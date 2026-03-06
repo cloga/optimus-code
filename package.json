@@ -1,0 +1,35 @@
+{
+  "name": "optimus-code",
+  "displayName": "Optimus Code",
+  "description": "The Ultimate Multi-Agent Orchestrator",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.86.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "optimus-code.summonCouncil",
+        "title": "Optimus Code: Summon Council (Debate)"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.86.0",
+    "@types/node": "18.x",
+    "typescript": "^5.3.3"
+  }
+}
