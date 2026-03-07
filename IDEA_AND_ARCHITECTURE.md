@@ -33,7 +33,12 @@ Operates as the geeks' command center, directly attached to your editor's sideba
 ### 2. Middle Layer: The Orchestrator Engine & Configuration Manager
 The core state-machine and pipeline logic:
 *   **Dynamic Setting Injection**: End-users control the `optimusCode.agents` array inside their `settings.json`. By pairing `github-copilot` or `claude-code` Adapters with varying `model` endpoints (e.g. `gpt-5.4`, `claude-opus-4.6`, `gemini-3-pro`), instances inject seamlessly.
-*   **Parallel Streaming Router**: Uses strict interfaces (`invoke(prompt, onUpdate)`) bridging output logs (`stdout` and `stderr`) simultaneously towards the UI, keeping high throughput without deadlocks.
+*   **Parallel Streaming Router**: Uses strict interfaces (`invoke(prompt, mode, onUpdate)`) bridging output logs (`stdout` and `stderr`) simultaneously towards the UI, keeping high throughput without deadlocks.
+
+### 2.1 The "Council for Planning, Dictator for Execution" Principle (多谋独断)
+A core safety tenet discovered during development:
+*   **Plan / Ask Modes**: Multiple agents are spun up concurrently to analyze the codebase and argue architectural variations.
+*   **Agent Mode**: Only **ONE** active agent is allowed to execute autonomously. If the user accidentally dispatches multiple agents with `--allow-all` / `--dangerously-skip-permissions`, the UI forcefully strips it down to a single dictator. This prevents catastrophic file-overwrite collisions, race conditions, and corrupted Git states.
 
 ### 3. Bottom Layer: CLI Adapter Layer (System Hooks)
 Node.js sub-processors invoking official tools (e.g., `@github/copilot`, `claude-code`) via continuous `child_process.spawn`.

@@ -83,6 +83,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             activeAdapters = activeAdapters.filter(a => selectedAgentIds.includes(a.id));
         }
 
+        // Prevent file conflicts in Agent Mode by allowing only ONE executing dictator
+        if (mode === 'agent' && activeAdapters.length > 1) {
+            const chosen = activeAdapters[0];
+            vscode.window.showWarningMessage(`[Optimus Code] To prevent file overwrite conflicts in Agent mode, execution is delegated exclusively to ${chosen.name}.`);
+            activeAdapters = [chosen];
+        }
+
         const sessionResponses: {agent: string, text: string, status: 'success' | 'error', raw: boolean}[] = [];
         
         // 1. Tell UI which agents are starting
@@ -357,7 +364,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                 <div class="chat-history" id="chat-history">
                     <div class="message agent">
-                        <div class="agent-name">ğŸ›ï¸?Optimus Council</div>
+                        <div class="agent-name">ğŸ›ï¿½?Optimus Council</div>
                         <p>Welcome! Describe your architecture problem, and I will summon the agents concurrently.</p>
                     </div>
                 </div>
@@ -490,14 +497,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         
                         const msgDiv = document.createElement('div');
                         msgDiv.className = 'message agent';
-                        let html = \`<div class="agent-name">ğŸ›ï¸?Council Verdict (Restored)</div><div class="council-container">\`;
+                        let html = \`<div class="agent-name">ğŸ›ï¿½?Council Verdict (Restored)</div><div class="council-container">\`;
                         
                         message.session.responses.forEach(r => {
                             const safeId = r.agent.replace(/[^a-zA-Z0-9]/g, '');
                             html += \`
                                 <div class="agent-column">
                                     <div class="task-item">
-                                        <span class="task-icon">\${r.status === 'success' ? 'âœ? : 'â?}</span> 
+                                        <span class="task-icon">\${r.status === 'success' ? 'ï¿½? : 'ï¿½?}</span> 
                                         <span class="task-name">\${r.agent}</span>
                                     </div>
                                     <div style="flex-grow: 1; overflow-y: auto;">
@@ -516,7 +523,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         const msgDiv = document.createElement('div');
                         msgDiv.className = 'message agent';
                         
-                        let html = \`<div class="agent-name" id="council-status-\${Date.now()}">â?Council is deliberating...</div>\`;
+                        let html = \`<div class="agent-name" id="council-status-\${Date.now()}">ï¿½?Council is deliberating...</div>\`;
                         currentCouncilHeader = \`council-status-\${Date.now()}\`; // track it to update later
 
                         html += \`<div class="council-container">\`;
@@ -559,7 +566,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         // Update UI individually
                         if (taskEl && contentEl) {
                             taskEl.classList.remove('thinking');
-                            taskEl.querySelector('.task-icon').textContent = message.status === 'success' ? 'âœ? : 'â?;
+                            taskEl.querySelector('.task-icon').textContent = message.status === 'success' ? 'ï¿½? : 'ï¿½?;
                             
                             if (message.raw) {
                                 contentEl.innerHTML = \`<pre class="\${message.status === 'error' ? 'error-text' : ''}">\${message.text}</pre>\`;
@@ -575,7 +582,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         if (currentCouncilHeader) {
                             const headerEl = document.getElementById(currentCouncilHeader);
                             if (headerEl) {
-                                headerEl.textContent = "ğŸ›ï¸?Council Verdict";
+                                headerEl.textContent = "ğŸ›ï¿½?Council Verdict";
                             }
                         }
                     }

@@ -14,7 +14,8 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
             // Give context that it shouldn't modify
             args.push('--excluded-tools', 'write', 'shell');
         } else if (mode === 'agent') {
-            args.push('--allow-all-tools');
+            args.push('--allow-all'); // Enable all permissions fully automatically
+            args.push('--no-ask-user'); // Prevent it from halting to await human clarification
         }
         
         return { cmd: 'copilot', args };

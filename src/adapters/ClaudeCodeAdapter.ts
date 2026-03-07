@@ -16,7 +16,7 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
         if (mode === 'plan' || mode === 'ask') {
             args.push('--permission-mode', 'plan');
         } else if (mode === 'agent') {
-            args.push('--permission-mode', 'acceptEdits');
+            args.push('--dangerously-skip-permissions');
         }
 
         return { cmd: 'claude', args };
