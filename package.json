@@ -12,12 +12,56 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "optimus-code.summonCouncil",
-        "title": "Optimus Code: Summon Council (Debate)"
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "optimus-code-sidebar",
+          "title": "Optimus Code",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "optimus-code-sidebar": [
+        {
+          "type": "webview",
+          "id": "optimus-code.chatView",
+          "name": "Council Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Optimus Code",
+      "properties": {
+        "optimusCode.agents": {
+          "type": "array",
+          "default": [
+            {
+              "id": "github-copilot-gemini",
+              "name": "🤖 Copilot (Gemini 3.0 Pro)",
+              "adapter": "github-copilot",
+              "model": "gemini-3-pro-preview",
+              "enabled": true
+            },
+            {
+              "id": "github-copilot-gpt5",
+              "name": "🤖 Copilot (GPT-5.4)",
+              "adapter": "github-copilot",
+              "model": "gpt-5.4",
+              "enabled": true
+            },
+            {
+              "id": "claude-code-opus",
+              "name": "🦉 Claude Code (Opus 4.6 1M)",
+              "adapter": "claude-code",
+              "model": "claude-opus-4.6-1m",
+              "enabled": true
+            }
+          ],
+          "description": "Configure the AI Agent combinations (Adapter + Model) summoned by Optimus Code."
+        }
       }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -28,8 +72,13 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/vscode": "^1.86.0",
+    "@types/marked": "^5.0.2",
     "@types/node": "18.x",
+    "@types/vscode": "^1.86.0",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@vscode/webview-ui-toolkit": "^1.4.0",
+    "marked": "^17.0.4"
   }
 }

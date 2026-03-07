@@ -4,30 +4,43 @@
 
 ##  What is Optimus Code?
 
-Optimus Code is a VS Code extension that acts as an orchestration engine. Rather than being just another tool that sends prompts directly to an API, it transforms various LLM clients into background "workers" via local CLI commands (like `gh copilot` or `claude`). It lets them review code, debate with each other, and finally presents the best code result to you in an elegant Diff format.
+Optimus Code is a VS Code extension that acts as an orchestration engine. Rather than being just another tool that sends prompts directly to an API, it transforms various LLM clients into background "workers" via an extensible **Adapter Pattern**. 
 
-**Strategy:**
-By utilizing existing CLI clients from major vendors, we avoid incurring direct API costs. They are wrapped as underlying workers to perform multi-agent reviews.
+It provides a **persistent Chat View in the sidebar**, where you can type your prompts. The engine will summon multiple AI brains globally, gather their architectural plans, and present them in the chat panel simultaneously.
 
 ##  Features
 
-*   **Summon Council:** Select a block of code and summon multiple AI brains for review with a single click.
-*   **Local Orchestration:** Uses Node.js child processes to hijack the I/O of local CLI tools.
-*   **Seamless Diff:** Once the debate concludes, the final result is presented via VS Code's native Diff view for side-by-side comparison.
+*   **Sidebar Chat Interface:** Built with official VS Code UI Toolkit.
+*   **Multi-Agent Generation:** Asks Gemini, Claude, and Copilot for their solutions and streams them back to you in one place.
+*   **Extensible Adapter System:** Easily add your own AI agents (Doubao, Kimi, DeepSeek etc.) by implementing a simple Interface without touching the core UI code.
 
-##  Getting Started (MVP)
+##  Getting Started (Developer Guide)
 
 1. Clone this repository and install dependencies:
-   ```bash
+   `ash
    npm install
-   ```
-2. Ensure you have the necessary CLI tools installed (e.g., GitHub CLI `gh` with the `gh-copilot` extension).
-3. Press `F5` in VS Code to start debugging.
-4. Open any code file in the new debugging window and select the code you want to review.
-5. Press `Ctrl+Shift+P` (or `Cmd+Shift+P`), search and execute:
-    **`Optimus Code: Summon Council (Debate)`**
+   ` 
+2. Ensure you have the necessary CLI tools installed (gh copilot and @anthropic-ai/claude-code).
+3. Press F5 in VS Code to start debugging.
+4. Open the **Optimus Code Activity Bar** on the left.
+5. Start chatting and watch the multi-agent council provide their plans!
 
-##  Architecture & Roadmap
+## 🧪 Recommended Test Prompts (Copy & Paste)
 
-For deeper design thoughts and the state machine design of the multi-brain debate engine, please refer to the core architecture document:
- [IDEA_AND_ARCHITECTURE.md](IDEA_AND_ARCHITECTURE.md)
+When running the extension locally via F5, try pasting these prompts into the Optimus Code sidebar chat to test the side-by-side capabilities of the different configured agents:
+
+### 1. Algorithm & Code Quality
+> "Write a robust, type-safe deep clone function in TypeScript. Include comments explaining how you handle circular references and special objects like Date or Regex."
+*Tests raw coding ability and TypeScript syntax formatting.*
+
+### 2. System Architecture
+> "Design a distributed rate-limiting system for a highly trafficked API. Explain the components, the storage layer (e.g., Redis), and provide a basic Node.js implementation example."
+*Compares how different models plan macro-architecture and structure long-form Markdown.*
+
+### 3. Frontend / UI Generation
+> "Give me a single-file HTML/JS/CSS implementation of a sleek Kanban board column that accepts dragged items. Use modern Flexbox."
+*Tests the Markdown rendering in your VS Code Webview (specifically for large code blocks).*
+
+### 4. Agentic Local Workspace Reading (e.g., Claude Code CLI)
+> "Analyze the current workspace. Look into the `src/` directory and summarize what this VS Code extension does."
+*Tests infinite-timeout streaming and whether the underlying CLI tool correctly utilizes local file-reading skills.*
