@@ -1,6 +1,7 @@
 import { AgentAdapter } from './AgentAdapter';
 import * as cp from 'child_process';
 import * as util from 'util';
+import * as vscode from 'vscode';
 
 const execAsync = util.promisify(cp.exec);
 
@@ -23,8 +24,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
         return new Promise((resolve, reject) => {
             let fullText = "";
+            const currentCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
             const child = cp.spawn(`claude -p "${safePrompt}"${modelArg}`, {
                 shell: true,
+                cwd: currentCwd,
                 env: { ...process.env, TERM: 'dumb', CI: 'true', FORCE_COLOR: '0' }
             });
 
