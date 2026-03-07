@@ -3,6 +3,11 @@
   "displayName": "Optimus Code",
   "description": "The Ultimate Multi-Agent Orchestrator",
   "version": "0.0.1",
+  "publisher": "cloga",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloga/optimus-code.git"
+  },
   "engines": {
     "vscode": "^1.86.0"
   },
@@ -44,11 +49,21 @@
           "items": {
             "type": "object",
             "properties": {
-              "id": { "type": "string" },
-              "name": { "type": "string" },
-              "adapter": { "type": "string" },
-              "model": { "type": "string" },
-              "enabled": { "type": "boolean" }
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "adapter": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
             }
           },
           "default": [
@@ -91,6 +106,7 @@
     "@types/marked": "^5.0.2",
     "@types/node": "18.x",
     "@types/vscode": "^1.86.0",
+    "@vscode/vsce": "^3.7.1",
     "typescript": "^5.3.3"
   },
   "dependencies": {
