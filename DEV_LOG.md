@@ -2,6 +2,24 @@
 
 This document captures the context, rationale, and meaningful discussions (the "Why") behind technical decisions and architectural shifts in Optimus Code.
 
+## [2026-03-08] - Enrich Planner Prompt Context for Better Planning Quality
+
+### Context
+Planning agents were running with a lightweight context that only included the task summary and last 2 executor outcome summaries. They had no visibility into open questions, blocked reasons, or what the user actually asked in previous turns. This caused planners to sometimes suggest approaches that had already failed, or to miss important unresolved questions.
+
+### Root Cause
+The original `buildPlannerPrompt()` design was intentionally minimal to avoid "groupthink" bias and keep planners lightweight. However, it was too minimal — planners lacked the situational awareness needed for multi-turn tasks.
+
+### Changes Made
+1. **Added `openQuestions`** (last 3) to planner context — planners now know what's unresolved.
+2. **Added `blockedReasons`** (last 3) to planner context — planners now know what failed.
+3. **Included user prompt in recent turn history** — changed from `Turn N: <outcome>` to `Turn N: User: <prompt> / Outcome: <outcome>`, so planners understand the conversation flow.
+4. **Increased history window from 2 to 3 turns** — aligned with executor to reduce information gaps.
+5. **Conditional sections** — `openQuestions` and `blockedReasons` only appear when non-empty, keeping first-turn prompts clean.
+
+### Design Decision
+Planner context is enriched but stays lighter than the executor's. Planners don't receive Task ID, the planner synthesis section, or the full executor instruction block. This preserves the "independent advisor" role while giving them enough situational awareness to plan effectively.
+
 ## [2026-03-08] - Structured Tool Trace Separation and Execution Timeline Rendering
 
 ### Context
@@ -25,6 +43,80 @@ Executor runs, especially through Claude structured streaming, were showing tool
 - The Output panel must represent the agent's final answer, not an accidental concatenation of partial tool events.
 - Tool traces are operational metadata and should read like a call timeline rather than a code block dump.
 - Keeping process and answer separate also makes restored history sessions more trustworthy because the same structure can be replayed deterministically.
+
+### Follow-up Refinement
+The first pass still rendered tool arguments as a single flat string. This was improved further by:
+1. expanding structured input summaries to include more path and line-oriented keys,
+2. formatting tool calls as a title line plus `↳` detail lines, and
+3. rendering those details as badge groups in the Webview.
+
+This keeps executor traces compact while making file paths, line ranges, and command/query context immediately scannable.
+
+### Second Follow-up Refinement
+Real CLI event inspection showed that both adapters expose stable completion events:
+- Claude emits `user.tool_result` payloads tied to the original `tool_use_id`
+- Copilot emits `tool.execution_complete` events with structured `result.content`
+
+Based on that, the process renderer was upgraded again to:
+1. register tool-call ids during structured start events,
+2. attach completion summaries back onto the same tool step,
+3. render per-step status (`running`, `success`, `error`), and
+4. surface result summaries as a separate completed section instead of burying them in the final answer.
+
+This makes the Execution Process panel materially closer to a real agent tool-call trace rather than a best-effort transcript.
+
+### Third Follow-up Refinement
+There were still two conceptual mismatches after the trace work:
+1. executor cards were identified by display-name suffixes like `(Executing)` / `(Executor)` while planner cards were not, and
+2. Claude and Copilot still used separate adapter-local `extractThinking()` logic.
+
+These were unified by:
+1. adding explicit `role` metadata (`planner` / `executor`) to stored session responses,
+2. rendering the same role badge style for both planners and executors instead of mutating the agent name,
+3. removing executor-specific name suffixes from live and restored cards, and
+4. introducing a shared base parsing helper in `PersistentAgentAdapter` so Claude and Copilot now use the same process/output extraction algorithm with only small regex-level differences.
+
+The result is that planner and executor cards now differ by phase context, not by ad-hoc rendering rules, and Copilot/Claude traces now pass through the same normalization layer.
+
+### Fourth Follow-up Refinement
+The next consistency pass removed the remaining hardcoded divergence in the phase header layer and improved tool completion summaries:
+1. phase start / done labels are now derived from a shared `phaseKind` model rather than being manually repeated as planner-only or executor-only strings,
+2. restored history sessions use the same phase presentation helper as live runs,
+3. the stale `extractProcessSteps` reference in the final-card renderer was removed in favor of the current normalized process-entry parser, and
+4. tool completion summaries now use typed heuristics for common tools such as `Bash`, `Read`, `view`, `Glob`, and `Grep` instead of one generic fallback string.
+
+This means the UI now differs between planner and executor only where it should: phase semantics. The visual structure, status model, and tool summary style are shared.
+
+### Fifth Follow-up Refinement
+The remaining mismatch was in the diagnostic/debug surface and the visual density of process badges:
+1. `agentDebug` messages now carry `role` so planner and executor diagnostics can be rendered through the same phase-aware card layout,
+2. the Webview debug panel now shows a structured grid instead of a raw newline dump, and
+3. process badges are now typed visually (`path`, `count`, `preview`, `neutral`) so file paths, counts, and result previews are easier to distinguish at a glance.
+
+This tightens the product-level consistency further: the tool trace, the phase header, and the debug panel now all follow the same planner/executor unification direction.
+
+### Sixth Follow-up Refinement
+The next pass focused on reducing visual noise while improving the usefulness of completed tool summaries:
+1. runtime diagnostics are now rendered as a shared `Runtime Details` disclosure card in both the live debug strip and the final Input Prompt section, so the metadata stays available without competing with the main execution trace,
+2. the old inline debug `pre` block was removed in favor of that same structured card renderer, and
+3. tool completion summaries for high-frequency tools (`Read`, `Edit`, `Grep`, `Bash`, list/glob-style tools) now emit more structured parts such as `path=...`, `lines=...`, `matches=...`, `exit=...`, and `preview=...`.
+
+This keeps the planner/executor cards quieter by default while making the completed-state badges materially more informative.
+
+### Seventh Follow-up Refinement
+Planner-side permission failures revealed that CLI permission mode alone was not enough to keep planning agents behaviorally read-only. Even in plan mode, the models could still propose or attempt edit-style tools before the runtime rejected them.
+
+To fix that at the root prompt layer, `buildPlannerPrompt()` now explicitly states that planners are read-only, must not call edit/write/apply/create/delete tools, and must hand implementation steps off to the executor instead of narrating failed permission workarounds.
+
+This aligns behavioral intent with the existing runtime restrictions: the planner plans, the executor executes.
+
+### Eighth Follow-up Refinement
+History had two data-loss problems and one UX problem:
+1. user image attachments were saved to disk for the live turn but were never stored with the session record, so restored history only showed the text prompt,
+2. agent output was only persisted as a final batch at turn completion, so interrupted or still-running agents could disappear from history, and
+3. the history list / restore flow had no loading feedback, which made slower loads look broken.
+
+This was fixed by storing image attachments in `StoredSession`, allowing the webview to resolve those files from the extension global storage directory, incrementally upserting running agent snapshots during streaming, and adding explicit loading cards for history list and restore operations.
 
 ## [2026-03-08] - Code Quality Hardening (Multi-Agent Review)
 

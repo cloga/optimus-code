@@ -1,6 +1,4 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
-import { ANSI_RE } from '../utils/textParsing';
-
 // Copilot CLI uses ● (U+25CF filled circle) and tree-drawing chars for tool trace lines
 // Also handle ⏺ (U+23FA) and • (U+2022) for robustness
 const COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→]/;
@@ -39,45 +37,11 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
     }
 
     extractThinking(rawText: string): { thinking: string; output: string; usageLog?: string } {
-        if (!rawText) { return { thinking: '', output: '' }; }
-
-        const lines = rawText.split(/\r?\n|\r/);
-        const processLines: string[] = [];
-        const outputLines: string[] = [];
-        const logLines: string[] = [];
-        let outputStarted = false;
-
-        for (const line of lines) {
-            const clean = line.replace(ANSI_RE, '').trim();
-            // [LOG] lines are usage stats — capture separately regardless of position.
-            // May appear as "> [LOG] ..." (stderr-decorated) or plain "[LOG] ..." (stdout).
-            // Use a loose match to tolerate leading whitespace or invisible chars after ANSI strip.
-            if (/\[LOG\]/i.test(clean)) {
-                logLines.push(clean);
-                continue;
-            }
-            if (!outputStarted) {
-                if (clean === '' || COPILOT_PROCESS_LINE_RE.test(clean) || clean.startsWith('> [') || clean.startsWith('[')) {
-                    processLines.push(line);
-                } else {
-                    outputStarted = true;
-                    outputLines.push(line);
-                }
-            } else {
-                outputLines.push(line);
-            }
-        }
-
-        while (processLines.length > 0 && processLines[processLines.length - 1].trim() === '') {
-            outputLines.unshift(processLines.pop() as string);
-        }
-
-        const processBlock = processLines.join('\n').trim();
-        return {
-            thinking: processBlock ? '```text\n' + processBlock + '\n```' : '',
-            output: outputLines.join('\n').trim(),
-            usageLog: logLines.length > 0 ? logLines.join('\n') : this.lastUsageLog
-        };
+        return this.extractThinkingWithSharedParser(rawText, {
+            processLineRe: COPILOT_PROCESS_LINE_RE,
+            captureBracketLines: true,
+            collectUsageLog: true,
+        });
     }
 
     protected getSpawnCommand(mode: string): { cmd: string, args: string[] } {

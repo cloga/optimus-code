@@ -7,7 +7,7 @@ import { PersistentAgentAdapter } from '../adapters/PersistentAgentAdapter';
 import { SharedTaskStateManager } from '../managers/SharedTaskStateManager';
 import { marked } from 'marked';
 import { debugLog } from '../debugLogger';
-import { ContributionRecord, ExecutorOutcomeRecord, SessionResponseRecord, StoredSession } from '../types/SharedTaskContext';
+import { ContributionRecord, ExecutorOutcomeRecord, SessionImageAttachment, SessionResponseRecord, StoredSession } from '../types/SharedTaskContext';
 import { ANSI_RE } from '../utils/textParsing';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
@@ -15,6 +15,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _activeRunAdapters: ReturnType<typeof getActiveAdapters> = [];
     private _currentTaskId?: string;
+    private _activeTurnRef?: { taskId: string; turnId: string };
+    private _activeStopReason?: string;
     private readonly _runningTaskIds = new Set<string>();
     private readonly _taskStateManager: SharedTaskStateManager;
 
@@ -122,7 +124,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [
-                this._extensionUri
+                this._extensionUri,
+                this._context.globalStorageUri,
             ]
         };
 
@@ -320,7 +323,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    private _makeStreamingCallback(agentName: string, adapter?: AgentAdapter): { callback: (text: string) => void; flush: () => void } {
+    private _makeStreamingCallback(
+        agentName: string,
+        adapter?: AgentAdapter,
+        sessionMeta?: { turnId: string; agentId?: string; role?: 'planner' | 'executor'; prompt?: string }
+    ): { callback: (text: string) => void; flush: () => void } {
         let pendingText = '';
         let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -339,6 +346,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 outputHtml,
                 rawText: text,
             });
+
+            if (sessionMeta?.turnId) {
+                this._upsertSessionResponse(sessionMeta.turnId, {
+                    agent: agentName,
+                    agentId: sessionMeta.agentId,
+                    role: sessionMeta.role,
+                    prompt: sessionMeta.prompt,
+                    thinking: parsed.thinking,
+                    text: parsed.output || text,
+                    status: 'running',
+                    raw: false,
+                    debug: adapter?.lastDebugInfo,
+                });
+            }
         };
 
         const callback = (incrementalText: string) => {
@@ -359,7 +380,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return { callback, flush };
     }
 
-    private _saveImagesToDisk(images: { dataUrl: string; mimeType: string }[]): string[] {
+    private _postPhaseStart(
+        phaseKind: 'planner' | 'executor',
+        agents: Array<{ id: string; name: string; role: 'planner' | 'executor' }>,
+        prompt: string,
+        autoCollapseOnSuccess?: boolean
+    ) {
+        this._view?.webview.postMessage({
+            type: 'startCouncil',
+            phaseKind,
+            agents,
+            prompt,
+            autoCollapseOnSuccess,
+        });
+    }
+
+    private _saveImagesToDisk(images: { dataUrl: string; mimeType: string }[]): SessionImageAttachment[] {
         const storageDir = this._context.globalStorageUri.fsPath;
         fs.mkdirSync(storageDir, { recursive: true });
         const ts = Date.now();
@@ -369,7 +405,64 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             const filePath = path.join(storageDir, `paste-${ts}-${i}-${rand}.${ext}`);
             const base64 = img.dataUrl.replace(/^data:[^;]+;base64,/, '');
             fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
-            return filePath;
+            return { filePath, mimeType: img.mimeType };
+        });
+    }
+
+    private _toWebviewAttachment(attachment: SessionImageAttachment): SessionImageAttachment | undefined {
+        if (!this._view || !attachment.filePath || !fs.existsSync(attachment.filePath)) {
+            return undefined;
+        }
+
+        return {
+            ...attachment,
+            src: this._view.webview.asWebviewUri(vscode.Uri.file(attachment.filePath)).toString(),
+        };
+    }
+
+    private _upsertSessionResponse(turnId: string, nextResponse: SessionResponseRecord) {
+        const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
+        const sessionIndex = sessions.findIndex(session => session.turnId === turnId);
+        if (sessionIndex === -1) {
+            return;
+        }
+
+        const session = sessions[sessionIndex];
+        const responseIndex = session.responses.findIndex(response =>
+            response.agent === nextResponse.agent
+            && response.role === nextResponse.role
+            && response.agentId === nextResponse.agentId
+        );
+
+        const responses = session.responses.slice();
+        if (responseIndex === -1) {
+            responses.push(nextResponse);
+        } else {
+            responses[responseIndex] = {
+                ...responses[responseIndex],
+                ...nextResponse,
+            };
+        }
+
+        sessions[sessionIndex] = { ...session, responses };
+        this._context.globalState.update('optimusSessions', sessions);
+    }
+
+    private _initializeSessionResponses(
+        turnId: string,
+        agents: Array<{ name: string; agentId?: string; role?: 'planner' | 'executor'; prompt?: string }>
+    ) {
+        agents.forEach(agent => {
+            this._upsertSessionResponse(turnId, {
+                agent: agent.name,
+                agentId: agent.agentId,
+                role: agent.role,
+                prompt: agent.prompt,
+                thinking: '',
+                text: '',
+                status: 'running',
+                raw: false,
+            });
         });
     }
 
@@ -378,9 +471,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         // Save pasted images to disk and inject file paths into the prompt
         let imageNote = '';
+        let storedAttachments: SessionImageAttachment[] = [];
         if (images && images.length > 0) {
-            const imagePaths = this._saveImagesToDisk(images);
-            imageNote = '\n\n[Attached images]\n' + imagePaths.map(p => `- ${p}`).join('\n') + '\n';
+            storedAttachments = this._saveImagesToDisk(images);
+            imageNote = '\n\n[Attached images]\n' + storedAttachments.map(image => `- ${image.filePath}`).join('\n') + '\n';
         }
 
         // Prepend active editor context so planners have live code awareness
@@ -401,8 +495,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             return;
         }
         this._runningTaskIds.add(this._currentTaskId);
+        this._activeTurnRef = {
+            taskId: turnState.taskState.taskId,
+            turnId: turnState.turnRecord.turnId,
+        };
+        this._activeStopReason = undefined;
 
-        this._createSessionRecord(prompt, turnState.taskState.taskId, turnState.turnRecord.turnId);
+        this._createSessionRecord(prompt, turnState.taskState.taskId, turnState.turnRecord.turnId, storedAttachments);
 
         const allAdapters = getActiveAdapters();
         debugLog('Council', 'Delegation started', JSON.stringify({
@@ -483,31 +582,45 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         );
 
         // --- Phase 1: Council Planning ---
-        this._view.webview.postMessage({
-            type: 'startCouncil',
-            agents: planAdapters.map(a => ({ id: a.id, name: a.name })),
-            prompt: plannerPrompt,
-            title: 'Council Planning',
-            doneTitle: 'Planning Complete',
-            autoCollapseOnSuccess: true
-        });
+        this._postPhaseStart(
+            'planner',
+            planAdapters.map(a => ({ id: a.id, name: a.name, role: 'planner' })),
+            plannerPrompt,
+            true
+        );
+        this._initializeSessionResponses(
+            turnState.turnRecord.turnId,
+            planAdapters.map(adapter => ({
+                name: adapter.name,
+                agentId: adapter.id,
+                role: 'planner' as const,
+                prompt: plannerPrompt,
+            }))
+        );
 
         try {
             const planResults: {agentId: string, agent: string, text: string, status: 'success' | 'error'}[] = [];
 
             const promises = planAdapters.map(adapter => {
-                const { callback, flush } = this._makeStreamingCallback(adapter.name, adapter);
+                const { callback, flush } = this._makeStreamingCallback(adapter.name, adapter, {
+                    turnId: turnState.turnRecord.turnId,
+                    agentId: adapter.id,
+                    role: 'planner',
+                    prompt: plannerPrompt,
+                });
                 return adapter.invoke(plannerPrompt, 'plan', callback)
                 .then(async res => {
                     flush();
                     debugLog(adapter.id, 'Raw result length + preview', JSON.stringify({ len: res.length, preview: res.slice(0, 500) }));
                     const { thinking, output, usageLog } = this._extractThinking(res, adapter);
                     planResults.push({ agentId: adapter.id, agent: adapter.name, text: output, status: 'success' });
-                    sessionResponses.push({ agent: adapter.name, agentId: adapter.id, prompt: plannerPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success', raw: false, debug: adapter.lastDebugInfo });
+                    const plannerSuccessRecord = { agent: adapter.name, agentId: adapter.id, role: 'planner' as const, prompt: plannerPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success' as const, raw: false, debug: adapter.lastDebugInfo };
+                    sessionResponses.push(plannerSuccessRecord);
+                    this._upsertSessionResponse(turnState.turnRecord.turnId, plannerSuccessRecord);
                     plannerContributions.push(this._buildContributionRecord(adapter, 'planner', res, 'success'));
                     const htmlContent = await marked.parse(output);
                     const thinkingHtml = thinking ? await marked.parse(thinking) : undefined;
-                    this._view?.webview.postMessage({ type: 'agentDone', agent: adapter.name, agentId: adapter.id, prompt: plannerPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: adapter.lastDebugInfo, status: 'success', raw: false });
+                    this._view?.webview.postMessage({ type: 'agentDone', agent: adapter.name, agentId: adapter.id, role: 'planner', prompt: plannerPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: adapter.lastDebugInfo, status: 'success', raw: false });
                     this._sendDebugInfo(adapter, '', {
                         taskId: turnState.taskState.taskId,
                         turnId: turnState.turnRecord.turnId,
@@ -517,9 +630,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .catch(err => {
                     flush();
                     planResults.push({ agentId: adapter.id, agent: adapter.name, text: err.message, status: 'error' });
-                    sessionResponses.push({ agent: adapter.name, agentId: adapter.id, prompt: plannerPrompt, text: err.message, status: 'error', raw: true, debug: adapter.lastDebugInfo });
+                    const plannerErrorRecord = { agent: adapter.name, agentId: adapter.id, role: 'planner' as const, prompt: plannerPrompt, text: err.message, status: 'error' as const, raw: true, debug: adapter.lastDebugInfo };
+                    sessionResponses.push(plannerErrorRecord);
+                    this._upsertSessionResponse(turnState.turnRecord.turnId, plannerErrorRecord);
                     plannerContributions.push(this._buildContributionRecord(adapter, 'planner', err.message, 'error'));
-                    this._view?.webview.postMessage({ type: 'agentDone', agent: adapter.name, agentId: adapter.id, prompt: plannerPrompt, text: err.message, debug: adapter.lastDebugInfo, status: 'error', raw: true });
+                    this._view?.webview.postMessage({ type: 'agentDone', agent: adapter.name, agentId: adapter.id, role: 'planner', prompt: plannerPrompt, text: err.message, debug: adapter.lastDebugInfo, status: 'error', raw: true });
                     this._sendDebugInfo(adapter, '', {
                         taskId: turnState.taskState.taskId,
                         turnId: turnState.turnRecord.turnId,
@@ -551,16 +666,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     synthesisPrompt = executorPrompt;
 
                     // Show executor in UI
-                    this._view.webview.postMessage({
-                        type: 'startCouncil',
-                        agents: [{ id: executor.id, name: executor.name + ' (Executing)' }],
+                    this._postPhaseStart(
+                        'executor',
+                        [{ id: executor.id, name: executor.name, role: 'executor' }],
+                        executorPrompt
+                    );
+                    this._initializeSessionResponses(turnState.turnRecord.turnId, [{
+                        name: executor.name,
+                        agentId: executor.id,
+                        role: 'executor',
                         prompt: executorPrompt,
-                        title: 'Executor Synthesis',
-                        doneTitle: 'Execution Complete'
-                    });
+                    }]);
 
-                    const execName = executor.name + ' (Executing)';
-                    const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, executor);
+                    const execName = executor.name;
+                    const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, executor, {
+                        turnId: turnState.turnRecord.turnId,
+                        agentId: executor.id,
+                        role: 'executor',
+                        prompt: executorPrompt,
+                    });
                     debugLog('Council', 'Executor phase starting', JSON.stringify({ executor: executor.name, promptLength: executorPrompt.length }));
 
                     try {
@@ -572,7 +696,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
                         const { thinking, output, usageLog } = this._extractThinking(execCleaned, executor);
 
-                        sessionResponses.push({ agent: executor.name + ' (Executor)', agentId: executor.id, prompt: executorPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success', raw: false, debug: executor.lastDebugInfo });
+                        const executorSuccessRecord = { agent: executor.name, agentId: executor.id, role: 'executor' as const, prompt: executorPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success' as const, raw: false, debug: executor.lastDebugInfo };
+                        sessionResponses.push(executorSuccessRecord);
+                        this._upsertSessionResponse(turnState.turnRecord.turnId, executorSuccessRecord);
                         executorOutcome = this._buildExecutorOutcomeRecord(executor, execCleaned, 'success');
 
                         if (extractedSummary) {
@@ -582,18 +708,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         }
                         const htmlContent = await marked.parse(output);
                         const thinkingHtml = thinking ? await marked.parse(thinking) : undefined;
-                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: executor.id, prompt: executorPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: executor.lastDebugInfo, status: 'success', raw: false });
-                        this._sendDebugInfo(executor, ' (Executing)', {
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: executor.id, role: 'executor', prompt: executorPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: executor.lastDebugInfo, status: 'success', raw: false });
+                        this._sendDebugInfo(executor, '', {
                             taskId: turnState.taskState.taskId,
                             turnId: turnState.turnRecord.turnId,
                             role: 'executor',
                         });
                     } catch (err: any) {
                         execFlush();
-                        sessionResponses.push({ agent: executor.name + ' (Executor)', agentId: executor.id, prompt: executorPrompt, text: err.message, status: 'error', raw: true, debug: executor.lastDebugInfo });
+                        const executorErrorRecord = { agent: executor.name, agentId: executor.id, role: 'executor' as const, prompt: executorPrompt, text: err.message, status: 'error' as const, raw: true, debug: executor.lastDebugInfo };
+                        sessionResponses.push(executorErrorRecord);
+                        this._upsertSessionResponse(turnState.turnRecord.turnId, executorErrorRecord);
                         executorOutcome = this._buildExecutorOutcomeRecord(executor, err.message, 'error');
-                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: executor.id, prompt: executorPrompt, text: err.message, debug: executor.lastDebugInfo, status: 'error', raw: true });
-                        this._sendDebugInfo(executor, ' (Executing)', {
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: executor.id, role: 'executor', prompt: executorPrompt, text: err.message, debug: executor.lastDebugInfo, status: 'error', raw: true });
+                        this._sendDebugInfo(executor, '', {
                             taskId: turnState.taskState.taskId,
                             turnId: turnState.turnRecord.turnId,
                             role: 'executor',
@@ -641,13 +769,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
             }
         } catch (error: any) {
-            await this._taskStateManager.failTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, error.message);
+            const failureReason = this._activeTurnRef?.turnId === turnState.turnRecord.turnId && this._activeStopReason
+                ? this._activeStopReason
+                : error.message;
+            await this._taskStateManager.failTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, failureReason);
             debugLog('Council', 'Delegation failed', error?.stack || String(error));
-            this._view.webview.postMessage({ type: 'agentDone', agent: 'System', text: error.message, status: 'error', raw: true });
+            this._view.webview.postMessage({ type: 'agentDone', agent: 'System', text: failureReason, status: 'error', raw: true });
             this._view.webview.postMessage({ type: 'councilComplete' });
             this._sendCurrentTaskState();
         } finally {
             this._runningTaskIds.delete(turnState.taskState.taskId);
+            this._activeTurnRef = undefined;
+            this._activeStopReason = undefined;
             this._activeRunAdapters = [];
         }
     }
@@ -687,23 +820,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             output = output.replace(match[0], '');
         }
 
-        // Extract leading tool chain execution lines common in Copilot and Claude CLI outputs
+        // Extract tool chain execution lines common in Copilot and Claude CLI outputs.
+        // Full-scan mode: tool chain lines can appear anywhere, not just as a leading prefix.
+        const PROCESS_LINE_RE = /^[•●⏺▶→└│├✓✗↳]|^>\s*\[/;
         const lines = output.split(/\r?\n|\r/);
         const processLines: string[] = [];
         const outputLines: string[] = [];
-        let outputStarted = false;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const cleanLine = line.replace(ANSI_RE, '');
             const trimmed = cleanLine.trim();
-            if (!outputStarted) {
-                if (trimmed === '' || /^[•└│├]/.test(trimmed) || trimmed.startsWith('> [')) {
-                    processLines.push(line);
-                } else {
-                    outputStarted = true;
-                    outputLines.push(line);
-                }
+            if (PROCESS_LINE_RE.test(trimmed)) {
+                processLines.push(line);
             } else {
                 outputLines.push(line);
             }
@@ -820,12 +949,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             this._view?.webview.postMessage({
                 type: 'agentDebug',
                 agent: adapter.name + nameSuffix,
+                role: taskContext?.role,
                 ...debugObj,
             });
         }
     }
 
     private _stopActiveCouncil() {
+        if (this._activeTurnRef) {
+            this._activeStopReason = 'Stopped by user: council execution was manually stopped.';
+        }
         for (const adapter of this._activeRunAdapters) {
             adapter.stop?.();
         }
@@ -876,7 +1009,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _createSessionRecord(prompt: string, taskId: string, turnId: string) {
+    private _createSessionRecord(prompt: string, taskId: string, turnId: string, attachments: SessionImageAttachment[] = []) {
         const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
         sessions.unshift({
             id: turnId,
@@ -884,6 +1017,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             prompt,
             taskId,
             turnId,
+            attachments,
             responses: [],
         });
         const limited = sessions.slice(0, 50);
@@ -895,7 +1029,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
         const idx = sessions.findIndex(s => s.turnId === turnId);
         if (idx !== -1) {
-            sessions[idx] = { ...sessions[idx], responses };
+            sessions[idx] = { ...sessions[idx], responses: responses.map(response => ({ ...response })) };
         }
         this._context.globalState.update('optimusSessions', sessions);
         this._sendSessionsToUI();
@@ -933,6 +1067,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 turnCount: snapshot?.turnCount,
                 latestSummary: snapshot?.latestSummary,
                 pinned: snapshot?.pinned,
+                attachmentCount: Array.isArray(s.attachments) ? s.attachments.length : 0,
             };
         });
         this._view?.webview.postMessage({ type: 'updateSessionsList', sessions: lightweightSessions });
@@ -947,6 +1082,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // If part of a task, retrieve the most recent turns (cap at 20 to avoid bloating the webview)
         const MAX_TURNS_IN_VIEW = 20;
         const isTaskGroup = !!targetSession.taskId;
+        const taskState = targetSession.taskId ? this._taskStateManager.getTask(targetSession.taskId) : undefined;
         const groupSessions = isTaskGroup
             ? sessions
                 .filter(s => s.taskId === targetSession.taskId)
@@ -968,7 +1104,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 const thinkingText = responseThinking ? await marked.parse(responseThinking) : undefined;
                 return { ...r, parsedText: text, thinkingHtml: thinkingText, usageLog: r.usageLog };
             }));
-            parsedGroupSessions.push({ ...session, responses: parsedResponses });
+            const matchedTurn = taskState?.turnHistory.find(turn => turn.turnId === session.turnId);
+            parsedGroupSessions.push({
+                ...session,
+                failureReason: matchedTurn?.failureReason || session.failureReason,
+                attachments: (session.attachments || [])
+                    .map(attachment => this._toWebviewAttachment(attachment))
+                    .filter((attachment): attachment is SessionImageAttachment => Boolean(attachment)),
+                responses: parsedResponses,
+            });
         }
 
         this._view?.webview.postMessage({ type: 'restoreTaskSessions', sessions: parsedGroupSessions });
@@ -1097,6 +1241,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     align-self: flex-end;
                     max-width: 85%;
                 }
+                .message.user > div + .restored-image-strip,
+                .message.user > .restored-image-strip {
+                    margin-top: 8px;
+                }
                 .message.agent {
                     border-left: 3px solid var(--vscode-textLink-foreground);
                     background: var(--vscode-editor-background);
@@ -1177,6 +1325,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     margin-top: 4px;
                     display: block;
                 }
+                .restored-image-strip {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }
+                .history-loading-card {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 14px 16px;
+                    border-radius: 8px;
+                    border: 1px solid var(--vscode-panel-border);
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 12px;
+                }
+                .history-loading-card-chat {
+                    margin-top: 8px;
+                }
+                .history-loading-spinner {
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 999px;
+                    border: 2px solid color-mix(in srgb, var(--vscode-textLink-foreground) 28%, transparent 72%);
+                    border-top-color: var(--vscode-textLink-foreground);
+                    animation: spin 0.9s linear infinite;
+                    flex-shrink: 0;
+                }
                 pre {
                     white-space: pre-wrap;
                     font-family: var(--vscode-editor-font-family);
@@ -1231,6 +1407,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     0% { opacity: .2; }
                     20% { opacity: 1; }
                     100% { opacity: .2; }
+                }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
                 }
                 .thinking .task-icon {
                     animation: blink 1.4s infinite both;
@@ -1330,6 +1510,64 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .council-summary:hover {
                     background: var(--vscode-list-hoverBackground);
                 }
+
+                /* Sticky headers: pin summaries when content overflows viewport */
+                details[open] > .council-summary {
+                    position: sticky;
+                    top: 0;
+                    z-index: 30;
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                }
+                .agent-row[open] > .task-item {
+                    position: sticky;
+                    top: 36px;
+                    z-index: 20;
+                    background: var(--vscode-sideBar-background);
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                }
+                .agent-child-stack > details[open] > summary {
+                    position: sticky;
+                    top: 72px;
+                    z-index: 10;
+                    background: var(--vscode-editor-background);
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                    padding: 4px 8px;
+                }
+
+                /* Floating collapse bar for off-screen expanded sections */
+                #floating-collapse-bar {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    z-index: 200;
+                    display: flex;
+                    gap: 4px;
+                    padding: 4px 8px;
+                    background: var(--vscode-editorWidget-background);
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                    flex-wrap: wrap;
+                }
+                .floating-collapse-btn {
+                    padding: 2px 10px;
+                    border-radius: 999px;
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    border: 1px solid var(--vscode-panel-border);
+                    font-size: 11px;
+                    cursor: pointer;
+                    max-width: 220px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .floating-collapse-btn:hover {
+                    background: var(--vscode-button-hoverBackground);
+                    color: var(--vscode-button-foreground);
+                }
+
                 .council-container {
                     display: flex;
                     flex-direction: column;
@@ -1351,6 +1589,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     align-items: center;
                     gap: 8px;
                     font-size: 12px;
+                }
+                .restored-agent-status {
+                    margin-left: auto;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    border: 1px solid var(--vscode-panel-border);
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.03em;
+                    text-transform: uppercase;
+                    white-space: nowrap;
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+                .restored-agent-status-running {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 66%, var(--vscode-editorWarning-foreground) 34%);
+                    color: var(--vscode-editorWarning-foreground);
+                }
+                .restored-agent-status-error {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 66%, var(--vscode-errorForeground) 34%);
+                    color: var(--vscode-errorForeground);
+                }
+                .restored-agent-status-success {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 66%, var(--vscode-terminal-ansiGreen) 34%);
+                    color: var(--vscode-terminal-ansiGreen);
                 }
                 .agent-row .task-item:hover {
                     background: var(--vscode-list-hoverBackground);
@@ -1374,6 +1640,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .agent-child-stack > div {
                     margin-top: 2px;
                 }
+                .restored-agent-note {
+                    margin-bottom: 8px;
+                    padding: 8px 10px;
+                    border-radius: 6px;
+                    border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground) 55%, var(--vscode-panel-border) 45%);
+                    background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-editorWarning-foreground) 18%);
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 12px;
+                    line-height: 1.45;
+                }
                 .process-timeline {
                     display: flex;
                     flex-direction: column;
@@ -1393,14 +1669,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-inputValidation-warningBackground) 18%);
                 }
                 .process-step-index {
-                    width: 22px;
-                    height: 22px;
+                    width: 24px;
+                    height: 24px;
                     border-radius: 999px;
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: 11px;
-                    font-weight: 700;
+                    font-size: 14px;
+                    line-height: 1;
                     background: var(--vscode-button-secondaryBackground);
                     color: var(--vscode-button-secondaryForeground);
                     border: 1px solid var(--vscode-panel-border);
@@ -1408,11 +1684,77 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .process-step-body {
                     min-width: 0;
                 }
+                .process-step-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                }
                 .process-step-title {
                     font-size: 12px;
                     font-weight: 700;
                     color: var(--vscode-foreground);
                     word-break: break-word;
+                }
+                .process-step-status {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    border: 1px solid var(--vscode-panel-border);
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.03em;
+                    white-space: nowrap;
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+                .process-step-status-success {
+                    color: var(--vscode-terminal-ansiGreen);
+                }
+                .process-step-status-error {
+                    color: var(--vscode-errorForeground);
+                }
+                .process-step-status-running {
+                    color: var(--vscode-editorWarning-foreground);
+                }
+                .process-step-badges {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    margin-top: 6px;
+                }
+                .process-step-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    max-width: 100%;
+                    padding: 3px 8px;
+                    border-radius: 999px;
+                    border: 1px solid var(--vscode-panel-border);
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    font-size: 11px;
+                    line-height: 1.35;
+                    font-family: var(--vscode-editor-font-family);
+                    word-break: break-word;
+                }
+                .process-step-badge-path {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 68%, var(--vscode-textLink-foreground) 32%);
+                    color: var(--vscode-foreground);
+                }
+                .process-step-badge-count {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 68%, var(--vscode-terminal-ansiGreen) 32%);
+                    color: var(--vscode-foreground);
+                }
+                .process-step-badge-preview {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 72%, var(--vscode-editorWarning-foreground) 28%);
+                    color: var(--vscode-foreground);
+                }
+                .process-step-badge-neutral {
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
                 }
                 .process-step-meta {
                     margin-top: 4px;
@@ -1421,6 +1763,98 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     color: var(--vscode-descriptionForeground);
                     word-break: break-word;
                     font-family: var(--vscode-editor-font-family);
+                }
+                .process-step-meta-muted {
+                    opacity: 0.8;
+                    font-style: italic;
+                }
+                .process-step-result {
+                    margin-top: 10px;
+                    padding-top: 8px;
+                    border-top: 1px dashed var(--vscode-panel-border);
+                }
+                .process-step-result-label {
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: var(--vscode-descriptionForeground);
+                    margin-bottom: 6px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.03em;
+                }
+                .process-step-result-badges {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+                .process-step-result-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    max-width: 100%;
+                    padding: 3px 8px;
+                    border-radius: 999px;
+                    border: 1px solid var(--vscode-panel-border);
+                    background: color-mix(in srgb, var(--vscode-editor-background) 72%, var(--vscode-terminal-ansiGreen) 28%);
+                    color: var(--vscode-foreground);
+                    font-size: 11px;
+                    line-height: 1.35;
+                    font-family: var(--vscode-editor-font-family);
+                    word-break: break-word;
+                }
+                .process-step-result-badge-count {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 62%, var(--vscode-terminal-ansiGreen) 38%);
+                }
+                .process-step-result-badge-path {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 64%, var(--vscode-textLink-foreground) 36%);
+                }
+                .process-step-result-badge-result-preview {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 62%, var(--vscode-editorWarning-foreground) 38%);
+                }
+                .process-step-result-badge-result-neutral {
+                    background: color-mix(in srgb, var(--vscode-editor-background) 70%, var(--vscode-button-secondaryBackground) 30%);
+                }
+                .debug-card {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                .debug-stat-badges {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                }
+                .debug-stat-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    border: 1px solid var(--vscode-panel-border);
+                    font-size: 10px;
+                    line-height: 1.3;
+                    text-transform: uppercase;
+                    letter-spacing: 0.03em;
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+                .debug-stat-badge-role {
+                    color: var(--vscode-descriptionForeground);
+                }
+                .debug-stat-badge-transport {
+                    color: var(--vscode-textLink-foreground);
+                }
+                .debug-stat-badge-duration {
+                    color: var(--vscode-terminal-ansiGreen);
+                }
+                .debug-grid {
+                    display: grid;
+                    grid-template-columns: minmax(88px, 120px) 1fr;
+                    gap: 6px 10px;
+                }
+                .debug-key {
+                    color: var(--vscode-descriptionForeground);
+                }
+                .debug-value {
+                    color: var(--vscode-foreground);
+                    word-break: break-word;
                 }
                 .process-notes {
                     margin-top: 8px;
@@ -1432,6 +1866,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     background: var(--vscode-editor-background);
                     color: var(--vscode-descriptionForeground);
                     font-size: 12px;
+                }
+                .process-reasoning {
+                    margin-top: 8px;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 6px;
+                    background: var(--vscode-editor-background);
+                }
+                .process-reasoning > summary {
+                    padding: 6px 10px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: var(--vscode-descriptionForeground);
+                    outline: none;
+                }
+                .process-reasoning > summary:hover {
+                    background: var(--vscode-list-hoverBackground);
+                    border-radius: 6px;
+                }
+                .process-reasoning-body {
+                    padding: 8px 10px;
+                    font-size: 11px;
+                    line-height: 1.5;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    color: var(--vscode-descriptionForeground);
+                    font-family: var(--vscode-editor-font-family);
+                    border-top: 1px solid var(--vscode-panel-border);
                 }
                 .process-markdown-fallback {
                     opacity: 0.9;
@@ -1526,21 +1988,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
                 .debug-panel {
                     display: none;
-                    background: var(--vscode-textCodeBlock-background);
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 4px;
-                    padding: 6px 8px;
                     margin-top: 6px;
-                    font-size: 11px;
-                    font-family: var(--vscode-editor-font-family);
-                    color: var(--vscode-descriptionForeground);
-                    white-space: pre-wrap;
-                    word-break: break-all;
-                    max-height: 120px;
-                    overflow-y: auto;
                 }
                 .debug-panel.visible {
                     display: block;
+                }
+                .debug-details {
+                    display: block;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 6px;
+                    background: var(--vscode-textCodeBlock-background);
+                    padding: 6px 8px;
+                }
+                .debug-details summary {
+                    cursor: pointer;
+                    outline: none;
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: var(--vscode-descriptionForeground);
+                    text-transform: uppercase;
+                    letter-spacing: 0.03em;
+                    user-select: none;
+                }
+                .debug-details[open] summary {
+                    margin-bottom: 8px;
                 }
                 .diagnostic-panel {
                     margin-top: 8px;
