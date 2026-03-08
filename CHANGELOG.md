@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## [0.0.5] - 2026-03-08
+- **Repo Cleanup**: Removed debug log files, temp test scripts, and `temp_debug/` directory from root.
+- **Gitignore Fix**: Replaced garbled `.gitignore` entries with clean rules; added patterns for `*.log`, `[LOG]`, `temp/`, `temp_debug/`.
+
 ## [0.0.4] - 2026-03-08
 - **Modes-aware Agent Selection**: Agents now declare `modes: string[]`. Planning agent checkboxes show only agents with `"plan"` mode; executor dropdown shows only agents with `"agent"` mode.
 - **Council → Executor Two-Phase Pipeline**: Phase 1 runs all selected planners concurrently; Phase 2 feeds synthesized plans to a single designated executor in `agent` mode.

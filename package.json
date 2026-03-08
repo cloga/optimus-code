@@ -3,7 +3,7 @@
   "displayName": "Optimus Code",
   "description": "The Ultimate Multi-Agent Orchestrator",
   "icon": "resources/logo.png",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "Trinity-Alpha",
   "repository": {
     "type": "git",
