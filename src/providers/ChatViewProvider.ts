@@ -553,10 +553,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     /**
      * After Phase 1 completes, analyze planner outputs to determine whether
-     * code execution is actually needed. Returns 'action' if any planner
-     * flagged <action-required>yes</action-required>, 'answer' if majority
-     * flagged no, 'skip' if any planner flagged <skip-to-executor>yes</skip-to-executor>,
-     * or 'unknown' if tags are missing.
+     * code execution is actually needed. Uses a consensus threshold of
+     * min(2, numPlanners) — single-planner setups work as before, but with
+     * 2+ planners at least 2 must agree before triggering 'action' or 'skip'.
+     * Falls back to 'answer' when consensus is not reached.
      */
     private _computeIntentFromPlanners(planResults: { agentId: string; agent: string; text: string; status: 'success' | 'error' }[]): 'action' | 'answer' | 'skip' | 'unknown' {
         const successful = planResults.filter(r => r.status === 'success');
@@ -564,11 +564,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         let yesCount = 0;
         let noCount = 0;
-        let skipVoted = false;
+        let skipCount = 0;
         for (const r of successful) {
             // Check for skip-to-executor signal
             if (/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)) {
-                skipVoted = true;
+                skipCount++;
             }
 
             const match = /<action-required>\s*(yes|no)\s*<\/action-required>/i.exec(r.text);
@@ -586,10 +586,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
         }
 
-        // Skip takes priority: if any planner voted skip + action, fast-track to executor
-        if (skipVoted && yesCount > 0) { return 'skip'; }
+        // Consensus threshold: with 2+ planners, require at least 2 agreeing votes
+        const requiredConsensus = Math.min(2, successful.length);
+
+        // Skip takes priority: enough planners voted skip + action → fast-track to executor
+        if (skipCount >= requiredConsensus && yesCount >= requiredConsensus) { return 'skip'; }
+        // Consensus for action
+        if (yesCount >= requiredConsensus) { return 'action'; }
+        // All voted no (or consensus not reached for action)
         if (noCount > 0 && yesCount === 0) { return 'answer'; }
-        if (yesCount > 0) { return 'action'; }
         return 'unknown';
     }
 
@@ -728,8 +733,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
-        // In plan mode, include executor as synthesizer when multiple planners are selected
-        const planMayNeedSynthesis = mode === 'plan' && planAdapters.length > 1 && !!executor;
+        // In plan mode, include executor (or fallback synthesizer) when multiple planners are selected
+        const planMayNeedSynthesis = mode === 'plan' && planAdapters.length > 1;
         // In direct mode, include the validation planner (if any) plus the executor
         this._activeRunAdapters = mode === 'direct'
             ? [...planAdapters, ...(executor ? [executor] : [])]
@@ -896,8 +901,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
 
             const effectiveMode = intentDowngraded ? 'plan' : (intentUpgraded || directOverridden) ? 'auto' : mode;
-            const isPlanSynthesis = effectiveMode === 'plan' && executor && planResults.filter(r => r.status === 'success').length > 1;
-            if (executor && (effectiveMode !== 'plan' || isPlanSynthesis)) {
+            // For plan synthesis: use executor if available, otherwise fall back to first plan adapter as synthesizer
+            const synthesizerAdapter = executor ?? (effectiveMode === 'plan' ? planAdapters[0] : null);
+            const isPlanSynthesis = effectiveMode === 'plan' && synthesizerAdapter && planResults.filter(r => r.status === 'success').length > 1;
+            if ((executor || isPlanSynthesis) && (effectiveMode !== 'plan' || isPlanSynthesis)) {
+                const synthesizer = isPlanSynthesis ? synthesizerAdapter! : executor!;
                 // In 'direct' mode, skip planner synthesis check — executor acts on user prompt directly
                 // In 'auto' mode, require at least one successful planner output
                 const successfulPlans = planResults.filter(r => r.status === 'success');
@@ -952,30 +960,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     // Show executor/synthesizer in UI
                     this._postPhaseStart(
                         phaseRole,
-                        [{ id: executor.id, name: executor.name, role: phaseRole }],
+                        [{ id: synthesizer.id, name: synthesizer.name, role: phaseRole }],
                         executorPrompt
                     );
                     this._initializeSessionResponses(turnState.turnRecord.turnId, [{
-                        name: executor.name,
-                        agentId: executor.id,
+                        name: synthesizer.name,
+                        agentId: synthesizer.id,
                         role: phaseRole,
                         prompt: executorPrompt,
                     }]);
 
-                    const execName = executor.name;
-                    const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, executor, {
+                    const execName = isPlanSynthesis ? `📋 ${synthesizer.name} (Plan Summary)` : synthesizer.name;
+                    const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, synthesizer, {
                         turnId: turnState.turnRecord.turnId,
-                        agentId: executor.id,
+                        agentId: synthesizer.id,
                         role: phaseRole,
                         prompt: executorPrompt,
                     });
-                    debugLog('Council', `${phaseRole} phase starting`, JSON.stringify({ executor: executor.name, promptLength: executorPrompt.length, isPlanSynthesis }));
+                    debugLog('Council', `${phaseRole} phase starting`, JSON.stringify({ executor: synthesizer.name, promptLength: executorPrompt.length, isPlanSynthesis }));
 
                     // For plan synthesis, use 'plan' invoke mode so the synthesizer has no tool access
                     const invokeMode: AgentMode = isPlanSynthesis ? 'plan' : 'agent';
 
                     try {
-                        const execResultRaw = await executor.invoke(executorPrompt, invokeMode, execCallback);
+                        const execResultRaw = await synthesizer.invoke(executorPrompt, invokeMode, execCallback);
                         execFlush();
 
                         // Extract <task-summary> from executor output before further parsing
@@ -988,12 +996,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                             debugLog('Council', 'Memory update persisted', JSON.stringify({ length: update.length }));
                         }
 
-                        const { thinking, output, usageLog } = this._extractThinking(execCleanedFinal, executor);
+                        const { thinking, output, usageLog } = this._extractThinking(execCleanedFinal, synthesizer);
 
-                        const executorSuccessRecord = { agent: executor.name, agentId: executor.id, role: phaseRole, prompt: executorPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success' as const, raw: false, debug: executor.lastDebugInfo };
+                        const executorSuccessRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success' as const, raw: false, debug: synthesizer.lastDebugInfo };
                         sessionResponses.push(executorSuccessRecord);
                         this._upsertSessionResponse(turnState.turnRecord.turnId, executorSuccessRecord);
-                        executorOutcome = this._buildExecutorOutcomeRecord(executor, execCleanedFinal, 'success', output);
+                        executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, execCleanedFinal, 'success', output);
 
                         if (extractedSummary) {
                             this._taskStateManager.updateTaskSummary(turnState.taskState.taskId, extractedSummary).catch(err => {
@@ -1002,20 +1010,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         }
                         const htmlContent = await marked.parse(output);
                         const thinkingHtml = thinking ? await marked.parse(thinking) : undefined;
-                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: executor.id, role: phaseRole, prompt: executorPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: executor.lastDebugInfo, status: 'success', raw: false });
-                        this._sendDebugInfo(executor, '', {
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: synthesizer.lastDebugInfo, status: 'success', raw: false });
+                        this._sendDebugInfo(synthesizer, '', {
                             taskId: turnState.taskState.taskId,
                             turnId: turnState.turnRecord.turnId,
                             role: phaseRole,
                         });
                     } catch (err: any) {
                         execFlush();
-                        const executorErrorRecord = { agent: executor.name, agentId: executor.id, role: phaseRole, prompt: executorPrompt, text: err.message, status: 'error' as const, raw: true, debug: executor.lastDebugInfo };
+                        const executorErrorRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, status: 'error' as const, raw: true, debug: synthesizer.lastDebugInfo };
                         sessionResponses.push(executorErrorRecord);
                         this._upsertSessionResponse(turnState.turnRecord.turnId, executorErrorRecord);
-                        executorOutcome = this._buildExecutorOutcomeRecord(executor, err.message, 'error');
-                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: executor.id, role: phaseRole, prompt: executorPrompt, text: err.message, debug: executor.lastDebugInfo, status: 'error', raw: true });
-                        this._sendDebugInfo(executor, '', {
+                        executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, err.message, 'error');
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, debug: synthesizer.lastDebugInfo, status: 'error', raw: true });
+                        this._sendDebugInfo(synthesizer, '', {
                             taskId: turnState.taskState.taskId,
                             turnId: turnState.turnRecord.turnId,
                             role: phaseRole,

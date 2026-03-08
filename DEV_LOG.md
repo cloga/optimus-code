@@ -2,6 +2,59 @@
 
 This document captures the context, rationale, and meaningful discussions (the "Why") behind technical decisions and architectural shifts in Optimus Code.
 
+## [2026-03-08] - Enhancement: Planner Consensus Voting Threshold
+
+### Problem
+In `_computeIntentFromPlanners()`, a single planner voting `<action-required>yes</action-required>` was enough to trigger the executor — even when 2 other planners disagreed. This let one aggressive planner override the majority.
+
+### Fix
+Introduced a consensus threshold `requiredConsensus = Math.min(2, successful.length)`:
+- **1 planner**: threshold = 1 (behavior unchanged)
+- **2–3 planners**: threshold = 2 (need ≥2 votes for `action` or `skip`)
+
+Also changed `skipVoted` from a boolean to a counter (`skipCount`) so skip signals are subject to the same consensus rule.
+
+Decision priority after the change:
+1. `skip` — `skipCount >= threshold && yesCount >= threshold`
+2. `action` — `yesCount >= threshold`
+3. `answer` — `noCount > 0 && yesCount === 0`
+4. `unknown` — no clear consensus
+
+### Why
+Multi-model planning is valuable precisely because it reduces false positives. If one model hallucinates that action is needed while the rest disagree, the system should default to the safer path (answer-only). A threshold of 2 is the minimum meaningful consensus — strict enough to block single-model overrides, loose enough to not deadlock with 3 planners.
+
+### Files Changed
+- `src/providers/ChatViewProvider.ts` — `_computeIntentFromPlanners()` voting logic
+
+---
+
+## [2026-03-08] - Fix: Plan Mode Now Runs Synthesis Even Without a Dedicated Executor
+
+### Problem
+In plan mode with multiple planners, the synthesis step (which aggregates all planner outputs into a single coherent response) was gated behind `executor` being truthy. Since users in plan mode typically don't configure an executor, the synthesis never ran. Users had to manually read through each planner's individual output and reconcile them on their own.
+
+### Root Cause
+In `ChatViewProvider.ts`, the `isPlanSynthesis` condition required `executor` (line 899):
+```typescript
+const isPlanSynthesis = effectiveMode === 'plan' && executor && planResults.filter(r => r.status === 'success').length > 1;
+```
+When no executor adapter with `'agent'` mode was available — which is normal in pure plan mode — `executor` was `null`, making `isPlanSynthesis` always `false`.
+
+### Fix
+Introduced a `synthesizerAdapter` variable that falls back to the first plan adapter when no executor is configured:
+```typescript
+const synthesizerAdapter = executor ?? (effectiveMode === 'plan' ? planAdapters[0] : null);
+```
+This adapter is invoked with `'plan'` mode (no tool access) using the existing `buildPlanSynthesisPrompt()`, which already instructs "Do NOT execute code, modify files, or call any tools." The synthesis output is labelled `📋 <AgentName> (Plan Summary)` in the UI to distinguish it from individual planner outputs.
+
+### Why
+The synthesis step is the core value proposition of multi-planner mode. Without it, plan mode degrades to "show N independent analyses" — forcing the user to do the synthesis manually. Using a planner adapter as a fallback synthesizer is safe because the invoke mode is read-only and the synthesis prompt explicitly prohibits tool use.
+
+### Files Changed
+- `src/providers/ChatViewProvider.ts` — fallback synthesizer logic and UI label
+
+---
+
 ## [2026-03-08] - Fix: Queue Pause State Now Resets Cleanly And Keeps Send Available
 
 ### Problem

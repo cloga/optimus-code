@@ -7185,10 +7185,10 @@ ${codeSnippet}
   }
   /**
    * After Phase 1 completes, analyze planner outputs to determine whether
-   * code execution is actually needed. Returns 'action' if any planner
-   * flagged <action-required>yes</action-required>, 'answer' if majority
-   * flagged no, 'skip' if any planner flagged <skip-to-executor>yes</skip-to-executor>,
-   * or 'unknown' if tags are missing.
+   * code execution is actually needed. Uses a consensus threshold of
+   * min(2, numPlanners) — single-planner setups work as before, but with
+   * 2+ planners at least 2 must agree before triggering 'action' or 'skip'.
+   * Falls back to 'answer' when consensus is not reached.
    */
   _computeIntentFromPlanners(planResults) {
     const successful = planResults.filter((r) => r.status === "success");
@@ -7197,10 +7197,10 @@ ${codeSnippet}
     }
     let yesCount = 0;
     let noCount = 0;
-    let skipVoted = false;
+    let skipCount = 0;
     for (const r of successful) {
       if (/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)) {
-        skipVoted = true;
+        skipCount++;
       }
       const match = /<action-required>\s*(yes|no)\s*<\/action-required>/i.exec(r.text);
       if (match) {
@@ -7217,14 +7217,15 @@ ${codeSnippet}
         }
       }
     }
-    if (skipVoted && yesCount > 0) {
+    const requiredConsensus = Math.min(2, successful.length);
+    if (skipCount >= requiredConsensus && yesCount >= requiredConsensus) {
       return "skip";
+    }
+    if (yesCount >= requiredConsensus) {
+      return "action";
     }
     if (noCount > 0 && yesCount === 0) {
       return "answer";
-    }
-    if (yesCount > 0) {
-      return "action";
     }
     return "unknown";
   }
@@ -7331,7 +7332,7 @@ ${codeSnippet}
       debugLog("Council", "Aborted because no executor is available for direct mode");
       return;
     }
-    const planMayNeedSynthesis = mode === "plan" && planAdapters.length > 1 && !!executor;
+    const planMayNeedSynthesis = mode === "plan" && planAdapters.length > 1;
     this._activeRunAdapters = mode === "direct" ? [...planAdapters, ...executor ? [executor] : []] : [...planAdapters, ...mode === "plan" ? planMayNeedSynthesis && executor ? [executor] : [] : executor ? [executor] : []];
     const sessionResponses = [];
     const plannerContributions = [];
@@ -7463,8 +7464,10 @@ ${codeSnippet}
         this._view.webview.postMessage({ type: "intentUpgrade", originalMode: "direct", effectiveMode: "auto", plannerIntent });
       }
       const effectiveMode = intentDowngraded ? "plan" : intentUpgraded || directOverridden ? "auto" : mode;
-      const isPlanSynthesis = effectiveMode === "plan" && executor && planResults.filter((r) => r.status === "success").length > 1;
-      if (executor && (effectiveMode !== "plan" || isPlanSynthesis)) {
+      const synthesizerAdapter = executor ?? (effectiveMode === "plan" ? planAdapters[0] : null);
+      const isPlanSynthesis = effectiveMode === "plan" && synthesizerAdapter && planResults.filter((r) => r.status === "success").length > 1;
+      if ((executor || isPlanSynthesis) && (effectiveMode !== "plan" || isPlanSynthesis)) {
+        const synthesizer = isPlanSynthesis ? synthesizerAdapter : executor;
         const successfulPlans = planResults.filter((r) => r.status === "success");
         if (effectiveMode === "direct" || successfulPlans.length > 0) {
           let executorPrompt;
@@ -7515,26 +7518,26 @@ ${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").rep
           synthesisPrompt = executorPrompt;
           this._postPhaseStart(
             phaseRole,
-            [{ id: executor.id, name: executor.name, role: phaseRole }],
+            [{ id: synthesizer.id, name: synthesizer.name, role: phaseRole }],
             executorPrompt
           );
           this._initializeSessionResponses(turnState.turnRecord.turnId, [{
-            name: executor.name,
-            agentId: executor.id,
+            name: synthesizer.name,
+            agentId: synthesizer.id,
             role: phaseRole,
             prompt: executorPrompt
           }]);
-          const execName = executor.name;
-          const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, executor, {
+          const execName = isPlanSynthesis ? `\u{1F4CB} ${synthesizer.name} (Plan Summary)` : synthesizer.name;
+          const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, synthesizer, {
             turnId: turnState.turnRecord.turnId,
-            agentId: executor.id,
+            agentId: synthesizer.id,
             role: phaseRole,
             prompt: executorPrompt
           });
-          debugLog("Council", `${phaseRole} phase starting`, JSON.stringify({ executor: executor.name, promptLength: executorPrompt.length, isPlanSynthesis }));
+          debugLog("Council", `${phaseRole} phase starting`, JSON.stringify({ executor: synthesizer.name, promptLength: executorPrompt.length, isPlanSynthesis }));
           const invokeMode = isPlanSynthesis ? "plan" : "agent";
           try {
-            const execResultRaw = await executor.invoke(executorPrompt, invokeMode, execCallback);
+            const execResultRaw = await synthesizer.invoke(executorPrompt, invokeMode, execCallback);
             execFlush();
             const { summary: extractedSummary, cleaned: execCleaned } = this._extractTaskSummary(execResultRaw);
             const { updates: memoryUpdates, cleaned: execCleanedFinal } = this._extractMemoryUpdate(execCleaned);
@@ -7542,11 +7545,11 @@ ${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").rep
               this._memoryManager.appendMemory(update);
               debugLog("Council", "Memory update persisted", JSON.stringify({ length: update.length }));
             }
-            const { thinking, output, usageLog } = this._extractThinking(execCleanedFinal, executor);
-            const executorSuccessRecord = { agent: executor.name, agentId: executor.id, role: phaseRole, prompt: executorPrompt, thinking, text: output, usageLog, status: "success", raw: false, debug: executor.lastDebugInfo };
+            const { thinking, output, usageLog } = this._extractThinking(execCleanedFinal, synthesizer);
+            const executorSuccessRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinking, text: output, usageLog, status: "success", raw: false, debug: synthesizer.lastDebugInfo };
             sessionResponses.push(executorSuccessRecord);
             this._upsertSessionResponse(turnState.turnRecord.turnId, executorSuccessRecord);
-            executorOutcome = this._buildExecutorOutcomeRecord(executor, execCleanedFinal, "success", output);
+            executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, execCleanedFinal, "success", output);
             if (extractedSummary) {
               this._taskStateManager.updateTaskSummary(turnState.taskState.taskId, extractedSummary).catch((err) => {
                 debugLog("Council", "Failed to save extracted task summary", String(err));
@@ -7554,20 +7557,20 @@ ${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").rep
             }
             const htmlContent = await g.parse(output);
             const thinkingHtml = thinking ? await g.parse(thinking) : void 0;
-            this._view?.webview.postMessage({ type: "agentDone", agent: execName, agentId: executor.id, role: phaseRole, prompt: executorPrompt, thinkingHtml, thinking, text: htmlContent, rawText: output, usageLog, debug: executor.lastDebugInfo, status: "success", raw: false });
-            this._sendDebugInfo(executor, "", {
+            this._view?.webview.postMessage({ type: "agentDone", agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinkingHtml, thinking, text: htmlContent, rawText: output, usageLog, debug: synthesizer.lastDebugInfo, status: "success", raw: false });
+            this._sendDebugInfo(synthesizer, "", {
               taskId: turnState.taskState.taskId,
               turnId: turnState.turnRecord.turnId,
               role: phaseRole
             });
           } catch (err) {
             execFlush();
-            const executorErrorRecord = { agent: executor.name, agentId: executor.id, role: phaseRole, prompt: executorPrompt, text: err.message, status: "error", raw: true, debug: executor.lastDebugInfo };
+            const executorErrorRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, status: "error", raw: true, debug: synthesizer.lastDebugInfo };
             sessionResponses.push(executorErrorRecord);
             this._upsertSessionResponse(turnState.turnRecord.turnId, executorErrorRecord);
-            executorOutcome = this._buildExecutorOutcomeRecord(executor, err.message, "error");
-            this._view?.webview.postMessage({ type: "agentDone", agent: execName, agentId: executor.id, role: phaseRole, prompt: executorPrompt, text: err.message, debug: executor.lastDebugInfo, status: "error", raw: true });
-            this._sendDebugInfo(executor, "", {
+            executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, err.message, "error");
+            this._view?.webview.postMessage({ type: "agentDone", agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, debug: synthesizer.lastDebugInfo, status: "error", raw: true });
+            this._sendDebugInfo(synthesizer, "", {
               taskId: turnState.taskState.taskId,
               turnId: turnState.turnRecord.turnId,
               role: phaseRole

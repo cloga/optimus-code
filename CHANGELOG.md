@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-03-08
+- **Enhancement: Planner Consensus Voting Threshold**: `_computeIntentFromPlanners()` now requires `min(2, numPlanners)` agreeing votes before routing to `action` or `skip`. Single-planner setups behave as before; with 2+ planners, at least 2 must agree, preventing a single aggressive planner from overriding the majority.
+- **Fix: Plan Synthesis Without Dedicated Executor**: In plan mode with multiple planners but no executor configured, the synthesis step now falls back to the first plan adapter (invoked in read-only `plan` mode). Previously, synthesis was silently skipped, forcing users to manually reconcile planner outputs.
+- **UI: Plan Synthesis Label**: The synthesis output is now labelled `📋 <AgentName> (Plan Summary)` in the UI to distinguish it from individual planner outputs.
+
 ## [0.0.6] - 2026-03-08
 - **Feature: Smart auto-routing (`inferMode`)**: When mode is set to Auto (default), prompt heuristics now automatically route pure questions to Plan mode and short explicit edits (with prior context) to Direct mode. Reduces unnecessary planner+executor round-trips for straightforward interactions.
 - **Feature: Prompt prefix shortcuts**: Type `/plan <prompt>` or `/exec <prompt>` (or `/direct`) to override the mode for a single submission without touching the mode buttons. The prefix is stripped before the prompt reaches the host.
