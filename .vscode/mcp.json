@@ -1,0 +1,14 @@
+{
+    "servers": {
+        "optimus-agents": {
+            "type": "stdio",
+            "command": "node",
+            "args": ["${workspaceFolder}/out/mcp/optimus-agents.js"],
+            "env": {
+                "OPTIMUS_WORKSPACE": "${workspaceFolder}",
+                "PATH": "${env:PATH}"
+            }
+        }
+    },
+    "inputs": []
+}

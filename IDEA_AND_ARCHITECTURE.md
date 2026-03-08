@@ -30,97 +30,35 @@ Operates as the geeks' command center, directly attached to your editor's sideba
 *   **Side-by-Side Asynchronous "Kanban" Chat**: The traditional top-down chat flow limits reviewing parallel model data. Optimus renders a dynamically scrolling horizontally-aligned Webview where every summoned agent writes its output side-by-side. 
 *   **Rich Client Representation**: Employs real-time markdown parsing (`marked.js`) overlaying native VS Code themes.
 
-### 2. Middle Layer: The Orchestrator Engine & Configuration Manager
-The core state-machine and pipeline logic:
-*   **Dynamic Setting Injection**: End-users control the `optimusCode.agents` array inside their `settings.json`. By pairing `github-copilot` or `claude-code` Adapters with varying `model` endpoints (e.g. `gpt-5.4`, `claude-opus-4.6`, `gemini-3-pro`), instances inject seamlessly.
-*   **Parallel Streaming Router**: Uses strict interfaces (`invoke(prompt, mode, onUpdate)`) bridging output logs (`stdout` and `stderr`) simultaneously towards the UI, keeping high throughput without deadlocks.
+### 2. Middle Layer: The Thin Orchestrator & Session Tree
+Optimus Code embraces a **"Thin Client"** architecture. Instead of manually parsing histories or enforcing token limits, the extension delegates memory, state persistence, and context isolation entirely to the external CLI coding agents (e.g., Claude Code, GitHub Copilot CLI).
 
-### 2.1 The "Council for Planning, Dictator for Execution" Principle (多谋独断)
-The operation mode defaults to **Auto**, which implements a two-phase pipeline every round.  Users can override this via a **three-mode selector** in the input area:
+#### 2.1 The "Session Tree" (Logical vs. Physical Sessions)
+To the end-user, there is only one tracking entity: the **Logical Session** (e.g., "Feature_Login_Refactor"). Internally, Optimus manages a mapping to a sub-space of multiple **Physical CLI Sessions**:
+* **The Main/PM Agent**: Maintains the macro-level context, thinks about architecture, and interacts with the user. The Main Agent's **CLI Engine Type (e.g., Copilot vs. Claude) is fixed for the lifetime of a specific logical session**, but the end-user can freely hot-swap the **Model** (e.g., swapping `claude-3-opus` to `claude-3.5-sonnet`) mid-conversation without dropping context.
+* **Worker Agents (牛马)**: Sub-agents operating on their own isolated `cli_session_id`. They handle context-heavy "dirty work" (e.g., reading 100 files, running compilations, brute-force debugging) without polluting the Main Agent's context window. They can be paused, resumed, or discarded cleanly.
 
-| Mode | Phase 1 (Planning) | Phase 2 (Execution) | Use Case |
-|------|--------------------|--------------------|----------|
-| **Plan** | Runs all selected planners | Skipped | Analysis, review, "what do you think?" |
-| **Auto** (default) | Runs all selected planners | Executor synthesizes planner outputs | Complex multi-step tasks |
-| **Exec** (Direct Execute) | Skipped | Executor acts on user prompt directly | Clear single-step instructions, "change X to Y" |
+#### 2.2 The Sub-Agent Formula (牛马配方)
+Capabilities and pipelines are no longer hardcoded in TypeScript. An Agent instance in Optimus is dynamically instantiated with a pure configuration formula:
+`Agent = [CLI Engine] + [Session ID] + [System Prompt/Persona] + [Working Dir]`
+* **CLI Engine**: `claude_code` or `copilot_cli`.
+* **Session ID**: The physical thread ID that binds the Agent's memory lifecycle.
+* **System Prompt**: An initial payload granting its persona and rigid goals (e.g., "You are an automated code-reviewer...").
+* **Working Directory**: Dictates what context and local Config/MCP tools it will inherit upon boot.
 
-*   **Phase 1 — Council Planning**: All selected plan agents run concurrently in `plan` mode. Each receives a `<task-context>` block with the shared task summary and the last two executor outcomes, followed by the live editor context and user prompt. This gives each planner awareness of prior progress without biasing it with other planners' opinions.
-*   **Phase 2 — Executor Synthesis & Action**: The designated executor agent (selected via a UI dropdown, must support `agent` mode) receives all successful plan outputs (in Auto mode) or the user prompt directly (in Exec mode). It synthesizes the best approach and executes it autonomously in `agent` mode.
-*   In Auto mode, this pipeline repeats for every user message, ensuring collective intelligence informs every autonomous action. In Plan/Exec modes, only the relevant phase runs, reducing latency for straightforward tasks.
+#### 2.3 Dynamic Skill & MCP Binding (Hot-Swappable)
+Because underlying Agents operate via CLI initialization sequences, tools (MCP) and Skills (instructions) are bound at the **Workspace / Directory Environment** layer.
+If you install a new enterprise database MCP in the workspace, *even long-running existing sessions instantly acquire the new capability on their next execution loop*. The Agent simply wakes up, re-scans the environment, sees the new tools, and proceeds to use them seamlessly.
 
-#### Smart Auto-Routing (`_inferMode`) — Layer 1: Static Pre-filter
-When the user leaves the mode on Auto (default), a lightweight heuristic classifier inspects the prompt before routing:
+#### 2.4 Recursive Delegation (Swarm Capability)
+The architecture achieves a natural Multi-Agent Swarm structure. By giving the Main Agent a dedicated `delegate_task` MCP tool, the PM Agent can autonomously:
+1. Receive a high-level task from the human.
+2. Evaluate and call `delegate_task` to spin up specialized Worker Agents (e.g., assigning ID `sub_frontend_01` to build a UI component, or `sub_qa_01` to test it).
+3. Collect the workers' outputs asynchronously.
+4. Return a synthesized final summary back to the human.
+This delegation loop eliminates the need for manual UI micro-management by the user.
 
-| Prompt Signal | Inferred Mode | Rationale |
-|--------------|---------------|-----------|
-| Ends with `?`/`？`, or starts with question words (为什么, explain, how, etc.) | **Plan** | Pure analysis — no code changes needed |
-| Short (<150 chars) + starts with action verb (把, rename, fix, etc.) + prior turn context exists | **Direct** | Clear edit — additional planning would just slow things down |
-| Everything else | **Auto** | Ambiguous/complex — full pipeline warranted |
 
-Power users can also force a mode per-prompt using prefix shortcuts: `/plan <prompt>` or `/exec <prompt>`. The prefix is stripped before the prompt reaches the host.
-
-When auto-routing triggers, a small inline notification ("⚡ Auto-routed to Plan mode") appears in the chat so the user always knows which path was taken.
-
-#### Intent Gate (`_computeIntentFromPlanners`) — Layer 2: Semantic Post-filter
-After Phase 1 completes (all planners have responded), a second intent check runs for Auto mode. Each planner is instructed to output an `<action-required>yes/no</action-required>` tag. The intent gate aggregates these votes:
-
-| Planner Consensus | Effective Mode | Behavior |
-|-------------------|---------------|----------|
-| All planners vote `no` (answer-only) | **Plan** (downgraded from Auto) | Multi-planner: synthesizer runs (no tools). Single planner: executor skipped entirely |
-| Any planner votes `yes` (action needed) | **Auto** (unchanged) | Full executor runs with tool access |
-| Tags missing (unknown) | **Auto** (unchanged) | Falls back to content heuristics; defaults to full execution |
-
-When intent downgrade triggers, the chat displays "ℹ️ Planners detected question intent — skipping executor". The executor prompt also receives the planner consensus as a secondary safety hint.
-
-### 2.2 Agent Mode Filtering & Dual Execution Strategy
-*   Each agent declares a `modes` array (e.g. `["plan"]` or `["plan", "agent"]`) specifying its capabilities.
-*   **Non-interactive execution** (`-p` flag): For `plan`, `ask`, and any adapter that opts out of persistent sessions, the adapter spawns a one-shot CLI process. The promise resolves when the process exits — fully deterministic.
-*   **Persistent session policy hook**: `PersistentAgentAdapter` exposes an adapter-level policy so each CLI integration can decide whether `agent` mode should use a persistent session or a one-shot process.
-*   **Interactive daemon**: Persistent sessions remain available for adapters that can safely operate inside a non-TTY extension-host environment.
-*   **Claude current behavior**: `ClaudeCodeAdapter` now uses one-shot execution even in `agent` mode because this path proved more reliable than a non-TTY daemon for the current Auto pipeline.
-*   The executor UI dropdown only shows agents whose `modes` includes `"agent"`.
-*   The UI enforces a maximum of **3 concurrently selected plan agents**.
-
-### 2.3 App-level Multi-turn Shared Task State ✅
-Multi-turn memory has been moved from individual CLI sessions into Optimus Code itself.
-
-#### Why this direction
-*   CLI-level multi-turn only guarantees that one specific tool remembers its own conversation.
-*   Optimus Code needs a **shared task world model** so planners and the executor can see the same facts, prior actions, failures, and open questions. Planners receive a lightweight summary (task summary + recent executor outcomes). The executor receives the full structured context including open questions and blockers.
-*   This approach is model-agnostic and works across Claude, Copilot, and future adapters without depending on one vendor's interactive shell behavior.
-
-#### Core design goal
-Introduce a **Shared Task State** managed by the orchestrator layer rather than by individual adapters.
-
-The shared state should track at least:
-*   `taskId`, `turnId`, `turnSequence`
-*   User intent history
-*   Planner contributions and executor outcomes
-*   Artifacts, files touched, observed commands, and debug facts
-*   Open questions, blocked reasons, and latest summary
-
-#### Execution model
-Each new user turn should follow this lifecycle:
-1. Load or create a shared task state.
-2. Build a lightweight planner prompt (`buildPlannerPrompt`) that includes task summary + last 2 executor outcomes + editor context + user prompt.
-3. Run planner agents and normalize their outputs into structured contribution records.
-4. Synthesize an executor prompt (`buildExecutorPrompt`) from the full shared task state instead of raw concatenated planner text.
-5. Write the executor result back into the shared task state.
-6. Persist a resumable task snapshot for history and future continuation.
-
-#### Design boundaries
-*   The orchestrator owns shared memory and turn lifecycle.
-*   Adapters remain thin execution layers and should continue to accept prompt strings rather than owning global memory policy.
-*   Claude's current one-shot executor path is acceptable because app-level multi-turn will preserve continuity above the CLI layer.
-*   Native VS Code agent extensions remain isolated; any future cross-extension handoff must go through files or explicit external interfaces.
-
-#### Implementation (completed)
-*   `SharedTaskStateManager` added under `src/managers/`, with `buildPlannerPrompt` (lightweight: task summary + last 2 executor outcomes) and `buildExecutorPrompt` (full context: history, open questions, blockers, planner synthesis).
-*   Shared types `SharedTaskContext`, `TurnRecord`, and `ContributionRecord` added under `src/types/`.
-*   `ChatViewProvider` council/executor orchestration is state-aware via `buildExecutorPrompt`.
-*   History persistence upgraded to resumable task snapshots (taskId / turnSequence).
-*   Bounded context compression implemented to prevent unbounded prompt growth.
-*   **Turn references**: Users can explicitly reference prior turns via `@` hover buttons on user messages. Referenced turns are injected verbatim into agent prompts as `<user-referenced-turns>` blocks, bypassing summary compression for precise context recall.
 
 ### 3. Bottom Layer: CLI Adapter Layer (System Hooks)
 Node.js sub-processors invoking official tools (e.g., `@github/copilot`, `claude-code`) via continuous `child_process.spawn`.
@@ -144,19 +82,32 @@ Node.js sub-processors invoking official tools (e.g., `@github/copilot`, `claude
 *   [x] Executor dropdown in UI filtered to show only agents supporting `agent` mode.
 *   [x] Max 3 concurrent agent selection enforced in the Webview.
 
-### Phase 4: Conflict Synthesis & Shared Task State ✅
-*   [x] Read `vscode.window.activeTextEditor` to inject live context automatically (selection-priority, visible-range fallback, live badge UI).
-*   [x] Introduce `SharedTaskStateManager` and task-scoped context snapshots.
-*   [x] Persist resumable task history instead of read-only session archives.
-*   [x] Replace raw planner text concatenation with structured executor context synthesis (`buildExecutorPrompt`).
-*   ~~Allow models to "Review" another model's output~~ — **descoped**: executor summary synthesis is sufficient for conflict resolution.
-*   [x] Inject code block replacements back into the workspace utilizing `WorkspaceEdit` (executor output fenced blocks with filename annotations get "Apply to file" buttons; applying writes via `vscode.workspace.applyEdit`).
+### Phase 4: The Pivot to "Thin UI" & Delegated State ✅
+*   [x] Remove heavy multi-turn context parsing from the extension layer.
+*   [x] Let standard `claude_code` and `copilot_cli` tools track state via standard CLI `--continue` / `--resume` arguments.
+*   [x] Standardize all CLI tool integrations via Model Context Protocol (MCP).
 
-### Phase 5: App-level Multi-turn ✅
-*   [x] Support continuing a prior task through `taskId` / `turnSequence` rather than relying on CLI daemons.
-*   [x] Add deterministic context compression for long-running tasks.
-*   [x] Expose resume-task semantics in the Webview history UI.
-*   [x] Keep CLI-native persistent sessions as an optional future enhancement, not the primary memory mechanism.
+### Phase 5: Swarm Architecture & Multi-Agent Delegation
+  *   [x] Expose `delegate_task` MCP tool for Main agent recursive invocation.
+  *   [ ] Provide robust tracking map (Session Tree) for `Logical Session ID` -> `Multiple Physical CLI Session IDs`.
+  *   [ ] Handle graceful spin-up and teardown logic of specialized dummy Worker Agents ("牛马").
+
+### The "Virtual Software Company" & Blackboard Pattern (SOP)
+To ensure the Orchestrator truly acts as a Chief Architect (老板/包工头), we elevate the architecture into a **Virtual Software Company / Multi-Tier Swarm**. This prevents the "telephone game" (context loss) and ensures scalable, manageable multi-agent collaboration.
+
+1. **Adaptive Hierarchy (弹性折叠架构)**: 
+   - **Simple Tasks**: The Orchestrator handles small fixes directly or delegates to a single Worker instantly.
+   - **Epic Tasks**: The Orchestrator dynamically summons a "PM/Tech Lead" Agent to analyze requirements, write PRDs, and break down tickets before any coding starts.
+2. **The "Blackboard" Pattern (Artifact-Driven Handoff)**: 
+   - Instead of passing massive prompts back and forth (which degrades context), agents communicate via a Shared Blackboard—typically markdown files in the workspace (e.g., `PLANNING.md`, `TASKS.todo`). 
+   - The PM writes to the Blackboard; the Worker reads the Blackboard. The Human (You) can audit and modify the Blackboard at any time to steer the entire Swarm instantly.
+3. **Team Assembly & Dispatch**:
+   - The Orchestrator binds specialized `role_prompt`s to different workers (e.g., "You are an expert QA engineer").
+   - Workers are dispatched via the `delegate_task` MCP tool, pointing them to specific sections of the Blackboard.
+4. **Review, Circuit Breakers & Integration**:
+   - The PM/Orchestrator acts as Reviewer, checking the Worker's output (via `git diff`, test results, or linter outputs).
+   - **Circuit Breaker**: If a Worker fails/hallucinates repeatedly (e.g., >3 retries on the same sub-task), the PM halts the loop and escalates to the Human to avoid infinite loops and token waste.
+   - Once all Blackboard tickets are resolved, the Orchestrator delivers the final integrated product.
 
 ---
 *"In the holy trinity of the Architect (You), the Code Bee (Copilot), and the Reviewer (Claude), you just press the button and sip your coffee."*

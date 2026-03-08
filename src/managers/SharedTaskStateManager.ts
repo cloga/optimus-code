@@ -715,10 +715,34 @@ export class SharedTaskStateManager {
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
-            const rulesPath = path.join(workspaceFolders[0].uri.fsPath, '.optimus', 'rules.md');
-            if (!fs.existsSync(rulesPath)) { return null; }
-            return fs.readFileSync(rulesPath, 'utf8');
-        } catch {
+            const rootPath = workspaceFolders[0].uri.fsPath;
+            const rulesPath = path.join(rootPath, '.optimus', 'rules.md');
+            
+            let rulesContent = "";
+            if (fs.existsSync(rulesPath)) {
+                rulesContent += fs.readFileSync(rulesPath, 'utf8') + "\n\n";
+            }
+
+            // Also load the orchestrator skills automatically
+            const delegateSkillPath = path.join(rootPath, "resources", "plugins", "skills", "delegate_task.md");
+            if (fs.existsSync(delegateSkillPath)) {
+                rulesContent += "---\n[SYSTEM: INJECTED SKILL - delegate_task]\n" + fs.readFileSync(delegateSkillPath, 'utf8');
+            }
+
+            // Inject available engines and models dynamically from settings
+            const modelsConfig = vscode.workspace.getConfiguration('optimusCode').get<any>('models');
+            if (modelsConfig) {
+                rulesContent += `\n\n## Available CLI Engines and Models (Dynamic)\n`;
+                if (modelsConfig.claude_code) {
+                    rulesContent += `- **github copilot**: Implicitly maps to \`engine: "copilot_cli"\`.\n`;
+                }
+                rulesContent += `You MUST map user colloquial requests like "github copilot" or "claude code" to the actual engine IDs used by the tool.\n`;
+                rulesContent += `Current available models:\n${JSON.stringify(modelsConfig, null, 2)}\n`;
+            }
+
+            return rulesContent.trim().length > 0 ? rulesContent : null;
+        } catch (err) {
+            console.error("SharedTaskStateManager readRulesMd error:", err);
             return null;
         }
     }

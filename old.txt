@@ -1,0 +1,692 @@
+    private async _delegateToCouncil(prompt: string, selectedAgentIds: string[] = [], mode: string = 'auto', executorId?: string, images?: { dataUrl: string; mimeType: string }[], referencedTurnSequences?: number[]) {
+        if (!this._view) { return; }
+
+        // Save pasted images to disk and inject file paths into the prompt
+        let imageNote = '';
+        let storedAttachments: SessionImageAttachment[] = [];
+        if (images && images.length > 0) {
+            storedAttachments = this._saveImagesToDisk(images);
+            imageNote = '\n\n[Attached images]\n' + storedAttachments.map(image => `- ${image.filePath}`).join('\n') + '\n';
+        }
+
+        // Prepend active editor context so planners have live code awareness
+        const editorContext = this._getActiveEditorContext();
+        const enrichedPrompt = [editorContext, prompt + imageNote].filter(Boolean).join('\n\n');
+
+        const turnState = await this._taskStateManager.startTurn({
+            taskId: this._currentTaskId,
+            prompt,
+            selectedAgentIds,
+            executorId,
+            referencedTurnSequences,
+        });
+        this._currentTaskId = turnState.taskState.taskId;
+
+        if (this._runningTaskIds.has(this._currentTaskId)) {
+            await this._taskStateManager.failTurn(this._currentTaskId, turnState.turnRecord.turnId, 'Blocked: another turn is already running for this task.');
+            this._view.webview.postMessage({ type: 'agentDone', agent: 'System', text: 'A turn is already running for this task. Please wait for it to finish.', status: 'error', raw: true });
+            return;
+        }
+        this._runningTaskIds.add(this._currentTaskId);
+        this._sendSessionsToUI();
+        this._activeTurnRef = {
+            taskId: turnState.taskState.taskId,
+            turnId: turnState.turnRecord.turnId,
+        };
+        this._activeStopReason = undefined;
+
+        await this._createSessionRecord(prompt, turnState.taskState.taskId, turnState.turnRecord.turnId, storedAttachments);
+
+        // Auto-route: infer optimal mode from prompt heuristics when user selected 'auto'
+        const originalMode = mode;
+        mode = this._inferMode(prompt, mode, turnState.taskState);
+        if (mode !== originalMode) {
+            this._view.webview.postMessage({ type: 'modeInferred', originalMode, inferredMode: mode });
+        }
+
+        const allAdapters = getActiveAdapters();
+        debugLog('Council', 'Delegation started', JSON.stringify({
+            taskId: turnState.taskState.taskId,
+            turnId: turnState.turnRecord.turnId,
+            turnSequence: turnState.turnRecord.sequence,
+            promptLength: enrichedPrompt.length,
+            hasEditorContext: !!editorContext,
+            selectedAgentIds,
+            mode,
+            originalMode,
+            executorId,
+            allAdapters: allAdapters.map(a => ({ id: a.id, name: a.name, modes: a.modes }))
+        }));
+        this._sendCurrentTaskState();
+
+        // === MODE-AWARE ROUTING ===
+        // 'auto' — full two-phase: planners → executor (default)
+        // 'plan' — planners only, skip executor
+        // 'direct' — skip planners, executor acts on user prompt directly
+
+        // Phase 1 setup: filter plan-capable agents.
+        // In 'direct' mode, run a single planner as a lightweight validation check
+        // so the planner can override _inferMode misclassifications (e.g. complex task
+        // misidentified as direct). The planner can vote <action-required> to upgrade.
+        const allPlanAdapters = allAdapters.filter(a =>
+            selectedAgentIds.includes(a.id) && a.modes.includes('plan')
+        );
+        let planAdapters = mode === 'direct' ? allPlanAdapters.slice(0, 1) : allPlanAdapters;
+
+        // Only report dropped planners when in non-direct modes with multiple planners.
+        // In direct mode, we intentionally limit to 1 planner — no need to notify about the rest.
+        if (mode !== 'direct') {
+            const droppedPlannerSelections = selectedAgentIds
+                .filter(id => !planAdapters.some(adapter => adapter.id === id))
+                .map(id => {
+                    const adapter = allAdapters.find(candidate => candidate.id === id);
+                    if (!adapter) {
+                        return { id, name: id, reason: 'not available in the active agent configuration' };
+                    }
+                    if (!adapter.modes.includes('plan')) {
+                        return { id, name: adapter.name, reason: 'executor-only, skipped as planner' };
+                    }
+                    return { id, name: adapter.name, reason: 'not participating in this planning phase' };
+                });
+
+            if (droppedPlannerSelections.length > 0) {
+                const droppedSummary = droppedPlannerSelections
+                    .map(item => `${item.name} (${item.reason})`)
+                    .join(', ');
+                const droppedMessage = `Skipped from planning: ${droppedSummary}`;
+                debugLog('Council', droppedMessage);
+                this._view.webview.postMessage({
+                    type: 'agentDone',
+                    agent: 'System',
+                    text: droppedMessage,
+                    status: 'info',
+                    raw: true,
+                });
+            }
+        }
+
+        // Phase 2 executor: find the designated executor agent
+        let executor = executorId ? allAdapters.find(a => a.id === executorId && a.modes.includes('agent')) : null;
+        if (!executor) {
+            executor = allAdapters.find(a => a.modes.includes('agent'));
+        }
+
+        debugLog('Council', 'Resolved council participants', JSON.stringify({
+            planners: planAdapters.map(a => ({ id: a.id, name: a.name })),
+            executor: executor ? { id: executor.id, name: executor.name } : null,
+        }));
+
+        if (planAdapters.length === 0 && mode !== 'direct') {
+            if (executor) {
+                // No planners available — fall back to direct mode instead of aborting
+                debugLog('Council', 'No planners configured, falling back to direct mode');
+                mode = 'direct';
+            } else {
+                vscode.window.showWarningMessage('[Optimus Code] No plan agents selected.');
+                debugLog('Council', 'Aborted because no plan agents were selected');
+                return;
+            }
+        }
+        if (mode === 'direct' && !executor) {
+            vscode.window.showWarningMessage('[Optimus Code] No executor agent available for direct execution.');
+            debugLog('Council', 'Aborted because no executor is available for direct mode');
+            return;
+        }
+
+        // In plan mode, include executor (or fallback synthesizer) when multiple planners are selected
+        const planMayNeedSynthesis = mode === 'plan' && planAdapters.length > 1;
+        // In direct mode, include the validation planner (if any) plus the executor
+        this._activeRunAdapters = mode === 'direct'
+            ? [...planAdapters, ...(executor ? [executor] : [])]
+            : [...planAdapters, ...(mode === 'plan' ? (planMayNeedSynthesis && executor ? [executor] : []) : executor ? [executor] : [])];
+
+        const sessionResponses: SessionResponseRecord[] = [];
+        const plannerContributions: ContributionRecord[] = [];
+
+        try {
+            const planResults: {agentId: string, agent: string, text: string, status: 'success' | 'error'}[] = [];
+            // Track planner promises so background planners (from skip-to-executor early exit)
+            // can be drained before persisting turn state.
+            let pendingPlannerPromises: Promise<void>[] = [];
+
+            // --- Phase 1: Council Planning (runs whenever planAdapters is non-empty) ---
+            // In 'direct' mode, a single validation planner runs to catch _inferMode misclassifications.
+            if (planAdapters.length > 0) {
+                const plannerPrompt = this._taskStateManager.buildPlannerPrompt(
+                    turnState.taskState,
+                    turnState.turnRecord,
+                    enrichedPrompt
+                );
+
+                this._postPhaseStart(
+                    'planner',
+                    planAdapters.map(a => ({ id: a.id, name: a.name, role: 'planner' })),
+                    plannerPrompt,
+                    true
+                );
+                this._initializeSessionResponses(
+                    turnState.turnRecord.turnId,
+                    planAdapters.map(adapter => ({
+                        name: adapter.name,
+                        agentId: adapter.id,
+                        role: 'planner' as const,
+                        prompt: plannerPrompt,
+                    }))
+                );
+
+                const promises = planAdapters.map(adapter => {
+                    const { callback, flush } = this._makeStreamingCallback(adapter.name, adapter, {
+                        turnId: turnState.turnRecord.turnId,
+                        agentId: adapter.id,
+                        role: 'planner',
+                        prompt: plannerPrompt,
+                    });
+                    return adapter.invoke(plannerPrompt, 'plan', callback)
+                    .then(async res => {
+                        flush();
+                        debugLog(adapter.id, 'Raw result length + preview', JSON.stringify({ len: res.length, preview: res.slice(0, 500) }));
+                        const { thinking, output, usageLog } = this._extractThinking(res, adapter);
+                        planResults.push({ agentId: adapter.id, agent: adapter.name, text: output, status: 'success' });
+                        // Strip <action-required> and <skip-to-executor> tags from display output (kept in planResults for intent detection)
+                        const displayOutput = output
+                            .replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '')
+                            .replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '')
+                            .trim();
+                        const plannerSuccessRecord = { agent: adapter.name, agentId: adapter.id, role: 'planner' as const, prompt: plannerPrompt, thinking: thinking, text: displayOutput, usageLog: usageLog, status: 'success' as const, raw: false, debug: adapter.lastDebugInfo };
+                        sessionResponses.push(plannerSuccessRecord);
+                        this._upsertSessionResponse(turnState.turnRecord.turnId, plannerSuccessRecord);
+                        plannerContributions.push(this._buildContributionRecord(adapter, 'planner', res, 'success'));
+                        const htmlContent = await marked.parse(displayOutput);
+                        const thinkingHtml = thinking ? await marked.parse(thinking) : undefined;
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: adapter.name, agentId: adapter.id, role: 'planner', prompt: plannerPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: displayOutput, usageLog: usageLog, debug: adapter.lastDebugInfo, status: 'success', raw: false });
+                        this._sendDebugInfo(adapter, '', {
+                            taskId: turnState.taskState.taskId,
+                            turnId: turnState.turnRecord.turnId,
+                            role: 'planner',
+                        });
+                    })
+                    .catch(err => {
+                        flush();
+                        planResults.push({ agentId: adapter.id, agent: adapter.name, text: err.message, status: 'error' });
+                        const plannerErrorRecord = { agent: adapter.name, agentId: adapter.id, role: 'planner' as const, prompt: plannerPrompt, text: err.message, status: 'error' as const, raw: true, debug: adapter.lastDebugInfo };
+                        sessionResponses.push(plannerErrorRecord);
+                        this._upsertSessionResponse(turnState.turnRecord.turnId, plannerErrorRecord);
+                        plannerContributions.push(this._buildContributionRecord(adapter, 'planner', err.message, 'error'));
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: adapter.name, agentId: adapter.id, role: 'planner', prompt: plannerPrompt, text: err.message, debug: adapter.lastDebugInfo, status: 'error', raw: true });
+                        this._sendDebugInfo(adapter, '', {
+                            taskId: turnState.taskState.taskId,
+                            turnId: turnState.turnRecord.turnId,
+                            role: 'planner',
+                        });
+                    });
+                });
+                pendingPlannerPromises = promises;
+
+                // First-vote-wins: if any planner signals <skip-to-executor>, resolve early
+                // without waiting for the remaining planners. All planners still run to completion
+                // in the background (their results are recorded for session history).
+                let skipDetected = false;
+                if (planAdapters.length > 1) {
+                    await new Promise<void>(resolve => {
+                        let settled = 0;
+                        const total = promises.length;
+                        for (const p of promises) {
+                            p.then(() => {
+                                settled++;
+                                if (!skipDetected) {
+                                    // Check if any result so far has skip signal
+                                    const hasSkip = planResults.some(r =>
+                                        r.status === 'success' && /<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)
+                                    );
+                                    if (hasSkip) {
+                                        skipDetected = true;
+                                        debugLog('Council', 'Skip-to-executor detected, proceeding early', JSON.stringify({
+                                            settled,
+                                            total,
+                                            skipAgent: planResults.find(r => /<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text))?.agent,
+                                        }));
+                                        resolve();
+                                    } else if (settled === total) {
+                                        resolve();
+                                    }
+                                } else if (settled === total) {
+                                    // Already resolved early, just let remaining finish
+                                }
+                            }).catch(() => {
+                                settled++;
+                                if (settled === total && !skipDetected) {
+                                    resolve();
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    await Promise.all(promises);
+                }
+                this._view.webview.postMessage({ type: 'councilComplete' });
+                debugLog('Council', 'Planning phase completed', JSON.stringify({ planResults: planResults.length, skipDetected }));
+            }
+
+            // --- Phase 2: Executor synthesizes and acts (skipped in 'plan' mode) ---
+            // In 'plan' mode with multiple planner results, run a synthesis-only step
+            let executorOutcome: ExecutorOutcomeRecord | undefined;
+            let synthesisPrompt: string | undefined;
+
+            // Intent gate: let planners vote on whether execution is needed.
+            // Runs in 'auto', 'plan', and 'direct' modes so planner votes can override
+            // _inferMode misclassifications (e.g. plan→executor, direct→needs planning).
+            const plannerIntent = planResults.length > 0 ? this._computeIntentFromPlanners(planResults) : undefined;
+            const intentDowngraded = mode === 'auto' && plannerIntent === 'answer';
+            const intentSkipped = mode === 'auto' && plannerIntent === 'skip';
+            // Upgrade: if _inferMode said 'plan' but planners voted action/skip, upgrade to auto
+            const intentUpgraded = mode === 'plan' && (plannerIntent === 'action' || plannerIntent === 'skip');
+            // Direct override: if _inferMode said 'direct' but planner voted action (complex task),
+            // upgrade to auto so executor receives planner synthesis instead of raw user prompt
+            const directOverridden = mode === 'direct' && plannerIntent === 'action';
+            if (intentDowngraded) {
+                debugLog('IntentGate', 'Auto mode downgraded to plan (planners voted answer-only)', JSON.stringify({ plannerIntent }));
+                this._view.webview.postMessage({ type: 'intentDowngrade', originalMode: 'auto', effectiveMode: 'plan', plannerIntent });
+            }
+            if (intentSkipped) {
+                debugLog('IntentGate', 'Skip-to-executor: planner voted simple task, fast-tracking to executor', JSON.stringify({ plannerIntent }));
+                this._view.webview.postMessage({ type: 'intentSkip', originalMode: 'auto', effectiveMode: 'auto', plannerIntent: 'skip' });
+            }
+            if (intentUpgraded) {
+                debugLog('IntentGate', 'Plan mode upgraded to auto (planners voted action-required)', JSON.stringify({ plannerIntent, originalInferredMode: mode }));
+                this._view.webview.postMessage({ type: 'intentUpgrade', originalMode: 'plan', effectiveMode: 'auto', plannerIntent });
+            }
+            if (directOverridden) {
+                debugLog('IntentGate', 'Direct mode upgraded to auto (planner voted action-required for complex task)', JSON.stringify({ plannerIntent, originalInferredMode: mode }));
+                this._view.webview.postMessage({ type: 'intentUpgrade', originalMode: 'direct', effectiveMode: 'auto', plannerIntent });
+            }
+
+            const effectiveMode = intentDowngraded ? 'plan' : (intentUpgraded || directOverridden) ? 'auto' : mode;
+            // For plan synthesis: use executor if available, otherwise fall back to first plan adapter as synthesizer
+            const synthesizerAdapter = executor ?? (effectiveMode === 'plan' ? planAdapters[0] : null);
+            const isPlanSynthesis = effectiveMode === 'plan' && synthesizerAdapter && planResults.filter(r => r.status === 'success').length > 1;
+            if ((executor || isPlanSynthesis) && (effectiveMode !== 'plan' || isPlanSynthesis)) {
+                const synthesizer = isPlanSynthesis ? synthesizerAdapter! : executor!;
+                // In 'direct' mode, skip planner synthesis check — executor acts on user prompt directly
+                // In 'auto' mode, require at least one successful planner output
+                const successfulPlans = planResults.filter(r => r.status === 'success');
+                if (effectiveMode === 'direct' || successfulPlans.length > 0) {
+                    let executorPrompt: string;
+                    const phaseRole = isPlanSynthesis ? 'synthesizer' as const : 'executor' as const;
+                    if (effectiveMode === 'direct') {
+                        executorPrompt = this._taskStateManager.buildDirectExecutorPrompt(
+                            turnState.taskState,
+                            turnState.turnRecord,
+                            prompt,
+                            enrichedPrompt
+                        );
+                    } else if (directOverridden && successfulPlans.length > 0) {
+                        // Direct→Auto escalation: validation planner flagged complex task.
+                        // Use hybrid prompt with both user request and planner insight
+                        // (only 1 planner ran in direct mode, so standard synthesis is thin).
+                        const plannerInsight = successfulPlans.map(r =>
+                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '').trim()}`
+                        ).join('\n\n');
+                        executorPrompt = this._taskStateManager.buildDirectEscalatedPrompt(
+                            turnState.taskState,
+                            turnState.turnRecord,
+                            prompt,
+                            enrichedPrompt,
+                            plannerInsight
+                        );
+                    } else if (isPlanSynthesis) {
+                        const synthesis = successfulPlans.map(r =>
+                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '').trim()}`
+                        ).join('\n\n');
+                        executorPrompt = this._taskStateManager.buildPlanSynthesisPrompt(
+                            turnState.taskState,
+                            turnState.turnRecord,
+                            prompt,
+                            synthesis
+                        );
+                    } else {
+                        const synthesis = successfulPlans.map(r =>
+                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '').trim()}`
+                        ).join('\n\n');
+                        executorPrompt = this._taskStateManager.buildExecutorPrompt(
+                            turnState.taskState,
+                            turnState.turnRecord,
+                            prompt,
+                            synthesis,
+                            plannerIntent
+                        );
+                    }
+                    synthesisPrompt = executorPrompt;
+
+                    // Show executor/synthesizer in UI
+                    this._postPhaseStart(
+                        phaseRole,
+                        [{ id: synthesizer.id, name: synthesizer.name, role: phaseRole }],
+                        executorPrompt
+                    );
+                    this._initializeSessionResponses(turnState.turnRecord.turnId, [{
+                        name: synthesizer.name,
+                        agentId: synthesizer.id,
+                        role: phaseRole,
+                        prompt: executorPrompt,
+                    }]);
+
+                    const execName = isPlanSynthesis ? `📋 ${synthesizer.name} (Plan Summary)` : synthesizer.name;
+                    const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, synthesizer, {
+                        turnId: turnState.turnRecord.turnId,
+                        agentId: synthesizer.id,
+                        role: phaseRole,
+                        prompt: executorPrompt,
+                    });
+                    debugLog('Council', `${phaseRole} phase starting`, JSON.stringify({ executor: synthesizer.name, promptLength: executorPrompt.length, isPlanSynthesis }));
+
+                    // For plan synthesis, use 'plan' invoke mode so the synthesizer has no tool access
+                    const invokeMode: AgentMode = isPlanSynthesis ? 'plan' : 'agent';
+
+                    try {
+                        const execResultRaw = await synthesizer.invoke(executorPrompt, invokeMode, execCallback);
+                        execFlush();
+
+                        // Extract <task-summary> from executor output before further parsing
+                        const { summary: extractedSummary, cleaned: execCleaned } = this._extractTaskSummary(execResultRaw);
+
+                        // Extract <memory-update> blocks and persist to .optimus/memory.md
+                        const { updates: memoryUpdates, cleaned: execCleanedFinal } = this._extractMemoryUpdate(execCleaned);
+                        for (const update of memoryUpdates) {
+                            this._memoryManager.appendMemory(update);
+                            debugLog('Council', 'Memory update persisted', JSON.stringify({ length: update.length }));
+                        }
+
+                        const { thinking, output, usageLog } = this._extractThinking(execCleanedFinal, synthesizer);
+
+                        const executorSuccessRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinking: thinking, text: output, usageLog: usageLog, status: 'success' as const, raw: false, debug: synthesizer.lastDebugInfo };
+                        sessionResponses.push(executorSuccessRecord);
+                        this._upsertSessionResponse(turnState.turnRecord.turnId, executorSuccessRecord);
+                        executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, execCleanedFinal, 'success', output);
+
+                        if (extractedSummary) {
+                            this._taskStateManager.updateTaskSummary(turnState.taskState.taskId, extractedSummary).catch(err => {
+                                debugLog('Council', 'Failed to save extracted task summary', String(err));
+                            });
+                        }
+                        const htmlContent = await marked.parse(output);
+                        const thinkingHtml = thinking ? await marked.parse(thinking) : undefined;
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinkingHtml: thinkingHtml, thinking: thinking, text: htmlContent, rawText: output, usageLog: usageLog, debug: synthesizer.lastDebugInfo, status: 'success', raw: false });
+                        this._sendDebugInfo(synthesizer, '', {
+                            taskId: turnState.taskState.taskId,
+                            turnId: turnState.turnRecord.turnId,
+                            role: phaseRole,
+                        });
+                    } catch (err: any) {
+                        execFlush();
+                        const executorErrorRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, status: 'error' as const, raw: true, debug: synthesizer.lastDebugInfo };
+                        sessionResponses.push(executorErrorRecord);
+                        this._upsertSessionResponse(turnState.turnRecord.turnId, executorErrorRecord);
+                        executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, err.message, 'error');
+                        this._view?.webview.postMessage({ type: 'agentDone', agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, debug: synthesizer.lastDebugInfo, status: 'error', raw: true });
+                        this._sendDebugInfo(synthesizer, '', {
+                            taskId: turnState.taskState.taskId,
+                            turnId: turnState.turnRecord.turnId,
+                            role: phaseRole,
+                        });
+                    }
+
+                    this._view.webview.postMessage({ type: 'councilComplete' });
+                    debugLog('Council', 'Executor phase completed');
+                }
+            }
+
+            // Drain any background planner promises that were still running
+            // after a skip-to-executor early exit, so their contributions are
+            // properly recorded in session state and turn history.
+            if (pendingPlannerPromises.length > 0) {
+                await Promise.allSettled(pendingPlannerPromises);
+                debugLog('Council', 'Background planner promises drained', JSON.stringify({ count: pendingPlannerPromises.length }));
+            }
+
+            // Persist session responses BEFORE completing the turn in task state.
+            // This prevents a race where task state is saved but session responses
+            // are lost if VS Code shuts down between the two writes.
+            await this._updateSessionRecord(turnState.turnRecord.turnId, sessionResponses);
+
+            const updatedTaskState = await this._taskStateManager.completeTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, {
+                plannerContributions,
+                executorOutcome,
+                synthesisPrompt,
+            });
+            debugLog('Council', 'Task state updated after turn', JSON.stringify({
+                taskId: turnState.taskState.taskId,
+                turnId: turnState.turnRecord.turnId,
+                latestSummary: updatedTaskState?.latestSummary,
+                turnCount: updatedTaskState?.turnHistory.length,
+            }));
+
+            this._sendCurrentTaskState();
+
+            // Auto-compact if context exceeds threshold
+            if (updatedTaskState && this._taskStateManager.needsCompaction(updatedTaskState)) {
+                const tokensBefore = this._taskStateManager.estimateContextTokens(updatedTaskState);
+                debugLog('Council', 'Context exceeds threshold, auto-compacting', JSON.stringify({
+                    taskId: updatedTaskState.taskId,
+                    tokensBefore,
+                }));
+                const compacted = await this._taskStateManager.compactContext(updatedTaskState.taskId);
+                if (compacted) {
+                    const tokensAfter = this._taskStateManager.estimateContextTokens(compacted);
+                    this._sendCurrentTaskState();
+                    this._view?.webview.postMessage({
+                        type: 'compactResult',
+                        trigger: 'auto',
+                        tokensBefore,
+                        tokensAfter,
+                        tokensFreed: tokensBefore - tokensAfter,
+                    });
+                }
+            }
+        } catch (error: any) {
+            const failureReason = this._activeTurnRef?.turnId === turnState.turnRecord.turnId && this._activeStopReason
+                ? this._activeStopReason
+                : error.message;
+            await this._taskStateManager.failTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, failureReason);
+            debugLog('Council', 'Delegation failed', error?.stack || String(error));
+            this._view.webview.postMessage({ type: 'agentDone', agent: 'System', text: failureReason, status: 'error', raw: true });
+            this._view.webview.postMessage({ type: 'councilComplete' });
+            this._sendCurrentTaskState();
+        } finally {
+            this._runningTaskIds.delete(turnState.taskState.taskId);
+            this._sendSessionsToUI();
+            this._activeTurnRef = undefined;
+            this._activeStopReason = undefined;
+            this._activeRunAdapters = [];
+            this._view?.webview.postMessage({ type: 'turnComplete' });
+        }
+    }
+
+    private _extractTaskSummary(rawText: string): { summary: string; cleaned: string } {
+        const regex = /<task-summary>([\s\S]*?)<\/task-summary>/i;
+        const match = regex.exec(rawText);
+        if (!match) {
+            return { summary: '', cleaned: rawText };
+        }
+        const summary = match[1].trim();
+        const cleaned = rawText.replace(match[0], '').trim();
+        debugLog('ExtractTaskSummary', 'Extracted summary', JSON.stringify({ length: summary.length, preview: summary.slice(0, 100) }));
+        return { summary, cleaned };
+    }
+
+    private _extractMemoryUpdate(rawText: string): { updates: string[]; cleaned: string } {
+        const regex = /<memory-update>([\s\S]*?)<\/memory-update>/gi;
+        const updates: string[] = [];
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(rawText)) !== null) {
+            updates.push(match[1].trim());
+        }
+        const cleaned = rawText.replace(/<memory-update>[\s\S]*?<\/memory-update>/gi, '').trim();
+        return { updates, cleaned };
+    }
+
+    private _extractThinking(rawText: string, adapter?: AgentAdapter): { thinking: string; output: string; usageLog?: string } {
+        if (!rawText) return { thinking: '', output: '' };
+        debugLog('ExtractThinking', 'Input first 200 chars', JSON.stringify(rawText.slice(0, 200)));
+
+        // Delegate to adapter-specific parser when available
+        if (adapter?.extractThinking) {
+            const result = adapter.extractThinking(rawText);
+            if (!result.usageLog && adapter.lastUsageLog) {
+                result.usageLog = adapter.lastUsageLog;
+            }
+            debugLog('ExtractThinking', 'Delegated to adapter', JSON.stringify({ adapter: adapter.id, thinkingLen: result.thinking.length, outputLen: result.output.length }));
+            return result;
+        }
+
+        const regex = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/gi;
+        let thinkingBlocks: string[] = [];
+        let output = rawText;
+        let match;
+        while ((match = regex.exec(rawText)) !== null) {
+            thinkingBlocks.push(match[2].trim());
+            output = output.replace(match[0], '');
+        }
+
+        // Extract tool chain execution lines common in Copilot and Claude CLI outputs.
+        // Full-scan mode: tool chain lines can appear anywhere, not just as a leading prefix.
+        const PROCESS_LINE_RE = /^[•●⏺▶→└│├✓✗↳]|^>\s*\[/;
+        const lines = output.split(/\r?\n|\r/);
+        const processLines: string[] = [];
+        const outputLines: string[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const cleanLine = line.replace(ANSI_RE, '');
+            const trimmed = cleanLine.trim();
+            if (PROCESS_LINE_RE.test(trimmed)) {
+                processLines.push(line);
+            } else {
+                outputLines.push(line);
+            }
+        }
+
+        // Clean up trailing empty lines from processLines
+        while (processLines.length > 0 && processLines[processLines.length - 1].trim() === '') {
+            const emptyLine = processLines.pop() as string;
+            outputLines.unshift(emptyLine);
+        }
+
+        const additionalProcessInfo = processLines.join('\n').trim();
+        if (additionalProcessInfo) {
+            thinkingBlocks.push('```text\n' + additionalProcessInfo + '\n```');
+        }
+
+        const result = {
+            thinking: thinkingBlocks.length > 0 ? thinkingBlocks.join('\n\n---\n\n') : '',
+            output: outputLines.join('\n').trim()
+        };
+        debugLog('ExtractThinking', 'Result', JSON.stringify({ thinkingLen: result.thinking.length, outputLen: result.output.length, processLineCount: processLines.length }));
+        return result;
+    }
+
+    private _buildDebugObject(adapter: AgentAdapter) {
+        const d = adapter.lastDebugInfo;
+        if (!d) { return undefined; }
+        return {
+            command: d.command,
+            cwd: d.cwd,
+            pid: d.pid,
+            duration: d.endTime && d.startTime ? d.endTime - d.startTime : undefined,
+            promptTransport: d.promptTransport,
+            promptFilePath: d.promptFilePath,
+            originalPromptLength: d.originalPromptLength,
+            sentPromptLength: d.sentPromptLength,
+            promptFileThreshold: d.promptFileThreshold,
+        };
+    }
+
+    private _buildContributionRecord(
+        adapter: AgentAdapter,
+        role: 'planner' | 'executor',
+        text: string,
+        status: 'success' | 'error'
+    ): ContributionRecord {
+        const normalizedText = text.trim();
+        return {
+            agentId: adapter.id,
+            agentName: adapter.name,
+            role,
+            status,
+            summary: this._summarizeText(normalizedText),
+            rawText: normalizedText,
+            filesTouched: [],
+            commandsObserved: adapter.lastDebugInfo?.command ? [adapter.lastDebugInfo.command] : [],
+            openQuestions: this._extractOpenQuestions(normalizedText),
+            nextStepSuggestion: status === 'success' ? this._extractNextStepSuggestion(normalizedText) : undefined,
+            timestamp: Date.now(),
+            debug: this._buildDebugObject(adapter),
+        };
+    }
+
+    private _buildExecutorOutcomeRecord(
+        adapter: AgentAdapter,
+        text: string,
+        status: 'success' | 'error',
+        cleanOutputForSummary?: string
+    ): ExecutorOutcomeRecord {
+        const normalizedText = text.trim();
+        const summarySource = cleanOutputForSummary !== undefined
+            ? cleanOutputForSummary.trim()
+            : normalizedText;
+        return {
+            agentId: adapter.id,
+            agentName: adapter.name,
+            status,
+            summary: this._summarizeText(summarySource),
+            rawText: normalizedText,
+            timestamp: Date.now(),
+            debug: this._buildDebugObject(adapter),
+        };
+    }
+
+    private _summarizeText(text: string): string {
+        // Defense-in-depth: strip tool trace lines before summarizing
+        const filtered = text.split('\n')
+            .filter(line => !/^\s*[•●⏺▶→└│├✓✗↳]/.test(line))
+            .join('\n');
+        const singleLine = filtered.replace(/\s+/g, ' ').trim();
+        if (singleLine.length <= 220) {
+            return singleLine;
+        }
+
+        return singleLine.slice(0, 217) + '...';
+    }
+
+    private _extractOpenQuestions(text: string): string[] {
+        const matches = text.match(/[^.!?\n]*\?/g) || [];
+        return matches.map(match => match.trim()).filter(Boolean).slice(0, 3);
+    }
+
+    private _extractNextStepSuggestion(text: string): string | undefined {
+        const firstSentence = text.split(/(?<=[.!?])\s+/)[0]?.trim();
+        return firstSentence || undefined;
+    }
+
+    private _sendDebugInfo(
+        adapter: AgentAdapter,
+        nameSuffix: string = '',
+        taskContext?: { taskId?: string; turnId?: string; role?: string }
+    ) {
+        if (adapter.lastDebugInfo) {
+            const debugObj = this._buildDebugObject(adapter)!;
+            debugLog('Adapter', 'Sending adapter debug info to webview', JSON.stringify({
+                agent: adapter.name + nameSuffix,
+                taskId: taskContext?.taskId,
+                turnId: taskContext?.turnId,
+                role: taskContext?.role,
+                ...debugObj,
+            }));
+            this._view?.webview.postMessage({
+                type: 'agentDebug',
+                agent: adapter.name + nameSuffix,
+                role: taskContext?.role,
+                ...debugObj,
+            });
+        }
+    }
+

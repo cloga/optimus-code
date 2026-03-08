@@ -3673,8 +3673,8 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode7 = __toESM(require("vscode"));
-var path5 = __toESM(require("path"));
+var vscode5 = __toESM(require("vscode"));
+var path3 = __toESM(require("path"));
 
 // src/adapters/PersistentAgentAdapter.ts
 var cp = __toESM(require("child_process"));
@@ -4147,7 +4147,7 @@ ${outputBlock}`;
     const record = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record, result);
     const lines = this.countMeaningfulLines(content);
-    const path6 = this.getStructuredResultPath(record);
+    const path4 = this.getStructuredResultPath(record);
     const lineRange = this.getStructuredResultLineRange(record);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/bash|shell|run|exec|command/.test(normalizedName)) {
@@ -4170,30 +4170,30 @@ ${outputBlock}`;
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, "matches=0"]);
+        return this.buildStructuredSummary([path4, "matches=0"]);
       }
-      return this.buildStructuredSummary([path6, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path4, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path6, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path4, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path6, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, "items=0"]);
+        return this.buildStructuredSummary([path4, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path6, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path4, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path6, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -4706,59 +4706,7 @@ ${line}` : "";
 };
 
 // src/providers/ChatViewProvider.ts
-var vscode6 = __toESM(require("vscode"));
-var fs4 = __toESM(require("fs"));
-var path4 = __toESM(require("path"));
-
-// src/adapters/GitHubCopilotAdapter.ts
-var COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
-var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
-  constructor(id = "github-copilot", name = "\u{1F6F8} GitHub Copilot", modelFlag = "", modes) {
-    super(id, name, modelFlag, "?>", modes);
-  }
-  shouldUseStructuredOutput(mode) {
-    return mode === "plan";
-  }
-  getNonInteractiveCommand(mode, prompt) {
-    const command = super.getNonInteractiveCommand(mode, prompt);
-    if (this.shouldUseStructuredOutput(mode)) {
-      command.args.push("--output-format", "json", "--stream", "on");
-    }
-    return command;
-  }
-  extractStructuredUsageLog(event) {
-    if (event?.type !== "result" || !event?.usage) {
-      return void 0;
-    }
-    const usage = event.usage;
-    const lines = [
-      typeof usage.premiumRequests === "number" ? `Premium requests: ${usage.premiumRequests}` : "",
-      typeof usage.totalApiDurationMs === "number" ? `API duration: ${usage.totalApiDurationMs}ms` : "",
-      typeof usage.sessionDurationMs === "number" ? `Session duration: ${usage.sessionDurationMs}ms` : "",
-      usage.codeChanges ? `Code changes: ${JSON.stringify(usage.codeChanges)}` : ""
-    ].filter(Boolean);
-    return lines.length > 0 ? lines.join("\n") : void 0;
-  }
-  extractThinking(rawText) {
-    return this.extractThinkingWithSharedParser(rawText, {
-      processLineRe: COPILOT_PROCESS_LINE_RE,
-      captureBracketLines: true,
-      captureProcessLinesAfterOutputStarts: true,
-      collectUsageLog: true
-    });
-  }
-  getSpawnCommand(mode) {
-    const args = [];
-    const cwd = PersistentAgentAdapter.getWorkspacePath();
-    args.push("--add-dir", cwd);
-    if (mode === "plan") {
-    } else if (mode === "agent") {
-      args.push("--allow-all");
-      args.push("--no-ask-user");
-    }
-    return { cmd: "copilot", args };
-  }
-};
+var vscode4 = __toESM(require("vscode"));
 
 // src/adapters/ClaudeCodeAdapter.ts
 var CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
@@ -4815,37 +4763,66 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   }
 };
 
-// src/adapters/index.ts
-var vscode3 = __toESM(require("vscode"));
-function getActiveAdapters() {
-  const config = vscode3.workspace.getConfiguration("optimusCode");
-  const agentsConfig = config.get("agents") || [];
-  const adapters = [];
-  for (const agent of agentsConfig) {
-    if (!agent.enabled) continue;
-    let adapterInstance = null;
-    const modes = agent.modes || ["plan", "agent"];
-    if (agent.adapter === "github-copilot") {
-      adapterInstance = new GitHubCopilotAdapter(agent.id, agent.name, agent.model || "", modes);
-    } else if (agent.adapter === "claude-code") {
-      adapterInstance = new ClaudeCodeAdapter(agent.id, agent.name, agent.model || "", modes);
-    } else {
-      debugLog("Adapters", `Unknown adapter type '${agent.adapter}', skipping agent '${agent.id}'`);
-    }
-    if (adapterInstance) {
-      adapters.push(adapterInstance);
-    }
+// src/adapters/GitHubCopilotAdapter.ts
+var COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
+var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
+  constructor(id = "github-copilot", name = "\u{1F6F8} GitHub Copilot", modelFlag = "", modes) {
+    super(id, name, modelFlag, "?>", modes);
   }
-  if (adapters.length === 0) {
-    adapters.push(new GitHubCopilotAdapter("github-copilot-default", "\u{1F916} Copilot (Default)"));
+  shouldUsePersistentSession(mode) {
+    return false;
   }
-  return adapters;
-}
+  shouldUseStructuredOutput(mode) {
+    return mode === "plan" || mode === "agent";
+  }
+  getNonInteractiveCommand(mode, prompt) {
+    const command = super.getNonInteractiveCommand(mode, prompt);
+    if (this.shouldUseStructuredOutput(mode)) {
+      command.args.push("--output-format", "json", "--stream", "on");
+    }
+    return command;
+  }
+  extractStructuredUsageLog(event) {
+    if (event?.type !== "result" || !event?.usage) {
+      return void 0;
+    }
+    const usage = event.usage;
+    const lines = [
+      typeof usage.premiumRequests === "number" ? `Premium requests: ${usage.premiumRequests}` : "",
+      typeof usage.totalApiDurationMs === "number" ? `API duration: ${usage.totalApiDurationMs}ms` : "",
+      typeof usage.sessionDurationMs === "number" ? `Session duration: ${usage.sessionDurationMs}ms` : "",
+      usage.codeChanges ? `Code changes: ${JSON.stringify(usage.codeChanges)}` : ""
+    ].filter(Boolean);
+    return lines.length > 0 ? lines.join("\n") : void 0;
+  }
+  extractThinking(rawText) {
+    return this.extractThinkingWithSharedParser(rawText, {
+      processLineRe: COPILOT_PROCESS_LINE_RE,
+      captureBracketLines: true,
+      captureProcessLinesAfterOutputStarts: true,
+      collectUsageLog: true
+    });
+  }
+  getSpawnCommand(mode) {
+    const args = [];
+    const cwd = PersistentAgentAdapter.getWorkspacePath();
+    args.push("--add-dir", cwd);
+    if (this.modelFlag) {
+      args.push("--model", this.modelFlag);
+    }
+    if (mode === "plan") {
+    } else if (mode === "agent") {
+      args.push("--allow-all");
+      args.push("--no-ask-user");
+    }
+    return { cmd: "copilot", args };
+  }
+};
 
 // src/managers/SharedTaskStateManager.ts
 var fs2 = __toESM(require("fs"));
 var path2 = __toESM(require("path"));
-var vscode4 = __toESM(require("vscode"));
+var vscode3 = __toESM(require("vscode"));
 var SharedTaskStateManager = class _SharedTaskStateManager {
   constructor(globalState) {
     this.globalState = globalState;
@@ -4854,7 +4831,7 @@ var SharedTaskStateManager = class _SharedTaskStateManager {
   static maxTasks = 25;
   static defaultCompactThreshold = 8e5;
   getCompactThreshold() {
-    const configured = vscode4.workspace.getConfiguration("optimusCode").get("compactThresholdTokens");
+    const configured = vscode3.workspace.getConfiguration("optimusCode").get("compactThresholdTokens");
     if (typeof configured !== "number" || !Number.isFinite(configured) || configured < 1e3) {
       return _SharedTaskStateManager.defaultCompactThreshold;
     }
@@ -5428,22 +5405,45 @@ Executor outcome: ${outcome}
   }
   readRulesMd() {
     try {
-      const workspaceFolders = vscode4.workspace.workspaceFolders;
+      const workspaceFolders = vscode3.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return null;
       }
-      const rulesPath = path2.join(workspaceFolders[0].uri.fsPath, ".optimus", "rules.md");
-      if (!fs2.existsSync(rulesPath)) {
-        return null;
+      const rootPath = workspaceFolders[0].uri.fsPath;
+      const rulesPath = path2.join(rootPath, ".optimus", "rules.md");
+      let rulesContent = "";
+      if (fs2.existsSync(rulesPath)) {
+        rulesContent += fs2.readFileSync(rulesPath, "utf8") + "\n\n";
       }
-      return fs2.readFileSync(rulesPath, "utf8");
-    } catch {
+      const delegateSkillPath = path2.join(rootPath, "resources", "plugins", "skills", "delegate_task.md");
+      if (fs2.existsSync(delegateSkillPath)) {
+        rulesContent += "---\n[SYSTEM: INJECTED SKILL - delegate_task]\n" + fs2.readFileSync(delegateSkillPath, "utf8");
+      }
+      const modelsConfig = vscode3.workspace.getConfiguration("optimusCode").get("models");
+      if (modelsConfig) {
+        rulesContent += `
+
+## Available CLI Engines and Models (Dynamic)
+`;
+        if (modelsConfig.claude_code) {
+          rulesContent += `- **github copilot**: Implicitly maps to \`engine: "copilot_cli"\`.
+`;
+        }
+        rulesContent += `You MUST map user colloquial requests like "github copilot" or "claude code" to the actual engine IDs used by the tool.
+`;
+        rulesContent += `Current available models:
+${JSON.stringify(modelsConfig, null, 2)}
+`;
+      }
+      return rulesContent.trim().length > 0 ? rulesContent : null;
+    } catch (err) {
+      console.error("SharedTaskStateManager readRulesMd error:", err);
       return null;
     }
   }
   readMemoryMd() {
     try {
-      const workspaceFolders = vscode4.workspace.workspaceFolders;
+      const workspaceFolders = vscode3.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return null;
       }
@@ -5458,7 +5458,7 @@ Executor outcome: ${outcome}
   }
   writeMemoryMd(newContent) {
     try {
-      const workspaceFolders = vscode4.workspace.workspaceFolders;
+      const workspaceFolders = vscode3.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return;
       }
@@ -5473,68 +5473,6 @@ Executor outcome: ${outcome}
   }
   clone(value) {
     return structuredClone(value);
-  }
-};
-
-// src/managers/MemoryManager.ts
-var fs3 = __toESM(require("fs"));
-var path3 = __toESM(require("path"));
-var vscode5 = __toESM(require("vscode"));
-var MemoryManager = class _MemoryManager {
-  static memoryFileName = "memory.md";
-  static optimusDir = ".optimus";
-  getMemoryFilePath() {
-    const workspaceFolders = vscode5.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      return null;
-    }
-    return path3.join(workspaceFolders[0].uri.fsPath, _MemoryManager.optimusDir, _MemoryManager.memoryFileName);
-  }
-  readMemory() {
-    try {
-      const filePath = this.getMemoryFilePath();
-      if (!filePath || !fs3.existsSync(filePath)) {
-        return null;
-      }
-      return fs3.readFileSync(filePath, "utf8");
-    } catch (err) {
-      debugLog("MemoryManager", "Failed to read memory file", String(err));
-      return null;
-    }
-  }
-  appendMemory(entry) {
-    try {
-      const filePath = this.getMemoryFilePath();
-      if (!filePath) {
-        debugLog("MemoryManager", "No workspace folder available; memory not persisted");
-        return;
-      }
-      const dir = path3.dirname(filePath);
-      if (!fs3.existsSync(dir)) {
-        fs3.mkdirSync(dir, { recursive: true });
-      }
-      const timestamp = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      const block = `
-<!-- updated ${timestamp} -->
-${entry.trim()}
-`;
-      fs3.appendFileSync(filePath, block, "utf8");
-      debugLog("MemoryManager", "Memory entry appended", JSON.stringify({ length: entry.length }));
-    } catch (err) {
-      debugLog("MemoryManager", "Failed to append to memory file", String(err));
-    }
-  }
-  clearMemory() {
-    try {
-      const filePath = this.getMemoryFilePath();
-      if (!filePath || !fs3.existsSync(filePath)) {
-        return;
-      }
-      fs3.writeFileSync(filePath, "", "utf8");
-      debugLog("MemoryManager", "Memory file cleared");
-    } catch (err) {
-      debugLog("MemoryManager", "Failed to clear memory file", String(err));
-    }
   }
 };
 
@@ -6745,2524 +6683,570 @@ var en = x.lex;
 
 // src/providers/ChatViewProvider.ts
 var ChatViewProvider = class {
-  constructor(_extensionUri, _context) {
+  constructor(_extensionUri, context) {
     this._extensionUri = _extensionUri;
-    this._context = _context;
-    this._taskStateManager = new SharedTaskStateManager(this._context.globalState);
-    this._memoryManager = new MemoryManager();
+    this.context = context;
+    this.taskStateManager = new SharedTaskStateManager(context.globalState);
   }
   static viewType = "optimus-code.chatView";
-  _view;
-  _activeRunAdapters = [];
-  _currentTaskId;
-  _activeTurnRef;
-  _activeStopReason;
-  _runningTaskIds = /* @__PURE__ */ new Set();
-  _taskStateManager;
-  _memoryManager;
-  _lastSentTurnCount = 0;
-  _showAllWorkspaces = false;
-  _cachedContextTokens;
-  _getActiveEditorContext() {
-    const editor = vscode6.window.activeTextEditor;
-    if (!editor || editor.document.uri.scheme !== "file") {
-      return void 0;
-    }
-    const doc = editor.document;
-    const filePath = vscode6.workspace.asRelativePath(doc.uri, false);
-    const lang = doc.languageId;
-    const selection = editor.selection;
-    let codeSnippet;
-    let contextLabel;
-    if (!selection.isEmpty) {
-      codeSnippet = doc.getText(selection);
-      const startLine = selection.start.line + 1;
-      const endLine = selection.end.line + 1;
-      contextLabel = `${filePath}:${startLine}-${endLine} (selected)`;
-    } else {
-      const visibleRange = editor.visibleRanges[0];
-      if (!visibleRange) {
-        return void 0;
-      }
-      const maxLines = 80;
-      const startLine = visibleRange.start.line;
-      const endLine = Math.min(visibleRange.end.line, startLine + maxLines - 1);
-      codeSnippet = doc.getText(new vscode6.Range(startLine, 0, endLine + 1, 0)).trimEnd();
-      contextLabel = `${filePath}:${startLine + 1}-${endLine + 1} (visible)`;
-    }
-    if (!codeSnippet.trim()) {
-      return void 0;
-    }
-    return `<active-editor-context file="${contextLabel}" lang="${lang}">
-${codeSnippet}
-</active-editor-context>`;
-  }
-  _buildContextBadge() {
-    const editor = vscode6.window.activeTextEditor;
-    if (!editor || editor.document.uri.scheme !== "file") {
-      return { label: "", hasContext: false };
-    }
-    const filePath = vscode6.workspace.asRelativePath(editor.document.uri, false);
-    const selection = editor.selection;
-    if (!selection.isEmpty) {
-      return {
-        label: `${filePath}:${selection.start.line + 1}-${selection.end.line + 1}`,
-        hasContext: true
-      };
-    }
-    return { label: filePath, hasContext: true };
-  }
-  _sendContextBadge() {
-    const badge = this._buildContextBadge();
-    this._view?.webview.postMessage({ type: "updateContextBadge", ...badge });
-  }
-  _registerWorkspacePathHint() {
-    const workspacePathHint = vscode6.workspace.workspaceFolders?.[0]?.uri.fsPath || (vscode6.window.activeTextEditor?.document?.uri.scheme === "file" ? vscode6.workspace.getWorkspaceFolder(vscode6.window.activeTextEditor.document.uri)?.uri.fsPath || vscode6.window.activeTextEditor.document.uri.fsPath : void 0) || (this._context.extensionMode === vscode6.ExtensionMode.Development ? this._extensionUri.fsPath : void 0);
-    if (!workspacePathHint) {
-      debugLog("Workspace", "No workspace path hint available during webview resolution");
-      return;
-    }
-    PersistentAgentAdapter.setWorkspacePathHint(workspacePathHint);
-    debugLog("Workspace", "Registered workspace path hint during webview resolution", JSON.stringify({ workspacePathHint }));
-  }
-  resolveWebviewView(webviewView, context, _token) {
-    this._view = webviewView;
-    this._currentTaskId = void 0;
-    this._registerWorkspacePathHint();
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        this._extensionUri,
-        this._context.globalStorageUri
-      ]
-    };
+  // Agents — each wraps a CLI with streaming support
+  agents = {};
+  isGenerating = false;
+  genStart = 0;
+  streamSeq = 0;
+  currentTaskId;
+  taskStateManager;
+  resolveWebviewView(webviewView) {
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.html = this.getHtml();
     webviewView.webview.onDidReceiveMessage(async (data) => {
-      debugLog("Webview", "Received message from webview", JSON.stringify({
-        type: data.type,
-        hasValue: typeof data.value === "string" ? data.value.length > 0 : false,
-        agentCount: Array.isArray(data.agents) ? data.agents.length : void 0,
-        executor: data.executor,
-        taskId: data.taskId,
-        sessionId: data.sessionId
-      }));
       switch (data.type) {
-        case "askCouncil": {
-          await this._delegateToCouncil(data.value, data.agents, data.mode, data.executor, data.images, data.referencedTurnSequences);
-          break;
-        }
-        case "newChat": {
-          this._currentTaskId = void 0;
-          this._activeTurnRef = void 0;
-          this._activeStopReason = void 0;
-          this._activeRunAdapters = [];
-          this._view?.webview.postMessage({ type: "turnComplete" });
-          break;
-        }
-        case "requestSessions": {
-          this._sendSessionsToUI();
-          break;
-        }
-        case "loadSession": {
-          await this._loadSessionToUI(data.sessionId);
-          break;
-        }
-        case "resumeTask": {
-          await this._resumeTask(data.taskId, data.sessionId);
-          break;
-        }
-        case "renameTask": {
-          await this._renameTask(data.taskId, data.newTitle);
-          break;
-        }
-        case "deleteTask": {
-          await this._deleteTask(data.taskId, data.sessionId);
-          break;
-        }
-        case "pinTask": {
-          await this._pinTask(data.taskId);
-          break;
-        }
-        case "toggleShowAllWorkspaces": {
-          this._showAllWorkspaces = !this._showAllWorkspaces;
-          this._sendSessionsToUI();
-          break;
-        }
-        case "compactContext": {
-          if (this._currentTaskId) {
-            const taskState = this._taskStateManager.getTask(this._currentTaskId);
-            const tokensBefore = taskState ? this._taskStateManager.estimateContextTokens(taskState) : 0;
-            debugLog("Compact", "Manual compact requested", JSON.stringify({ taskId: this._currentTaskId, tokensBefore }));
-            const compacted = await this._taskStateManager.compactContext(this._currentTaskId);
-            if (compacted) {
-              const tokensAfter = this._taskStateManager.estimateContextTokens(compacted);
-              this._sendCurrentTaskState();
-              this._view?.webview.postMessage({
-                type: "compactResult",
-                trigger: "manual",
-                tokensBefore,
-                tokensAfter,
-                tokensFreed: tokensBefore - tokensAfter
-              });
-            }
-          }
-          break;
-        }
-        case "requestAgents": {
-          this._sendAgentsToUI();
-          break;
-        }
-        case "webviewReady": {
-          this._sendAgentsToUI();
-          this._sendUiState();
-          this._sendCurrentTaskState();
-          this._sendContextBadge();
-          void this._context.globalState.update("optimusQueue", void 0);
-          break;
-        }
-        case "openSettings": {
-          vscode6.commands.executeCommand("workbench.action.openSettings", "optimusCode.debugMode");
-          break;
-        }
-        case "stopCouncil": {
-          this._stopActiveCouncil();
-          break;
-        }
-        case "applyCodeBlock": {
-          await this._applyCodeBlock(data.filePath, data.code);
-          break;
-        }
+        case "ask":
+          return this.handleAsk(webviewView, data.text, data.agent, data.model);
+        case "stop":
+          this.isGenerating = false;
+          webviewView.webview.postMessage({ type: "setGenerating", value: false });
+          return webviewView.webview.postMessage({ type: "status", content: "Stopped." });
+        case "newChat":
+          this.isGenerating = false;
+          this.currentTaskId = void 0;
+          webviewView.webview.postMessage({ type: "setGenerating", value: false });
+          webviewView.webview.postMessage({ type: "chatCleared" });
+          return webviewView.webview.postMessage({ type: "status", content: "New session." });
       }
     });
-    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-    this._context.subscriptions.push(
-      vscode6.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("optimusCode") && this._view) {
-          this._sendAgentsToUI();
-          this._sendUiState();
-          this._sendCurrentTaskState();
-        }
-      })
-    );
-    this._context.subscriptions.push(
-      vscode6.window.onDidChangeActiveTextEditor(() => {
-        if (this._view) {
-          this._sendContextBadge();
-        }
-      }),
-      vscode6.window.onDidChangeTextEditorSelection(() => {
-        if (this._view) {
-          this._sendContextBadge();
-        }
-      })
-    );
   }
-  _sendAgentsToUI() {
-    const adapters = getActiveAdapters();
-    debugLog("Webview", "_sendAgentsToUI, adapters: " + adapters.map((a) => a.id).join(", "));
-    debugLog("Webview", "Sending agent selector update", JSON.stringify(adapters.map((a) => ({
-      id: a.id,
-      name: a.name,
-      modes: a.modes
-    }))));
-    this._view?.webview.postMessage({
-      type: "updateAgentSelector",
-      agents: adapters.map((a) => ({ id: a.id, name: a.name, modes: a.modes }))
-    });
-  }
-  _sendUiState() {
-    debugLog("Webview", "Sending UI state update", JSON.stringify({ debugMode: isDebugModeEnabled() }));
-    this._view?.webview.postMessage({
-      type: "updateUiState",
-      debugMode: isDebugModeEnabled()
-    });
-  }
-  _sendCurrentTaskState() {
-    if (!this._view) {
-      return;
+  async handleAsk(wv, text, agentId, modelId) {
+    if (this.isGenerating && Date.now() - this.genStart > 18e4) {
+      this.isGenerating = false;
     }
-    const taskState = this._currentTaskId ? this._taskStateManager.getTask(this._currentTaskId) : void 0;
-    const latestTurn = taskState?.turnHistory[taskState.turnHistory.length - 1];
-    const turnCount = taskState?.turnHistory.length ?? 0;
-    const turnCountChanged = turnCount !== this._lastSentTurnCount;
-    let contextTokens = 0;
-    let needsCompaction = false;
-    if (taskState) {
-      const cache = this._cachedContextTokens;
-      if (cache && cache.taskId === taskState.taskId && cache.turnCount === turnCount) {
-        contextTokens = cache.tokens;
-        needsCompaction = cache.needsCompaction;
-      } else {
-        contextTokens = this._taskStateManager.estimateContextTokens(taskState);
-        needsCompaction = this._taskStateManager.needsCompaction(taskState);
-        this._cachedContextTokens = { taskId: taskState.taskId, turnCount, tokens: contextTokens, needsCompaction };
-      }
+    if (this.isGenerating) {
+      return wv.webview.postMessage({ type: "status", content: "Busy \u2014 please wait." });
     }
-    const turnHistory = taskState && turnCountChanged ? taskState.turnHistory.map((turn) => ({
-      sequence: turn.sequence,
-      prompt: turn.prompt.length > 80 ? turn.prompt.slice(0, 77) + "..." : turn.prompt,
-      status: turn.status,
-      referencedTurnSequences: turn.referencedTurnSequences
-    })) : void 0;
-    this._lastSentTurnCount = turnCount;
-    this._view.webview.postMessage({
-      type: "updateTaskState",
-      task: taskState ? {
-        taskId: taskState.taskId,
-        title: taskState.title,
-        status: taskState.status,
-        turnCount,
-        latestSummary: taskState.latestSummary,
-        latestPrompt: latestTurn?.prompt,
-        latestTurnStatus: latestTurn?.status,
-        latestTurnSequence: latestTurn?.sequence,
-        latestPlannerNames: latestTurn?.plannerContributions.map((contribution) => contribution.agentName) || [],
-        latestExecutorSummary: latestTurn?.executorOutcome?.summary,
-        openQuestions: taskState.openQuestions.slice(-3),
-        blockedReasons: taskState.blockedReasons.slice(-3),
-        contextTokens,
-        needsCompaction,
-        turnHistory
-      } : null
-    });
-  }
-  _makeStreamingCallback(agentName, adapter, sessionMeta) {
-    let pendingText = "";
-    let timer = null;
-    const send = async () => {
-      timer = null;
-      const text = pendingText;
-      if (!text) {
-        return;
-      }
-      const parsed = this._extractThinking(text, adapter);
-      const thinkingHtml = parsed.thinking ? await g.parse(parsed.thinking) : "";
-      const outputHtml = parsed.output ? await g.parse(parsed.output) : "";
-      this._view?.webview.postMessage({
-        type: "agentUpdate",
-        agent: agentName,
-        thinkingHtml,
-        thinkingText: parsed.thinking,
-        outputHtml,
-        rawText: text
-      });
-    };
-    const callback = (incrementalText) => {
-      pendingText = incrementalText;
-      if (timer === null) {
-        timer = setTimeout(send, 100);
-      }
-    };
-    const flush = () => {
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-        send();
-      }
-    };
-    return { callback, flush };
-  }
-  _postPhaseStart(phaseKind, agents, prompt, autoCollapseOnSuccess) {
-    this._view?.webview.postMessage({
-      type: "startCouncil",
-      phaseKind,
-      agents,
-      prompt,
-      autoCollapseOnSuccess
-    });
-  }
-  _saveImagesToDisk(images) {
-    const storageDir = this._context.globalStorageUri.fsPath;
-    fs4.mkdirSync(storageDir, { recursive: true });
-    const ts = Date.now();
-    return images.map((img, i) => {
-      const ext = img.mimeType.split("/")[1] || "png";
-      const rand = Math.random().toString(36).slice(2, 7);
-      const filePath = path4.join(storageDir, `paste-${ts}-${i}-${rand}.${ext}`);
-      const base64 = img.dataUrl.replace(/^data:[^;]+;base64,/, "");
-      fs4.writeFileSync(filePath, Buffer.from(base64, "base64"));
-      return { filePath, mimeType: img.mimeType };
-    });
-  }
-  _toWebviewAttachment(attachment) {
-    if (!this._view || !attachment.filePath || !fs4.existsSync(attachment.filePath)) {
-      return void 0;
-    }
-    return {
-      ...attachment,
-      src: this._view.webview.asWebviewUri(vscode6.Uri.file(attachment.filePath)).toString()
-    };
-  }
-  async _upsertSessionResponse(turnId, nextResponse) {
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    const sessionIndex = sessions.findIndex((session2) => session2.turnId === turnId);
-    if (sessionIndex === -1) {
-      return;
-    }
-    const session = sessions[sessionIndex];
-    const responseIndex = session.responses.findIndex(
-      (response) => response.agent === nextResponse.agent && response.role === nextResponse.role && response.agentId === nextResponse.agentId
-    );
-    const responses = session.responses.slice();
-    if (responseIndex === -1) {
-      responses.push(nextResponse);
-    } else {
-      responses[responseIndex] = {
-        ...responses[responseIndex],
-        ...nextResponse
-      };
-    }
-    sessions[sessionIndex] = { ...session, responses };
-    await this._context.globalState.update("optimusSessions", sessions);
-  }
-  _initializeSessionResponses(turnId, agents) {
-    agents.forEach((agent) => {
-      this._upsertSessionResponse(turnId, {
-        agent: agent.name,
-        agentId: agent.agentId,
-        role: agent.role,
-        prompt: agent.prompt,
-        thinking: "",
-        text: "",
-        status: "running",
-        raw: false
-      });
-    });
-  }
-  /**
-   * Infer execution mode from prompt characteristics when user selected 'auto'.
-   * Returns 'plan' for pure questions, 'direct' for simple edits, 'auto' otherwise.
-   */
-  _inferMode(prompt, userMode, taskState) {
-    if (userMode !== "auto") {
-      return userMode;
-    }
-    const trimmed = prompt.trim();
-    const implementationQuestionPattern = /^(如何|怎么|how\s+(to|do|can|should)|what('s| is)\s+the\s+(best|right)\s+way)/i;
-    const questionPatterns = [
-      /^[^。.!！？?\n]{0,120}[？?]$/,
-      /^(为什么|怎么|什么|如何|是否|有没有|能不能|是不是|哪个|哪些|解释|分析|看看|review|explain|why|how|what|which|is\s+there|can\s+you\s+tell|do\s+you\s+think)/i,
-      /^(目前|现在|当前).{0,60}(建议|看法|意见|想法|问题)[？?]?$/,
-      // Additional question patterns
-      /^(有什么|你.{0,10}(觉得|认为|建议)|比较|对比|区别|difference|compare)/i,
-      /^(告诉我|帮我(看|分析|理解)|describe|summarize|list\s+(the|all))/i
-    ];
-    if (questionPatterns.some((pattern) => pattern.test(trimmed)) && !implementationQuestionPattern.test(trimmed)) {
-      debugLog("InferMode", "Inferred plan mode (question pattern)", JSON.stringify({ prompt: trimmed.slice(0, 80) }));
-      return "plan";
-    }
-    if (taskState?.turnHistory && taskState.turnHistory.length > 0) {
-      const confirmPatterns = [
-        /^(好的?|确认|就(按|照|这样)|可以|行|没问题|ok|okay|yes|go|lgtm|do\s+it|proceed|execute|开始|执行|搞|干|来吧|做吧)/i,
-        /^(按照?|就按|依照|照着).{0,20}(做|执行|来|改|实现)/i,
-        /^(实现一下|帮我(做|实现|写|改)|按.{0,10}(上面|这个|方案))/i
-      ];
-      if (trimmed.length < 100 && confirmPatterns.some((p) => p.test(trimmed))) {
-        debugLog("InferMode", "Inferred direct mode (confirmation follow-up)", JSON.stringify({ prompt: trimmed.slice(0, 80) }));
-        return "direct";
-      }
-    }
-    const microEditPatterns = [
-      /^(fix typo|rename\s|remove\s|delete\s|add\s+line|update\s+comment|格式化|修复\s*typo|重命名\s)/i
-    ];
-    const isMicro = trimmed.length < 80;
-    if (isMicro && microEditPatterns.some((p) => p.test(trimmed))) {
-      debugLog("InferMode", "Inferred direct mode (micro edit)", JSON.stringify({ prompt: trimmed.slice(0, 80) }));
-      return "direct";
-    }
-    const directPatterns = [
-      /^(把|将|改|删除|移除|添加|加上|去掉|rename|fix typo|remove|delete|add|change|replace|update)/i,
-      /^(修复|修改|替换|加一个|加一行|改一下|改成)/i,
-      // Explicit execution commands
-      /^(run|build|compile|install|test|npm\s|git\s|执行|运行|编译|构建|安装|发布|部署)/i,
-      /^(帮我写|帮我做|帮我实现|实现一下|写一个|做一下|创建一个)/i
-    ];
-    const isShort = trimmed.length < 200;
-    if (isShort && directPatterns.some((pattern) => pattern.test(trimmed))) {
-      debugLog("InferMode", "Inferred direct mode (short edit command)", JSON.stringify({ prompt: trimmed.slice(0, 80) }));
-      return "direct";
-    }
-    return "auto";
-  }
-  /**
-   * After Phase 1 completes, analyze planner outputs to determine whether
-   * code execution is actually needed. Uses a consensus threshold of
-   * min(2, numPlanners) — single-planner setups work as before, but with
-   * 2+ planners at least 2 must agree before triggering 'action' or 'skip'.
-   * Falls back to 'answer' when consensus is not reached.
-   */
-  _computeIntentFromPlanners(planResults) {
-    const successful = planResults.filter((r) => r.status === "success");
-    if (successful.length === 0) {
-      return "unknown";
-    }
-    let yesCount = 0;
-    let noCount = 0;
-    let skipCount = 0;
-    for (const r of successful) {
-      if (/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)) {
-        skipCount++;
-      }
-      const match = /<action-required>\s*(yes|no)\s*<\/action-required>/i.exec(r.text);
-      if (match) {
-        if (match[1].toLowerCase() === "yes") {
-          yesCount++;
-        } else {
-          noCount++;
-        }
-      } else {
-        if (/```|\bsrc\/|\bfile\b|\.ts\b|修改|implement|创建|添加文件/i.test(r.text)) {
-          yesCount++;
-        } else {
-          noCount++;
-        }
-      }
-    }
-    const requiredConsensus = Math.min(2, successful.length);
-    if (skipCount >= requiredConsensus && yesCount >= requiredConsensus) {
-      return "skip";
-    }
-    if (yesCount >= requiredConsensus) {
-      return "action";
-    }
-    if (noCount > 0 && yesCount === 0) {
-      return "answer";
-    }
-    return "unknown";
-  }
-  async _delegateToCouncil(prompt, selectedAgentIds = [], mode = "auto", executorId, images, referencedTurnSequences) {
-    if (!this._view) {
-      return;
-    }
-    let imageNote = "";
-    let storedAttachments = [];
-    if (images && images.length > 0) {
-      storedAttachments = this._saveImagesToDisk(images);
-      imageNote = "\n\n[Attached images]\n" + storedAttachments.map((image) => `- ${image.filePath}`).join("\n") + "\n";
-    }
-    const editorContext = this._getActiveEditorContext();
-    const enrichedPrompt = [editorContext, prompt + imageNote].filter(Boolean).join("\n\n");
-    const turnState = await this._taskStateManager.startTurn({
-      taskId: this._currentTaskId,
-      prompt,
-      selectedAgentIds,
-      executorId,
-      referencedTurnSequences
-    });
-    this._currentTaskId = turnState.taskState.taskId;
-    if (this._runningTaskIds.has(this._currentTaskId)) {
-      await this._taskStateManager.failTurn(this._currentTaskId, turnState.turnRecord.turnId, "Blocked: another turn is already running for this task.");
-      this._view.webview.postMessage({ type: "agentDone", agent: "System", text: "A turn is already running for this task. Please wait for it to finish.", status: "error", raw: true });
-      return;
-    }
-    this._runningTaskIds.add(this._currentTaskId);
-    this._sendSessionsToUI();
-    this._activeTurnRef = {
-      taskId: turnState.taskState.taskId,
-      turnId: turnState.turnRecord.turnId
-    };
-    this._activeStopReason = void 0;
-    await this._createSessionRecord(prompt, turnState.taskState.taskId, turnState.turnRecord.turnId, storedAttachments);
-    const originalMode = mode;
-    mode = this._inferMode(prompt, mode, turnState.taskState);
-    if (mode !== originalMode) {
-      this._view.webview.postMessage({ type: "modeInferred", originalMode, inferredMode: mode });
-    }
-    const allAdapters = getActiveAdapters();
-    debugLog("Council", "Delegation started", JSON.stringify({
-      taskId: turnState.taskState.taskId,
-      turnId: turnState.turnRecord.turnId,
-      turnSequence: turnState.turnRecord.sequence,
-      promptLength: enrichedPrompt.length,
-      hasEditorContext: !!editorContext,
-      selectedAgentIds,
-      mode,
-      originalMode,
-      executorId,
-      allAdapters: allAdapters.map((a) => ({ id: a.id, name: a.name, modes: a.modes }))
-    }));
-    this._sendCurrentTaskState();
-    const allPlanAdapters = allAdapters.filter(
-      (a) => selectedAgentIds.includes(a.id) && a.modes.includes("plan")
-    );
-    let planAdapters = mode === "direct" ? allPlanAdapters.slice(0, 1) : allPlanAdapters;
-    if (mode !== "direct") {
-      const droppedPlannerSelections = selectedAgentIds.filter((id) => !planAdapters.some((adapter) => adapter.id === id)).map((id) => {
-        const adapter = allAdapters.find((candidate) => candidate.id === id);
-        if (!adapter) {
-          return { id, name: id, reason: "not available in the active agent configuration" };
-        }
-        if (!adapter.modes.includes("plan")) {
-          return { id, name: adapter.name, reason: "executor-only, skipped as planner" };
-        }
-        return { id, name: adapter.name, reason: "not participating in this planning phase" };
-      });
-      if (droppedPlannerSelections.length > 0) {
-        const droppedSummary = droppedPlannerSelections.map((item) => `${item.name} (${item.reason})`).join(", ");
-        const droppedMessage = `Skipped from planning: ${droppedSummary}`;
-        debugLog("Council", droppedMessage);
-        this._view.webview.postMessage({
-          type: "agentDone",
-          agent: "System",
-          text: droppedMessage,
-          status: "info",
-          raw: true
-        });
-      }
-    }
-    let executor = executorId ? allAdapters.find((a) => a.id === executorId && a.modes.includes("agent")) : null;
-    if (!executor) {
-      executor = allAdapters.find((a) => a.modes.includes("agent"));
-    }
-    debugLog("Council", "Resolved council participants", JSON.stringify({
-      planners: planAdapters.map((a) => ({ id: a.id, name: a.name })),
-      executor: executor ? { id: executor.id, name: executor.name } : null
-    }));
-    if (planAdapters.length === 0 && mode !== "direct") {
-      if (executor) {
-        debugLog("Council", "No planners configured, falling back to direct mode");
-        mode = "direct";
-      } else {
-        vscode6.window.showWarningMessage("[Optimus Code] No plan agents selected.");
-        debugLog("Council", "Aborted because no plan agents were selected");
-        return;
-      }
-    }
-    if (mode === "direct" && !executor) {
-      vscode6.window.showWarningMessage("[Optimus Code] No executor agent available for direct execution.");
-      debugLog("Council", "Aborted because no executor is available for direct mode");
-      return;
-    }
-    const planMayNeedSynthesis = mode === "plan" && planAdapters.length > 1;
-    this._activeRunAdapters = mode === "direct" ? [...planAdapters, ...executor ? [executor] : []] : [...planAdapters, ...mode === "plan" ? planMayNeedSynthesis && executor ? [executor] : [] : executor ? [executor] : []];
-    const sessionResponses = [];
-    const plannerContributions = [];
+    this.isGenerating = true;
+    this.genStart = Date.now();
+    wv.webview.postMessage({ type: "setGenerating", value: true });
     try {
-      const planResults = [];
-      let pendingPlannerPromises = [];
-      if (planAdapters.length > 0) {
-        const plannerPrompt = this._taskStateManager.buildPlannerPrompt(
-          turnState.taskState,
-          turnState.turnRecord,
-          enrichedPrompt
-        );
-        this._postPhaseStart(
-          "planner",
-          planAdapters.map((a) => ({ id: a.id, name: a.name, role: "planner" })),
-          plannerPrompt,
-          true
-        );
-        this._initializeSessionResponses(
-          turnState.turnRecord.turnId,
-          planAdapters.map((adapter) => ({
-            name: adapter.name,
-            agentId: adapter.id,
-            role: "planner",
-            prompt: plannerPrompt
-          }))
-        );
-        const promises = planAdapters.map((adapter) => {
-          const { callback, flush } = this._makeStreamingCallback(adapter.name, adapter, {
-            turnId: turnState.turnRecord.turnId,
-            agentId: adapter.id,
-            role: "planner",
-            prompt: plannerPrompt
-          });
-          return adapter.invoke(plannerPrompt, "plan", callback).then(async (res) => {
-            flush();
-            debugLog(adapter.id, "Raw result length + preview", JSON.stringify({ len: res.length, preview: res.slice(0, 500) }));
-            const { thinking, output, usageLog } = this._extractThinking(res, adapter);
-            planResults.push({ agentId: adapter.id, agent: adapter.name, text: output, status: "success" });
-            const displayOutput = output.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, "").trim();
-            const plannerSuccessRecord = { agent: adapter.name, agentId: adapter.id, role: "planner", prompt: plannerPrompt, thinking, text: displayOutput, usageLog, status: "success", raw: false, debug: adapter.lastDebugInfo };
-            sessionResponses.push(plannerSuccessRecord);
-            this._upsertSessionResponse(turnState.turnRecord.turnId, plannerSuccessRecord);
-            plannerContributions.push(this._buildContributionRecord(adapter, "planner", res, "success"));
-            const htmlContent = await g.parse(displayOutput);
-            const thinkingHtml = thinking ? await g.parse(thinking) : void 0;
-            this._view?.webview.postMessage({ type: "agentDone", agent: adapter.name, agentId: adapter.id, role: "planner", prompt: plannerPrompt, thinkingHtml, thinking, text: htmlContent, rawText: displayOutput, usageLog, debug: adapter.lastDebugInfo, status: "success", raw: false });
-            this._sendDebugInfo(adapter, "", {
-              taskId: turnState.taskState.taskId,
-              turnId: turnState.turnRecord.turnId,
-              role: "planner"
-            });
-          }).catch((err) => {
-            flush();
-            planResults.push({ agentId: adapter.id, agent: adapter.name, text: err.message, status: "error" });
-            const plannerErrorRecord = { agent: adapter.name, agentId: adapter.id, role: "planner", prompt: plannerPrompt, text: err.message, status: "error", raw: true, debug: adapter.lastDebugInfo };
-            sessionResponses.push(plannerErrorRecord);
-            this._upsertSessionResponse(turnState.turnRecord.turnId, plannerErrorRecord);
-            plannerContributions.push(this._buildContributionRecord(adapter, "planner", err.message, "error"));
-            this._view?.webview.postMessage({ type: "agentDone", agent: adapter.name, agentId: adapter.id, role: "planner", prompt: plannerPrompt, text: err.message, debug: adapter.lastDebugInfo, status: "error", raw: true });
-            this._sendDebugInfo(adapter, "", {
-              taskId: turnState.taskState.taskId,
-              turnId: turnState.turnRecord.turnId,
-              role: "planner"
-            });
-          });
-        });
-        pendingPlannerPromises = promises;
-        let skipDetected = false;
-        if (planAdapters.length > 1) {
-          await new Promise((resolve) => {
-            let settled = 0;
-            const total = promises.length;
-            for (const p of promises) {
-              p.then(() => {
-                settled++;
-                if (!skipDetected) {
-                  const hasSkip = planResults.some(
-                    (r) => r.status === "success" && /<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)
-                  );
-                  if (hasSkip) {
-                    skipDetected = true;
-                    debugLog("Council", "Skip-to-executor detected, proceeding early", JSON.stringify({
-                      settled,
-                      total,
-                      skipAgent: planResults.find((r) => /<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text))?.agent
-                    }));
-                    resolve();
-                  } else if (settled === total) {
-                    resolve();
-                  }
-                } else if (settled === total) {
-                }
-              }).catch(() => {
-                settled++;
-                if (settled === total && !skipDetected) {
-                  resolve();
-                }
-              });
-            }
-          });
+      const cacheKey = `${agentId}:${modelId || ""}`;
+      let entry = this.agents[cacheKey];
+      if (!entry) {
+        if (agentId === "copilot_cli") {
+          entry = {
+            adapter: new GitHubCopilotAdapter("copilot", "GitHub Copilot CLI", modelId || ""),
+            label: "GitHub Copilot",
+            mode: "agent"
+          };
+        } else if (agentId === "claude_code") {
+          entry = {
+            adapter: new ClaudeCodeAdapter("claude", "Claude Code", modelId || ""),
+            label: "Claude Code",
+            mode: "agent"
+          };
         } else {
-          await Promise.all(promises);
+          wv.webview.postMessage({ type: "addMessage", role: "system", html: `Unknown agent: ${agentId}` });
+          return;
         }
-        this._view.webview.postMessage({ type: "councilComplete" });
-        debugLog("Council", "Planning phase completed", JSON.stringify({ planResults: planResults.length, skipDetected }));
+        this.agents[cacheKey] = entry;
       }
-      let executorOutcome;
-      let synthesisPrompt;
-      const plannerIntent = planResults.length > 0 ? this._computeIntentFromPlanners(planResults) : void 0;
-      const intentDowngraded = mode === "auto" && plannerIntent === "answer";
-      const intentSkipped = mode === "auto" && plannerIntent === "skip";
-      const intentUpgraded = mode === "plan" && (plannerIntent === "action" || plannerIntent === "skip");
-      const directOverridden = mode === "direct" && plannerIntent === "action";
-      if (intentDowngraded) {
-        debugLog("IntentGate", "Auto mode downgraded to plan (planners voted answer-only)", JSON.stringify({ plannerIntent }));
-        this._view.webview.postMessage({ type: "intentDowngrade", originalMode: "auto", effectiveMode: "plan", plannerIntent });
-      }
-      if (intentSkipped) {
-        debugLog("IntentGate", "Skip-to-executor: planner voted simple task, fast-tracking to executor", JSON.stringify({ plannerIntent }));
-        this._view.webview.postMessage({ type: "intentSkip", originalMode: "auto", effectiveMode: "auto", plannerIntent: "skip" });
-      }
-      if (intentUpgraded) {
-        debugLog("IntentGate", "Plan mode upgraded to auto (planners voted action-required)", JSON.stringify({ plannerIntent, originalInferredMode: mode }));
-        this._view.webview.postMessage({ type: "intentUpgrade", originalMode: "plan", effectiveMode: "auto", plannerIntent });
-      }
-      if (directOverridden) {
-        debugLog("IntentGate", "Direct mode upgraded to auto (planner voted action-required for complex task)", JSON.stringify({ plannerIntent, originalInferredMode: mode }));
-        this._view.webview.postMessage({ type: "intentUpgrade", originalMode: "direct", effectiveMode: "auto", plannerIntent });
-      }
-      const effectiveMode = intentDowngraded ? "plan" : intentUpgraded || directOverridden ? "auto" : mode;
-      const synthesizerAdapter = executor ?? (effectiveMode === "plan" ? planAdapters[0] : null);
-      const isPlanSynthesis = effectiveMode === "plan" && synthesizerAdapter && planResults.filter((r) => r.status === "success").length > 1;
-      if ((executor || isPlanSynthesis) && (effectiveMode !== "plan" || isPlanSynthesis)) {
-        const synthesizer = isPlanSynthesis ? synthesizerAdapter : executor;
-        const successfulPlans = planResults.filter((r) => r.status === "success");
-        if (effectiveMode === "direct" || successfulPlans.length > 0) {
-          let executorPrompt;
-          const phaseRole = isPlanSynthesis ? "synthesizer" : "executor";
-          if (effectiveMode === "direct") {
-            executorPrompt = this._taskStateManager.buildDirectExecutorPrompt(
-              turnState.taskState,
-              turnState.turnRecord,
-              prompt,
-              enrichedPrompt
-            );
-          } else if (directOverridden && successfulPlans.length > 0) {
-            const plannerInsight = successfulPlans.map(
-              (r) => `=== ${r.agent} ===
-${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, "").trim()}`
-            ).join("\n\n");
-            executorPrompt = this._taskStateManager.buildDirectEscalatedPrompt(
-              turnState.taskState,
-              turnState.turnRecord,
-              prompt,
-              enrichedPrompt,
-              plannerInsight
-            );
-          } else if (isPlanSynthesis) {
-            const synthesis = successfulPlans.map(
-              (r) => `=== ${r.agent} ===
-${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, "").trim()}`
-            ).join("\n\n");
-            executorPrompt = this._taskStateManager.buildPlanSynthesisPrompt(
-              turnState.taskState,
-              turnState.turnRecord,
-              prompt,
-              synthesis
-            );
-          } else {
-            const synthesis = successfulPlans.map(
-              (r) => `=== ${r.agent} ===
-${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, "").trim()}`
-            ).join("\n\n");
-            executorPrompt = this._taskStateManager.buildExecutorPrompt(
-              turnState.taskState,
-              turnState.turnRecord,
-              prompt,
-              synthesis,
-              plannerIntent
-            );
-          }
-          synthesisPrompt = executorPrompt;
-          this._postPhaseStart(
-            phaseRole,
-            [{ id: synthesizer.id, name: synthesizer.name, role: phaseRole }],
-            executorPrompt
-          );
-          this._initializeSessionResponses(turnState.turnRecord.turnId, [{
-            name: synthesizer.name,
-            agentId: synthesizer.id,
-            role: phaseRole,
-            prompt: executorPrompt
-          }]);
-          const execName = isPlanSynthesis ? `\u{1F4CB} ${synthesizer.name} (Plan Summary)` : synthesizer.name;
-          const { callback: execCallback, flush: execFlush } = this._makeStreamingCallback(execName, synthesizer, {
-            turnId: turnState.turnRecord.turnId,
-            agentId: synthesizer.id,
-            role: phaseRole,
-            prompt: executorPrompt
-          });
-          debugLog("Council", `${phaseRole} phase starting`, JSON.stringify({ executor: synthesizer.name, promptLength: executorPrompt.length, isPlanSynthesis }));
-          const invokeMode = isPlanSynthesis ? "plan" : "agent";
-          try {
-            const execResultRaw = await synthesizer.invoke(executorPrompt, invokeMode, execCallback);
-            execFlush();
-            const { summary: extractedSummary, cleaned: execCleaned } = this._extractTaskSummary(execResultRaw);
-            const { updates: memoryUpdates, cleaned: execCleanedFinal } = this._extractMemoryUpdate(execCleaned);
-            for (const update of memoryUpdates) {
-              this._memoryManager.appendMemory(update);
-              debugLog("Council", "Memory update persisted", JSON.stringify({ length: update.length }));
-            }
-            const { thinking, output, usageLog } = this._extractThinking(execCleanedFinal, synthesizer);
-            const executorSuccessRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinking, text: output, usageLog, status: "success", raw: false, debug: synthesizer.lastDebugInfo };
-            sessionResponses.push(executorSuccessRecord);
-            this._upsertSessionResponse(turnState.turnRecord.turnId, executorSuccessRecord);
-            executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, execCleanedFinal, "success", output);
-            if (extractedSummary) {
-              this._taskStateManager.updateTaskSummary(turnState.taskState.taskId, extractedSummary).catch((err) => {
-                debugLog("Council", "Failed to save extracted task summary", String(err));
-              });
-            }
-            const htmlContent = await g.parse(output);
-            const thinkingHtml = thinking ? await g.parse(thinking) : void 0;
-            this._view?.webview.postMessage({ type: "agentDone", agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, thinkingHtml, thinking, text: htmlContent, rawText: output, usageLog, debug: synthesizer.lastDebugInfo, status: "success", raw: false });
-            this._sendDebugInfo(synthesizer, "", {
-              taskId: turnState.taskState.taskId,
-              turnId: turnState.turnRecord.turnId,
-              role: phaseRole
-            });
-          } catch (err) {
-            execFlush();
-            const executorErrorRecord = { agent: synthesizer.name, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, status: "error", raw: true, debug: synthesizer.lastDebugInfo };
-            sessionResponses.push(executorErrorRecord);
-            this._upsertSessionResponse(turnState.turnRecord.turnId, executorErrorRecord);
-            executorOutcome = this._buildExecutorOutcomeRecord(synthesizer, err.message, "error");
-            this._view?.webview.postMessage({ type: "agentDone", agent: execName, agentId: synthesizer.id, role: phaseRole, prompt: executorPrompt, text: err.message, debug: synthesizer.lastDebugInfo, status: "error", raw: true });
-            this._sendDebugInfo(synthesizer, "", {
-              taskId: turnState.taskState.taskId,
-              turnId: turnState.turnRecord.turnId,
-              role: phaseRole
-            });
-          }
-          this._view.webview.postMessage({ type: "councilComplete" });
-          debugLog("Council", "Executor phase completed");
-        }
-      }
-      if (pendingPlannerPromises.length > 0) {
-        await Promise.allSettled(pendingPlannerPromises);
-        debugLog("Council", "Background planner promises drained", JSON.stringify({ count: pendingPlannerPromises.length }));
-      }
-      await this._updateSessionRecord(turnState.turnRecord.turnId, sessionResponses);
-      const updatedTaskState = await this._taskStateManager.completeTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, {
-        plannerContributions,
-        executorOutcome,
-        synthesisPrompt
+      wv.webview.postMessage({ type: "addMessage", role: "user", html: text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") });
+      const { taskState, turnRecord } = await this.taskStateManager.startTurn({
+        taskId: this.currentTaskId,
+        prompt: text,
+        selectedAgentIds: [cacheKey],
+        executorId: agentId
       });
-      debugLog("Council", "Task state updated after turn", JSON.stringify({
-        taskId: turnState.taskState.taskId,
-        turnId: turnState.turnRecord.turnId,
-        latestSummary: updatedTaskState?.latestSummary,
-        turnCount: updatedTaskState?.turnHistory.length
-      }));
-      this._sendCurrentTaskState();
-      if (updatedTaskState && this._taskStateManager.needsCompaction(updatedTaskState)) {
-        const tokensBefore = this._taskStateManager.estimateContextTokens(updatedTaskState);
-        debugLog("Council", "Context exceeds threshold, auto-compacting", JSON.stringify({
-          taskId: updatedTaskState.taskId,
-          tokensBefore
-        }));
-        const compacted = await this._taskStateManager.compactContext(updatedTaskState.taskId);
-        if (compacted) {
-          const tokensAfter = this._taskStateManager.estimateContextTokens(compacted);
-          this._sendCurrentTaskState();
-          this._view?.webview.postMessage({
-            type: "compactResult",
-            trigger: "auto",
-            tokensBefore,
-            tokensAfter,
-            tokensFreed: tokensBefore - tokensAfter
-          });
-        }
-      }
-    } catch (error) {
-      const failureReason = this._activeTurnRef?.turnId === turnState.turnRecord.turnId && this._activeStopReason ? this._activeStopReason : error.message;
-      await this._taskStateManager.failTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, failureReason);
-      debugLog("Council", "Delegation failed", error?.stack || String(error));
-      this._view.webview.postMessage({ type: "agentDone", agent: "System", text: failureReason, status: "error", raw: true });
-      this._view.webview.postMessage({ type: "councilComplete" });
-      this._sendCurrentTaskState();
-    } finally {
-      this._runningTaskIds.delete(turnState.taskState.taskId);
-      this._sendSessionsToUI();
-      this._activeTurnRef = void 0;
-      this._activeStopReason = void 0;
-      this._activeRunAdapters = [];
-      this._view?.webview.postMessage({ type: "turnComplete" });
-    }
-  }
-  _extractTaskSummary(rawText) {
-    const regex2 = /<task-summary>([\s\S]*?)<\/task-summary>/i;
-    const match = regex2.exec(rawText);
-    if (!match) {
-      return { summary: "", cleaned: rawText };
-    }
-    const summary = match[1].trim();
-    const cleaned = rawText.replace(match[0], "").trim();
-    debugLog("ExtractTaskSummary", "Extracted summary", JSON.stringify({ length: summary.length, preview: summary.slice(0, 100) }));
-    return { summary, cleaned };
-  }
-  _extractMemoryUpdate(rawText) {
-    const regex2 = /<memory-update>([\s\S]*?)<\/memory-update>/gi;
-    const updates = [];
-    let match;
-    while ((match = regex2.exec(rawText)) !== null) {
-      updates.push(match[1].trim());
-    }
-    const cleaned = rawText.replace(/<memory-update>[\s\S]*?<\/memory-update>/gi, "").trim();
-    return { updates, cleaned };
-  }
-  _extractThinking(rawText, adapter) {
-    if (!rawText) return { thinking: "", output: "" };
-    debugLog("ExtractThinking", "Input first 200 chars", JSON.stringify(rawText.slice(0, 200)));
-    if (adapter?.extractThinking) {
-      const result2 = adapter.extractThinking(rawText);
-      if (!result2.usageLog && adapter.lastUsageLog) {
-        result2.usageLog = adapter.lastUsageLog;
-      }
-      debugLog("ExtractThinking", "Delegated to adapter", JSON.stringify({ adapter: adapter.id, thinkingLen: result2.thinking.length, outputLen: result2.output.length }));
-      return result2;
-    }
-    const regex2 = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/gi;
-    let thinkingBlocks = [];
-    let output = rawText;
-    let match;
-    while ((match = regex2.exec(rawText)) !== null) {
-      thinkingBlocks.push(match[2].trim());
-      output = output.replace(match[0], "");
-    }
-    const PROCESS_LINE_RE = /^[•●⏺▶→└│├✓✗↳]|^>\s*\[/;
-    const lines = output.split(/\r?\n|\r/);
-    const processLines = [];
-    const outputLines = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const cleanLine = line.replace(ANSI_RE, "");
-      const trimmed = cleanLine.trim();
-      if (PROCESS_LINE_RE.test(trimmed)) {
-        processLines.push(line);
-      } else {
-        outputLines.push(line);
-      }
-    }
-    while (processLines.length > 0 && processLines[processLines.length - 1].trim() === "") {
-      const emptyLine = processLines.pop();
-      outputLines.unshift(emptyLine);
-    }
-    const additionalProcessInfo = processLines.join("\n").trim();
-    if (additionalProcessInfo) {
-      thinkingBlocks.push("```text\n" + additionalProcessInfo + "\n```");
-    }
-    const result = {
-      thinking: thinkingBlocks.length > 0 ? thinkingBlocks.join("\n\n---\n\n") : "",
-      output: outputLines.join("\n").trim()
-    };
-    debugLog("ExtractThinking", "Result", JSON.stringify({ thinkingLen: result.thinking.length, outputLen: result.output.length, processLineCount: processLines.length }));
-    return result;
-  }
-  _buildDebugObject(adapter) {
-    const d = adapter.lastDebugInfo;
-    if (!d) {
-      return void 0;
-    }
-    return {
-      command: d.command,
-      cwd: d.cwd,
-      pid: d.pid,
-      duration: d.endTime && d.startTime ? d.endTime - d.startTime : void 0,
-      promptTransport: d.promptTransport,
-      promptFilePath: d.promptFilePath,
-      originalPromptLength: d.originalPromptLength,
-      sentPromptLength: d.sentPromptLength,
-      promptFileThreshold: d.promptFileThreshold
-    };
-  }
-  _buildContributionRecord(adapter, role, text, status) {
-    const normalizedText = text.trim();
-    return {
-      agentId: adapter.id,
-      agentName: adapter.name,
-      role,
-      status,
-      summary: this._summarizeText(normalizedText),
-      rawText: normalizedText,
-      filesTouched: [],
-      commandsObserved: adapter.lastDebugInfo?.command ? [adapter.lastDebugInfo.command] : [],
-      openQuestions: this._extractOpenQuestions(normalizedText),
-      nextStepSuggestion: status === "success" ? this._extractNextStepSuggestion(normalizedText) : void 0,
-      timestamp: Date.now(),
-      debug: this._buildDebugObject(adapter)
-    };
-  }
-  _buildExecutorOutcomeRecord(adapter, text, status, cleanOutputForSummary) {
-    const normalizedText = text.trim();
-    const summarySource = cleanOutputForSummary !== void 0 ? cleanOutputForSummary.trim() : normalizedText;
-    return {
-      agentId: adapter.id,
-      agentName: adapter.name,
-      status,
-      summary: this._summarizeText(summarySource),
-      rawText: normalizedText,
-      timestamp: Date.now(),
-      debug: this._buildDebugObject(adapter)
-    };
-  }
-  _summarizeText(text) {
-    const filtered = text.split("\n").filter((line) => !/^\s*[•●⏺▶→└│├✓✗↳]/.test(line)).join("\n");
-    const singleLine = filtered.replace(/\s+/g, " ").trim();
-    if (singleLine.length <= 220) {
-      return singleLine;
-    }
-    return singleLine.slice(0, 217) + "...";
-  }
-  _extractOpenQuestions(text) {
-    const matches = text.match(/[^.!?\n]*\?/g) || [];
-    return matches.map((match) => match.trim()).filter(Boolean).slice(0, 3);
-  }
-  _extractNextStepSuggestion(text) {
-    const firstSentence = text.split(/(?<=[.!?])\s+/)[0]?.trim();
-    return firstSentence || void 0;
-  }
-  _sendDebugInfo(adapter, nameSuffix = "", taskContext) {
-    if (adapter.lastDebugInfo) {
-      const debugObj = this._buildDebugObject(adapter);
-      debugLog("Adapter", "Sending adapter debug info to webview", JSON.stringify({
-        agent: adapter.name + nameSuffix,
-        taskId: taskContext?.taskId,
-        turnId: taskContext?.turnId,
-        role: taskContext?.role,
-        ...debugObj
-      }));
-      this._view?.webview.postMessage({
-        type: "agentDebug",
-        agent: adapter.name + nameSuffix,
-        role: taskContext?.role,
-        ...debugObj
-      });
-    }
-  }
-  _stopActiveCouncil() {
-    if (this._activeTurnRef) {
-      this._activeStopReason = "Stopped by user: council execution was manually stopped.";
-    }
-    for (const adapter of this._activeRunAdapters) {
-      adapter.stop?.();
-    }
-    this._activeRunAdapters = [];
-    this._view?.webview.postMessage({ type: "councilComplete" });
-  }
-  async _applyCodeBlock(filePath, code) {
-    if (!filePath || !code) {
-      return;
-    }
-    const workspaceRoot = vscode6.workspace.workspaceFolders?.[0]?.uri;
-    if (!workspaceRoot) {
-      vscode6.window.showErrorMessage("[Optimus Code] No workspace folder open \u2014 cannot apply code.");
-      return;
-    }
-    const normalized = path4.posix.normalize(filePath);
-    if (path4.isAbsolute(normalized) || normalized.startsWith("..")) {
-      vscode6.window.showErrorMessage(`[Optimus Code] Unsafe file path rejected: ${filePath}`);
-      return;
-    }
-    const fileUri = vscode6.Uri.joinPath(workspaceRoot, normalized);
-    const edit = new vscode6.WorkspaceEdit();
-    try {
-      const doc = await vscode6.workspace.openTextDocument(fileUri);
-      const fullRange = new vscode6.Range(
-        doc.lineAt(0).range.start,
-        doc.lineAt(doc.lineCount - 1).range.end
+      this.currentTaskId = taskState.taskId;
+      const orchestratorPrompt = this.taskStateManager.buildDirectExecutorPrompt(
+        taskState,
+        turnRecord,
+        text,
+        [
+          "You are the MAIN ORCHESTRATOR for this Optimus Code sidebar session.",
+          "Do not default to doing all substantive implementation work yourself.",
+          "For any non-trivial feature, architectural work, multi-file change, PRD, breakdown, testing pass, or review workflow, use the delegate_task tool and route work to the proper specialized role.",
+          "Use role_prompt values exactly from the roster: pm, architect, dev, qa.",
+          "Keep the main agent focused on coordination, synthesis, routing, and acceptance.",
+          "Only skip delegation when the user request is obviously trivial and can be completed safely in one short direct step."
+        ].join("\n")
       );
-      edit.replace(fileUri, fullRange, code);
-    } catch {
-      edit.createFile(fileUri, { ignoreIfExists: false });
-      edit.insert(fileUri, new vscode6.Position(0, 0), code);
-    }
-    const success = await vscode6.workspace.applyEdit(edit);
-    if (success) {
-      vscode6.window.showTextDocument(fileUri, { preview: false });
-      this._view?.webview.postMessage({ type: "codeBlockApplied", filePath });
-    } else {
-      vscode6.window.showErrorMessage(`[Optimus Code] Failed to apply code to ${filePath}`);
-    }
-  }
-  async _createSessionRecord(prompt, taskId, turnId, attachments = []) {
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    sessions.unshift({
-      id: turnId,
-      timestamp: Date.now(),
-      prompt,
-      taskId,
-      turnId,
-      attachments,
-      responses: [],
-      workspacePath: PersistentAgentAdapter.getWorkspacePath()
-    });
-    const limited = sessions.slice(0, 50);
-    await this._context.globalState.update("optimusSessions", limited);
-    this._sendSessionsToUI();
-  }
-  async _updateSessionRecord(turnId, responses) {
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    const idx = sessions.findIndex((s) => s.turnId === turnId);
-    if (idx !== -1) {
-      sessions[idx] = { ...sessions[idx], responses: responses.map((response) => ({ ...response })) };
-    }
-    await this._context.globalState.update("optimusSessions", sessions);
-    this._sendSessionsToUI();
-  }
-  _sendSessionsToUI() {
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    const snapshots = this._taskStateManager.listTaskSnapshots();
-    const snapshotMap = new Map(snapshots.map((snapshot) => [snapshot.taskId, snapshot]));
-    const currentWorkspacePath = PersistentAgentAdapter.getWorkspacePath();
-    const seenTaskIds = /* @__PURE__ */ new Set();
-    const uniqueSessions = [];
-    for (const s of sessions) {
-      if (s.taskId) {
-        if (seenTaskIds.has(s.taskId)) {
-          continue;
-        }
-        seenTaskIds.add(s.taskId);
-      }
-      if (!this._showAllWorkspaces && s.taskId) {
-        const snapshot = snapshotMap.get(s.taskId);
-        const sessionWorkspacePath = snapshot?.workspacePath ?? s.workspacePath;
-        if (sessionWorkspacePath && sessionWorkspacePath !== currentWorkspacePath) {
-          continue;
-        }
-      }
-      uniqueSessions.push(s);
-    }
-    const lightweightSessions = uniqueSessions.map((s) => {
-      const snapshot = s.taskId ? snapshotMap.get(s.taskId) : void 0;
-      const attachments = (s.attachments || []).map((a) => this._toWebviewAttachment(a)).filter((a) => Boolean(a));
-      return {
-        id: s.id,
-        prompt: s.prompt,
-        timestamp: s.timestamp,
-        taskId: s.taskId,
-        turnId: s.turnId,
-        taskTitle: snapshot?.title,
-        taskStatus: snapshot?.status,
-        turnCount: snapshot?.turnCount,
-        latestSummary: snapshot?.latestSummary,
-        pinned: snapshot?.pinned,
-        isRunning: s.taskId ? this._runningTaskIds.has(s.taskId) : false,
-        workspacePath: snapshot?.workspacePath ?? s.workspacePath,
-        attachmentCount: attachments.length,
-        attachments
+      const sid = ++this.streamSeq;
+      wv.webview.postMessage({ type: "streamStart", id: sid, role: agentId });
+      wv.webview.postMessage({ type: "status", content: `${entry.label} is working...` });
+      const onUpdate = (chunk) => {
+        wv.webview.postMessage({ type: "streamUpdate", id: sid, text: chunk });
       };
-    });
-    this._view?.webview.postMessage({
-      type: "updateSessionsList",
-      sessions: lightweightSessions,
-      currentWorkspacePath,
-      showAllWorkspaces: this._showAllWorkspaces
-    });
-  }
-  async _loadSessionToUI(id) {
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    const targetSession = sessions.find((s) => s.id === id);
-    if (!targetSession) return;
-    const MAX_TURNS_IN_VIEW = 20;
-    const isTaskGroup = !!targetSession.taskId;
-    const taskState = targetSession.taskId ? this._taskStateManager.getTask(targetSession.taskId) : void 0;
-    const groupSessions = isTaskGroup ? sessions.filter((s) => s.taskId === targetSession.taskId).sort((a, b2) => a.timestamp - b2.timestamp).slice(-MAX_TURNS_IN_VIEW) : [targetSession];
-    debugLog("History", "Viewing session(s) snapshot", JSON.stringify({
-      count: groupSessions.length,
-      taskId: targetSession.taskId
-    }));
-    const parsedGroupSessions = [];
-    for (const session of groupSessions) {
-      const matchedTurn = taskState?.turnHistory.find((turn) => turn.turnId === session.turnId);
-      let effectiveResponses = session.responses;
-      if (effectiveResponses.length === 0 && matchedTurn && matchedTurn.status !== "in_progress") {
-        const fallback = [];
-        for (const contribution of matchedTurn.plannerContributions) {
-          fallback.push({
-            agent: contribution.agentName,
-            agentId: contribution.agentId,
-            role: "planner",
-            text: contribution.summary || contribution.rawText,
-            status: contribution.status,
-            raw: false
-          });
+      const reply = await entry.adapter.invoke(orchestratorPrompt, entry.mode, onUpdate) || "No reply.";
+      this.persistMemoryUpdates(reply);
+      const clean = this.cleanForDisplay(this.stripControlTags(reply));
+      await this.taskStateManager.completeTurn(taskState.taskId, turnRecord.turnId, {
+        plannerContributions: [],
+        executorOutcome: {
+          agentId,
+          agentName: entry.label,
+          status: "success",
+          summary: this.buildTurnSummary(reply, clean),
+          rawText: reply,
+          timestamp: Date.now(),
+          debug: entry.adapter.lastDebugInfo ? {
+            command: entry.adapter.lastDebugInfo.command,
+            cwd: entry.adapter.lastDebugInfo.cwd,
+            pid: entry.adapter.lastDebugInfo.pid,
+            duration: entry.adapter.lastDebugInfo.endTime && entry.adapter.lastDebugInfo.startTime ? entry.adapter.lastDebugInfo.endTime - entry.adapter.lastDebugInfo.startTime : void 0,
+            promptTransport: entry.adapter.lastDebugInfo.promptTransport,
+            promptFilePath: entry.adapter.lastDebugInfo.promptFilePath,
+            originalPromptLength: entry.adapter.lastDebugInfo.originalPromptLength,
+            sentPromptLength: entry.adapter.lastDebugInfo.sentPromptLength,
+            promptFileThreshold: entry.adapter.lastDebugInfo.promptFileThreshold
+          } : void 0
         }
-        if (matchedTurn.executorOutcome) {
-          fallback.push({
-            agent: matchedTurn.executorOutcome.agentName,
-            agentId: matchedTurn.executorOutcome.agentId,
-            role: "executor",
-            text: matchedTurn.executorOutcome.summary || matchedTurn.executorOutcome.rawText,
-            status: matchedTurn.executorOutcome.status,
-            raw: false
-          });
-        }
-        if (fallback.length > 0) {
-          effectiveResponses = fallback;
-          debugLog("History", "Rebuilt responses from task state for turn", JSON.stringify({ turnId: session.turnId, count: fallback.length }));
-        }
-      }
-      const parsedResponses = await Promise.all(effectiveResponses.map(async (r) => {
-        const responseText = r.text || "";
-        const responseThinking = r.thinking || "";
-        const text = r.status === "success" && !r.raw ? await g.parse(responseText) : responseText;
-        const thinkingText = responseThinking ? await g.parse(responseThinking) : void 0;
-        return { ...r, parsedText: text, thinkingHtml: thinkingText, usageLog: r.usageLog };
-      }));
-      parsedGroupSessions.push({
-        ...session,
-        turnSequence: matchedTurn?.sequence,
-        referencedTurnSequences: matchedTurn?.referencedTurnSequences,
-        failureReason: matchedTurn?.failureReason || session.failureReason,
-        attachments: (session.attachments || []).map((attachment) => this._toWebviewAttachment(attachment)).filter((attachment) => Boolean(attachment)),
-        responses: parsedResponses
       });
+      wv.webview.postMessage({ type: "streamEnd", id: sid, role: agentId, html: await g.parse(clean) });
+    } catch (e) {
+      if (this.currentTaskId) {
+        await this.taskStateManager.failTurn(this.currentTaskId, this.taskStateManager.getTask(this.currentTaskId)?.turnHistory.slice(-1)[0]?.turnId || "", String(e?.message || e));
+      }
+      wv.webview.postMessage({ type: "addMessage", role: "system", html: "Error: " + (e.message || e) });
+    } finally {
+      wv.webview.postMessage({ type: "status", content: "Idle" });
+      wv.webview.postMessage({ type: "setGenerating", value: false });
+      this.isGenerating = false;
     }
-    this._view?.webview.postMessage({ type: "restoreTaskSessions", sessions: parsedGroupSessions });
   }
-  async _resumeTask(taskId, sessionId) {
-    if (!taskId) {
+  buildTurnSummary(raw, clean) {
+    const tagged = this.extractTaggedContent(raw, "task-summary")[0];
+    if (tagged) {
+      return tagged;
+    }
+    const normalized = clean.replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return "No executor summary was produced.";
+    }
+    return normalized.length > 220 ? normalized.slice(0, 217) + "..." : normalized;
+  }
+  stripControlTags(raw) {
+    return raw.replace(/<task-summary>[\s\S]*?<\/task-summary>/gi, "").replace(/<memory-update>[\s\S]*?<\/memory-update>/gi, "").trim();
+  }
+  extractTaggedContent(raw, tagName) {
+    const regex2 = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "gi");
+    const matches = [];
+    let match;
+    while ((match = regex2.exec(raw)) !== null) {
+      const value = match[1]?.trim();
+      if (value) {
+        matches.push(value);
+      }
+    }
+    return matches;
+  }
+  persistMemoryUpdates(raw) {
+    const updates = this.extractTaggedContent(raw, "memory-update");
+    if (updates.length === 0) {
       return;
     }
-    this._currentTaskId = taskId;
-    this._sendCurrentTaskState();
-    debugLog("History", "Resuming task from history", JSON.stringify({ taskId, sessionId }));
-    if (sessionId) {
-      await this._loadSessionToUI(sessionId);
-      return;
-    }
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    const latestSession = sessions.find((session) => session.taskId === taskId);
-    if (latestSession) {
-      await this._loadSessionToUI(latestSession.id);
+    const existing = this.taskStateManager.readMemoryMd()?.trim() || "";
+    const merged = [.../* @__PURE__ */ new Set([
+      ...existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+      ...updates.map((update) => update.trim()).filter(Boolean)
+    ])].join("\n");
+    if (merged && merged !== existing) {
+      this.taskStateManager.writeMemoryMd(merged + "\n");
     }
   }
-  async _renameTask(taskId, newTitle) {
-    await this._taskStateManager.renameTask(taskId, newTitle);
-    this._sendSessionsToUI();
-  }
-  async _deleteTask(taskId, sessionId) {
-    await this._taskStateManager.deleteTask(taskId);
-    const sessions = this._context.globalState.get("optimusSessions", []);
-    const updated = sessions.filter((s) => {
-      if (sessionId && s.id === sessionId) {
+  /** Strip process trace lines, keep only meaningful output */
+  cleanForDisplay(raw) {
+    return raw.split(/\r?\n/).filter((line) => {
+      const t = line.trim();
+      if (!t) {
+        return true;
+      }
+      if (/^[\u2022\u25CF\u23FA\u25B6\u2192\u2713\u2717\u21B3\u2514\u2502\u251C]/.test(t)) {
         return false;
       }
-      if (taskId && s.taskId === taskId) {
+      if (/^(result|command|description|file_path|path|stdout|preview)=/i.test(t)) {
         return false;
       }
       return true;
-    });
-    await this._context.globalState.update("optimusSessions", updated);
-    if (this._currentTaskId === taskId) {
-      this._currentTaskId = void 0;
+    }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  getHtml() {
+    const config = vscode4.workspace.getConfiguration("optimusCode");
+    const rawModelsCfg = config.get("models");
+    let claudeModels = rawModelsCfg?.claude_code || [
+      "claude-opus-4.6-1m",
+      "gpt-5.4"
+    ];
+    let copilotModels = rawModelsCfg?.copilot_cli || [
+      "gemini-3-pro-preview",
+      "claude-opus-4.6-1m",
+      "gpt-5.4"
+    ];
+    return (
+      /*html*/
+      `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; }
+body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground);
+       display: flex; flex-direction: column; height: 100vh; margin: 0; }
+#chat { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.msg { padding: 10px; border-radius: 6px; background: var(--vscode-editor-inactiveSelectionBackground); word-wrap: break-word; overflow-x: hidden; }
+.msg.user { background: var(--vscode-button-background); color: var(--vscode-button-foreground); align-self: flex-end; max-width: 80%; }
+.msg.user p { margin: 0; }
+.msg.claude-opus, .msg.claude_code { border-left: 4px solid #D2691E; }
+.msg.claude-sonnet { border-left: 4px solid #8A2BE2; }
+.msg.copilot, .msg.copilot_cli { border-left: 4px solid #1f6feb; }
+.msg.system { font-style: italic; color: var(--vscode-descriptionForeground); font-size: .9em; background: transparent; text-align: center; }
+.msg pre { background: var(--vscode-editor-background); padding: 8px; border-radius: 4px; overflow-x: auto; }
+.msg code { font-family: var(--vscode-editor-font-family); font-size: .9em; color: var(--vscode-textPreformat-foreground); }
+
+/* Stream Box with Tabs */
+.stream-box { border-radius: 6px; background: var(--vscode-editor-inactiveSelectionBackground); overflow: hidden; display: flex; flex-direction: column; }
+.stream-box.claude-opus, .stream-box.claude_code { border-left: 4px solid #D2691E; }
+.stream-box.claude-sonnet { border-left: 4px solid #8A2BE2; }
+.stream-box.copilot, .stream-box.copilot_cli { border-left: 4px solid #1f6feb; }
+
+.stream-header { display: flex; align-items: center; padding: 6px 10px; background: rgba(0,0,0,0.1); border-bottom: 1px solid var(--vscode-panel-border); }
+.stream-title { font-weight: bold; font-size: 0.9em; flex: 1; }
+.stream-tabs { display: flex; gap: 2px; }
+.tab-btn { background: transparent; border: none; color: var(--vscode-descriptionForeground); cursor: pointer; padding: 2px 6px; font-size: 0.85em; border-radius: 3px; }
+.tab-btn:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
+.tab-btn.active { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); font-weight: 500; }
+
+.stream-content { padding: 10px; font-size: .9em; overflow-y: auto; max-height: 600px; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Trace View */
+.step-list { display: flex; flex-direction: column; gap: 1px; }
+.step { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; font-size: .9em; line-height: 1.4; }
+.step-dot { flex: none; margin-top: 5px; width: 8px; height: 8px; border-radius: 50%; }
+.step-dot-run  { background: var(--vscode-textLink-foreground); animation: pulse 1s ease-in-out infinite; }
+.step-dot-done { background: #3fb950; }
+.step-dot-err  { background: #f85149; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+.step-text { flex: 1; min-width: 0; }
+.step-name { font-weight: 600; color: var(--vscode-foreground); }
+.step-detail { color: var(--vscode-descriptionForeground); font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.step-result-text { color: var(--vscode-descriptionForeground); font-size: .85em; font-style: italic; display: block; }
+
+/* Log View */
+.log-view { white-space: pre-wrap; font-family: var(--vscode-editor-font-family); font-size: 0.85em; color: var(--vscode-textPreformat-foreground); }
+
+/* Output View */
+.output-view { white-space: pre-wrap; font-family: var(--vscode-editor-font-family); font-size: .9em; line-height: 1.5; color: var(--vscode-foreground); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--vscode-descriptionForeground); border-top-color: var(--vscode-textLink-foreground); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: 4px; }
+
+.header { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+select, button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 12px; cursor: pointer; border-radius: 2px; }
+button:hover { background: var(--vscode-button-hoverBackground); }
+button.sec { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+button.stop { background: var(--vscode-errorForeground); color: #fff; }
+#status { font-size: .85em; color: var(--vscode-textLink-activeForeground); min-height: 20px; font-weight: bold; }
+#input-area { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; }
+textarea { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 8px; min-height: 60px; resize: vertical; font-family: inherit; }
+.hint { font-size: .8em; color: var(--vscode-descriptionForeground); }
+.btns { display: flex; gap: 8px; }
+.btns button { flex: 1; }
+.idle-only { display: inline-flex; }
+.gen-only  { display: none; }
+body.generating .idle-only { display: none; }
+body.generating .gen-only  { display: inline-flex; }
+</style>
+</head>
+<body id="root">
+    <div class="header">
+        <select id="engine" onchange="updateModels()">
+            <option value="copilot_cli" selected>GitHub Copilot</option>
+            <option value="claude_code">Claude Code</option>
+        </select>
+        <select id="model">
+        </select>
+        <button onclick="doNew()" class="sec">+ New</button>
+    </div>
+    <div id="status">Idle</div>
+    <div id="chat"></div>
+    <div id="input-area">
+        <textarea id="prompt" placeholder="Message..." onkeydown="handleKey(event)"></textarea>
+        <div class="hint">Enter to Send &middot; Shift+Enter newline</div>
+        <div class="btns">
+            <button onclick="doSend()" class="idle-only">Send</button>
+            <button onclick="doStop()" class="gen-only stop">Stop</button>
+        </div>
+    </div>
+<script>
+var vscode = acquireVsCodeApi();
+var chat = document.getElementById("chat");
+var statusEls = document.getElementById("status");
+var engineSelect = document.getElementById("engine");
+var modelSelect = document.getElementById("model");
+const defaultEngine = "copilot_cli";
+const defaultModelByEngine = {
+    "copilot_cli": "gemini-3-pro-preview",
+    "claude_code": "claude-opus-4.6-1m"
+};
+
+const modelsByEngine = {
+    "claude_code": ${JSON.stringify(claudeModels)}.map(m => ({value: m, label: m})),
+    "copilot_cli": ${JSON.stringify(copilotModels)}.map(m => ({value: m, label: m}))
+};
+
+function updateModels() {
+    const engine = engineSelect.value;
+    const models = modelsByEngine[engine] || [];
+    const preferredModel = defaultModelByEngine[engine];
+    modelSelect.innerHTML = '';
+    for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        modelSelect.appendChild(opt);
     }
-    this._sendSessionsToUI();
-  }
-  async _pinTask(taskId) {
-    await this._taskStateManager.pinTask(taskId);
-    this._sendSessionsToUI();
-  }
-  _getHtmlForWebview(webview) {
-    const toolkitUri = webview.asWebviewUri(vscode6.Uri.joinPath(this._extensionUri, "node_modules", "@vscode", "webview-ui-toolkit", "dist", "toolkit.js"));
-    const webviewScriptUri = webview.asWebviewUri(vscode6.Uri.joinPath(this._extensionUri, "resources", "chatView.js"));
-    const adapters = getActiveAdapters();
-    const maxAgents = 3;
-    const plannerAdapters = adapters.filter((adapter) => adapter.modes.includes("plan"));
-    const initialAgentSelectorHtml = plannerAdapters.map((adapter, index) => {
-      const checkedAttr = index < maxAgents ? " checked" : "";
-      return '<label class="agent-pill"><input type="checkbox" class="agent-checkbox" value="' + adapter.id + '"' + checkedAttr + "><span>" + adapter.name + "</span></label>";
-    }).join("");
-    const initialExecutorOptionsHtml = adapters.filter((adapter) => adapter.modes.includes("agent")).map((adapter) => '<option value="' + adapter.id + '">' + adapter.name + "</option>").join("");
-    return `<!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <script type="module" src="${toolkitUri}"></script>
-            <style>
-                body {
-                    font-family: var(--vscode-font-family);
-                    padding: 10px;
-                    display: flex;
-                    flex-direction: column;
-                    height: 100vh;
-                    box-sizing: border-box;
-                    overflow: hidden;
-                }
-                .chat-history {
-                    flex-grow: 1;
-                    overflow-y: scroll;
-                    overflow-x: hidden;
-                    min-height: 0;
-                    margin-bottom: 10px;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 15px;
-                    width: 100%;
-                    box-sizing: border-box;
-                    align-content: flex-start;
-                }
-                .chat-history > * {
-                    flex-shrink: 0;
-                }
-                .chat-history::-webkit-scrollbar {
-                    width: 8px;
-                }
-                .chat-history::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                .chat-history::-webkit-scrollbar-thumb {
-                    background: var(--vscode-scrollbarSlider-background);
-                    border-radius: 4px;
-                }
-                .chat-history::-webkit-scrollbar-thumb:hover {
-                    background: var(--vscode-scrollbarSlider-hoverBackground);
-                }
-                .message {
-                    padding: 10px;
-                    border-radius: 6px;
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    font-size: 13px;
-                    line-height: 1.5;
-                }
-                .message.user {
-                    background: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    align-self: flex-end;
-                    max-width: 85%;
-                    position: relative;
-                }
-                .message.user > div + .restored-image-strip,
-                .message.user > .restored-image-strip {
-                    margin-top: 8px;
-                }
-                .message.agent {
-                    border-left: 3px solid var(--vscode-textLink-foreground);
-                    background: var(--vscode-editor-background);
-                    width: 100%;
-                    box-sizing: border-box;
-                    overflow: hidden;
-                }
-                .agent-name {
-                    font-weight: 600;
-                    margin-bottom: 8px;
-                    color: var(--vscode-textLink-foreground);
-                }
-                .input-area {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 10px;
-                    padding-top: 10px;
-                    border-top: 1px solid var(--vscode-panel-border);
-                }
-                #prompt-input {
-                    width: 100%;
-                    box-sizing: border-box;
-                    resize: vertical;
-                    min-height: 84px;
-                    max-height: 240px;
-                    padding: 8px 10px;
-                    border-radius: 6px;
-                    border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
-                    background: var(--vscode-input-background);
-                    color: var(--vscode-input-foreground);
-                    font-family: var(--vscode-font-family);
-                    font-size: 13px;
-                    line-height: 1.5;
-                }
-                #prompt-input:focus {
-                    outline: 1px solid var(--vscode-focusBorder);
-                    outline-offset: 0;
-                }
-                #image-preview-bar {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                }
-                #image-preview-bar:empty {
-                    display: none;
-                }
-                #reference-chips {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 4px;
-                    padding: 4px 0;
-                }
-                #reference-chips:empty {
-                    display: none;
-                }
-                .ref-chip {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
-                    padding: 2px 8px;
-                    font-size: 11px;
-                    border-radius: 999px;
-                    background: var(--vscode-badge-background);
-                    color: var(--vscode-badge-foreground);
-                    cursor: default;
-                    white-space: nowrap;
-                }
-                .ref-chip-remove {
-                    cursor: pointer;
-                    font-size: 12px;
-                    opacity: 0.7;
-                    margin-left: 2px;
-                }
-                .ref-chip-remove:hover {
-                    opacity: 1;
-                }
-                .message.user.referenced {
-                    border-left: 3px solid var(--vscode-focusBorder);
-                    background: var(--vscode-editor-selectionHighlightBackground);
-                }
-                .ref-turn-btn {
-                    display: inline-block;
-                    position: absolute;
-                    top: 4px;
-                    right: 4px;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 4px;
-                    font-size: 11px;
-                    padding: 1px 6px;
-                    cursor: pointer;
-                    line-height: 1.4;
-                    opacity: 0.45;
-                    transition: opacity 0.15s ease;
-                }
-                .message.user:hover .ref-turn-btn {
-                    opacity: 1;
-                }
-                .ref-turn-btn:hover {
-                    background: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    opacity: 1;
-                }
-                .message-ref-cards {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 4px;
-                    margin-top: 6px;
-                }
-                .message-ref-card {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 2px;
-                    padding: 4px 8px;
-                    border-left: 3px solid var(--vscode-focusBorder);
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    border-radius: 0 4px 4px 0;
-                    cursor: pointer;
-                    opacity: 0.85;
-                    transition: opacity 0.15s ease, background 0.15s ease;
-                    max-width: 340px;
-                    overflow: hidden;
-                }
-                .message-ref-card:hover {
-                    opacity: 1;
-                    background: var(--vscode-list-hoverBackground);
-                }
-                .message-ref-card-header {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    font-size: 11px;
-                    overflow: hidden;
-                }
-                .message-ref-card-seq {
-                    font-weight: 600;
-                    color: var(--vscode-textLink-foreground);
-                    flex-shrink: 0;
-                }
-                .message-ref-card-prompt {
-                    color: var(--vscode-foreground);
-                    opacity: 0.85;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                .message-ref-card-summary {
-                    font-size: 10px;
-                    color: var(--vscode-descriptionForeground);
-                    opacity: 0.75;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    font-style: italic;
-                }
-                @keyframes ref-flash {
-                    0%   { box-shadow: 0 0 0 2px var(--vscode-focusBorder); }
-                    50%  { box-shadow: 0 0 0 4px var(--vscode-focusBorder); background: var(--vscode-editor-findMatchHighlightBackground); }
-                    100% { box-shadow: none; }
-                }
-                .ref-highlight-flash {
-                    animation: ref-flash 0.5s ease 3;
-                    border-radius: 4px;
-                }
-                .mode-selector {
-                    display: inline-flex;
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 4px;
-                    overflow: hidden;
-                }
-                .mode-btn {
-                    padding: 3px 8px;
-                    font-size: 11px;
-                    border: none;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    cursor: pointer;
-                    border-right: 1px solid var(--vscode-panel-border);
-                    line-height: 1.4;
-                }
-                .mode-btn:last-child {
-                    border-right: none;
-                }
-                .mode-btn.active {
-                    background: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                }
-                .mode-btn:hover:not(.active) {
-                    background: var(--vscode-button-secondaryHoverBackground);
-                }
-                .image-preview-item {
-                    position: relative;
-                    display: inline-flex;
-                }
-                .image-preview-item img {
-                    max-height: 80px;
-                    max-width: 120px;
-                    border-radius: 4px;
-                    border: 1px solid var(--vscode-panel-border);
-                    object-fit: cover;
-                }
-                .image-preview-remove {
-                    position: absolute;
-                    top: -6px;
-                    right: -6px;
-                    width: 16px;
-                    height: 16px;
-                    border-radius: 50%;
-                    background: var(--vscode-errorForeground);
-                    color: white;
-                    font-size: 10px;
-                    line-height: 16px;
-                    text-align: center;
-                    cursor: pointer;
-                    border: none;
-                    padding: 0;
-                }
-                .chat-image {
-                    max-width: 240px;
-                    max-height: 180px;
-                    border-radius: 6px;
-                    margin-top: 4px;
-                    display: block;
-                }
-                .restored-image-strip {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                }
-                .history-loading-card {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    padding: 14px 16px;
-                    border-radius: 8px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    color: var(--vscode-descriptionForeground);
-                    font-size: 12px;
-                }
-                .history-loading-card-chat {
-                    margin-top: 8px;
-                }
-                .history-loading-spinner {
-                    width: 14px;
-                    height: 14px;
-                    border-radius: 999px;
-                    border: 2px solid color-mix(in srgb, var(--vscode-textLink-foreground) 28%, transparent 72%);
-                    border-top-color: var(--vscode-textLink-foreground);
-                    animation: spin 0.9s linear infinite;
-                    flex-shrink: 0;
-                }
-                pre {
-                    white-space: pre-wrap;
-                    font-family: var(--vscode-editor-font-family);
-                    margin: 0;
-                    padding: 10px;
-                    background: var(--vscode-textCodeBlock-background);
-                    border-radius: 4px;
-                }
+    if (preferredModel && models.some(m => m.value === preferredModel)) {
+        modelSelect.value = preferredModel;
+    }
+}
+engineSelect.value = defaultEngine;
+updateModels();
+
+let sessionLocked = false;
+function lockEngine(locked) {
+    sessionLocked = locked;
+    engineSelect.disabled = locked;
+    if(locked) {
+        engineSelect.style.opacity = '0.6';
+        engineSelect.title = "Engine type is locked for the current session. Start a new session to switch engines.";
+    } else {
+        engineSelect.style.opacity = '1';
+        engineSelect.title = "";
+    }
+}
+var ta = document.getElementById("prompt");
+var root = document.getElementById("root");
+var labels = { "claude_code": "Claude Code", "copilot_cli": "GitHub Copilot" };
+var streamDivs = {};
+var streamTimers = {};
+
+function clearStreamTimer(id) {
+    var timer = streamTimers[id];
+    if (timer) {
+        clearTimeout(timer);
+        delete streamTimers[id];
+    }
+}
+
+function scheduleSlowStartHint(id) {
+    clearStreamTimer(id);
+    streamTimers[id] = setTimeout(function() {
+        var t = streamDivs[id];
+        if (t) {
+             // Only show if trace is empty
+             var tracePane = t.querySelector('.tab-pane.trace');
+             if (tracePane && !tracePane.innerHTML.trim()) {
+                tracePane.innerHTML = '<span style="color:var(--vscode-descriptionForeground)">Still starting. The first response from the CLI can take 5-15 seconds.</span>';
+             }
+        }
+    }, 2500);
+}
+
+function doSend() {
+    var text = ta.value ? ta.value.trim() : "";
+    if (!text) return;
+    
+    // Lock engine
+    lockEngine(true);
+    
+    statusEls.textContent = "Sending...";
+    vscode.postMessage({ 
+        type: "ask", 
+        text: text, 
+        agent: engineSelect.value, 
+        model: modelSelect.value 
+    });
+    ta.value = "";
+}
+function doStop() { vscode.postMessage({ type: "stop" }); }
+function doNew() { 
+    chat.innerHTML = ""; 
+    lockEngine(false);
+    vscode.postMessage({ type: "newChat" }); 
+}
+function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+}
+function escapeHtml(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function switchTab(streamId, tabName) {
+    var box = document.getElementById("stream-" + streamId);
+    if(!box) return;
+    var tabs = box.querySelectorAll('.tab-btn');
+    var panes = box.querySelectorAll('.tab-pane');
+    
+    tabs.forEach(t => t.classList.remove('active'));
+    panes.forEach(p => p.classList.remove('active'));
+    
+    var btn = box.querySelector('.tab-btn[data-tab="' + tabName + '"]');
+    var pane = box.querySelector('.tab-pane.' + tabName);
+    
+    if(btn) btn.classList.add('active');
+    if(pane) pane.classList.add('active');
+}
+
+function renderStreamText(raw, container) {
+    var NL = String.fromCharCode(10);
+    var lines = raw.split(NL);
+    var steps = [];
+    var outputLines = [];
+    var cur = null;
+
+    function shortPath(s) { var m = /[/\\\\]([^/\\\\]+)$/.exec(s); return m ? m[1] : s; }
+    function summarize(d) {
+        return d.replace(/\\s+/g, " ").trim().replace(/(?:file_path|path|filepath|relative_workspace_path)=([^,]+)/gi, function(_, v) { return shortPath(v.trim()); });
+    }
+    function flush() { if (cur) { steps.push(cur); cur = null; } }
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var tm = /^[\\u2022\\u25CF\\u23FA\\u25B6\\u2192]\\s*(.+)$/.exec(line);
+        if (tm) { flush(); cur = { name: tm[1].trim(), detail: "", done: null, result: "" }; continue; }
+        var dm = /^([\\u2713\\u2717])\\s*(.*)$/.exec(line);
+        if (dm) {
+            if (cur && (!dm[2] || cur.name === dm[2].trim())) { cur.done = dm[1]; }
+            else { flush(); cur = { name: dm[2].trim() || "tool", detail: "", done: dm[1], result: "" }; }
+            continue;
+        }
+        var det = /^\\u21B3\\s*(.+)$/.exec(line);
+        if (det && cur) { if (cur.done) { cur.result = summarize(det[1]); } else { cur.detail = summarize(det[1]); } continue; }
+        flush();
+        outputLines.push(line);
+    }
+    flush();
+
+    // Render Trace
+    var traceHtml = "";
+    if (steps.length > 0) {
+        traceHtml += '<div class="step-list">';
+        for (var s = 0; s < steps.length; s++) {
+            var st = steps[s];
+            var dc = st.done === "\\u2713" ? "step-dot-done" : st.done === "\\u2717" ? "step-dot-err" : "step-dot-run";
+            traceHtml += '<div class="step"><div class="step-dot ' + dc + '"></div><div class="step-text">';
+            traceHtml += '<span class="step-name">' + escapeHtml(st.name) + '</span>';
+            if (st.detail) traceHtml += '<span class="step-detail">' + escapeHtml(st.detail) + '</span>';
+            if (st.result) traceHtml += '<span class="step-result-text">' + escapeHtml(st.result) + '</span>';
+            traceHtml += '</div></div>';
+        }
+        traceHtml += '</div>';
+    } else {
+        traceHtml = '<span style="color:var(--vscode-descriptionForeground)">Waiting for steps...</span>';
+    }
+    
+    // Update Trace Pane
+    var tracePane = container.querySelector('.tab-pane.trace');
+    if(tracePane) tracePane.innerHTML = traceHtml;
+    
+    // Update Log Pane
+    var logPane = container.querySelector('.tab-pane.log');
+    if(logPane) {
+         logPane.querySelector('div').textContent = raw;
+    }
+    
+    // Update Output Pane (Preview)
+    var out = outputLines.join(NL).trim();
+    var outputPane = container.querySelector('.tab-pane.output');
+    if(outputPane) {
+         if (out) outputPane.querySelector('div').textContent = out;
+         else outputPane.querySelector('div').textContent = "Waiting for output...";
+    }
+    
+    return traceHtml; // Return trace for summary if needed
+}
+
+window.addEventListener("message", function(event) {
+    var msg = event.data;
+    if (msg.type === "addMessage") {
+        var div = document.createElement("div");
+        div.className = "msg " + msg.role;
+        if (labels[msg.role]) { var h = document.createElement("strong"); h.textContent = labels[msg.role]; div.appendChild(h); }
+        var c = document.createElement("div"); c.innerHTML = msg.html; div.appendChild(c);
+        chat.appendChild(div); chat.scrollTop = chat.scrollHeight;
+    } else if (msg.type === "streamStart") {
+        var div = document.createElement("div");
+        div.className = "stream-box " + msg.role;
+        div.id = "stream-" + msg.id;
+        
+        // Header with Tabs
+        var header = document.createElement("div");
+        header.className = "stream-header";
+        
+        var title = document.createElement("div");
+        title.className = "stream-title";
+        title.innerHTML = '<span class="spinner"></span>' + (labels[msg.role] || msg.role);
+        header.appendChild(title);
+        
+        var tabs = document.createElement("div");
+        tabs.className = "stream-tabs";
+        tabs.innerHTML = \`
+            <button class="tab-btn active" data-tab="trace" onclick="switchTab(\${msg.id}, 'trace')">Trace</button>
+            <button class="tab-btn" data-tab="log" onclick="switchTab(\${msg.id}, 'log')">Log</button>
+            <button class="tab-btn" data-tab="output" onclick="switchTab(\${msg.id}, 'output')">Output</button>
+        \`;
+        header.appendChild(tabs);
+        div.appendChild(header);
+        
+        var ct = document.createElement("div"); 
+        ct.className = "stream-content";
+        ct.innerHTML = \`
+            <div class="tab-pane trace active"><span style="color:var(--vscode-descriptionForeground)">Starting...</span></div>
+            <div class="tab-pane log"><div class="log-view"></div></div>
+            <div class="tab-pane output"><div class="output-view"></div></div>
+        \`;
+        div.appendChild(ct);
+        
+        chat.appendChild(div); 
+        streamDivs[msg.id] = ct;
+        scheduleSlowStartHint(msg.id);
+        chat.scrollTop = chat.scrollHeight;
+        
+    } else if (msg.type === "streamUpdate") {
+        clearStreamTimer(msg.id);
+        var t = streamDivs[msg.id]; 
+        if (t) { 
+            renderStreamText(msg.text, t); 
+            // Auto-scroll logic if needed
+        }
+    } else if (msg.type === "streamEnd") {
+        clearStreamTimer(msg.id);
+        var box = document.getElementById("stream-" + msg.id);
+        if (box) {
+            // Stop spinner
+            var title = box.querySelector(".stream-title");
+            if(title) title.innerHTML = (labels[msg.role] || msg.role) + " (Done)";
+            
+            // Finalize output tab with rendered HTML if available
+            if(msg.html) {
+                var outPane = box.querySelector(".tab-pane.output div");
+                if(outPane) outPane.innerHTML = msg.html;
                 
-                /* New UX styles for tasks */
-                .error-text {
-                    color: var(--vscode-errorForeground);
-                    border: 1px solid var(--vscode-errorForeground);
-                    padding: 8px;
-                    border-radius: 4px;
-                }
-                .markdown-body {
-                    user-select: text;
-                    word-wrap: break-word;
-                    font-size: 13px;
-                }
-                .markdown-body pre {
-                    background-color: var(--vscode-textCodeBlock-background);
-                    padding: 8px;
-                    border-radius: 4px;
-                    overflow-x: auto;
-                }
-                .markdown-body code {
-                    font-family: var(--vscode-editor-font-family);
-                    color: var(--vscode-textPreformat-foreground);
-                }
-                .apply-btn {
-                    display: block;
-                    margin-bottom: 4px;
-                    padding: 3px 10px;
-                    font-size: 11px;
-                    cursor: pointer;
-                    border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
-                    border-radius: 4px;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-                .apply-btn:hover:not(:disabled) {
-                    background: var(--vscode-button-secondaryHoverBackground);
-                }
-                .apply-btn-done {
-                    opacity: 0.6;
-                    cursor: default;
-                }
-                /* Blinking animation for thinking */
-                @keyframes blink {
-                    0% { opacity: .2; }
-                    20% { opacity: 1; }
-                    100% { opacity: .2; }
-                }
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-                .thinking .task-icon {
-                    animation: blink 1.4s infinite both;
-                }
-                .chat-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 10px;
-                    padding-bottom: 10px;
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                    flex-shrink: 0;
-                }
-                .chat-header-actions {
-                    display: flex;
-                    gap: 6px;
-                    flex-shrink: 0;
-                }
-                .chat-header-actions button {
-                    padding: 3px 10px;
-                    font-size: 12px;
-                    cursor: pointer;
-                    border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
-                    border-radius: 4px;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    font-family: var(--vscode-font-family);
-                    white-space: nowrap;
-                }
-                .chat-header-actions button:hover {
-                    background: var(--vscode-button-secondaryHoverBackground);
-                }
-                .sessions-panel {
-                    flex-grow: 1;
-                    flex-direction: column;
-                    gap: 8px;
-                    overflow-y: auto;
-                    min-height: 0;
-                    margin-bottom: 10px;
-                    padding: 10px;
-                }
-                .session-item {
-                    cursor: pointer;
-                    padding: 12px;
-                    border-radius: 4px;
-                    font-size: 13px;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    margin-bottom: 8px;
-                }
-                .session-item:hover {
-                    background: var(--vscode-list-hoverBackground);
-                }
-                .session-pinned {
-                    border-color: var(--vscode-focusBorder);
-                }
-                .session-workspace-label {
-                    font-size: 10px;
-                    color: var(--vscode-descriptionForeground);
-                    margin-bottom: 2px;
-                    opacity: 0.8;
-                }
-                .session-title-row {
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                    overflow: hidden;
-                }
-                .session-title-text {
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    flex: 1;
-                }
-                .session-pin-indicator {
-                    flex-shrink: 0;
-                    font-size: 11px;
-                }
-                .session-running-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 5px;
-                    flex-shrink: 0;
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: var(--vscode-textLink-foreground);
-                    background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent 86%);
-                    border-radius: 4px;
-                    padding: 1px 6px;
-                }
-                .session-running-badge .running-dot {
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 999px;
-                    border: 1.5px solid color-mix(in srgb, var(--vscode-textLink-foreground) 28%, transparent 72%);
-                    border-top-color: var(--vscode-textLink-foreground);
-                    animation: spin 0.9s linear infinite;
-                }
-                .task-status-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    min-width: 64px;
-                    padding: 2px 8px;
-                    border-radius: 999px;
-                    font-size: 11px;
-                    font-weight: 600;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-button-secondaryBackground);
-                }
-                .task-status-badge.active {
-                    color: var(--vscode-terminal-ansiGreen);
-                }
-                .task-status-badge.blocked {
-                    color: var(--vscode-errorForeground);
-                }
-                .task-status-badge.completed {
-                    color: var(--vscode-terminal-ansiBlue);
-                }
-                .session-meta {
-                    margin-top: 6px;
-                    font-size: 11px;
-                    color: var(--vscode-descriptionForeground);
-                    white-space: normal;
-                }
-                .session-image-strip {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 4px;
-                    margin-top: 6px;
-                }
-                .session-image-thumb {
-                    width: 48px;
-                    height: 48px;
-                    object-fit: cover;
-                    border-radius: 4px;
-                    border: 1px solid var(--vscode-panel-border);
-                }
-                
-                /* New UX styles for tool calls */
-                .council-details {
-                    margin: 5px 0;
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 6px;
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                }
-                .council-summary {
-                    padding: 8px 12px;
-                    cursor: pointer;
-                    font-weight: bold;
-                    user-select: none;
-                    outline: none;
-                }
-                .council-summary:hover {
-                    background: var(--vscode-list-hoverBackground);
-                }
-
-                /* Sticky headers: pin summaries when content overflows viewport */
-                details[open] > .council-summary {
-                    position: sticky;
-                    top: 0;
-                    z-index: 30;
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                }
-                .agent-row[open] > .task-item {
-                    position: sticky;
-                    top: 36px;
-                    z-index: 20;
-                    background: var(--vscode-sideBar-background);
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                }
-                .agent-child-stack > details[open] > summary {
-                    background: var(--vscode-editor-background);
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                    padding: 4px 8px;
-                }
-
-                /* Floating collapse bar for off-screen expanded sections */
-                #floating-collapse-bar {
-                    flex-shrink: 0;
-                    z-index: 10;
-                    display: flex;
-                    gap: 4px;
-                    padding: 4px 8px;
-                    background: var(--vscode-editorWidget-background);
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-                    flex-wrap: wrap;
-                }
-                .floating-collapse-btn {
-                    padding: 2px 10px;
-                    border-radius: 999px;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    border: 1px solid var(--vscode-panel-border);
-                    font-size: 11px;
-                    cursor: pointer;
-                    max-width: 220px;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-                .floating-collapse-btn:hover {
-                    background: var(--vscode-button-hoverBackground);
-                    color: var(--vscode-button-foreground);
-                }
-
-                .council-container {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0px;
-                    border-top: 1px solid var(--vscode-panel-border);
-                    border-left: 2px solid var(--vscode-list-hoverBackground);
-                    margin-left: 6px;
-                }
-                .agent-row {
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                }
-                .agent-row:last-child {
-                    border-bottom: none;
-                }
-                .agent-row .task-item {
-                    padding: 8px 12px;
-                    background: var(--vscode-sideBar-background);
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    font-size: 12px;
-                }
-                .restored-agent-status {
-                    margin-left: auto;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 2px 8px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    font-size: 10px;
-                    font-weight: 700;
-                    letter-spacing: 0.03em;
-                    text-transform: uppercase;
-                    white-space: nowrap;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-                .restored-agent-status-running {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 66%, var(--vscode-editorWarning-foreground) 34%);
-                    color: var(--vscode-editorWarning-foreground);
-                }
-                .restored-agent-status-error {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 66%, var(--vscode-errorForeground) 34%);
-                    color: var(--vscode-errorForeground);
-                }
-                .restored-agent-status-success {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 66%, var(--vscode-terminal-ansiGreen) 34%);
-                    color: var(--vscode-terminal-ansiGreen);
-                }
-                .agent-row .task-item:hover {
-                    background: var(--vscode-list-hoverBackground);
-                }
-                .agent-row .agent-content {
-                    padding: 12px;
-                    background: var(--vscode-editor-background);
-                    border-top: 1px dashed var(--vscode-panel-border);
-                    font-size: 13px;
-                    line-height: 1.5;
-                    overflow-x: auto;
-                    max-width: 100%;
-                    box-sizing: border-box;
-                }
-                .agent-child-stack {
-                    margin-left: 18px;
-                    padding-left: 12px;
-                    border-left: 2px solid var(--vscode-panel-border);
-                }
-                .agent-child-stack > details,
-                .agent-child-stack > div {
-                    margin-top: 2px;
-                }
-                .restored-agent-note {
-                    margin-bottom: 8px;
-                    padding: 8px 10px;
-                    border-radius: 6px;
-                    border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground) 55%, var(--vscode-panel-border) 45%);
-                    background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-editorWarning-foreground) 18%);
-                    color: var(--vscode-descriptionForeground);
-                    font-size: 12px;
-                    line-height: 1.45;
-                }
-                .process-timeline {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                }
-                .process-step {
-                    display: grid;
-                    grid-template-columns: 24px 1fr;
-                    gap: 10px;
-                    align-items: start;
-                    padding: 8px 10px;
-                    border-radius: 6px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: color-mix(in srgb, var(--vscode-editor-background) 86%, var(--vscode-list-hoverBackground) 14%);
-                }
-                .process-step-log {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-inputValidation-warningBackground) 18%);
-                }
-                .process-step-index {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 999px;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 14px;
-                    line-height: 1;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    border: 1px solid var(--vscode-panel-border);
-                }
-                .process-step-body {
-                    min-width: 0;
-                }
-                .process-step-header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 8px;
-                }
-                .process-step-title {
-                    font-size: 12px;
-                    font-weight: 700;
-                    color: var(--vscode-foreground);
-                    word-break: break-word;
-                }
-                .process-step-status {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 2px 8px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    font-size: 10px;
-                    font-weight: 700;
-                    text-transform: uppercase;
-                    letter-spacing: 0.03em;
-                    white-space: nowrap;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-                .process-step-status-success {
-                    color: var(--vscode-terminal-ansiGreen);
-                }
-                .process-step-status-error {
-                    color: var(--vscode-errorForeground);
-                }
-                .process-step-status-running {
-                    color: var(--vscode-editorWarning-foreground);
-                }
-                .process-step-status-interrupted {
-                    color: var(--vscode-disabledForeground);
-                    font-style: italic;
-                }
-                .process-interrupted-group {
-                    margin: 8px 0 4px 0;
-                    border: 1px dashed var(--vscode-panel-border);
-                    border-radius: 6px;
-                    padding: 0;
-                    opacity: 0.75;
-                }
-                .process-interrupted-group[open] {
-                    opacity: 1;
-                }
-                .process-interrupted-summary {
-                    cursor: pointer;
-                    padding: 6px 10px;
-                    font-size: 12px;
-                    color: var(--vscode-disabledForeground);
-                    font-style: italic;
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                }
-                .process-interrupted-summary:hover {
-                    color: var(--vscode-foreground);
-                }
-                .process-interrupted-icon {
-                    font-style: normal;
-                }
-                .process-interrupted-tools {
-                    margin-left: auto;
-                    font-size: 11px;
-                    opacity: 0.7;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                    max-width: 200px;
-                }
-                .process-interrupted-details {
-                    padding: 0 8px 8px 8px;
-                    border-top: 1px dashed var(--vscode-panel-border);
-                }
-                .process-step-badges {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                    margin-top: 6px;
-                }
-                .process-step-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    max-width: 100%;
-                    padding: 3px 8px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    font-size: 11px;
-                    line-height: 1.35;
-                    font-family: var(--vscode-editor-font-family);
-                    word-break: break-word;
-                }
-                .process-step-badge-path {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 68%, var(--vscode-textLink-foreground) 32%);
-                    color: var(--vscode-foreground);
-                }
-                .process-step-badge-count {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 68%, var(--vscode-terminal-ansiGreen) 32%);
-                    color: var(--vscode-foreground);
-                }
-                .process-step-badge-preview {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 72%, var(--vscode-editorWarning-foreground) 28%);
-                    color: var(--vscode-foreground);
-                }
-                .process-step-badge-neutral {
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-                .process-step-meta {
-                    margin-top: 4px;
-                    font-size: 11px;
-                    line-height: 1.45;
-                    color: var(--vscode-descriptionForeground);
-                    word-break: break-word;
-                    font-family: var(--vscode-editor-font-family);
-                }
-                .process-step-meta-muted {
-                    opacity: 0.8;
-                    font-style: italic;
-                }
-                .process-step-result {
-                    margin-top: 10px;
-                    padding-top: 8px;
-                    border-top: 1px dashed var(--vscode-panel-border);
-                }
-                .process-step-result-label {
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: var(--vscode-descriptionForeground);
-                    margin-bottom: 6px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.03em;
-                }
-                .process-step-result-badges {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                }
-                .process-step-result-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    max-width: 100%;
-                    padding: 3px 8px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: color-mix(in srgb, var(--vscode-editor-background) 72%, var(--vscode-terminal-ansiGreen) 28%);
-                    color: var(--vscode-foreground);
-                    font-size: 11px;
-                    line-height: 1.35;
-                    font-family: var(--vscode-editor-font-family);
-                    word-break: break-word;
-                }
-                .process-step-result-badge-count {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 62%, var(--vscode-terminal-ansiGreen) 38%);
-                }
-                .process-step-result-badge-path {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 64%, var(--vscode-textLink-foreground) 36%);
-                }
-                .process-step-result-badge-result-preview {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 62%, var(--vscode-editorWarning-foreground) 38%);
-                }
-                .process-step-result-badge-result-neutral {
-                    background: color-mix(in srgb, var(--vscode-editor-background) 70%, var(--vscode-button-secondaryBackground) 30%);
-                }
-                .debug-card {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                }
-                .debug-stat-badges {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                }
-                .debug-stat-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    padding: 2px 8px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    font-size: 10px;
-                    line-height: 1.3;
-                    text-transform: uppercase;
-                    letter-spacing: 0.03em;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                }
-                .debug-stat-badge-role {
-                    color: var(--vscode-descriptionForeground);
-                }
-                .debug-stat-badge-transport {
-                    color: var(--vscode-textLink-foreground);
-                }
-                .debug-stat-badge-duration {
-                    color: var(--vscode-terminal-ansiGreen);
-                }
-                .debug-grid {
-                    display: grid;
-                    grid-template-columns: minmax(88px, 120px) 1fr;
-                    gap: 6px 10px;
-                }
-                .debug-key {
-                    color: var(--vscode-descriptionForeground);
-                }
-                .debug-value {
-                    color: var(--vscode-foreground);
-                    word-break: break-word;
-                }
-                .process-notes {
-                    margin-top: 8px;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                    padding: 8px 10px;
-                    border-radius: 6px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-editor-background);
-                    color: var(--vscode-descriptionForeground);
-                    font-size: 12px;
-                }
-                .process-reasoning {
-                    margin-top: 8px;
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 6px;
-                    background: var(--vscode-editor-background);
-                }
-                .process-reasoning > summary {
-                    padding: 6px 10px;
-                    cursor: pointer;
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: var(--vscode-descriptionForeground);
-                    outline: none;
-                }
-                .process-reasoning > summary:hover {
-                    background: var(--vscode-list-hoverBackground);
-                    border-radius: 6px;
-                }
-                .process-reasoning-body {
-                    padding: 8px 10px;
-                    font-size: 11px;
-                    line-height: 1.5;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                    color: var(--vscode-descriptionForeground);
-                    font-family: var(--vscode-editor-font-family);
-                    border-top: 1px solid var(--vscode-panel-border);
-                }
-                .process-markdown-fallback {
-                    opacity: 0.9;
-                    border-left: 3px solid var(--vscode-editorBracketHighlight-foreground1, #ccc);
-                    padding-left: 8px;
-                }
-                .usage-log-card {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                    padding: 10px;
-                    border-radius: 6px;
-                    background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-list-hoverBackground) 12%);
-                    border: 1px solid var(--vscode-panel-border);
-                }
-                .usage-log-badges {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                }
-                .usage-log-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    padding: 3px 8px;
-                    border-radius: 999px;
-                    font-size: 11px;
-                    line-height: 1.2;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    border: 1px solid var(--vscode-panel-border);
-                }
-                .usage-log-grid {
-                    display: grid;
-                    grid-template-columns: minmax(120px, 160px) 1fr;
-                    gap: 6px 10px;
-                    font-size: 12px;
-                }
-                .usage-log-key {
-                    color: var(--vscode-descriptionForeground);
-                }
-                .usage-log-value {
-                    color: var(--vscode-foreground);
-                    word-break: break-word;
-                }
-                .session-actions {
-                    display: flex;
-                    gap: 8px;
-                    margin-top: 8px;
-                }
-                .session-action-button {
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-size: 11px;
-                    cursor: pointer;
-                }
-                .session-action-button:hover {
-                    background: var(--vscode-button-secondaryHoverBackground);
-                }
-                .session-action-icon {
-                    padding: 4px 6px;
-                }
-                .session-action-danger:hover {
-                    background: var(--vscode-inputValidation-errorBackground);
-                    border-color: var(--vscode-inputValidation-errorBorder);
-                }
-                .view {
-                    display: none;
-                    flex-direction: column;
-                    flex: 1;
-                    height: 100%;
-                    min-height: 0;
-                    width: 100%;
-                }
-                .view.active {
-                    display: flex;
-                }
-                .agent-pill {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 6px 10px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    font-size: 12px;
-                }
-                .agent-pill input {
-                    margin: 0;
-                }
-                .debug-panel {
-                    display: none;
-                    margin-top: 6px;
-                }
-                .debug-panel.visible {
-                    display: block;
-                }
-                .debug-details {
-                    display: block;
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 6px;
-                    background: var(--vscode-textCodeBlock-background);
-                    padding: 6px 8px;
-                }
-                .debug-details summary {
-                    cursor: pointer;
-                    outline: none;
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: var(--vscode-descriptionForeground);
-                    text-transform: uppercase;
-                    letter-spacing: 0.03em;
-                    user-select: none;
-                }
-                .debug-details[open] summary {
-                    margin-bottom: 8px;
-                }
-                .context-badge {
-                    display: none;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                    font-size: 11px;
-                    color: var(--vscode-descriptionForeground);
-                    font-family: var(--vscode-editor-font-family);
-                    max-width: 100%;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                    margin-bottom: 4px;
-                }
-                .context-badge.visible {
-                    display: flex;
-                }
-                .context-badge-icon {
-                    flex-shrink: 0;
-                    opacity: 0.7;
-                }
-                .context-badge-label {
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-                .queue-item {
-                    display: flex;
-                    align-items: center;
-                    padding: 3px 10px;
-                    font-size: 12px;
-                    gap: 6px;
-                    border-bottom: 1px solid var(--vscode-panel-border);
-                }
-                .queue-item:last-child { border-bottom: none; }
-                .queue-item-index {
-                    color: var(--vscode-descriptionForeground);
-                    min-width: 18px;
-                    font-size: 11px;
-                }
-                .queue-item-text {
-                    flex: 1;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-                .queue-item-remove {
-                    cursor: pointer;
-                    padding: 0 4px;
-                    color: var(--vscode-descriptionForeground);
-                    font-size: 14px;
-                }
-                .queue-item-remove:hover {
-                    color: var(--vscode-errorForeground);
-                }
-                .queue-header-action {
-                    cursor: pointer;
-                    padding: 1px 6px;
-                    border-radius: 3px;
-                    font-size: 11px;
-                    background: var(--vscode-button-secondaryBackground);
-                    color: var(--vscode-button-secondaryForeground);
-                    white-space: nowrap;
-                }
-                .queue-header-action:hover {
-                    opacity: 0.8;
-                }
-                .queue-header-danger {
-                    color: var(--vscode-errorForeground);
-                }
-                .queue-item-mode {
-                    flex-shrink: 0;
-                    font-size: 10px;
-                    padding: 0 4px;
-                    border-radius: 3px;
-                    background: var(--vscode-badge-background);
-                    color: var(--vscode-badge-foreground);
-                    white-space: nowrap;
-                }
-            </style>
-        </head>
-        <body data-debug-mode="${isDebugModeEnabled() ? "true" : "false"}">
-            <!-- MAIN CHAT VIEW -->
-            <div id="chat-view" class="view active">
-                <div class="chat-header">
-                    <div style="font-weight: bold; font-size: 14px;">Optimus Council</div>
-                    <div class="chat-header-actions">
-                        <button aria-label="New Chat" id="new-chat-btn" title="Start a new conversation (clears current task context)">New Chat</button>
-                        <button aria-label="Sessions History" id="toggle-sessions-btn" title="View Sessions History">History</button>
-                    </div>
-                </div>
-
-                <div class="chat-history" id="chat-history">
-                    <div class="message agent">
-                        <div class="agent-name">Optimus Council</div>
-                        <p>Welcome! Describe your architecture problem, and I will summon the agents concurrently.</p>
-                    </div>
-                </div>
-
-                <div id="task-state-strip" class="task-state-strip" style="display:none; align-items: center; justify-content: space-between; padding: 6px 12px; flex-direction: row; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-inactiveSelectionBackground);">
-                    <div class="task-state-topline" style="gap: 6px; display: flex; align-items: center;">
-                        <span style="font-size: 13px;">\u{1F3AF}</span>
-                        <strong id="task-title" style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">Current Task</strong>
-                        <span id="task-status-badge" class="task-status-badge" style="transform: scale(0.85); margin-left: 4px;">IDLE</span>
-                    </div>
-                    <div id="task-turn-count" style="font-size: 11px; color: var(--vscode-descriptionForeground);"></div>
-                </div>
-
-                <div class="input-area">
-                    <div id="context-badge" class="context-badge" title="Active editor context \u2014 will be injected into planner prompts">
-                        <span class="context-badge-icon">[ctx]</span>
-                        <span id="context-badge-label" class="context-badge-label"></span>
-                    </div>
-                    <textarea id="prompt-input" placeholder="E.g., How to implement RBAC in Next.js?" rows="4"></textarea>
-                    <div id="image-preview-bar"></div>
-                    <div id="reference-chips" style="display:none;"></div>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-start; margin-top: 8px;">
-                        <div id="agent-selector" style="display: flex; flex-wrap: wrap; gap: 8px; flex-grow: 1;">
-                            ${initialAgentSelectorHtml}
-                        </div>
-                        <vscode-button appearance="icon" aria-label="Configure Agents" id="config-btn" title="Configure Agents & Roles" style="margin-left: 4px;">
-                            <span>CFG</span>
-                        </vscode-button>
-
-                        <select id="executor-selector" style="padding: 4px 6px; border-radius: 4px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); font-size: 12px;" title="Executor Agent">
-                            ${initialExecutorOptionsHtml}
-                        </select>
-
-                        <div id="mode-selector" class="mode-selector" title="Execution Mode">
-                            <button class="mode-btn" data-mode="plan" title="Plan Only \u2014 analysis without execution">Plan</button>
-                            <button class="mode-btn active" data-mode="auto" title="Auto \u2014 planners then executor (default)">Auto</button>
-                            <button class="mode-btn" data-mode="direct" title="Execute Only \u2014 skip planners, direct execution">Exec</button>
-                        </div>
-
-                        <vscode-button appearance="secondary" id="compact-btn" title="Compact Context">Compact</vscode-button>
-                        <span id="context-token-counter" style="font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; display: none;"></span>
-                        <vscode-button appearance="secondary" id="stop-btn" title="Stop Council Activity" style="display:none; background: var(--vscode-errorForeground); color: white;">Stop</vscode-button>
-                        <vscode-button appearance="secondary" id="queue-btn" title="Add current prompt to queue (Enter)" style="display:none;">Queue <span id="queue-badge" style="margin-left: 4px; font-weight: bold;"></span></vscode-button>
-                        <vscode-button appearance="icon" id="queue-view-btn" title="View / hide queued prompts" style="display:none;">\u2630 <span id="queue-view-count" style="font-weight: bold;"></span></vscode-button>
-                        <vscode-button id="ask-btn">Send</vscode-button>
-                    </div>
-                    <div id="queue-panel" style="display:none; margin-top: 6px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-editor-background); max-height: 160px; overflow-y: auto;">
-                        <div style="padding: 6px 10px; font-size: 11px; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); display: flex; justify-content: space-between; align-items: center;">
-                            <span>Queued Prompts</span>
-                            <span style="display:flex;align-items:center;gap:8px;">
-                                <span id="queue-panel-actions" style="display:flex;gap:6px;"></span>
-                                <span id="queue-panel-close" style="cursor: pointer; padding: 0 4px;" title="Close">\u2715</span>
-                            </span>
-                        </div>
-                        <div id="queue-list" style="padding: 4px 0;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- SESSIONS HISTORY VIEW -->
-            <div id="sessions-view" class="view">
-                <div class="chat-header">
-                    <vscode-button appearance="secondary" id="back-to-chat-btn" title="Back to Chat">
-                        Back
-                    </vscode-button>
-                    <div style="font-weight: bold; font-size: 14px;">Sessions History</div>
-                    <vscode-button appearance="secondary" id="toggle-workspace-btn" title="Toggle workspace filter">
-                        This workspace
-                    </vscode-button>
-                </div>
-                <div class="sessions-panel" id="sessions-panel"></div>
-            </div>
-
-            <script src="${webviewScriptUri}"></script>
-        </body>
-        </html>`;
+                // Switch to output tab on finish? Maybe keep user preference.
+                // switchTab(msg.id, 'output'); 
+            }
+            
+            delete streamDivs[msg.id]; 
+        }
+    } else if (msg.type === "status") { statusEls.textContent = msg.content; }
+    else if (msg.type === "setGenerating") { root.classList.toggle("generating", msg.value); }
+    else if (msg.type === "chatCleared") {
+        Object.keys(streamTimers).forEach(function(id) { clearStreamTimer(id); });
+        chat.innerHTML = "";
+    }
+});
+</script>
+</body>
+</html>`
+    );
   }
 };
 
@@ -9270,7 +7254,7 @@ ${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, "").rep
 function activate(context) {
   registerDebugOutputChannel(context);
   debugLog("Extension", "Optimus Code is now active!");
-  const workspacePathHint = vscode7.workspace.workspaceFolders?.[0]?.uri.fsPath || (vscode7.window.activeTextEditor?.document?.uri.scheme === "file" ? path5.dirname(vscode7.window.activeTextEditor.document.uri.fsPath) : void 0) || (context.extensionMode === vscode7.ExtensionMode.Development ? context.extensionUri.fsPath : void 0);
+  const workspacePathHint = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath || (vscode5.window.activeTextEditor?.document?.uri.scheme === "file" ? path3.dirname(vscode5.window.activeTextEditor.document.uri.fsPath) : void 0) || (context.extensionMode === vscode5.ExtensionMode.Development ? context.extensionUri.fsPath : void 0);
   if (workspacePathHint) {
     PersistentAgentAdapter.setWorkspacePathHint(workspacePathHint);
     debugLog("Extension", "Registered workspace path hint", JSON.stringify({ workspacePathHint }));
@@ -9279,7 +7263,7 @@ function activate(context) {
   }
   const provider = new ChatViewProvider(context.extensionUri, context);
   context.subscriptions.push(
-    vscode7.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider)
+    vscode5.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider)
   );
 }
 function deactivate() {

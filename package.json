@@ -15,7 +15,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -24,25 +26,6 @@
         "title": "Optimus Code: Configure Agents"
       }
     ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "optimus-code-sidebar",
-          "title": "Optimus Code",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "optimus-code-sidebar": [
-        {
-          "type": "webview",
-          "id": "optimus-code.chatView",
-          "name": "Council Chat",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    },
     "configuration": {
       "title": "Optimus Code",
       "properties": {
@@ -135,6 +118,42 @@
           "default": false,
           "description": "Show Optimus Code debug panels and enable additional debug logging."
         },
+        "optimusCode.models": {
+          "type": "object",
+          "properties": {
+            "claude_code": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [
+                "claude-opus-4.6-1m",
+                "gpt-5.4"
+              ],
+              "description": "Available models for Claude Code."
+            },
+            "copilot_cli": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [
+                "gemini-3-pro-preview",
+                "claude-opus-4.6-1m",
+                "gpt-5.4"
+              ],
+              "description": "Available models for GitHub Copilot CLI."
+            }
+          },
+          "default": {
+            "claude_code": [
+                "claude-opus-4.6-1m",
+                "gpt-5.4"
+            ],
+            "copilot_cli": [
+                "gemini-3-pro-preview",
+                "claude-opus-4.6-1m",
+                "gpt-5.4"
+            ]
+          },
+          "description": "List of models available for each CLI engine."
+        },
         "optimusCode.compactThresholdTokens": {
           "type": "integer",
           "default": 800000,
@@ -148,6 +167,25 @@
           "description": "Character threshold for switching oversized non-interactive prompts to workspace runtime briefing files instead of inline CLI arguments."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "optimus-code-sidebar",
+          "title": "Optimus Code",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "optimus-code-sidebar": [
+        {
+          "type": "webview",
+          "id": "optimus-code.chatView",
+          "name": "Council Chat",
+          "icon": "resources/icon.svg"
+        }
+      ]
     }
   },
   "scripts": {
@@ -174,6 +212,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@vscode/webview-ui-toolkit": "^1.4.0",
     "iconv-lite": "^0.6.3",
     "marked": "^17.0.4",

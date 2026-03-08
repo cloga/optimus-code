@@ -9,8 +9,12 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         super(id, name, modelFlag, '?>', modes);
     }
 
+    protected shouldUsePersistentSession(mode: AgentMode): boolean {
+        return false;
+    }
+
     protected shouldUseStructuredOutput(mode: AgentMode): boolean {
-        return mode === 'plan';
+        return mode === 'plan' || mode === 'agent';
     }
 
     protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
@@ -50,6 +54,10 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         const args: string[] = [];
         const cwd = PersistentAgentAdapter.getWorkspacePath();
         args.push('--add-dir', cwd);
+
+        if (this.modelFlag) {
+            args.push('--model', this.modelFlag);
+        }
 
         if (mode === 'plan') {
             // -p flag already prevents file modifications; no extra flags needed
