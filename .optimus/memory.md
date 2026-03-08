@@ -33,3 +33,6 @@ Core architecture: VS Code extension with "Council for Planning, Dictator for Ex
 - Project memory: `.optimus/memory.md` (this file)
 - Project rules: `.optimus/rules.md`
 - CI/CD: `.github/workflows/publish.yml`
+
+<!-- updated 2026-03-08 -->
+该项目当前正确的扩展构建流程是 `npm run compile` -> `tsc --noEmit` + `node esbuild.js`，目标产物应为单文件 `out/extension.js`，不应保留旧的 `tsc` 分目录 JS 输出。

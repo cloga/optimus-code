@@ -1,18 +1,19 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
+import { AgentMode } from '../types/SharedTaskContext';
 // Copilot CLI uses ● (U+25CF filled circle) and tree-drawing chars for tool trace lines
 // Also handle ⏺ (U+23FA) and • (U+2022) for robustness
 const COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
 
 export class GitHubCopilotAdapter extends PersistentAgentAdapter {
-    constructor(id: string = 'github-copilot', name: string = '🛸 GitHub Copilot', modelFlag: string = '', modes?: string[]) {
+    constructor(id: string = 'github-copilot', name: string = '🛸 GitHub Copilot', modelFlag: string = '', modes?: AgentMode[]) {
         super(id, name, modelFlag, '?>', modes);
     }
 
-    protected shouldUseStructuredOutput(mode: string): boolean {
+    protected shouldUseStructuredOutput(mode: AgentMode): boolean {
         return mode === 'plan';
     }
 
-    protected getNonInteractiveCommand(mode: string, prompt: string): { cmd: string, args: string[] } {
+    protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
         const command = super.getNonInteractiveCommand(mode, prompt);
         if (this.shouldUseStructuredOutput(mode)) {
             command.args.push('--output-format', 'json', '--stream', 'on');
@@ -45,18 +46,18 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         });
     }
 
-    protected getSpawnCommand(mode: string): { cmd: string, args: string[] } {
+    protected getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] } {
         const args: string[] = [];
         const cwd = PersistentAgentAdapter.getWorkspacePath();
         args.push('--add-dir', cwd);
-        
+
         if (mode === 'plan') {
             // -p flag already prevents file modifications; no extra flags needed
         } else if (mode === 'agent') {
             args.push('--allow-all');
             args.push('--no-ask-user');
         }
-        
+
         return { cmd: 'copilot', args };
     }
 }

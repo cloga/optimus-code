@@ -1,5 +1,6 @@
 export type AgentRunStatus = 'running' | 'success' | 'error';
 export type AgentRole = 'planner' | 'executor' | 'synthesizer';
+export type AgentMode = 'plan' | 'agent';
 export type TaskTurnStatus = 'in_progress' | 'completed' | 'failed';
 export type TaskStatus = 'active' | 'blocked' | 'completed';
 
@@ -82,6 +83,7 @@ export interface SharedTaskState {
     title: string;
     status: TaskStatus;
     pinned?: boolean;
+    workspacePath?: string;
     userIntentHistory: string[];
     plannerContributions: ContributionRecord[];
     executorOutcomes: ExecutorOutcomeRecord[];
@@ -101,6 +103,7 @@ export interface TaskSnapshot {
     turnCount: number;
     latestSummary: string;
     latestPrompt?: string;
+    workspacePath?: string;
 }
 
 export interface StartTurnInput {
@@ -132,4 +135,5 @@ export interface StoredSession {
     attachments?: SessionImageAttachment[];
     failureReason?: string;
     responses: SessionResponseRecord[];
+    workspacePath?: string;
 }

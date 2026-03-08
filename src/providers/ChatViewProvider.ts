@@ -7,8 +7,8 @@ import { PersistentAgentAdapter } from '../adapters/PersistentAgentAdapter';
 import { SharedTaskStateManager } from '../managers/SharedTaskStateManager';
 import { MemoryManager } from '../managers/MemoryManager';
 import { marked } from 'marked';
-import { debugLog } from '../debugLogger';
-import { ContributionRecord, ExecutorOutcomeRecord, SessionImageAttachment, SessionResponseRecord, StoredSession } from '../types/SharedTaskContext';
+import { debugLog, isDebugModeEnabled } from '../debugLogger';
+import { AgentMode, ContributionRecord, ExecutorOutcomeRecord, SessionImageAttachment, SessionResponseRecord, StoredSession } from '../types/SharedTaskContext';
 import { ANSI_RE } from '../utils/textParsing';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
@@ -22,11 +22,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     private readonly _taskStateManager: SharedTaskStateManager;
     private readonly _memoryManager: MemoryManager;
     private _lastSentTurnCount = 0;
+    private _showAllWorkspaces = false;
     private _cachedContextTokens?: { taskId: string; turnCount: number; tokens: number; needsCompaction: boolean };
-
-    private _isDebugModeEnabled() {
-        return vscode.workspace.getConfiguration('optimusCode').get<boolean>('debugMode', false);
-    }
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -144,21 +141,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 sessionId: data.sessionId,
             }));
 
-            if (this._isDebugModeEnabled()) {
-                this._view?.webview.postMessage({
-                    type: 'hostDebug',
-                    phase: 'received',
-                    messageType: data.type,
-                    detail: JSON.stringify({
-                        hasValue: typeof data.value === 'string' ? data.value.length > 0 : false,
-                        agentCount: Array.isArray(data.agents) ? data.agents.length : undefined,
-                        executor: data.executor,
-                        taskId: data.taskId,
-                        sessionId: data.sessionId,
-                    })
-                });
-            }
-
             switch (data.type) {
                 case 'askCouncil':
                     {
@@ -168,21 +150,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 case 'newChat':
                     {
                         this._currentTaskId = undefined;
-                        this._context.globalState.update('optimusQueue', []);
-                        break;
-                    }
-                case 'saveQueue':
-                    {
-                        const queue = Array.isArray(data.queue) ? data.queue : [];
-                        // Strip heavy dataUrl from images before persisting
-                        const lite = queue.map((item: { text: string; agents: string[]; executor: string; mode?: string; images?: { dataUrl: string; mimeType: string }[] }) => ({
-                            text: item.text,
-                            agents: item.agents,
-                            executor: item.executor,
-                            mode: item.mode || 'auto',
-                            images: item.images ? item.images.map((img: { dataUrl: string; mimeType: string }) => ({ dataUrl: img.dataUrl, mimeType: img.mimeType })) : undefined,
-                        }));
-                        this._context.globalState.update('optimusQueue', lite);
+                        this._activeTurnRef = undefined;
+                        this._activeStopReason = undefined;
+                        this._activeRunAdapters = [];
+                        this._view?.webview.postMessage({ type: 'turnComplete' });
                         break;
                     }
                 case 'requestSessions':
@@ -213,6 +184,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 case 'pinTask':
                     {
                         await this._pinTask(data.taskId);
+                        break;
+                    }
+                case 'toggleShowAllWorkspaces':
+                    {
+                        this._showAllWorkspaces = !this._showAllWorkspaces;
+                        this._sendSessionsToUI();
                         break;
                     }
                 case 'compactContext':
@@ -247,11 +224,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         this._sendUiState();
                         this._sendCurrentTaskState();
                         this._sendContextBadge();
-                        // Restore persisted queue
-                        const savedQueue = this._context.globalState.get<unknown[]>('optimusQueue', []);
-                        if (savedQueue.length > 0) {
-                            this._view?.webview.postMessage({ type: 'initQueue', queue: savedQueue });
-                        }
+                        void this._context.globalState.update('optimusQueue', undefined);
                         break;
                     }
                 case 'openSettings':
@@ -311,10 +284,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _sendUiState() {
-        debugLog('Webview', 'Sending UI state update', JSON.stringify({ debugMode: this._isDebugModeEnabled() }));
+        debugLog('Webview', 'Sending UI state update', JSON.stringify({ debugMode: isDebugModeEnabled() }));
         this._view?.webview.postMessage({
             type: 'updateUiState',
-            debugMode: this._isDebugModeEnabled()
+            debugMode: isDebugModeEnabled()
         });
     }
 
@@ -349,6 +322,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 sequence: turn.sequence,
                 prompt: turn.prompt.length > 80 ? turn.prompt.slice(0, 77) + '...' : turn.prompt,
                 status: turn.status,
+                referencedTurnSequences: turn.referencedTurnSequences,
             }))
             : undefined;
 
@@ -465,7 +439,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         };
     }
 
-    private _upsertSessionResponse(turnId: string, nextResponse: SessionResponseRecord) {
+    private async _upsertSessionResponse(turnId: string, nextResponse: SessionResponseRecord) {
         const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
         const sessionIndex = sessions.findIndex(session => session.turnId === turnId);
         if (sessionIndex === -1) {
@@ -490,7 +464,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         sessions[sessionIndex] = { ...session, responses };
-        this._context.globalState.update('optimusSessions', sessions);
+        await this._context.globalState.update('optimusSessions', sessions);
     }
 
     private _initializeSessionResponses(
@@ -537,6 +511,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             return 'plan';
         }
 
+        // Context-aware: if previous turn was plan-only and user confirms → direct execution
+        if (taskState?.turnHistory && taskState.turnHistory.length > 0) {
+            const confirmPatterns = [
+                /^(好的?|确认|就(按|照|这样)|可以|行|没问题|ok|okay|yes|go|lgtm|do\s+it|proceed|execute|开始|执行|搞|干|来吧|做吧)/i,
+                /^(按照?|就按|依照|照着).{0,20}(做|执行|来|改|实现)/i,
+                /^(实现一下|帮我(做|实现|写|改)|按.{0,10}(上面|这个|方案))/i,
+            ];
+            if (trimmed.length < 100 && confirmPatterns.some(p => p.test(trimmed))) {
+                debugLog('InferMode', 'Inferred direct mode (confirmation follow-up)', JSON.stringify({ prompt: trimmed.slice(0, 80) }));
+                return 'direct';
+            }
+        }
+
         // Micro-edits: unambiguous, very short commands → direct even without prior context
         const microEditPatterns = [
             /^(fix typo|rename\s|remove\s|delete\s|add\s+line|update\s+comment|格式化|修复\s*typo|重命名\s)/i,
@@ -551,6 +538,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const directPatterns = [
             /^(把|将|改|删除|移除|添加|加上|去掉|rename|fix typo|remove|delete|add|change|replace|update)/i,
             /^(修复|修改|替换|加一个|加一行|改一下|改成)/i,
+            // Explicit execution commands
+            /^(run|build|compile|install|test|npm\s|git\s|执行|运行|编译|构建|安装|发布|部署)/i,
+            /^(帮我写|帮我做|帮我实现|实现一下|写一个|做一下|创建一个)/i,
         ];
         const isShort = trimmed.length < 200;
         if (isShort && directPatterns.some(pattern => pattern.test(trimmed))) {
@@ -565,15 +555,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
      * After Phase 1 completes, analyze planner outputs to determine whether
      * code execution is actually needed. Returns 'action' if any planner
      * flagged <action-required>yes</action-required>, 'answer' if majority
-     * flagged no, or 'unknown' if tags are missing.
+     * flagged no, 'skip' if any planner flagged <skip-to-executor>yes</skip-to-executor>,
+     * or 'unknown' if tags are missing.
      */
-    private _computeIntentFromPlanners(planResults: { agentId: string; agent: string; text: string; status: 'success' | 'error' }[]): 'action' | 'answer' | 'unknown' {
+    private _computeIntentFromPlanners(planResults: { agentId: string; agent: string; text: string; status: 'success' | 'error' }[]): 'action' | 'answer' | 'skip' | 'unknown' {
         const successful = planResults.filter(r => r.status === 'success');
         if (successful.length === 0) { return 'unknown'; }
 
         let yesCount = 0;
         let noCount = 0;
+        let skipVoted = false;
         for (const r of successful) {
+            // Check for skip-to-executor signal
+            if (/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)) {
+                skipVoted = true;
+            }
+
             const match = /<action-required>\s*(yes|no)\s*<\/action-required>/i.exec(r.text);
             if (match) {
                 if (match[1].toLowerCase() === 'yes') { yesCount++; }
@@ -589,6 +586,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
         }
 
+        // Skip takes priority: if any planner voted skip + action, fast-track to executor
+        if (skipVoted && yesCount > 0) { return 'skip'; }
         if (noCount > 0 && yesCount === 0) { return 'answer'; }
         if (yesCount > 0) { return 'action'; }
         return 'unknown';
@@ -624,13 +623,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             return;
         }
         this._runningTaskIds.add(this._currentTaskId);
+        this._sendSessionsToUI();
         this._activeTurnRef = {
             taskId: turnState.taskState.taskId,
             turnId: turnState.turnRecord.turnId,
         };
         this._activeStopReason = undefined;
 
-        this._createSessionRecord(prompt, turnState.taskState.taskId, turnState.turnRecord.turnId, storedAttachments);
+        await this._createSessionRecord(prompt, turnState.taskState.taskId, turnState.turnRecord.turnId, storedAttachments);
 
         // Auto-route: infer optimal mode from prompt heuristics when user selected 'auto'
         const originalMode = mode;
@@ -659,13 +659,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 'plan' — planners only, skip executor
         // 'direct' — skip planners, executor acts on user prompt directly
 
-        // Phase 1 setup: filter plan-capable agents (skipped entirely in direct mode)
-        let planAdapters = mode === 'direct' ? [] : allAdapters.filter(a =>
+        // Phase 1 setup: filter plan-capable agents.
+        // In 'direct' mode, run a single planner as a lightweight validation check
+        // so the planner can override _inferMode misclassifications (e.g. complex task
+        // misidentified as direct). The planner can vote <action-required> to upgrade.
+        const allPlanAdapters = allAdapters.filter(a =>
             selectedAgentIds.includes(a.id) && a.modes.includes('plan')
         );
+        let planAdapters = mode === 'direct' ? allPlanAdapters.slice(0, 1) : allPlanAdapters;
 
-        // Only report dropped planners in non-direct modes.
-        // In direct mode, planners are skipped by design — no need to notify.
+        // Only report dropped planners when in non-direct modes with multiple planners.
+        // In direct mode, we intentionally limit to 1 planner — no need to notify about the rest.
         if (mode !== 'direct') {
             const droppedPlannerSelections = selectedAgentIds
                 .filter(id => !planAdapters.some(adapter => adapter.id === id))
@@ -726,8 +730,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         // In plan mode, include executor as synthesizer when multiple planners are selected
         const planMayNeedSynthesis = mode === 'plan' && planAdapters.length > 1 && !!executor;
+        // In direct mode, include the validation planner (if any) plus the executor
         this._activeRunAdapters = mode === 'direct'
-            ? (executor ? [executor] : [])
+            ? [...planAdapters, ...(executor ? [executor] : [])]
             : [...planAdapters, ...(mode === 'plan' ? (planMayNeedSynthesis && executor ? [executor] : []) : executor ? [executor] : [])];
 
         const sessionResponses: SessionResponseRecord[] = [];
@@ -735,9 +740,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         try {
             const planResults: {agentId: string, agent: string, text: string, status: 'success' | 'error'}[] = [];
+            // Track planner promises so background planners (from skip-to-executor early exit)
+            // can be drained before persisting turn state.
+            let pendingPlannerPromises: Promise<void>[] = [];
 
-            // --- Phase 1: Council Planning (skipped in 'direct' mode) ---
-            if (mode !== 'direct') {
+            // --- Phase 1: Council Planning (runs whenever planAdapters is non-empty) ---
+            // In 'direct' mode, a single validation planner runs to catch _inferMode misclassifications.
+            if (planAdapters.length > 0) {
                 const plannerPrompt = this._taskStateManager.buildPlannerPrompt(
                     turnState.taskState,
                     turnState.turnRecord,
@@ -773,8 +782,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         debugLog(adapter.id, 'Raw result length + preview', JSON.stringify({ len: res.length, preview: res.slice(0, 500) }));
                         const { thinking, output, usageLog } = this._extractThinking(res, adapter);
                         planResults.push({ agentId: adapter.id, agent: adapter.name, text: output, status: 'success' });
-                        // Strip <action-required> tags from display output (kept in planResults for intent detection)
-                        const displayOutput = output.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').trim();
+                        // Strip <action-required> and <skip-to-executor> tags from display output (kept in planResults for intent detection)
+                        const displayOutput = output
+                            .replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '')
+                            .replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '')
+                            .trim();
                         const plannerSuccessRecord = { agent: adapter.name, agentId: adapter.id, role: 'planner' as const, prompt: plannerPrompt, thinking: thinking, text: displayOutput, usageLog: usageLog, status: 'success' as const, raw: false, debug: adapter.lastDebugInfo };
                         sessionResponses.push(plannerSuccessRecord);
                         this._upsertSessionResponse(turnState.turnRecord.turnId, plannerSuccessRecord);
@@ -803,10 +815,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         });
                     });
                 });
+                pendingPlannerPromises = promises;
 
-                await Promise.all(promises);
+                // First-vote-wins: if any planner signals <skip-to-executor>, resolve early
+                // without waiting for the remaining planners. All planners still run to completion
+                // in the background (their results are recorded for session history).
+                let skipDetected = false;
+                if (planAdapters.length > 1) {
+                    await new Promise<void>(resolve => {
+                        let settled = 0;
+                        const total = promises.length;
+                        for (const p of promises) {
+                            p.then(() => {
+                                settled++;
+                                if (!skipDetected) {
+                                    // Check if any result so far has skip signal
+                                    const hasSkip = planResults.some(r =>
+                                        r.status === 'success' && /<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text)
+                                    );
+                                    if (hasSkip) {
+                                        skipDetected = true;
+                                        debugLog('Council', 'Skip-to-executor detected, proceeding early', JSON.stringify({
+                                            settled,
+                                            total,
+                                            skipAgent: planResults.find(r => /<skip-to-executor>\s*yes\s*<\/skip-to-executor>/i.test(r.text))?.agent,
+                                        }));
+                                        resolve();
+                                    } else if (settled === total) {
+                                        resolve();
+                                    }
+                                } else if (settled === total) {
+                                    // Already resolved early, just let remaining finish
+                                }
+                            }).catch(() => {
+                                settled++;
+                                if (settled === total && !skipDetected) {
+                                    resolve();
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    await Promise.all(promises);
+                }
                 this._view.webview.postMessage({ type: 'councilComplete' });
-                debugLog('Council', 'Planning phase completed', JSON.stringify(planResults));
+                debugLog('Council', 'Planning phase completed', JSON.stringify({ planResults: planResults.length, skipDetected }));
             }
 
             // --- Phase 2: Executor synthesizes and acts (skipped in 'plan' mode) ---
@@ -814,15 +867,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             let executorOutcome: ExecutorOutcomeRecord | undefined;
             let synthesisPrompt: string | undefined;
 
-            // Intent gate: let planners vote on whether execution is needed
-            const plannerIntent = mode === 'auto' ? this._computeIntentFromPlanners(planResults) : undefined;
+            // Intent gate: let planners vote on whether execution is needed.
+            // Runs in 'auto', 'plan', and 'direct' modes so planner votes can override
+            // _inferMode misclassifications (e.g. plan→executor, direct→needs planning).
+            const plannerIntent = planResults.length > 0 ? this._computeIntentFromPlanners(planResults) : undefined;
             const intentDowngraded = mode === 'auto' && plannerIntent === 'answer';
+            const intentSkipped = mode === 'auto' && plannerIntent === 'skip';
+            // Upgrade: if _inferMode said 'plan' but planners voted action/skip, upgrade to auto
+            const intentUpgraded = mode === 'plan' && (plannerIntent === 'action' || plannerIntent === 'skip');
+            // Direct override: if _inferMode said 'direct' but planner voted action (complex task),
+            // upgrade to auto so executor receives planner synthesis instead of raw user prompt
+            const directOverridden = mode === 'direct' && plannerIntent === 'action';
             if (intentDowngraded) {
                 debugLog('IntentGate', 'Auto mode downgraded to plan (planners voted answer-only)', JSON.stringify({ plannerIntent }));
                 this._view.webview.postMessage({ type: 'intentDowngrade', originalMode: 'auto', effectiveMode: 'plan', plannerIntent });
             }
+            if (intentSkipped) {
+                debugLog('IntentGate', 'Skip-to-executor: planner voted simple task, fast-tracking to executor', JSON.stringify({ plannerIntent }));
+                this._view.webview.postMessage({ type: 'intentSkip', originalMode: 'auto', effectiveMode: 'auto', plannerIntent: 'skip' });
+            }
+            if (intentUpgraded) {
+                debugLog('IntentGate', 'Plan mode upgraded to auto (planners voted action-required)', JSON.stringify({ plannerIntent, originalInferredMode: mode }));
+                this._view.webview.postMessage({ type: 'intentUpgrade', originalMode: 'plan', effectiveMode: 'auto', plannerIntent });
+            }
+            if (directOverridden) {
+                debugLog('IntentGate', 'Direct mode upgraded to auto (planner voted action-required for complex task)', JSON.stringify({ plannerIntent, originalInferredMode: mode }));
+                this._view.webview.postMessage({ type: 'intentUpgrade', originalMode: 'direct', effectiveMode: 'auto', plannerIntent });
+            }
 
-            const effectiveMode = intentDowngraded ? 'plan' : mode;
+            const effectiveMode = intentDowngraded ? 'plan' : (intentUpgraded || directOverridden) ? 'auto' : mode;
             const isPlanSynthesis = effectiveMode === 'plan' && executor && planResults.filter(r => r.status === 'success').length > 1;
             if (executor && (effectiveMode !== 'plan' || isPlanSynthesis)) {
                 // In 'direct' mode, skip planner synthesis check — executor acts on user prompt directly
@@ -838,9 +911,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                             prompt,
                             enrichedPrompt
                         );
+                    } else if (directOverridden && successfulPlans.length > 0) {
+                        // Direct→Auto escalation: validation planner flagged complex task.
+                        // Use hybrid prompt with both user request and planner insight
+                        // (only 1 planner ran in direct mode, so standard synthesis is thin).
+                        const plannerInsight = successfulPlans.map(r =>
+                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '').trim()}`
+                        ).join('\n\n');
+                        executorPrompt = this._taskStateManager.buildDirectEscalatedPrompt(
+                            turnState.taskState,
+                            turnState.turnRecord,
+                            prompt,
+                            enrichedPrompt,
+                            plannerInsight
+                        );
                     } else if (isPlanSynthesis) {
                         const synthesis = successfulPlans.map(r =>
-                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').trim()}`
+                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '').trim()}`
                         ).join('\n\n');
                         executorPrompt = this._taskStateManager.buildPlanSynthesisPrompt(
                             turnState.taskState,
@@ -850,7 +937,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         );
                     } else {
                         const synthesis = successfulPlans.map(r =>
-                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').trim()}`
+                            `=== ${r.agent} ===\n${r.text.replace(/<action-required>\s*(yes|no)\s*<\/action-required>/gi, '').replace(/<skip-to-executor>\s*yes\s*<\/skip-to-executor>/gi, '').trim()}`
                         ).join('\n\n');
                         executorPrompt = this._taskStateManager.buildExecutorPrompt(
                             turnState.taskState,
@@ -885,10 +972,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     debugLog('Council', `${phaseRole} phase starting`, JSON.stringify({ executor: executor.name, promptLength: executorPrompt.length, isPlanSynthesis }));
 
                     // For plan synthesis, use 'plan' invoke mode so the synthesizer has no tool access
-                    const invokeMode = isPlanSynthesis ? 'plan' : 'agent';
+                    const invokeMode: AgentMode = isPlanSynthesis ? 'plan' : 'agent';
 
                     try {
-                        const execResultRaw = await executor.invoke(executorPrompt, invokeMode as any, execCallback);
+                        const execResultRaw = await executor.invoke(executorPrompt, invokeMode, execCallback);
                         execFlush();
 
                         // Extract <task-summary> from executor output before further parsing
@@ -940,6 +1027,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
             }
 
+            // Drain any background planner promises that were still running
+            // after a skip-to-executor early exit, so their contributions are
+            // properly recorded in session state and turn history.
+            if (pendingPlannerPromises.length > 0) {
+                await Promise.allSettled(pendingPlannerPromises);
+                debugLog('Council', 'Background planner promises drained', JSON.stringify({ count: pendingPlannerPromises.length }));
+            }
+
+            // Persist session responses BEFORE completing the turn in task state.
+            // This prevents a race where task state is saved but session responses
+            // are lost if VS Code shuts down between the two writes.
+            await this._updateSessionRecord(turnState.turnRecord.turnId, sessionResponses);
+
             const updatedTaskState = await this._taskStateManager.completeTurn(turnState.taskState.taskId, turnState.turnRecord.turnId, {
                 plannerContributions,
                 executorOutcome,
@@ -952,7 +1052,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 turnCount: updatedTaskState?.turnHistory.length,
             }));
 
-            this._updateSessionRecord(turnState.turnRecord.turnId, sessionResponses);
             this._sendCurrentTaskState();
 
             // Auto-compact if context exceeds threshold
@@ -986,6 +1085,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             this._sendCurrentTaskState();
         } finally {
             this._runningTaskIds.delete(turnState.taskState.taskId);
+            this._sendSessionsToUI();
             this._activeTurnRef = undefined;
             this._activeStopReason = undefined;
             this._activeRunAdapters = [];
@@ -1236,7 +1336,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _createSessionRecord(prompt: string, taskId: string, turnId: string, attachments: SessionImageAttachment[] = []) {
+    private async _createSessionRecord(prompt: string, taskId: string, turnId: string, attachments: SessionImageAttachment[] = []) {
         const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
         sessions.unshift({
             id: turnId,
@@ -1246,19 +1346,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             turnId,
             attachments,
             responses: [],
+            workspacePath: PersistentAgentAdapter.getWorkspacePath(),
         });
         const limited = sessions.slice(0, 50);
-        this._context.globalState.update('optimusSessions', limited);
+        await this._context.globalState.update('optimusSessions', limited);
         this._sendSessionsToUI();
     }
 
-    private _updateSessionRecord(turnId: string, responses: SessionResponseRecord[]) {
+    private async _updateSessionRecord(turnId: string, responses: SessionResponseRecord[]) {
         const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
         const idx = sessions.findIndex(s => s.turnId === turnId);
         if (idx !== -1) {
             sessions[idx] = { ...sessions[idx], responses: responses.map(response => ({ ...response })) };
         }
-        this._context.globalState.update('optimusSessions', sessions);
+        await this._context.globalState.update('optimusSessions', sessions);
         this._sendSessionsToUI();
     }
 
@@ -1266,7 +1367,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const sessions: StoredSession[] = this._context.globalState.get('optimusSessions', []);
         const snapshots = this._taskStateManager.listTaskSnapshots();
         const snapshotMap = new Map(snapshots.map(snapshot => [snapshot.taskId, snapshot]));
-        
+        const currentWorkspacePath = PersistentAgentAdapter.getWorkspacePath();
+
         // Deduplicate sessions so that we only show ONE entry per Task in the history list.
         const seenTaskIds = new Set<string>();
         const uniqueSessions = [];
@@ -1278,6 +1380,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
                 seenTaskIds.add(s.taskId);
             }
+
+            // Workspace filter: skip tasks from other workspaces unless showAllWorkspaces is on.
+            // Old data without workspacePath is always shown (backward compatible).
+            if (!this._showAllWorkspaces && s.taskId) {
+                const snapshot = snapshotMap.get(s.taskId);
+                const sessionWorkspacePath = snapshot?.workspacePath ?? s.workspacePath;
+                if (sessionWorkspacePath && sessionWorkspacePath !== currentWorkspacePath) {
+                    continue;
+                }
+            }
+
             uniqueSessions.push(s);
         }
 
@@ -1297,11 +1410,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 turnCount: snapshot?.turnCount,
                 latestSummary: snapshot?.latestSummary,
                 pinned: snapshot?.pinned,
+                isRunning: s.taskId ? this._runningTaskIds.has(s.taskId) : false,
+                workspacePath: snapshot?.workspacePath ?? s.workspacePath,
                 attachmentCount: attachments.length,
                 attachments,
             };
         });
-        this._view?.webview.postMessage({ type: 'updateSessionsList', sessions: lightweightSessions });
+        this._view?.webview.postMessage({
+            type: 'updateSessionsList',
+            sessions: lightweightSessions,
+            currentWorkspacePath,
+            showAllWorkspaces: this._showAllWorkspaces,
+        });
     }
 
     private async _loadSessionToUI(id: string) {
@@ -1328,17 +1448,50 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         const parsedGroupSessions = [];
         for (const session of groupSessions) {
-            const parsedResponses = await Promise.all(session.responses.map(async (r: SessionResponseRecord) => {
+            const matchedTurn = taskState?.turnHistory.find(turn => turn.turnId === session.turnId);
+
+            // Fallback: if session responses were lost (e.g. crash before persistence)
+            // but the turn has planner/executor data in task state, rebuild minimal entries.
+            let effectiveResponses = session.responses;
+            if (effectiveResponses.length === 0 && matchedTurn && matchedTurn.status !== 'in_progress') {
+                const fallback: SessionResponseRecord[] = [];
+                for (const contribution of matchedTurn.plannerContributions) {
+                    fallback.push({
+                        agent: contribution.agentName,
+                        agentId: contribution.agentId,
+                        role: 'planner',
+                        text: contribution.summary || contribution.rawText,
+                        status: contribution.status,
+                        raw: false,
+                    });
+                }
+                if (matchedTurn.executorOutcome) {
+                    fallback.push({
+                        agent: matchedTurn.executorOutcome.agentName,
+                        agentId: matchedTurn.executorOutcome.agentId,
+                        role: 'executor',
+                        text: matchedTurn.executorOutcome.summary || matchedTurn.executorOutcome.rawText,
+                        status: matchedTurn.executorOutcome.status,
+                        raw: false,
+                    });
+                }
+                if (fallback.length > 0) {
+                    effectiveResponses = fallback;
+                    debugLog('History', 'Rebuilt responses from task state for turn', JSON.stringify({ turnId: session.turnId, count: fallback.length }));
+                }
+            }
+
+            const parsedResponses = await Promise.all(effectiveResponses.map(async (r: SessionResponseRecord) => {
                 const responseText = r.text || '';
                 const responseThinking = r.thinking || '';
                 const text = (r.status === 'success' && !r.raw) ? await marked.parse(responseText) : responseText;
                 const thinkingText = responseThinking ? await marked.parse(responseThinking) : undefined;
                 return { ...r, parsedText: text, thinkingHtml: thinkingText, usageLog: r.usageLog };
             }));
-            const matchedTurn = taskState?.turnHistory.find(turn => turn.turnId === session.turnId);
             parsedGroupSessions.push({
                 ...session,
                 turnSequence: matchedTurn?.sequence,
+                referencedTurnSequences: matchedTurn?.referencedTurnSequences,
                 failureReason: matchedTurn?.failureReason || session.failureReason,
                 attachments: (session.attachments || [])
                     .map(attachment => this._toWebviewAttachment(attachment))
@@ -1582,6 +1735,67 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     color: var(--vscode-button-foreground);
                     opacity: 1;
                 }
+                .message-ref-cards {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    margin-top: 6px;
+                }
+                .message-ref-card {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    padding: 4px 8px;
+                    border-left: 3px solid var(--vscode-focusBorder);
+                    background: var(--vscode-editor-inactiveSelectionBackground);
+                    border-radius: 0 4px 4px 0;
+                    cursor: pointer;
+                    opacity: 0.85;
+                    transition: opacity 0.15s ease, background 0.15s ease;
+                    max-width: 340px;
+                    overflow: hidden;
+                }
+                .message-ref-card:hover {
+                    opacity: 1;
+                    background: var(--vscode-list-hoverBackground);
+                }
+                .message-ref-card-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 11px;
+                    overflow: hidden;
+                }
+                .message-ref-card-seq {
+                    font-weight: 600;
+                    color: var(--vscode-textLink-foreground);
+                    flex-shrink: 0;
+                }
+                .message-ref-card-prompt {
+                    color: var(--vscode-foreground);
+                    opacity: 0.85;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .message-ref-card-summary {
+                    font-size: 10px;
+                    color: var(--vscode-descriptionForeground);
+                    opacity: 0.75;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    font-style: italic;
+                }
+                @keyframes ref-flash {
+                    0%   { box-shadow: 0 0 0 2px var(--vscode-focusBorder); }
+                    50%  { box-shadow: 0 0 0 4px var(--vscode-focusBorder); background: var(--vscode-editor-findMatchHighlightBackground); }
+                    100% { box-shadow: none; }
+                }
+                .ref-highlight-flash {
+                    animation: ref-flash 0.5s ease 3;
+                    border-radius: 4px;
+                }
                 .mode-selector {
                     display: inline-flex;
                     border: 1px solid var(--vscode-panel-border);
@@ -1787,6 +2001,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .session-pinned {
                     border-color: var(--vscode-focusBorder);
                 }
+                .session-workspace-label {
+                    font-size: 10px;
+                    color: var(--vscode-descriptionForeground);
+                    margin-bottom: 2px;
+                    opacity: 0.8;
+                }
                 .session-title-row {
                     display: flex;
                     align-items: center;
@@ -1801,6 +2021,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .session-pin-indicator {
                     flex-shrink: 0;
                     font-size: 11px;
+                }
+                .session-running-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 5px;
+                    flex-shrink: 0;
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: var(--vscode-textLink-foreground);
+                    background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent 86%);
+                    border-radius: 4px;
+                    padding: 1px 6px;
+                }
+                .session-running-badge .running-dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 999px;
+                    border: 1.5px solid color-mix(in srgb, var(--vscode-textLink-foreground) 28%, transparent 72%);
+                    border-top-color: var(--vscode-textLink-foreground);
+                    animation: spin 0.9s linear infinite;
                 }
                 .task-status-badge {
                     display: inline-flex;
@@ -2400,59 +2640,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 .debug-details[open] summary {
                     margin-bottom: 8px;
                 }
-                .diagnostic-panel {
-                    margin-top: 8px;
-                    border: 1px solid var(--vscode-panel-border);
-                    border-radius: 6px;
-                    background: var(--vscode-editor-background);
-                    padding: 8px;
-                    display: none;
-                    flex-direction: column;
-                    gap: 6px;
-                }
-                .diagnostic-panel.visible {
-                    display: flex;
-                }
-                .diagnostic-title {
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: var(--vscode-descriptionForeground);
-                    text-transform: uppercase;
-                    letter-spacing: 0.04em;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }
-                .diagnostic-status {
-                    font-size: 10px;
-                    padding: 2px 6px;
-                    border-radius: 999px;
-                    border: 1px solid var(--vscode-panel-border);
-                    background: var(--vscode-editor-inactiveSelectionBackground);
-                }
-                .diagnostic-status.pending {
-                    color: var(--vscode-editorWarning-foreground);
-                }
-                .diagnostic-status.running {
-                    color: var(--vscode-testing-iconPassed);
-                }
-                .diagnostic-status.failed {
-                    color: var(--vscode-errorForeground);
-                }
-                .diagnostic-log {
-                    max-height: 120px;
-                    overflow-y: auto;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                    font-size: 11px;
-                    line-height: 1.4;
-                    font-family: var(--vscode-editor-font-family);
-                    color: var(--vscode-descriptionForeground);
-                }
-                .diagnostic-line {
-                    padding: 2px 0;
-                    border-bottom: 1px dashed var(--vscode-panel-border);
-                }
                 .context-badge {
                     display: none;
                     align-items: center;
@@ -2537,7 +2724,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
             </style>
         </head>
-        <body data-debug-mode="${this._isDebugModeEnabled() ? 'true' : 'false'}">
+        <body data-debug-mode="${isDebugModeEnabled() ? 'true' : 'false'}">
             <!-- MAIN CHAT VIEW -->
             <div id="chat-view" class="view active">
                 <div class="chat-header">
@@ -2607,13 +2794,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         </div>
                         <div id="queue-list" style="padding: 4px 0;"></div>
                     </div>
-                    <div id="diagnostic-panel" class="diagnostic-panel">
-                        <div class="diagnostic-title">
-                            <span>Webview Diagnostics</span>
-                            <span id="diagnostic-status" class="diagnostic-status pending">PENDING</span>
-                        </div>
-                        <div id="diagnostic-log" class="diagnostic-log">Waiting for script boot...</div>
-                    </div>
                 </div>
             </div>
 
@@ -2624,7 +2804,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         Back
                     </vscode-button>
                     <div style="font-weight: bold; font-size: 14px;">Sessions History</div>
-                    <div style="width: 70px;"></div> <!-- Spacer to center the title -->
+                    <vscode-button appearance="secondary" id="toggle-workspace-btn" title="Toggle workspace filter">
+                        This workspace
+                    </vscode-button>
                 </div>
                 <div class="sessions-panel" id="sessions-panel"></div>
             </div>

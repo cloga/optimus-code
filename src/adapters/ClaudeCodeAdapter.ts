@@ -1,21 +1,22 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
+import { AgentMode } from '../types/SharedTaskContext';
 // Claude CLI process line prefixes: spinning indicator (⏺), bullets (•), tree chars (└│├)
 const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 
 export class ClaudeCodeAdapter extends PersistentAgentAdapter {
-    constructor(id: string = 'claude-code', name: string = '🦖 Claude Code', modelFlag: string = '', modes?: string[]) {
+    constructor(id: string = 'claude-code', name: string = '🦖 Claude Code', modelFlag: string = '', modes?: AgentMode[]) {
         super(id, name, modelFlag, '>', modes);
     }
 
-    protected shouldUsePersistentSession(mode: string): boolean {
+    protected shouldUsePersistentSession(mode: AgentMode): boolean {
         return false;
     }
 
-    protected shouldUseStructuredOutput(mode: string): boolean {
+    protected shouldUseStructuredOutput(mode: AgentMode): boolean {
         return mode === 'plan' || mode === 'agent';
     }
 
-    protected getNonInteractiveCommand(mode: string, prompt: string): { cmd: string, args: string[] } {
+    protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
         const command = super.getNonInteractiveCommand(mode, prompt);
         if (this.shouldUseStructuredOutput(mode)) {
             command.args.push('--output-format', 'stream-json', '--include-partial-messages', '--verbose');
@@ -47,7 +48,7 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
         });
     }
 
-    protected getSpawnCommand(mode: string): { cmd: string, args: string[] } {
+    protected getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] } {
         const args: string[] = [];
         const cwd = PersistentAgentAdapter.getWorkspacePath();
         args.push('--add-dir', cwd);

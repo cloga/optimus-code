@@ -1,15 +1,19 @@
 import { AgentAdapter } from './AgentAdapter';
 import { GitHubCopilotAdapter } from './GitHubCopilotAdapter';
 import { ClaudeCodeAdapter } from './ClaudeCodeAdapter';
+import { AgentMode } from '../types/SharedTaskContext';
+import { debugLog } from '../debugLogger';
 import * as vscode from 'vscode';
+
+type AdapterKind = 'github-copilot' | 'claude-code';
 
 interface AgentConfig {
     id: string;
     name: string;
-    adapter: 'github-copilot' | 'claude-code' | string;
+    adapter: AdapterKind;
     model?: string;
     enabled: boolean;
-    modes?: string[];
+    modes?: AgentMode[];
 }
 
 /**
@@ -25,14 +29,15 @@ export function getActiveAdapters(): AgentAdapter[] {
         if (!agent.enabled) continue;
 
         let adapterInstance: AgentAdapter | null = null;
-        const modes = agent.modes || ['plan', 'agent'];
+        const modes = agent.modes || ['plan', 'agent'] satisfies AgentMode[];
         if (agent.adapter === 'github-copilot') {
             adapterInstance = new GitHubCopilotAdapter(agent.id, agent.name, agent.model || '', modes);
         } else if (agent.adapter === 'claude-code') {
             adapterInstance = new ClaudeCodeAdapter(agent.id, agent.name, agent.model || '', modes);
+        } else {
+            debugLog('Adapters', `Unknown adapter type '${agent.adapter}', skipping agent '${agent.id}'`);
         }
         // Future adapters (e.g. 'doubao', 'kimi') can be effortlessly added here
-        // else if (agent.adapter === 'your-new-adapter') { ... }
 
         if (adapterInstance) {
             adapters.push(adapterInstance);

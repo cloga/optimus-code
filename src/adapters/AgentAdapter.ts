@@ -1,3 +1,5 @@
+import { AgentMode } from '../types/SharedTaskContext';
+
 export interface AgentAdapter {
     /**
      * Unique identifier for the agent
@@ -17,13 +19,13 @@ export interface AgentAdapter {
     /**
         * Supported capabilities (e.g. ['plan'] or ['plan', 'agent'])
      */
-    modes: string[];
+    modes: AgentMode[];
 
     /**
      * The core execution function that sends the prompt to the tool and returns the response.
      * Optionally accepts an onUpdate callback for streaming output progressively.
      */
-    invoke(prompt: string, mode: string, onUpdate?: (chunk: string) => void): Promise<string>;
+    invoke(prompt: string, mode: AgentMode, onUpdate?: (chunk: string) => void): Promise<string>;
 
     /**
      * Forces the agent to stop generating and clear its current queue.

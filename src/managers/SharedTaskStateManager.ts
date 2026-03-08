@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { PersistentAgentAdapter } from '../adapters/PersistentAgentAdapter';
 import {
     CompleteTurnInput,
     SharedTaskState,
@@ -41,6 +42,7 @@ export class SharedTaskStateManager {
                 updatedAt: now,
                 title: this.buildTaskTitle(input.prompt),
                 status: 'active',
+                workspacePath: PersistentAgentAdapter.getWorkspacePath(),
                 userIntentHistory: [],
                 plannerContributions: [],
                 executorOutcomes: [],
@@ -98,12 +100,12 @@ export class SharedTaskStateManager {
         const taskSummary = taskState.latestSummary || 'New task — no prior execution history.';
 
         const openQuestions = taskState.openQuestions.length
-            ? taskState.openQuestions.slice(-3).map(q => `- ${q}`).join('\n')
-            : null;
+            ? taskState.openQuestions.slice(-5).map(q => `- ${q}`).join('\n')
+            : '- None recorded.';
 
         const blockedReasons = taskState.blockedReasons.length
-            ? taskState.blockedReasons.slice(-3).map(r => `- ${r}`).join('\n')
-            : null;
+            ? taskState.blockedReasons.slice(-5).map(r => `- ${r}`).join('\n')
+            : '- None recorded.';
 
         const rulesContent = this.readRulesMd();
         const rulesParts: string[] = rulesContent
@@ -125,24 +127,25 @@ export class SharedTaskStateManager {
             ...rulesParts,
             ...memoryParts,
             '',
+            `Task ID: ${taskState.taskId}`,
+            `Turn: ${turnRecord.sequence}`,
+            `Current user request: "${turnRecord.prompt}"`,
+            '',
             '<task-context>',
             `Task: ${taskState.title}`,
-            `Turn: ${turnRecord.sequence}`,
             '',
             'What has been accomplished so far:',
             taskSummary,
             '',
             recentTurns ? 'Recent turns:\n' + recentTurns : 'No prior executor outcomes.',
+            '',
+            'Known open questions:',
+            openQuestions,
+            '',
+            'Known blockers:',
+            blockedReasons,
+            '</task-context>',
         ];
-
-        if (openQuestions) {
-            parts.push('', 'Known open questions:', openQuestions);
-        }
-        if (blockedReasons) {
-            parts.push('', 'Known blockers:', blockedReasons);
-        }
-
-        parts.push('</task-context>');
 
         if (referencedContext) {
             parts.push('', referencedContext);
@@ -155,12 +158,16 @@ export class SharedTaskStateManager {
             'IMPORTANT: At the very end of your response, output exactly one of the following tags to indicate whether code/file changes are needed to fulfill the user\'s request:',
             '<action-required>yes</action-required>   — if code changes, file modifications, or tool execution are needed',
             '<action-required>no</action-required>    — if this is purely analysis, review, Q&A, or advisory (no files need to change)',
+            '',
+            'Additionally, if you determine this is a simple, straightforward execution task (e.g. single file edit, rename, one-liner fix, run a command) that does NOT benefit from multi-planner deliberation, also output:',
+            '<skip-to-executor>yes</skip-to-executor>',
+            'This signals the orchestrator to skip waiting for other planners and proceed directly to the executor with your plan. Only use this for clearly simple tasks — do NOT use it for complex, multi-file, or architectural changes.',
         );
 
         return parts.join('\n');
     }
 
-    public buildExecutorPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, synthesis: string, plannerIntent?: 'action' | 'answer' | 'unknown'): string {
+    public buildExecutorPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, synthesis: string, plannerIntent?: 'action' | 'answer' | 'skip' | 'unknown'): string {
         const previousTurns = taskState.turnHistory.filter(turn => turn.turnId !== turnRecord.turnId);
         const recentTurns = previousTurns.slice(-3).map(turn => {
             const executorSummary = turn.executorOutcome?.summary || 'No executor outcome recorded.';
@@ -231,11 +238,13 @@ export class SharedTaskStateManager {
             '',
             'Based on the shared task state and planner contributions above, execute the best next step. Avoid repeating work that has already been completed unless the new request clearly requires it.',
             '',
+            'IMPORTANT: After making any TypeScript or JavaScript code changes, you MUST run `npm run compile` to rebuild the extension bundle (`out/extension.js`). Running `npx tsc --noEmit` alone only performs type-checking and does NOT update the bundle. Verify the rebuild succeeds before finishing.',
+            '',
             'After completing your work, append a concise progress summary wrapped in <task-summary> tags. This summary should capture what was accomplished in this turn and the overall task status in 2-3 sentences. Example:',
             '<task-summary>Refactored the auth module to use JWT tokens. All tests pass. Remaining: update API docs.</task-summary>',
             '',
             'IMPORTANT: At the end of each turn, evaluate whether you learned any important project-level facts, architecture decisions, user preferences, or key technical constraints that should persist across sessions. If so, you MUST wrap them in <memory-update> tags. The orchestrator will merge this into .optimus/memory.md automatically. Example:',
-            '<memory-update>User prefers TypeScript strict mode. Always run `npx tsc --noEmit` after changes.</memory-update>',
+            '<memory-update>This project uses esbuild bundling. Always run `npm run compile` after code changes to rebuild `out/extension.js`. `npx tsc --noEmit` is type-check only.</memory-update>',
         );
 
         return parts.join('\n');
@@ -267,6 +276,87 @@ export class SharedTaskStateManager {
             '4. If planners propose actionable steps, present a unified recommendation.',
             '5. Keep your response concise — do not repeat the same point from multiple planners.',
         ];
+
+        return parts.join('\n');
+    }
+
+    /**
+     * Build executor prompt for direct→auto escalation: the executor receives
+     * both the raw user prompt (for full context) AND the validation planner's
+     * insight (explaining why this was escalated from direct to auto mode).
+     */
+    public buildDirectEscalatedPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, enrichedPrompt: string, plannerInsight: string): string {
+        const previousTurns = taskState.turnHistory.filter(turn => turn.turnId !== turnRecord.turnId);
+        const recentTurns = previousTurns.slice(-3).map(turn => {
+            const executorSummary = turn.executorOutcome?.summary || 'No executor outcome recorded.';
+            return `Turn ${turn.sequence}: ${turn.prompt}\nOutcome: ${executorSummary}`;
+        }).join('\n\n');
+
+        const taskSummary = taskState.latestSummary || 'No prior shared summary is available yet.';
+        const openQuestions = taskState.openQuestions.length
+            ? taskState.openQuestions.slice(-5).map(question => `- ${question}`).join('\n')
+            : '- None recorded.';
+        const blockedReasons = taskState.blockedReasons.length
+            ? taskState.blockedReasons.slice(-5).map(reason => `- ${reason}`).join('\n')
+            : '- None recorded.';
+
+        const rulesContent = this.readRulesMd();
+        const rulesParts: string[] = rulesContent
+            ? ['', '<project-rules>', rulesContent.trim(), '</project-rules>', '']
+            : [];
+
+        const memoryContent = this.readMemoryMd();
+        const memoryParts: string[] = memoryContent
+            ? ['', '<project-memory>', memoryContent.trim(), '</project-memory>', '']
+            : [];
+
+        const referencedContext = this.buildReferencedTurnsContext(taskState, turnRecord.referencedTurnSequences);
+
+        const parts = [
+            'You are the executor agent for Optimus Code.',
+            'This task was initially routed as DIRECT EXECUTION, but a validation planner detected it requires more careful planning.',
+            'You have both the original user request and the planner\'s analysis below. Use the planner insight to guide your approach, but execute the full user request.',
+            ...rulesParts,
+            ...memoryParts,
+            '',
+            `Task ID: ${taskState.taskId}`,
+            `Turn: ${turnRecord.sequence}`,
+            `Current user request: "${currentPrompt}"`,
+            '',
+            'Shared task summary:',
+            taskSummary,
+            '',
+            'Recent completed turns:',
+            recentTurns || 'This is the first execution turn for this task.',
+            '',
+            'Known open questions:',
+            openQuestions,
+            '',
+            'Known blockers:',
+            blockedReasons,
+        ];
+
+        if (referencedContext) {
+            parts.push('', referencedContext);
+        }
+
+        parts.push(
+            '',
+            'Validation planner analysis (explains why this task needs careful execution):',
+            plannerInsight,
+            '',
+            enrichedPrompt,
+            '',
+            'Based on the planner analysis and the user request above, execute the task carefully. Avoid repeating work that has already been completed unless the new request clearly requires it.',
+            '',
+            'IMPORTANT: After making any TypeScript or JavaScript code changes, you MUST run `npm run compile` to rebuild the extension bundle (`out/extension.js`). Running `npx tsc --noEmit` alone only performs type-checking and does NOT update the bundle. Verify the rebuild succeeds before finishing.',
+            '',
+            'After completing your work, append a concise progress summary wrapped in <task-summary> tags. This summary should capture what was accomplished in this turn and the overall task status in 2-3 sentences. Example:',
+            '<task-summary>Refactored the auth module to use JWT tokens. All tests pass. Remaining: update API docs.</task-summary>',
+            '',
+            'IMPORTANT: At the end of each turn, evaluate whether you learned any important project-level facts, architecture decisions, user preferences, or key technical constraints that should persist across sessions. If so, you MUST wrap them in <memory-update> tags. The orchestrator will merge this into .optimus/memory.md automatically. Example:',
+            '<memory-update>This project uses esbuild bundling. Always run `npm run compile` after code changes to rebuild `out/extension.js`. `npx tsc --noEmit` is type-check only.</memory-update>',
+        );
 
         return parts.join('\n');
     }
@@ -331,11 +421,13 @@ export class SharedTaskStateManager {
             '',
             'Execute the user request above directly. Avoid repeating work that has already been completed unless the new request clearly requires it.',
             '',
+            'IMPORTANT: After making any TypeScript or JavaScript code changes, you MUST run `npm run compile` to rebuild the extension bundle (`out/extension.js`). Running `npx tsc --noEmit` alone only performs type-checking and does NOT update the bundle. Verify the rebuild succeeds before finishing.',
+            '',
             'After completing your work, append a concise progress summary wrapped in <task-summary> tags. This summary should capture what was accomplished in this turn and the overall task status in 2-3 sentences. Example:',
             '<task-summary>Refactored the auth module to use JWT tokens. All tests pass. Remaining: update API docs.</task-summary>',
             '',
             'IMPORTANT: At the end of each turn, evaluate whether you learned any important project-level facts, architecture decisions, user preferences, or key technical constraints that should persist across sessions. If so, you MUST wrap them in <memory-update> tags. The orchestrator will merge this into .optimus/memory.md automatically. Example:',
-            '<memory-update>User prefers TypeScript strict mode. Always run `npx tsc --noEmit` after changes.</memory-update>',
+            '<memory-update>This project uses esbuild bundling. Always run `npm run compile` after code changes to rebuild `out/extension.js`. `npx tsc --noEmit` is type-check only.</memory-update>',
         );
 
         return parts.join('\n');
@@ -367,10 +459,15 @@ export class SharedTaskStateManager {
         }
 
         taskState.openQuestions = this.collectOpenQuestions(taskState.turnHistory);
-        taskState.blockedReasons = taskState.turnHistory
-            .filter(turn => turn.status === 'failed' && turn.failureReason)
-            .map(turn => turn.failureReason as string)
-            .slice(-5);
+        if (input.executorOutcome?.status === 'error') {
+            taskState.blockedReasons = taskState.turnHistory
+                .filter(turn => turn.status === 'failed' && turn.failureReason)
+                .map(turn => turn.failureReason as string)
+                .slice(-5);
+        } else {
+            // Successful turn clears stale interrupt/blocker history
+            taskState.blockedReasons = [];
+        }
         taskState.status = input.executorOutcome?.status === 'error' ? 'blocked' : 'active';
         taskState.latestSummary = this.buildTaskSummary(taskState);
 
@@ -412,6 +509,7 @@ export class SharedTaskStateManager {
             turnCount: task.turnHistory.length,
             latestSummary: task.latestSummary,
             latestPrompt: task.turnHistory[task.turnHistory.length - 1]?.prompt,
+            workspacePath: task.workspacePath,
         }));
     }
 
@@ -529,10 +627,9 @@ export class SharedTaskStateManager {
         }
         const text = parts.filter(Boolean).join(' ');
         // Mixed heuristic: CJK chars count ~0.5 tokens each, ASCII ~0.25
-        let tokens = 0;
-        for (let i = 0; i < text.length; i++) {
-            tokens += text.charCodeAt(i) > 0x2E80 ? 0.5 : 0.25;
-        }
+        // Use regex to count CJK characters in one pass instead of char-by-char loop
+        const cjkCount = (text.match(/[\u2E80-\uFFFF]/g) || []).length;
+        const tokens = (text.length - cjkCount) * 0.25 + cjkCount * 0.5;
         return Math.round(tokens);
     }
 
@@ -652,6 +749,6 @@ export class SharedTaskStateManager {
     }
 
     private clone<T>(value: T): T {
-        return JSON.parse(JSON.stringify(value)) as T;
+        return structuredClone(value);
     }
 }

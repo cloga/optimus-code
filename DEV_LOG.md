@@ -2,6 +2,184 @@
 
 This document captures the context, rationale, and meaningful discussions (the "Why") behind technical decisions and architectural shifts in Optimus Code.
 
+## [2026-03-08] - Fix: Queue Pause State Now Resets Cleanly And Keeps Send Available
+
+### Problem
+After the earlier New Chat recovery fix, queue-related UI still had two follow-up bugs in the webview.
+
+- When `pendingQueue.length > 0`, `setRunningState(false)` still hid the send button even if the queue had been paused, so the user could end up idle with queued work but no visible way to continue interacting.
+- Clicking **New Chat** cleared `pendingQueue` but did not reset `queuePaused`, so a paused queue state could leak into the next chat session.
+
+### Root Cause
+Both issues lived entirely in `resources/chatView.js` frontend state handling.
+
+- `setRunningState(false)` only checked queue length and did not distinguish between auto-dequeue being active vs. intentionally paused.
+- The `new-chat-btn` handler reset queue contents but forgot to restore the queue pause flag to its default state.
+
+### Fix
+Adjusted the queue-state reset logic in `resources/chatView.js`.
+
+- `setRunningState(false)` now keeps the send button hidden only when there are pending items **and** auto-dequeue is still active (`!queuePaused`).
+- `new-chat-btn` now explicitly sets `queuePaused = false` before restoring the idle UI.
+
+### Why
+Paused queue state is a user-controlled stop point, not a running state. The UI should therefore behave like idle mode when paused, and a fresh chat must not inherit queue control flags from the previous session.
+
+---
+
+## [2026-03-08] - Fix: New Chat Could Leave Send UI Stuck In Running State
+
+### Problem
+After a turn entered the running state, clicking **New Chat** cleared the visible chat history but did not reliably restore the input controls. The send button could remain hidden, making it look like even a brand-new chat could no longer submit messages.
+
+### Root Cause
+This was primarily a webview state-reset bug, not a planner/executor routing bug.
+
+- `resources/chatView.js`: the `new-chat-btn` handler cleared messages and queue state but never called `setRunningState(false)`.
+- The frontend mostly relied on `councilComplete` to restore the send controls. If that message was missed, late, or tied to the previous run, the UI stayed stuck in the running layout.
+- `turnComplete` only handled queue auto-dequeue and did not act as a safety reset for the send controls.
+
+### Fix
+Added an explicit UI reset on New Chat and a fallback reset on `turnComplete`.
+
+- `resources/chatView.js`
+  - New Chat now clears transient council UI references and immediately calls `setRunningState(false)`.
+  - `turnComplete` now also calls `setRunningState(false)` so the UI recovers even if `councilComplete` is skipped or arrives out of order.
+- `src/providers/ChatViewProvider.ts`
+  - `newChat` now also clears active turn metadata and posts a `turnComplete` message so the webview gets a definitive reset signal when starting a fresh chat.
+
+### Why
+The running/not-running UI state should not depend on a single happy-path completion message. Resetting it explicitly on New Chat and defensively on `turnComplete` makes the chat input recoverable without requiring an extension reload.
+
+---
+
+## [2026-03-08] - Fix: Stale Interrupt Blockers Polluting Prompts After VS Code Restore
+
+### Problem
+When VS Code window was restored/reloaded, `startTurn()` detected the previous in-progress turn and marked it as failed with `failureReason = 'Interrupted: VS Code was closed before this turn completed.'`. This was correct for zombie detection.
+
+However, `completeTurn()` unconditionally re-scanned the entire `turnHistory` to rebuild `blockedReasons`, picking up every historical failed turn's `failureReason`. This meant the stale "Interrupted" message persisted in "Known blockers:" for all subsequent planner/executor prompts, even after successful turns cleared the actual blockage.
+
+### Root Cause
+`SharedTaskStateManager.completeTurn()` (line 462-465) always rebuilt blockedReasons from full history regardless of whether the current turn succeeded or failed.
+
+### Fix
+Conditional logic: only rebuild blockedReasons from history when the current turn itself errors. On successful completion, clear blockedReasons entirely — a successful turn proves the task is no longer blocked.
+
+**File**: `src/managers/SharedTaskStateManager.ts` — `completeTurn()` method.
+
+---
+
+## [2026-03-08] - Bidirectional Routing: Complete Implementation of 4 Intent Gate Scenarios
+
+### Context
+The orchestration pipeline has `_inferMode()` as a pre-filter and the Intent Gate as a semantic post-filter, enabling bidirectional mode overrides. While the skeleton code for all 4 scenarios existed, two edge cases needed fixing.
+
+### Scenarios Verified/Fixed
+
+| # | Scenario | Status |
+|---|----------|--------|
+| 1 | **auto→plan** downgrade (`intentDowngraded`) | ✅ Already correct — executor properly skipped |
+| 2 | **plan→auto** upgrade (`intentUpgraded`) | ✅ Already correct — executor runs with synthesis |
+| 3 | **direct→auto** escalation (`directOverridden`) | ⚠️ Fixed — new hybrid prompt builder |
+| 4 | **skip-to-executor** fast path (`intentSkipped`) | ⚠️ Fixed — background planner drain |
+
+### Scenario 3 Fix: Direct→Auto Escalation Prompt
+**Problem**: When `direct` mode was overridden to `auto`, only 1 validation planner had run (direct mode uses `allPlanAdapters.slice(0, 1)`). The executor then received a standard synthesis prompt with just 1 planner's thin context, losing the original user prompt's directness.
+
+**Solution**: Added `buildDirectEscalatedPrompt()` to `SharedTaskStateManager` — a hybrid prompt that gives the executor both:
+- The original user request (full context, like direct mode)
+- The validation planner's analysis (explaining why escalation was needed)
+
+This ensures the executor has rich context despite only 1 planner running.
+
+### Scenario 4 Fix: Background Planner Drain
+**Problem**: When skip-to-executor fired early, the main promise resolved immediately but background planner promises were still running. If `completeTurn()` was called before they finished, their contributions would be lost from session history.
+
+**Solution**: Added `pendingPlannerPromises` tracking. Before persisting turn state, `Promise.allSettled(pendingPlannerPromises)` drains any remaining background planners so all contributions are properly recorded.
+
+### Changes
+- `src/managers/SharedTaskStateManager.ts`:
+  - Added `buildDirectEscalatedPrompt()` — hybrid direct+planner prompt for escalation cases
+- `src/providers/ChatViewProvider.ts`:
+  - Added `directOverridden` branch in executor prompt selection to use `buildDirectEscalatedPrompt`
+  - Added `pendingPlannerPromises` tracking for background planner drain
+  - Added `Promise.allSettled` drain step before `completeTurn()` persistence
+
+## [2026-03-08] - Smart Planning Skip: Planner-Driven Early Exit to Executor
+
+### Context
+In Auto mode, all planners run in parallel via `Promise.all()` and the system waits for every planner to finish before proceeding to the executor. For simple, straightforward tasks (single file edit, rename, one-liner fix), this introduces unnecessary latency — multiple planners deliberate on a task that doesn't need multi-agent consensus. The existing `_inferMode()` heuristic catches some obvious cases (micro-edits < 80 chars), but many simple tasks slip through to full planning.
+
+### Decision
+Implemented a three-layer optimization:
+
+1. **`_inferMode()` enhancement** — Added context-aware confirmation follow-up detection (e.g., "好的", "就按这个做", "proceed") that routes directly to executor when the previous turn was a plan. Also expanded direct-mode patterns with explicit execution commands ("run", "build", "帮我写", "实现一下").
+
+2. **`<skip-to-executor>` planner tag** — Planners are now instructed to output `<skip-to-executor>yes</skip-to-executor>` when they determine the task is trivially simple. This tag is parsed alongside the existing `<action-required>` tag.
+
+3. **First-vote-wins early exit** — When multiple planners run in parallel, the orchestrator no longer waits for all to finish. As soon as any planner returns with a `<skip-to-executor>yes</skip-to-executor>` signal combined with `<action-required>yes</action-required>`, the intent gate returns `'skip'` and the executor proceeds immediately. Remaining planners continue running in the background (their results are still recorded for session history) but don't block execution.
+
+### Changes
+- `src/providers/ChatViewProvider.ts`:
+  - `_inferMode()`: added confirmation follow-up patterns and expanded direct-mode patterns
+  - `_computeIntentFromPlanners()`: new return value `'skip'` when any planner votes skip + action
+  - `_delegateToCouncil()`: replaced `Promise.all()` with first-vote-wins race pattern (only when >1 planner); added `intentSkip` UI notification
+  - Synthesis blocks: strip `<skip-to-executor>` tags alongside `<action-required>` tags
+- `src/managers/SharedTaskStateManager.ts`:
+  - `buildPlannerPrompt()`: added `<skip-to-executor>` tag instruction
+  - `buildExecutorPrompt()`: updated `plannerIntent` type to include `'skip'`
+- `resources/chatView.js`: added `intentSkip` message handler showing "Simple task detected — fast-tracking to executor"
+
+### Why
+The three-layer approach covers different latency budgets:
+- Layer 1 (`_inferMode()`) catches obvious cases with zero LLM cost — pure regex, no planning at all
+- Layer 2 (skip tag) lets planners themselves signal simplicity, benefiting from their semantic understanding
+- Layer 3 (first-vote-wins) reduces P99 latency by not waiting for the slowest planner
+
+The executor intentionally requires no changes — it already handles both planned and direct execution prompts.
+
+## [2026-03-08] - Session-Workspace Soft Binding
+
+### Context
+Sessions and tasks in Optimus Code were stored globally in VS Code `globalState` with no workspace association. When users worked across multiple projects, all session history was mixed together with no way to distinguish which workspace a task belonged to. Resuming a task could also operate in the wrong directory if the workspace had changed.
+
+### Decision
+Implemented **workspace soft-binding**: each task and session now records the `workspacePath` where it was created. The History panel filters sessions to the current workspace by default, with a toggle button to show all workspaces. Old data without `workspacePath` remains visible everywhere (backward compatible).
+
+### Changes
+- `SharedTaskState`, `StoredSession`, `TaskSnapshot`: added optional `workspacePath` field
+- `SharedTaskStateManager.startTurn()`: captures workspace path on new task creation via `PersistentAgentAdapter.getWorkspacePath()`
+- `ChatViewProvider._sendSessionsToUI()`: filters by current workspace (skips tasks from other workspaces unless "All workspaces" toggle is on)
+- `ChatViewProvider._createSessionRecord()`: stores `workspacePath` on each session record
+- HTML/JS: added workspace toggle button and workspace badge for cross-workspace sessions
+- `PersistentAgentAdapter.getWorkspacePath()`: changed from `protected` to `public`
+
+### Why
+Soft-binding (optional field, no breaking change) provides the best tradeoff: workspace-scoped sessions for the common single-project case, while preserving flexibility for cross-project tasks. The toggle allows power users to see everything when needed.
+
+## [2026-03-08] - Prompt Reliability: Force Executor Rebuild After Code Changes
+
+### Context
+The executor prompt previously only required type-check style validation (`npx tsc --noEmit`) in its example memory text and never gave a direct instruction to rebuild the bundled VS Code extension after source edits. This caused a repeated failure mode where source changes were made successfully but `out/extension.js` remained stale, so the Extension Host kept running old code.
+
+### Decision
+Updated both `buildExecutorPrompt()` and `buildDirectExecutorPrompt()` in `src/managers/SharedTaskStateManager.ts` to explicitly require `npm run compile` after any TypeScript or JavaScript code change. Also updated the `<memory-update>` example to encode the correct esbuild-based workflow instead of reinforcing type-check-only validation.
+
+### Why
+This project ships a bundled extension entrypoint, so successful type-checking alone is not enough to make runtime behavior match edited source. Putting the rebuild rule directly in both executor prompts addresses the root cause at the instruction layer and reduces the chance of future stale-bundle regressions.
+
+## [2026-03-08] - UI Cleanup: Removed Webview Diagnostics Panel
+
+### Context
+The chat Webview still rendered a dedicated "Webview Diagnostics" panel even though ongoing diagnostics had already moved to the OutputChannel-based debug logger and per-agent debug panels. The user explicitly asked to hide or remove this panel because it no longer matched the current workflow.
+
+### Decision
+Removed the dedicated diagnostics panel from the Webview template and deleted the companion frontend logging helpers (`setDiagnosticStatus`, `addDiagnosticLine`, `showBootFailure`) plus host-to-webview `hostDebug` messages. Kept the `optimusCode.debugMode` setting itself because it still controls existing debug panels and additional debug logging.
+
+### Why
+The standalone diagnostics panel duplicated newer debugging surfaces and added UI noise without providing unique value. Keeping `debugMode` while narrowing its scope preserves useful debugging controls without carrying obsolete Webview-specific plumbing.
+
 ## [2026-03-08] - Feature: Intent Gate — Planner-Driven Dynamic Mode Switching in Auto Mode
 
 ### Motivation
@@ -158,6 +336,17 @@ In multi-turn conversations, agent context only includes the last 3 turns automa
 - `SharedTaskStateManager.ts`: Added `buildReferencedTurnsContext()` private method; updated `buildPlannerPrompt()` and `buildExecutorPrompt()` to inject referenced context; `startTurn()` now stores the field
 - `ChatViewProvider.ts`: `_delegateToCouncil()` accepts and passes `referencedTurnSequences`; `askCouncil` handler extracts the field; `_sendCurrentTaskState()` includes lightweight `turnHistory` array for the frontend; restored sessions include `turnSequence`; added CSS for `.ref-chip`, `.ref-turn-btn`; added `#reference-chips` container in HTML
 - `chatView.js`: Added `referencedTurns[]` and `currentTaskTurnHistory[]` state; added `addTurnReference()`, `removeTurnReference()`, `clearTurnReferences()`, `renderReferenceChips()`, `attachRefButton()` functions; `submitPrompt()` / `addToQueue()` / `submitFromQueue()` pass `referencedTurnSequences`; `renderRestoredSession()` attaches ref buttons on user messages; `updateTaskState` handler stores turn history; new chat clears references
+
+## [2026-03-08] - Fix: Queue Is Session-Scoped Instead of Persisted Across Webview Restarts
+
+### Context
+The previous queue implementation persisted `pendingQueue` into VS Code `globalState` under `optimusQueue` and restored it on every `webviewReady`. That caused two user-visible problems: queued items leaked across restarts instead of behaving like session state, and restored image attachments no longer had a reliable rendering path, so they degraded into text-only placeholders.
+
+### Decision
+Removed host-side queue persistence and restore entirely. `ChatViewProvider.ts` no longer handles `saveQueue`, no longer clears queue state via `globalState` on `newChat`, and now only performs a one-time cleanup of the legacy `optimusQueue` key during `webviewReady`. `resources/chatView.js` now treats `pendingQueue` as in-memory-only state and no longer syncs queue mutations back to the host.
+
+### Why
+This aligns queue behavior with user expectations: queue contents belong to the current chat/webview session and should disappear when that session ends. It also fixes the restored-image regression at the root by removing the broken persistence path rather than layering special-case image rehydration logic on top.
 
 ## [2026-03-08] - Feature: Queue Persistence & Content Visibility
 

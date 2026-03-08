@@ -1,6 +1,4 @@
 const vscode = acquireVsCodeApi();
-const diagnosticLog = document.getElementById('diagnostic-log');
-const diagnosticStatus = document.getElementById('diagnostic-status');
 const chatView = document.getElementById('chat-view');
 const sessionsView = document.getElementById('sessions-view');
 const askBtn = document.getElementById('ask-btn');
@@ -11,12 +9,12 @@ const chatHistory = document.getElementById('chat-history');
 const sessionsPanel = document.getElementById('sessions-panel');
 const toggleBtn = document.getElementById('toggle-sessions-btn');
 const backToChatBtn = document.getElementById('back-to-chat-btn');
+const workspaceToggleBtn = document.getElementById('toggle-workspace-btn');
 const configBtn = document.getElementById('config-btn');
 const agentSelector = document.getElementById('agent-selector');
 const executorSelector = document.getElementById('executor-selector');
 const queueBtn = document.getElementById('queue-btn');
 const queueBadge = document.getElementById('queue-badge');
-const diagnosticPanel = document.getElementById('diagnostic-panel');
 const taskStateStrip = document.getElementById('task-state-strip');
 const taskTitle = document.getElementById('task-title');
 const taskStatusBadge = document.getElementById('task-status-badge');
@@ -622,49 +620,9 @@ function updateTokenCounter(task) {
     }
 }
 
-function setDiagnosticStatus(status, text) {
-    if (!diagnosticStatus) {
-        return;
-    }
-
-    diagnosticStatus.className = 'diagnostic-status ' + status;
-    diagnosticStatus.textContent = text;
-}
-
-function addDiagnosticLine(message, replaceInitial) {
-    if (!diagnosticLog) {
-        return;
-    }
-
-    if (replaceInitial && diagnosticLog.textContent === 'Waiting for script boot...') {
-        diagnosticLog.textContent = '';
-    }
-
-    const line = document.createElement('div');
-    line.className = 'diagnostic-line';
-    line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
-    diagnosticLog.appendChild(line);
-
-    while (diagnosticLog.childElementCount > 30) {
-        diagnosticLog.removeChild(diagnosticLog.firstChild);
-    }
-
-    diagnosticLog.scrollTop = diagnosticLog.scrollHeight;
-}
-
-function showBootFailure(error) {
-    setDiagnosticStatus('failed', 'FAILED');
-    if (diagnosticLog) {
-        diagnosticLog.textContent = 'Boot failure: ' + (error && error.message ? error.message : String(error));
-    }
-}
-
 function applyDebugMode(enabled) {
     debugMode = enabled;
 
-    if (diagnosticPanel) {
-        diagnosticPanel.classList.toggle('visible', enabled);
-    }
 
     const panels = document.querySelectorAll('.debug-panel');
     panels.forEach(panel => {
@@ -677,7 +635,6 @@ function applyDebugMode(enabled) {
 }
 
 function sendToHost(payload, reason) {
-    addDiagnosticLine('postMessage -> ' + payload.type + (reason ? ' | ' + reason : ''), true);
     vscode.postMessage(payload);
 }
 
@@ -688,7 +645,6 @@ function showView(viewId) {
     if (viewId === 'sessions-view' && !historyListLoading) {
         setSessionsLoading(true, 'Loading history...');
     }
-    addDiagnosticLine('showView -> ' + viewId, true);
 }
 
 function bindAgentSelectionLimit() {
@@ -732,10 +688,8 @@ function bindPromptKeyboardShortcut() {
         event.preventDefault();
         const isQueueVisible = queueBtn && queueBtn.style.display !== 'none';
         if (isQueueVisible) {
-            addDiagnosticLine('prompt keydown -> addToQueue via Enter', true);
             addToQueue();
         } else {
-            addDiagnosticLine('prompt keydown -> submit via Enter', true);
             submitPrompt();
         }
     });
@@ -853,6 +807,58 @@ function attachRefButton(userMsgEl, sequence, promptExcerpt) {
     userMsgEl.appendChild(btn);
 }
 
+function attachReferencedTurnsIndicator(msgEl, refSeqs) {
+    if (!refSeqs || refSeqs.length === 0) { return; }
+    var container = document.createElement('div');
+    container.className = 'message-ref-cards';
+    refSeqs.forEach(function(seq) {
+        var turn = currentTaskTurnHistory.find(function(t) { return t.sequence === seq; });
+        var card = document.createElement('div');
+        card.className = 'message-ref-card';
+        card.title = 'Click to jump to Turn #' + seq;
+
+        var header = document.createElement('div');
+        header.className = 'message-ref-card-header';
+        var seqEl = document.createElement('span');
+        seqEl.className = 'message-ref-card-seq';
+        seqEl.textContent = '\u2197 #' + seq;
+        header.appendChild(seqEl);
+
+        var promptText = turn ? turn.prompt : '';
+        if (promptText) {
+            var promptEl = document.createElement('span');
+            promptEl.className = 'message-ref-card-prompt';
+            promptEl.textContent = promptText.length > 50
+                ? promptText.substring(0, 47) + '\u2026'
+                : promptText;
+            header.appendChild(promptEl);
+        }
+        card.appendChild(header);
+
+        var summary = turn && turn.executorOutcome && turn.executorOutcome.summary
+            ? turn.executorOutcome.summary : '';
+        if (summary) {
+            var summaryEl = document.createElement('div');
+            summaryEl.className = 'message-ref-card-summary';
+            summaryEl.textContent = summary.length > 100
+                ? summary.substring(0, 97) + '\u2026'
+                : summary;
+            card.appendChild(summaryEl);
+        }
+
+        card.addEventListener('click', function() {
+            var target = document.querySelector('.message.user[data-sequence="' + seq + '"]');
+            if (!target) { return; }
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('ref-highlight-flash');
+            setTimeout(function() { target.classList.remove('ref-highlight-flash'); }, 1500);
+        });
+
+        container.appendChild(card);
+    });
+    msgEl.appendChild(container);
+}
+
 function bindPasteHandler() {
     if (!promptInput) { return; }
     promptInput.addEventListener('paste', event => {
@@ -867,7 +873,6 @@ function bindPasteHandler() {
             const reader = new FileReader();
             reader.onload = e => {
                 addPendingImage(e.target.result, item.type);
-                addDiagnosticLine('paste image | type=' + item.type, true);
             };
             reader.readAsDataURL(file);
         }
@@ -881,9 +886,7 @@ function getSelectedAgents() {
 
 function submitPrompt() {
     let text = promptInput.value;
-    addDiagnosticLine('submitPrompt invoked | length=' + text.length, true);
     if (!text.trim() && pendingImages.length === 0) {
-        addDiagnosticLine('submitPrompt aborted | empty input', true);
         return;
     }
 
@@ -895,17 +898,14 @@ function submitPrompt() {
         if (prefix === 'plan') {
             effectiveMode = 'plan';
             text = text.slice(prefixMatch[0].length);
-            addDiagnosticLine('prefix override → plan mode', true);
         } else if (prefix === 'exec' || prefix === 'direct') {
             effectiveMode = 'direct';
             text = text.slice(prefixMatch[0].length);
-            addDiagnosticLine('prefix override → direct mode', true);
         }
     }
 
     const selectedAgents = getSelectedAgents();
     if (selectedAgents.length === 0) {
-        addDiagnosticLine('submitPrompt aborted | no selected agents', true);
         return;
     }
 
@@ -925,11 +925,15 @@ function submitPrompt() {
         userMsg.appendChild(imgEl);
     });
     chatHistory.appendChild(userMsg);
+    if (text.trim()) {
+        attachRefButton(userMsg, turnSeq, text.trim());
+    }
     scrollChat();
 
     const executor = executorSelector.value;
     const images = pendingImages.length > 0 ? pendingImages.map(img => ({ dataUrl: img.dataUrl, mimeType: img.mimeType })) : undefined;
     const refSeqs = referencedTurns.length > 0 ? referencedTurns.map(r => r.sequence) : undefined;
+    attachReferencedTurnsIndicator(userMsg, refSeqs);
     sendToHost({ type: 'askCouncil', value: text, agents: selectedAgents, mode: effectiveMode, executor: executor, images, referencedTurnSequences: refSeqs }, 'submitPrompt');
     promptInput.value = '';
     clearPendingImages();
@@ -937,7 +941,6 @@ function submitPrompt() {
 }
 
 function submitCompact() {
-    addDiagnosticLine('submitCompact invoked (real compact)', true);
 
     const compactMsg = document.createElement('div');
     compactMsg.className = 'message user';
@@ -964,14 +967,6 @@ function updateQueueBadge() {
         viewCount.textContent = pendingQueue.length > 0 ? '(' + pendingQueue.length + ')' : '';
     }
     renderQueuePanel();
-}
-
-function syncQueueToHost() {
-    // Strip images to keep message small; host saves to globalState
-    var lite = pendingQueue.map(function(item) {
-        return { text: item.text, agents: item.agents, executor: item.executor, mode: item.mode || 'auto', images: item.images };
-    });
-    sendToHost({ type: 'saveQueue', queue: lite }, 'syncQueue');
 }
 
 function renderQueuePanel() {
@@ -1006,13 +1001,10 @@ function renderQueuePanel() {
         toggleBtn.addEventListener('click', function() {
             queuePaused = !queuePaused;
             renderQueuePanel();
-            addDiagnosticLine('queue ' + (queuePaused ? 'paused' : 'resumed'), true);
             // If resuming and not running, trigger immediate dequeue
             if (!queuePaused && pendingQueue.length > 0 && stopBtn.style.display === 'none') {
                 var next = pendingQueue.shift();
                 updateQueueBadge();
-                syncQueueToHost();
-                addDiagnosticLine('manual-dequeue after resume | remaining=' + pendingQueue.length, true);
                 setTimeout(function() { submitFromQueue(next); }, 300);
             }
         });
@@ -1025,8 +1017,6 @@ function renderQueuePanel() {
         clearBtn.addEventListener('click', function() {
             pendingQueue = [];
             updateQueueBadge();
-            syncQueueToHost();
-            addDiagnosticLine('queue cleared by user', true);
         });
         headerActions.appendChild(clearBtn);
     }
@@ -1056,8 +1046,6 @@ function renderQueuePanel() {
             if (i >= 0 && i < pendingQueue.length) {
                 pendingQueue.splice(i, 1);
                 updateQueueBadge();
-                syncQueueToHost();
-                addDiagnosticLine('queue item removed | idx=' + i + ' | remaining=' + pendingQueue.length, true);
             }
         });
         row.appendChild(indexSpan);
@@ -1070,15 +1058,12 @@ function renderQueuePanel() {
 
 function addToQueue() {
     const text = promptInput.value;
-    addDiagnosticLine('addToQueue invoked | length=' + text.length, true);
     if (!text.trim() && pendingImages.length === 0) {
-        addDiagnosticLine('addToQueue aborted | empty input', true);
         return;
     }
 
     const selectedAgents = getSelectedAgents();
     if (selectedAgents.length === 0) {
-        addDiagnosticLine('addToQueue aborted | no selected agents', true);
         return;
     }
 
@@ -1090,15 +1075,14 @@ function addToQueue() {
     clearPendingImages();
     clearTurnReferences();
     updateQueueBadge();
-    syncQueueToHost();
-    addDiagnosticLine('addToQueue success | queue length=' + pendingQueue.length, true);
 }
 
 function submitFromQueue(item) {
-    addDiagnosticLine('submitFromQueue | text length=' + item.text.length, true);
 
+    const turnSeq = currentTaskTurnHistory.length + 1;
     const userMsg = document.createElement('div');
     userMsg.className = 'message user';
+    userMsg.dataset.sequence = String(turnSeq);
     if (item.text.trim()) {
         const textNode = document.createTextNode(item.text);
         userMsg.appendChild(textNode);
@@ -1113,19 +1097,28 @@ function submitFromQueue(item) {
         });
     }
     chatHistory.appendChild(userMsg);
+    if (item.text.trim()) {
+        attachRefButton(userMsg, turnSeq, item.text.trim());
+    }
     scrollChat();
 
+    attachReferencedTurnsIndicator(userMsg, item.referencedTurnSequences);
     sendToHost({ type: 'askCouncil', value: item.text, agents: item.agents, mode: item.mode || 'auto', executor: item.executor, images: item.images, referencedTurnSequences: item.referencedTurnSequences }, 'submitFromQueue');
 }
 
 function handleButtonAction(actionId) {
-    addDiagnosticLine('handleButtonAction -> ' + actionId, true);
     switch (actionId) {
         case 'new-chat-btn':
             chatHistory.innerHTML = '<div class="message agent"><div class="agent-name">Optimus Council</div><p>Welcome! Describe your architecture problem, and I will summon the agents concurrently.</p></div>';
             pendingQueue = [];
+            queuePaused = false;
             clearTurnReferences();
             currentTaskTurnHistory = [];
+            currentCouncilHeader = null;
+            currentCouncilDoneTitle = 'Council Verdict';
+            currentCouncilAutoCollapse = false;
+            currentCouncilAgentDomIds = new Map();
+            setRunningState(false);
             updateQueueBadge();
             sendToHost({ type: 'newChat' }, 'new chat');
             break;
@@ -1162,7 +1155,6 @@ function bindButtonAction(element, actionId) {
     const handler = event => {
         event.preventDefault();
         event.stopPropagation();
-        addDiagnosticLine('direct handler -> ' + actionId + ' via ' + event.type, true);
         handleButtonAction(actionId);
     };
 
@@ -1187,6 +1179,15 @@ function getActionIdFromEvent(event) {
 
 function renderSessionHistory(message) {
     historyListLoading = false;
+
+    // Update workspace toggle button state
+    if (workspaceToggleBtn) {
+        workspaceToggleBtn.textContent = message.showAllWorkspaces ? 'All workspaces' : 'This workspace';
+        workspaceToggleBtn.title = message.showAllWorkspaces
+            ? 'Showing all workspaces \u2014 click to filter to current workspace'
+            : 'Showing current workspace only \u2014 click to show all';
+    }
+
     sessionsPanel.innerHTML = message.sessions.length ? '' : '<i>No history yet.</i>';
     message.sessions.forEach(session => {
         const div = document.createElement('div');
@@ -1207,6 +1208,16 @@ function renderSessionHistory(message) {
             pinIndicator.className = 'session-pin-indicator';
             pinIndicator.textContent = '📌';
             titleRow.appendChild(pinIndicator);
+        }
+
+        if (session.isRunning) {
+            const runningBadge = document.createElement('span');
+            runningBadge.className = 'session-running-badge';
+            const dot = document.createElement('span');
+            dot.className = 'running-dot';
+            runningBadge.appendChild(dot);
+            runningBadge.appendChild(document.createTextNode('Running'));
+            titleRow.appendChild(runningBadge);
         }
 
         div.appendChild(titleRow);
@@ -1315,6 +1326,17 @@ function renderSessionHistory(message) {
         actions.appendChild(renameButton);
         actions.appendChild(pinButton);
         actions.appendChild(deleteButton);
+
+        // Show workspace badge if session is from a different workspace
+        if (message.showAllWorkspaces && session.workspacePath && session.workspacePath !== message.currentWorkspacePath) {
+            const wsLabel = document.createElement('div');
+            wsLabel.className = 'session-workspace-label';
+            const workspaceName = session.workspacePath.split(/[\\/]/).pop() || session.workspacePath;
+            wsLabel.textContent = workspaceName;
+            wsLabel.title = session.workspacePath;
+            div.appendChild(wsLabel);
+        }
+
         div.appendChild(actions);
 
         div.addEventListener('dblclick', () => {
@@ -1347,6 +1369,7 @@ function renderRestoredSession(session) {
     if (session.turnSequence && session.prompt) {
         attachRefButton(userDiv, session.turnSequence, session.prompt);
     }
+    attachReferencedTurnsIndicator(userDiv, session.referencedTurnSequences);
     chatHistory.appendChild(userDiv);
 
     const msgDiv = document.createElement('div');
@@ -1401,7 +1424,8 @@ function renderRestoredSession(session) {
                 content += '</details>';
                 
                 if (response.thinkingHtml) {
-                    content += '<details style="margin-bottom: 8px;"><summary style="cursor: pointer; outline: none; font-weight: bold;">⚙️ Execution Trace</summary>';
+                    var stepCount = extractProcessEntries(response.thinking || '').length;
+                    content += '<details style="margin-bottom: 8px;"><summary style="cursor: pointer; outline: none; font-weight: bold;">⚙️ Execution Trace' + (stepCount > 0 ? ' (' + stepCount + ' steps)' : '') + '</summary>';
                     content += renderProcessHtml(response.thinkingHtml, response.thinking || '', true);
                     content += '</details>';
                 }
@@ -1459,9 +1483,9 @@ function setRunningState(running) {
         updateQueueBadge();
     } else {
         stopBtn.style.display = 'none';
-        // If queue still has items, keep queue button visible to prevent
-        // the send button from appearing during the auto-dequeue gap
-        if (pendingQueue.length > 0) {
+        // If queue still has items and auto-dequeue is active, keep queue button visible
+        // to prevent the send button from appearing during the auto-dequeue gap.
+        if (pendingQueue.length > 0 && !queuePaused) {
             if (queueBtn) { queueBtn.style.display = ''; }
             askBtn.style.display = 'none';
             compactBtn.style.display = 'none';
@@ -1792,20 +1816,6 @@ function renderCouncilComplete() {
 try {
     applyDebugMode(debugMode);
 
-    window.addEventListener('error', event => {
-        setDiagnosticStatus('failed', 'FAILED');
-        addDiagnosticLine('window.error -> ' + event.message, true);
-    });
-
-    window.addEventListener('unhandledrejection', event => {
-        const reason = event.reason && event.reason.message ? event.reason.message : String(event.reason);
-        setDiagnosticStatus('failed', 'FAILED');
-        addDiagnosticLine('unhandledrejection -> ' + reason, true);
-    });
-
-    setDiagnosticStatus('running', 'RUNNING');
-    addDiagnosticLine('script booted', true);
-
     bindAgentSelectionLimit();
     bindPromptKeyboardShortcut();
     bindPasteHandler();
@@ -1813,6 +1823,11 @@ try {
     bindButtonAction(document.getElementById('new-chat-btn'), 'new-chat-btn');
     bindButtonAction(toggleBtn, 'toggle-sessions-btn');
     bindButtonAction(backToChatBtn, 'back-to-chat-btn');
+    if (workspaceToggleBtn) {
+        workspaceToggleBtn.addEventListener('click', () => {
+            sendToHost({ type: 'toggleShowAllWorkspaces' }, 'toggle workspace filter');
+        });
+    }
     bindButtonAction(document.getElementById('stop-btn'), 'stop-btn');
     bindButtonAction(document.getElementById('compact-btn'), 'compact-btn');
     bindButtonAction(document.getElementById('queue-btn'), 'queue-btn');
@@ -1843,7 +1858,6 @@ try {
         }
 
         event.preventDefault();
-        addDiagnosticLine('captured click -> ' + actionId, true);
         handleButtonAction(actionId);
     }, true);
 
@@ -1854,7 +1868,6 @@ try {
         }
 
         event.preventDefault();
-        addDiagnosticLine('captured pointerup -> ' + actionId, true);
         handleButtonAction(actionId);
     }, true);
 
@@ -1913,7 +1926,6 @@ try {
 
     window.addEventListener('message', event => {
         const message = event.data;
-        addDiagnosticLine('host -> ' + message.type, true);
 
         if (message.type === 'updateContextBadge') {
             renderContextBadge(message);
@@ -1961,13 +1973,13 @@ try {
         }
 
         if (message.type === 'updateTaskState') {
-            renderTaskState(message);
-            updateTokenCounter(message.task);
             if (message.task && Array.isArray(message.task.turnHistory)) {
                 currentTaskTurnHistory = message.task.turnHistory;
             } else {
                 currentTaskTurnHistory = [];
             }
+            renderTaskState(message);
+            updateTokenCounter(message.task);
             return;
         }
 
@@ -2007,13 +2019,6 @@ try {
             return;
         }
 
-        if (message.type === 'hostDebug') {
-            if (debugMode) {
-                addDiagnosticLine('hostDebug -> ' + message.messageType + (message.detail ? ' | ' + message.detail : ''), true);
-            }
-            return;
-        }
-
         if (message.type === 'updateSessionsList') {
             renderSessionHistory(message);
             return;
@@ -2030,16 +2035,9 @@ try {
             historyRestoreLoading = false;
             chatHistory.innerHTML = '';
             message.sessions.forEach(session => renderRestoredSession(session));
-            // Scroll to ~3 turns from the end so the user sees recent context
+            // Scroll directly to the latest turn on resume
             requestAnimationFrame(function () {
-                var userMessages = chatHistory.querySelectorAll('.message.user');
-                var VISIBLE_TAIL = 3;
-                if (userMessages.length > VISIBLE_TAIL) {
-                    var target = userMessages[userMessages.length - VISIBLE_TAIL];
-                    target.scrollIntoView({ block: 'start' });
-                } else {
-                    chatHistory.scrollTop = 0;
-                }
+                chatHistory.scrollTop = chatHistory.scrollHeight;
             });
             return;
         }
@@ -2077,7 +2075,6 @@ try {
             indicator.textContent = '\u26A1 Auto-routed to ' + label + ' mode';
             chatHistory.appendChild(indicator);
             scrollChat();
-            addDiagnosticLine('modeInferred | ' + message.originalMode + ' \u2192 ' + message.inferredMode, true);
         }
 
         if (message.type === 'intentDowngrade') {
@@ -2087,20 +2084,36 @@ try {
             indicator.textContent = '\u2139\uFE0F Planners detected question intent \u2014 skipping executor';
             chatHistory.appendChild(indicator);
             scrollChat();
-            addDiagnosticLine('intentDowngrade | plannerIntent=' + message.plannerIntent + ' | ' + message.originalMode + ' \u2192 ' + message.effectiveMode, true);
+        }
+
+        if (message.type === 'intentSkip') {
+            const indicator = document.createElement('div');
+            indicator.className = 'message system-note';
+            indicator.style.cssText = 'text-align:center;background:none;color:var(--vscode-descriptionForeground);font-size:11px;padding:2px 0;';
+            indicator.textContent = '\u26A1 Simple task detected \u2014 fast-tracking to executor';
+            chatHistory.appendChild(indicator);
+            scrollChat();
+        }
+
+        if (message.type === 'intentUpgrade') {
+            const indicator = document.createElement('div');
+            indicator.className = 'message system-note';
+            indicator.style.cssText = 'text-align:center;background:none;color:var(--vscode-descriptionForeground);font-size:11px;padding:2px 0;';
+            const fromMode = message.originalMode || 'inferred';
+            indicator.textContent = '\u2B06\uFE0F Planner override: ' + fromMode + ' \u2192 auto (complex task detected)';
+            chatHistory.appendChild(indicator);
+            scrollChat();
         }
 
         if (message.type === 'turnComplete') {
+            setRunningState(false);
             // Auto-dequeue: only process queued prompts after the entire turn
             // (including executor) has finished and _runningTaskIds is cleared.
             if (pendingQueue.length > 0 && !queuePaused) {
                 const next = pendingQueue.shift();
                 updateQueueBadge();
-                syncQueueToHost();
-                addDiagnosticLine('auto-dequeue | remaining=' + pendingQueue.length, true);
                 setTimeout(function() { submitFromQueue(next); }, 300);
             } else if (pendingQueue.length > 0 && queuePaused) {
-                addDiagnosticLine('auto-dequeue skipped | queue paused | remaining=' + pendingQueue.length, true);
             }
         }
 
@@ -2114,29 +2127,6 @@ try {
             });
         }
 
-        if (message.type === 'initQueue') {
-            // Restore persisted queue from host globalState
-            if (Array.isArray(message.queue) && message.queue.length > 0) {
-                pendingQueue = message.queue;
-                queuePaused = true; // start paused so user can review before running
-                updateQueueBadge();
-                addDiagnosticLine('initQueue restored | count=' + pendingQueue.length, true);
-                // Show restore toast in chat
-                var toast = document.createElement('div');
-                toast.className = 'message system-note';
-                toast.style.cssText = 'text-align:center;background:var(--vscode-editor-background);border:1px solid var(--vscode-panel-border);border-radius:4px;padding:6px 12px;font-size:12px;color:var(--vscode-descriptionForeground);margin:8px 0;';
-                toast.textContent = '\u{1F504} Queue restored: ' + pendingQueue.length + ' item' + (pendingQueue.length > 1 ? 's' : '') + ' from previous session (paused)';
-                chatHistory.appendChild(toast);
-                scrollChat();
-                // Auto-open queue panel so user can see restored items
-                queuePanelOpen = true;
-                // Make queue button visible so panel can render
-                if (queueBtn) { queueBtn.style.display = ''; }
-                var viewBtn = document.getElementById('queue-view-btn');
-                if (viewBtn) { viewBtn.style.display = ''; }
-                renderQueuePanel();
-            }
-        }
     });
 
     sendToHost({ type: 'webviewReady' }, 'startup');
@@ -2147,7 +2137,6 @@ try {
             document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
             btn.classList.add('active');
             submitMode = btn.dataset.mode || 'auto';
-            addDiagnosticLine('mode switched to ' + submitMode, true);
         });
     });
 
@@ -2157,5 +2146,5 @@ try {
         }
     }, 2000);
 } catch (error) {
-    showBootFailure(error);
+    console.error('Webview boot failure', error);
 }

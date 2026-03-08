@@ -1,4 +1,5 @@
 import { AgentAdapter } from './AgentAdapter';
+import { AgentMode } from '../types/SharedTaskContext';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -176,7 +177,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     name: string;
     modelFlag?: string;
     isEnabled: boolean = true;
-    modes: string[] = ['plan', 'agent'];
+    modes: AgentMode[] = ['plan', 'agent'];
     lastDebugInfo?: {
         command: string;
         cwd: string;
@@ -194,14 +195,14 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     protected childProcess: cp.ChildProcessWithoutNullStreams | null = null;
     protected promptString: string;
     protected outputBuffer: string = '';
-    protected currentMode: string = 'plan';
+    protected currentMode: AgentMode = 'plan';
     protected currentTurnMarker: string | null = null;
     
     protected turnResolve: ((val: string) => void) | null = null;
     protected turnReject: ((err: Error) => void) | null = null;
     protected turnOnUpdate: ((chunk: string) => void) | null = null;
 
-    constructor(id: string, name: string, modelFlag: string = '', promptString: string, modes?: string[]) {
+    constructor(id: string, name: string, modelFlag: string = '', promptString: string, modes?: AgentMode[]) {
         this.id = id;
         this.name = name;
         this.modelFlag = modelFlag;
@@ -212,7 +213,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     /**
      * Returns the active workspace folder path, with robust fallback.
      */
-    protected static getWorkspacePath(): string {
+    public static getWorkspacePath(): string {
         return PersistentAgentAdapter.resolveWorkspacePath().path;
     }
 
@@ -220,13 +221,13 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         PersistentAgentAdapter.workspacePathHint = workspacePathHint;
     }
 
-    protected abstract getSpawnCommand(mode: string): { cmd: string, args: string[] };
+    protected abstract getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] };
 
-    protected shouldUseStructuredOutput(mode: string): boolean {
+    protected shouldUseStructuredOutput(mode: AgentMode): boolean {
         return false;
     }
 
-    protected shouldUsePersistentSession(mode: string): boolean {
+    protected shouldUsePersistentSession(mode: AgentMode): boolean {
         return mode === 'agent';
     }
 
@@ -238,11 +239,11 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         return Math.max(1000, Math.floor(configured));
     }
 
-    protected shouldUsePromptFile(mode: string, prompt: string): boolean {
+    protected shouldUsePromptFile(mode: AgentMode, prompt: string): boolean {
         return prompt.length >= this.getPromptFileThreshold();
     }
 
-    private preparePromptForNonInteractive(mode: string, prompt: string, currentCwd: string): PreparedPrompt {
+    private preparePromptForNonInteractive(mode: AgentMode, prompt: string, currentCwd: string): PreparedPrompt {
         if (!this.shouldUsePromptFile(mode, prompt)) {
             return { prompt, transport: 'inline' };
         }
@@ -291,7 +292,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     /**
      * For non-interactive modes, returns the command + args with -p prepended.
      */
-    protected getNonInteractiveCommand(mode: string, prompt: string): { cmd: string, args: string[] } {
+    protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
         const { cmd, args } = this.getSpawnCommand(mode);
         const safePrompt = prompt.replace(/\r?\n/g, ' ').trim();
         return { cmd, args: ['-p', safePrompt, ...args] };
@@ -709,7 +710,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     /**
      * One-shot execution using -p flag. Spawns a process, collects all output, resolves when done.
      */
-    private invokeNonInteractive(prompt: string, mode: string, onUpdate?: (chunk: string) => void): Promise<string> {
+    private invokeNonInteractive(prompt: string, mode: AgentMode, onUpdate?: (chunk: string) => void): Promise<string> {
         return new Promise((resolve, reject) => {
             const workspacePath = PersistentAgentAdapter.resolveWorkspacePath();
             const currentCwd = workspacePath.path;
@@ -1053,7 +1054,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     /**
      * Interactive daemon initialization for agent mode.
      */
-    public async initialize(mode: string): Promise<void> {
+    public async initialize(mode: AgentMode): Promise<void> {
         if (this.childProcess) {
             if (this.currentMode !== mode) {
                 debugLog(this.id, 'Stopping existing daemon because mode changed', JSON.stringify({ from: this.currentMode, to: mode }));
@@ -1088,7 +1089,6 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         });
 
         this.childProcess.on('error', (err) => {
-            debugLog(this.id, 'Daemon process error (stderr)', err.stack || String(err));
             debugLog(this.id, 'Daemon process error', err.stack || String(err));
             if (this.turnReject) {
                 this.turnReject(err);
@@ -1097,7 +1097,6 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         });
 
         this.childProcess.on('close', (code) => {
-            debugLog(this.id, 'Daemon process closed with code: ' + code);
             debugLog(this.id, 'Daemon process closed', JSON.stringify({ code, mode: this.currentMode }));
             this.childProcess = null;
             if (this.turnReject) {
@@ -1158,7 +1157,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         this.currentTurnMarker = null;
     }
 
-    async invoke(prompt: string, mode: string = 'plan', onUpdate?: (chunk: string) => void): Promise<string> {
+    async invoke(prompt: string, mode: AgentMode = 'plan', onUpdate?: (chunk: string) => void): Promise<string> {
         // Use one-shot execution unless the adapter explicitly requires a persistent interactive session.
         if (!this.shouldUsePersistentSession(mode)) {
             return this.invokeNonInteractive(prompt, mode, onUpdate);
