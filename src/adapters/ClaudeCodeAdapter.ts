@@ -1,6 +1,6 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 // Claude CLI process line prefixes: spinning indicator (⏺), bullets (•), tree chars (└│├)
-const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├]/;
+const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 
 export class ClaudeCodeAdapter extends PersistentAgentAdapter {
     constructor(id: string = 'claude-code', name: string = '🦖 Claude Code', modelFlag: string = '', modes?: string[]) {

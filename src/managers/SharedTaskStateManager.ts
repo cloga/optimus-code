@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     CompleteTurnInput,
@@ -72,6 +74,7 @@ export class SharedTaskStateManager {
             executorId: input.executorId,
             status: 'in_progress',
             plannerContributions: [],
+            referencedTurnSequences: input.referencedTurnSequences,
         };
 
         taskState.turnHistory.push(turnRecord);
@@ -102,11 +105,25 @@ export class SharedTaskStateManager {
             ? taskState.blockedReasons.slice(-3).map(r => `- ${r}`).join('\n')
             : null;
 
+        const rulesContent = this.readRulesMd();
+        const rulesParts: string[] = rulesContent
+            ? ['', '<project-rules>', rulesContent.trim(), '</project-rules>', '']
+            : [];
+
+        const memoryContent = this.readMemoryMd();
+        const memoryParts: string[] = memoryContent
+            ? ['', '<project-memory>', memoryContent.trim(), '</project-memory>', '']
+            : [];
+
+        const referencedContext = this.buildReferencedTurnsContext(taskState, turnRecord.referencedTurnSequences);
+
         const parts: string[] = [
             'You are a planner agent for Optimus Code.',
             'Your role is read-only analysis and planning.',
             'Do not modify files, do not attempt to call edit/write/apply_patch/create/delete tools, and do not describe failed edit attempts or permission workarounds.',
             'If implementation is needed, propose the concrete next steps for the executor instead of trying to perform them yourself.',
+            ...rulesParts,
+            ...memoryParts,
             '',
             '<task-context>',
             `Task: ${taskState.title}`,
@@ -125,12 +142,25 @@ export class SharedTaskStateManager {
             parts.push('', 'Known blockers:', blockedReasons);
         }
 
-        parts.push('</task-context>', '', enrichedPrompt);
+        parts.push('</task-context>');
+
+        if (referencedContext) {
+            parts.push('', referencedContext);
+        }
+
+        parts.push('', enrichedPrompt);
+
+        parts.push(
+            '',
+            'IMPORTANT: At the very end of your response, output exactly one of the following tags to indicate whether code/file changes are needed to fulfill the user\'s request:',
+            '<action-required>yes</action-required>   — if code changes, file modifications, or tool execution are needed',
+            '<action-required>no</action-required>    — if this is purely analysis, review, Q&A, or advisory (no files need to change)',
+        );
 
         return parts.join('\n');
     }
 
-    public buildExecutorPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, synthesis: string): string {
+    public buildExecutorPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, synthesis: string, plannerIntent?: 'action' | 'answer' | 'unknown'): string {
         const previousTurns = taskState.turnHistory.filter(turn => turn.turnId !== turnRecord.turnId);
         const recentTurns = previousTurns.slice(-3).map(turn => {
             const executorSummary = turn.executorOutcome?.summary || 'No executor outcome recorded.';
@@ -144,8 +174,23 @@ export class SharedTaskStateManager {
         const blockedReasons = taskState.blockedReasons.length
             ? taskState.blockedReasons.slice(-5).map(reason => `- ${reason}`).join('\n')
             : '- None recorded.';
-        return [
+
+        const rulesContent = this.readRulesMd();
+        const rulesParts: string[] = rulesContent
+            ? ['', '<project-rules>', rulesContent.trim(), '</project-rules>', '']
+            : [];
+
+        const memoryContent = this.readMemoryMd();
+        const memoryParts: string[] = memoryContent
+            ? ['', '<project-memory>', memoryContent.trim(), '</project-memory>', '']
+            : [];
+
+        const referencedContext = this.buildReferencedTurnsContext(taskState, turnRecord.referencedTurnSequences);
+
+        const parts = [
             'You are the executor agent for Optimus Code.',
+            ...rulesParts,
+            ...memoryParts,
             '',
             `Task ID: ${taskState.taskId}`,
             `Turn: ${turnRecord.sequence}`,
@@ -162,15 +207,138 @@ export class SharedTaskStateManager {
             '',
             'Known blockers:',
             blockedReasons,
+        ];
+
+        if (referencedContext) {
+            parts.push('', referencedContext);
+        }
+
+        parts.push(
             '',
             'Planner contributions for this turn:',
             synthesis,
+        );
+
+        if (plannerIntent === 'answer') {
+            parts.push(
+                '',
+                'Planner consensus: answer-only — all planners indicated no code changes are needed.',
+                'If you agree with this assessment, provide a synthesized answer only. Do NOT modify any files or call tools.',
+            );
+        }
+
+        parts.push(
             '',
             'Based on the shared task state and planner contributions above, execute the best next step. Avoid repeating work that has already been completed unless the new request clearly requires it.',
             '',
             'After completing your work, append a concise progress summary wrapped in <task-summary> tags. This summary should capture what was accomplished in this turn and the overall task status in 2-3 sentences. Example:',
             '<task-summary>Refactored the auth module to use JWT tokens. All tests pass. Remaining: update API docs.</task-summary>',
-        ].join('\n');
+            '',
+            'IMPORTANT: At the end of each turn, evaluate whether you learned any important project-level facts, architecture decisions, user preferences, or key technical constraints that should persist across sessions. If so, you MUST wrap them in <memory-update> tags. The orchestrator will merge this into .optimus/memory.md automatically. Example:',
+            '<memory-update>User prefers TypeScript strict mode. Always run `npx tsc --noEmit` after changes.</memory-update>',
+        );
+
+        return parts.join('\n');
+    }
+
+    public buildPlanSynthesisPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, synthesis: string): string {
+        const rulesContent = this.readRulesMd();
+        const rulesParts: string[] = rulesContent
+            ? ['', '<project-rules>', rulesContent.trim(), '</project-rules>', '']
+            : [];
+
+        const parts = [
+            'You are SYNTHESIZER for Optimus Code.',
+            'Multiple planners have analyzed the user\'s request. Your ONLY job is to merge their analyses into a single, coherent response.',
+            'Do NOT execute code, modify files, or call any tools. Output a unified answer only.',
+            ...rulesParts,
+            '',
+            `Task: ${taskState.title}`,
+            `Turn: ${turnRecord.sequence}`,
+            `User request: "${currentPrompt}"`,
+            '',
+            'Planner contributions:',
+            synthesis,
+            '',
+            'Instructions:',
+            '1. Identify points of consensus across all planners.',
+            '2. Note any meaningful disagreements or unique insights from individual planners.',
+            '3. Produce a single, well-structured response that answers the user\'s question.',
+            '4. If planners propose actionable steps, present a unified recommendation.',
+            '5. Keep your response concise — do not repeat the same point from multiple planners.',
+        ];
+
+        return parts.join('\n');
+    }
+
+    public buildDirectExecutorPrompt(taskState: SharedTaskState, turnRecord: TurnRecord, currentPrompt: string, enrichedPrompt: string): string {
+        const previousTurns = taskState.turnHistory.filter(turn => turn.turnId !== turnRecord.turnId);
+        const recentTurns = previousTurns.slice(-3).map(turn => {
+            const executorSummary = turn.executorOutcome?.summary || 'No executor outcome recorded.';
+            return `Turn ${turn.sequence}: ${turn.prompt}\nOutcome: ${executorSummary}`;
+        }).join('\n\n');
+
+        const taskSummary = taskState.latestSummary || 'No prior shared summary is available yet.';
+        const openQuestions = taskState.openQuestions.length
+            ? taskState.openQuestions.slice(-5).map(question => `- ${question}`).join('\n')
+            : '- None recorded.';
+        const blockedReasons = taskState.blockedReasons.length
+            ? taskState.blockedReasons.slice(-5).map(reason => `- ${reason}`).join('\n')
+            : '- None recorded.';
+
+        const rulesContent = this.readRulesMd();
+        const rulesParts: string[] = rulesContent
+            ? ['', '<project-rules>', rulesContent.trim(), '</project-rules>', '']
+            : [];
+
+        const memoryContent = this.readMemoryMd();
+        const memoryParts: string[] = memoryContent
+            ? ['', '<project-memory>', memoryContent.trim(), '</project-memory>', '']
+            : [];
+
+        const referencedContext = this.buildReferencedTurnsContext(taskState, turnRecord.referencedTurnSequences);
+
+        const parts = [
+            'You are the executor agent for Optimus Code.',
+            'This is a DIRECT EXECUTION turn — no planner analysis was performed. Execute the user request directly.',
+            ...rulesParts,
+            ...memoryParts,
+            '',
+            `Task ID: ${taskState.taskId}`,
+            `Turn: ${turnRecord.sequence}`,
+            `Current user request: "${currentPrompt}"`,
+            '',
+            'Shared task summary:',
+            taskSummary,
+            '',
+            'Recent completed turns:',
+            recentTurns || 'This is the first execution turn for this task.',
+            '',
+            'Known open questions:',
+            openQuestions,
+            '',
+            'Known blockers:',
+            blockedReasons,
+        ];
+
+        if (referencedContext) {
+            parts.push('', referencedContext);
+        }
+
+        parts.push(
+            '',
+            enrichedPrompt,
+            '',
+            'Execute the user request above directly. Avoid repeating work that has already been completed unless the new request clearly requires it.',
+            '',
+            'After completing your work, append a concise progress summary wrapped in <task-summary> tags. This summary should capture what was accomplished in this turn and the overall task status in 2-3 sentences. Example:',
+            '<task-summary>Refactored the auth module to use JWT tokens. All tests pass. Remaining: update API docs.</task-summary>',
+            '',
+            'IMPORTANT: At the end of each turn, evaluate whether you learned any important project-level facts, architecture decisions, user preferences, or key technical constraints that should persist across sessions. If so, you MUST wrap them in <memory-update> tags. The orchestrator will merge this into .optimus/memory.md automatically. Example:',
+            '<memory-update>User prefers TypeScript strict mode. Always run `npx tsc --noEmit` after changes.</memory-update>',
+        );
+
+        return parts.join('\n');
     }
 
     public async completeTurn(taskId: string, turnId: string, input: CompleteTurnInput): Promise<SharedTaskState | undefined> {
@@ -296,6 +464,23 @@ export class SharedTaskStateManager {
             .flatMap(turn => turn.plannerContributions.flatMap(contribution => contribution.openQuestions))
             .filter(Boolean)
             .slice(-10);
+    }
+
+    private buildReferencedTurnsContext(taskState: SharedTaskState, sequences?: number[]): string | null {
+        if (!sequences || sequences.length === 0) { return null; }
+        const referencedTurns = taskState.turnHistory.filter(turn => sequences.includes(turn.sequence));
+        if (referencedTurns.length === 0) { return null; }
+
+        const blocks = referencedTurns.map(turn => {
+            const outcome = turn.executorOutcome?.summary ?? 'No outcome recorded.';
+            const synthesis = turn.synthesisPrompt ? `\nPlanner synthesis: ${turn.synthesisPrompt}` : '';
+            const plannerSummaries = turn.plannerContributions.length > 0
+                ? '\nPlanner contributions: ' + turn.plannerContributions.map(c => `${c.agentName}: ${c.summary}`).join(' | ')
+                : '';
+            return `<referenced-turn sequence="${turn.sequence}" status="${turn.status}">\nUser request: ${turn.prompt}${plannerSummaries}${synthesis}\nExecutor outcome: ${outcome}\n</referenced-turn>`;
+        });
+
+        return '<user-referenced-turns>\nThe user explicitly referenced the following prior turns for additional context:\n' + blocks.join('\n') + '\n</user-referenced-turns>';
     }
 
     private buildTaskSummary(taskState: SharedTaskState): string {
@@ -427,6 +612,43 @@ export class SharedTaskStateManager {
 
     private buildId(prefix: string): string {
         return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    private readRulesMd(): string | null {
+        try {
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
+            const rulesPath = path.join(workspaceFolders[0].uri.fsPath, '.optimus', 'rules.md');
+            if (!fs.existsSync(rulesPath)) { return null; }
+            return fs.readFileSync(rulesPath, 'utf8');
+        } catch {
+            return null;
+        }
+    }
+
+    public readMemoryMd(): string | null {
+        try {
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
+            const memPath = path.join(workspaceFolders[0].uri.fsPath, '.optimus', 'memory.md');
+            if (!fs.existsSync(memPath)) { return null; }
+            return fs.readFileSync(memPath, 'utf8');
+        } catch {
+            return null;
+        }
+    }
+
+    public writeMemoryMd(newContent: string): void {
+        try {
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders || workspaceFolders.length === 0) { return; }
+            const optimusDir = path.join(workspaceFolders[0].uri.fsPath, '.optimus');
+            if (!fs.existsSync(optimusDir)) { fs.mkdirSync(optimusDir, { recursive: true }); }
+            const memPath = path.join(optimusDir, 'memory.md');
+            fs.writeFileSync(memPath, newContent, 'utf8');
+        } catch {
+            // non-fatal: memory write failure should never block turn completion
+        }
     }
 
     private clone<T>(value: T): T {

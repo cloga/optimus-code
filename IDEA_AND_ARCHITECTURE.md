@@ -36,10 +36,41 @@ The core state-machine and pipeline logic:
 *   **Parallel Streaming Router**: Uses strict interfaces (`invoke(prompt, mode, onUpdate)`) bridging output logs (`stdout` and `stderr`) simultaneously towards the UI, keeping high throughput without deadlocks.
 
 ### 2.1 The "Council for Planning, Dictator for Execution" Principle (多谋独断)
-The sole operation mode is **Auto**, which implements a two-phase pipeline every round:
+The operation mode defaults to **Auto**, which implements a two-phase pipeline every round.  Users can override this via a **three-mode selector** in the input area:
+
+| Mode | Phase 1 (Planning) | Phase 2 (Execution) | Use Case |
+|------|--------------------|--------------------|----------|
+| **Plan** | Runs all selected planners | Skipped | Analysis, review, "what do you think?" |
+| **Auto** (default) | Runs all selected planners | Executor synthesizes planner outputs | Complex multi-step tasks |
+| **Exec** (Direct Execute) | Skipped | Executor acts on user prompt directly | Clear single-step instructions, "change X to Y" |
+
 *   **Phase 1 — Council Planning**: All selected plan agents run concurrently in `plan` mode. Each receives a `<task-context>` block with the shared task summary and the last two executor outcomes, followed by the live editor context and user prompt. This gives each planner awareness of prior progress without biasing it with other planners' opinions.
-*   **Phase 2 — Executor Synthesis & Action**: The designated executor agent (selected via a UI dropdown, must support `agent` mode) receives all successful plan outputs. It synthesizes the best approach and executes it autonomously in `agent` mode.
-*   This pipeline repeats for every user message, ensuring collective intelligence informs every autonomous action.
+*   **Phase 2 — Executor Synthesis & Action**: The designated executor agent (selected via a UI dropdown, must support `agent` mode) receives all successful plan outputs (in Auto mode) or the user prompt directly (in Exec mode). It synthesizes the best approach and executes it autonomously in `agent` mode.
+*   In Auto mode, this pipeline repeats for every user message, ensuring collective intelligence informs every autonomous action. In Plan/Exec modes, only the relevant phase runs, reducing latency for straightforward tasks.
+
+#### Smart Auto-Routing (`_inferMode`) — Layer 1: Static Pre-filter
+When the user leaves the mode on Auto (default), a lightweight heuristic classifier inspects the prompt before routing:
+
+| Prompt Signal | Inferred Mode | Rationale |
+|--------------|---------------|-----------|
+| Ends with `?`/`？`, or starts with question words (为什么, explain, how, etc.) | **Plan** | Pure analysis — no code changes needed |
+| Short (<150 chars) + starts with action verb (把, rename, fix, etc.) + prior turn context exists | **Direct** | Clear edit — additional planning would just slow things down |
+| Everything else | **Auto** | Ambiguous/complex — full pipeline warranted |
+
+Power users can also force a mode per-prompt using prefix shortcuts: `/plan <prompt>` or `/exec <prompt>`. The prefix is stripped before the prompt reaches the host.
+
+When auto-routing triggers, a small inline notification ("⚡ Auto-routed to Plan mode") appears in the chat so the user always knows which path was taken.
+
+#### Intent Gate (`_computeIntentFromPlanners`) — Layer 2: Semantic Post-filter
+After Phase 1 completes (all planners have responded), a second intent check runs for Auto mode. Each planner is instructed to output an `<action-required>yes/no</action-required>` tag. The intent gate aggregates these votes:
+
+| Planner Consensus | Effective Mode | Behavior |
+|-------------------|---------------|----------|
+| All planners vote `no` (answer-only) | **Plan** (downgraded from Auto) | Multi-planner: synthesizer runs (no tools). Single planner: executor skipped entirely |
+| Any planner votes `yes` (action needed) | **Auto** (unchanged) | Full executor runs with tool access |
+| Tags missing (unknown) | **Auto** (unchanged) | Falls back to content heuristics; defaults to full execution |
+
+When intent downgrade triggers, the chat displays "ℹ️ Planners detected question intent — skipping executor". The executor prompt also receives the planner consensus as a secondary safety hint.
 
 ### 2.2 Agent Mode Filtering & Dual Execution Strategy
 *   Each agent declares a `modes` array (e.g. `["plan"]` or `["plan", "agent"]`) specifying its capabilities.
@@ -89,6 +120,7 @@ Each new user turn should follow this lifecycle:
 *   `ChatViewProvider` council/executor orchestration is state-aware via `buildExecutorPrompt`.
 *   History persistence upgraded to resumable task snapshots (taskId / turnSequence).
 *   Bounded context compression implemented to prevent unbounded prompt growth.
+*   **Turn references**: Users can explicitly reference prior turns via `@` hover buttons on user messages. Referenced turns are injected verbatim into agent prompts as `<user-referenced-turns>` blocks, bypassing summary compression for precise context recall.
 
 ### 3. Bottom Layer: CLI Adapter Layer (System Hooks)
 Node.js sub-processors invoking official tools (e.g., `@github/copilot`, `claude-code`) via continuous `child_process.spawn`.
@@ -132,6 +164,7 @@ Node.js sub-processors invoking official tools (e.g., `@github/copilot`, `claude
 - **Tool-Call Mental Model**: The Multi-Agent Council execution should be presented to the user visually as 'Tool Calls' (e.g., hidden inside <details> blocks on success). Do not present complex dashboards or raw multi-agent logs as equal peers to standard conversation messages. Always mimic the minimal, conversational UX standards seen in GitHub Copilot and Claude to reduce the user's cognitive load.
 
 ## Configuration & Context Management
-- **The \.optimus/\ Directory**: To maintain a Single Source of Truth (SSOT) across all multi-agent backends (Copilot, Claude, etc.), the orchestrator uses the \.optimus/\ directory in the target workspace. 
-  - \.optimus/rules.md\: The primary instructions file. Optimus automatically synchronizes this to runner-specific locations (e.g., \.claude/CLAUDE.md\, \.github/copilot-instructions.md\) on startup.
-  - *Future Extensibility*: This directory is designed to scale natively, capable of hosting future context payloads like \.optimus/tasks.md\ (for task queues) or \.optimus/memory.md\ (for long-term agent memory).
+- **The \.optimus/\ Directory**: To maintain a Single Source of Truth (SSOT) across all multi-agent backends (Copilot, Claude, etc.), the orchestrator uses the \.optimus/\ directory in the target workspace.
+  - \.optimus/rules.md\: The primary instructions file. Optimus injects these rules into every agent prompt at runtime via `<project-rules>` tags — no file synchronization required. Both planner and executor prompts receive the rules fresh each turn through `SharedTaskStateManager.readRulesMd()`.
+  - \.optimus/memory.md\: **Long-term agent memory hot cache** (OpenClaw-inspired). Injected into every agent prompt via `<project-memory>` tags alongside rules. Executors can emit `<memory-update>` blocks to persist cross-task discoveries (user preferences, architectural decisions, recurring patterns). The orchestrator extracts these blocks and appends them to the file automatically. Human-readable and editable.
+  - *Future Extensibility*: This directory is designed to scale natively, capable of hosting future context payloads like \.optimus/tasks.md\ (for task queues) or deeper per-entity memory under \.optimus/memory/\.

@@ -3,7 +3,6 @@ import * as path from 'path';
 import { PersistentAgentAdapter } from './adapters/PersistentAgentAdapter';
 import { ChatViewProvider } from './providers/ChatViewProvider';
 import { debugLog, registerDebugOutputChannel } from './debugLogger';
-import { syncOptimusInstructions } from './utils/configSync';
 
 export function activate(context: vscode.ExtensionContext) {
     registerDebugOutputChannel(context);
@@ -19,9 +18,6 @@ export function activate(context: vscode.ExtensionContext) {
     if (workspacePathHint) {
         PersistentAgentAdapter.setWorkspacePathHint(workspacePathHint);
         debugLog('Extension', 'Registered workspace path hint', JSON.stringify({ workspacePathHint }));
-        
-        // Auto-sync OPTIMUS.md to underlying adapters
-        syncOptimusInstructions(workspacePathHint);
     } else {
         debugLog('Extension', 'No workspace path hint available during activation');
     }

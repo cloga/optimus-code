@@ -390,14 +390,13 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     protected appendProcessLines(currentText: string, lines: string[]): string {
         const existingLines = currentText ? currentText.split('\n').filter(Boolean) : [];
         for (const line of lines) {
-            const normalized = line.trim();
-            if (!normalized) {
-                continue;
+            // Split multi-line entries (e.g. "• tool\n↳ summary") into individual lines
+            for (const subLine of line.split('\n').map(l => l.trim()).filter(Boolean)) {
+                if (existingLines[existingLines.length - 1] === subLine) {
+                    continue;
+                }
+                existingLines.push(subLine);
             }
-            if (existingLines[existingLines.length - 1] === normalized) {
-                continue;
-            }
-            existingLines.push(normalized);
         }
         return existingLines.join('\n');
     }
@@ -436,7 +435,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
 
             const lineCount = `${nonEmptyLines.length} lines`;
             const clippedPreview = preview.length > 72 ? preview.slice(0, 69) + '...' : preview;
-            return `${lineCount}, first=${clippedPreview}`;
+            return `${lineCount}, preview=${clippedPreview}`;
         }
 
         if (typeof result === 'number' || typeof result === 'boolean') {
@@ -969,18 +968,23 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         }
 
         if (event?.type === 'user') {
-            const toolResultContent = Array.isArray(event?.message?.content)
-                ? event.message.content.find((block: any) => block?.type === 'tool_result')
-                : undefined;
-            const toolCallId = typeof toolResultContent?.tool_use_id === 'string' ? toolResultContent.tool_use_id : undefined;
-            if (!toolCallId) {
+            const toolResultBlocks = Array.isArray(event?.message?.content)
+                ? event.message.content.filter((block: any) => block?.type === 'tool_result')
+                : [];
+            if (toolResultBlocks.length === 0) {
                 return currentText;
             }
 
-            const toolName = toolCalls.get(toolCallId)?.name || 'tool';
-            const success = toolResultContent?.is_error !== true;
-            const result = event?.tool_use_result || toolResultContent?.content;
-            return this.appendProcessLines(currentText, this.formatStructuredToolCompletion(toolName, result, success));
+            let updatedText = currentText;
+            for (const block of toolResultBlocks) {
+                const toolCallId = typeof block?.tool_use_id === 'string' ? block.tool_use_id : undefined;
+                if (!toolCallId) { continue; }
+                const toolName = toolCalls.get(toolCallId)?.name || 'tool';
+                const success = block?.is_error !== true;
+                const result = block?.content;
+                updatedText = this.appendProcessLines(updatedText, this.formatStructuredToolCompletion(toolName, result, success));
+            }
+            return updatedText;
         }
 
         if (event?.type === 'stream_event') {

@@ -1,5 +1,5 @@
 export type AgentRunStatus = 'running' | 'success' | 'error';
-export type AgentRole = 'planner' | 'executor';
+export type AgentRole = 'planner' | 'executor' | 'synthesizer';
 export type TaskTurnStatus = 'in_progress' | 'completed' | 'failed';
 export type TaskStatus = 'active' | 'blocked' | 'completed';
 
@@ -72,6 +72,7 @@ export interface TurnRecord {
     executorOutcome?: ExecutorOutcomeRecord;
     synthesisPrompt?: string;
     failureReason?: string;
+    referencedTurnSequences?: number[];
 }
 
 export interface SharedTaskState {
@@ -107,6 +108,7 @@ export interface StartTurnInput {
     prompt: string;
     selectedAgentIds: string[];
     executorId?: string;
+    referencedTurnSequences?: number[];
 }
 
 export interface StartTurnResult {

@@ -2,8 +2,8 @@
 
 This file provides system-wide project-specific instructions for all Agents (Claude, Copilot, etc.) working in this repository.
 
-> **DO NOT EDIT `.claude/CLAUDE.md` OR `.github/copilot-instructions.md` DIRECTLY.**
-> Edit this file instead. The Optimus extension will automatically synchronize these rules to the respective agent folders.
+> This file is the single source of truth for all agent rules.
+> Optimus injects these rules into every agent prompt at runtime — no file synchronization required.
 
 ## GitHub Operations
 
@@ -66,9 +66,29 @@ When debugging this VS Code extension, always work in layers and validate them i
 - Do not leave temporary scripts, debugging dumps, extracted HTML, or test logs in the project root.
 - Put disposable troubleshooting artifacts under `scripts/` or `temp/`, or delete them immediately after use.
 
+## Publishing VS Code Extension Release
+
+When the executor is asked to publish or release a new version of the extension, follow these steps:
+
+1. **Bump version** in `package.json` following semver (patch for fixes, minor for features, major for breaking changes). Update `CHANGELOG.md` with the release notes.
+2. **Commit** the version bump and changelog:
+   ```
+   git add package.json CHANGELOG.md
+   git commit -m "chore: release v<NEW_VERSION>"
+   ```
+3. **Create and push the tag** — this triggers the `.github/workflows/publish.yml` GitHub Action:
+   ```
+   git tag v<NEW_VERSION>
+   git push origin main
+   git push origin v<NEW_VERSION>
+   ```
+4. **Verify** the Action is running at `https://github.com/cloga/optimus-code/actions`. The `Publish to VS Code Marketplace` workflow should appear in progress.
+5. Do **not** run `vsce publish` locally — the CI workflow handles packaging and publishing using the `VSCE_PAT` secret.
+6. If the `VSCE_PAT` secret is not configured in the repository (`Settings → Secrets and variables → Actions`), notify the user and block the release.
+
 ## Architecture Direction
 
-- Preserve the current Auto-only `council -> executor` workflow unless there is an explicit architectural decision to change it.
+- The system supports three execution modes: **Auto** (planner → executor, default), **Plan** (planners only), and **Exec** (executor only). Preserve this routing architecture unless there is an explicit decision to change it.
 - Treat shared task state and app-level multi-turn memory as orchestrator responsibilities, not as adapter-specific hidden session behavior.
 - Keep adapters thin and deterministic whenever possible.
 - If a CLI-specific persistent session is reintroduced in the future, make it adapter-specific and justify it against the current app-level shared-state direction.
