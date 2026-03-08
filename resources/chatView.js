@@ -14,6 +14,8 @@ const backToChatBtn = document.getElementById('back-to-chat-btn');
 const configBtn = document.getElementById('config-btn');
 const agentSelector = document.getElementById('agent-selector');
 const executorSelector = document.getElementById('executor-selector');
+const queueBtn = document.getElementById('queue-btn');
+const queueBadge = document.getElementById('queue-badge');
 const diagnosticPanel = document.getElementById('diagnostic-panel');
 const taskStateStrip = document.getElementById('task-state-strip');
 const taskTitle = document.getElementById('task-title');
@@ -29,11 +31,25 @@ let currentCouncilHeader = null;
 let currentCouncilDoneTitle = 'Council Verdict';
 let currentCouncilAgentDomIds = new Map();
 let pendingImages = []; // { dataUrl: string, mimeType: string }[]
+let pendingQueue = []; // { text: string, agents: string[], executor: string, images?: object[] }[]
+let queuePanelOpen = false; // user-controlled: panel only shows when toggled open
+let queuePaused = false;    // when true, auto-dequeue is suspended
+let referencedTurns = []; // { sequence: number, prompt: string, status?: string }[]
+let submitMode = 'auto'; // 'plan' | 'auto' | 'direct'
+let currentTaskTurnHistory = []; // { sequence: number, prompt: string, status: string }[]
 let historyListLoading = false;
 let historyRestoreLoading = false;
 
 function getPhasePresentation(phaseKind, state, restored) {
-    const normalizedKind = phaseKind === 'executor' ? 'executor' : 'planner';
+    const normalizedKind = phaseKind === 'executor' ? 'executor' : phaseKind === 'synthesizer' ? 'synthesizer' : 'planner';
+    if (normalizedKind === 'synthesizer') {
+        if (restored) {
+            return { icon: '✅', title: 'Synthesis Complete (Restored)' };
+        }
+        return state === 'done'
+            ? { icon: '✅', title: 'Synthesis Complete' }
+            : { icon: '⏳', title: 'Synthesizing Planner Results' };
+    }
     if (normalizedKind === 'executor') {
         if (restored) {
             return { icon: '✅', title: 'Execution Complete (Restored)' };
@@ -74,7 +90,7 @@ function renderAgentLabel(name, agentId, role) {
 }
 
 function isExecutorResponse(response) {
-    if (response && response.role === 'executor') {
+    if (response && (response.role === 'executor' || response.role === 'synthesizer')) {
         return true;
     }
     return !!(response && typeof response.agent === 'string' && /\s\(Executor\)$/.test(response.agent));
@@ -239,8 +255,19 @@ function normalizeProcessLines(thinkingText) {
         .replace(/```text\s*/gi, '')
         .replace(/```/g, '')
         .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(line => line && line !== '---');
+        .flatMap(line => {
+            line = line.trim();
+            if (!line || line === '---') return [];
+            // Split inline ↳ detail onto its own line.
+            // "• Read ↳ file_path=..." → ["• Read", "↳ file_path=..."]
+            // "✓ Read ↳ result=..."   → ["✓ Read", "↳ result=..."]
+            // "✗ Read ↳ result=..."   → ["✗ Read", "↳ result=..."]
+            var inlineDetail = /^([•●⏺▶→✓✗][^↳]+?)\s+(↳\s*.+)$/.exec(line);
+            if (inlineDetail) {
+                return [inlineDetail[1].trim(), inlineDetail[2].trim()];
+            }
+            return [line];
+        });
 }
 
 function extractProcessNotes(thinkingText) {
@@ -334,6 +361,7 @@ function extractProcessEntries(thinkingText) {
     const entries = [];
     let currentTool = null;
     let detailTarget = 'meta';
+    var pendingTools = new Map(); // Map<string, entry[]> — queue per tool name
 
     lines.forEach(line => {
         const logMatch = /^>\s*\[LOG\]\s*(.*)$/i.exec(line);
@@ -358,6 +386,9 @@ function extractProcessEntries(thinkingText) {
                 status: 'running'
             };
             entries.push(currentTool);
+            var queue = pendingTools.get(title) || [];
+            queue.push(currentTool);
+            pendingTools.set(title, queue);
             detailTarget = 'meta';
             return;
         }
@@ -367,12 +398,37 @@ function extractProcessEntries(thinkingText) {
             const status = completionMatch[1] === '✓' ? 'success' : 'error';
             const title = completionMatch[2].trim() || 'Tool';
 
-            if (currentTool && currentTool.title === title) {
-                currentTool.status = status;
+            // Try currentTool first, then look up in pendingTools queue (FIFO)
+            var targetTool = (currentTool && currentTool.title === title)
+                ? currentTool
+                : null;
+
+            if (!targetTool) {
+                var queue = pendingTools.get(title);
+                if (queue && queue.length > 0) {
+                    targetTool = queue.shift();
+                    if (queue.length === 0) {
+                        pendingTools.delete(title);
+                    }
+                }
+            } else {
+                // Remove from queue if matched via currentTool
+                var queue = pendingTools.get(title);
+                if (queue) {
+                    var idx = queue.indexOf(targetTool);
+                    if (idx !== -1) { queue.splice(idx, 1); }
+                    if (queue.length === 0) { pendingTools.delete(title); }
+                }
+            }
+
+            if (targetTool) {
+                targetTool.status = status;
+                currentTool = targetTool;
                 detailTarget = 'result';
                 return;
             }
 
+            // Orphan completion: no matching • line found
             currentTool = {
                 kind: 'tool',
                 title,
@@ -458,7 +514,7 @@ function renderProcessStepHtml(step, index) {
         + '</div></div>';
 }
 
-function renderProcessHtml(thinkingHtml, thinkingText) {
+function renderProcessHtml(thinkingHtml, thinkingText, agentDone) {
     if (!thinkingHtml && !thinkingText) {
         return '';
     }
@@ -466,14 +522,64 @@ function renderProcessHtml(thinkingHtml, thinkingText) {
     const steps = extractProcessEntries(thinkingText);
     const notes = extractProcessNotes(thinkingText);
 
+    if (agentDone) {
+        steps.forEach(function(step) {
+            if (step.kind === 'tool' && step.status === 'running') {
+                step.status = 'interrupted';
+            }
+        });
+    }
+
     if (steps.length === 0) {
         return '<div class="markdown-body process-markdown-fallback">' + (thinkingHtml || '') + '</div>';
     }
 
+    // Find the boundary where trailing interrupted steps begin
+    var trailingInterruptedStart = steps.length;
+    if (agentDone) {
+        for (var i = steps.length - 1; i >= 0; i--) {
+            if (steps[i].kind === 'tool' && steps[i].status === 'interrupted') {
+                trailingInterruptedStart = i;
+            } else {
+                break;
+            }
+        }
+    }
+    var trailingCount = steps.length - trailingInterruptedStart;
+
     let html = '<div class="process-timeline">';
     steps.forEach((step, index) => {
+        if (trailingCount >= 3 && index >= trailingInterruptedStart) {
+            // Skip individual rendering; handled by collapsed summary below
+            return;
+        }
         html += renderProcessStepHtml(step, index);
     });
+
+    // Render collapsed summary for trailing interrupted steps (3+)
+    if (trailingCount >= 3) {
+        var toolNames = {};
+        for (var j = trailingInterruptedStart; j < steps.length; j++) {
+            var name = steps[j].title || 'tool';
+            toolNames[name] = (toolNames[name] || 0) + 1;
+        }
+        var toolSummary = Object.keys(toolNames).map(function(n) {
+            return toolNames[n] > 1 ? n + ' \u00d7' + toolNames[n] : n;
+        }).join(', ');
+
+        html += '<details class="process-interrupted-group">'
+            + '<summary class="process-interrupted-summary">'
+            + '<span class="process-interrupted-icon">\u26a0</span> '
+            + escapeHtmlText(String(trailingCount)) + ' tool calls interrupted'
+            + '<span class="process-interrupted-tools">' + escapeHtmlText(toolSummary) + '</span>'
+            + '</summary>'
+            + '<div class="process-interrupted-details">';
+        for (var k = trailingInterruptedStart; k < steps.length; k++) {
+            html += renderProcessStepHtml(steps[k], k);
+        }
+        html += '</div></details>';
+    }
+
     html += '</div>';
 
     if (notes.length > 0) {
@@ -598,8 +704,19 @@ function bindAgentSelectionLimit() {
     });
 }
 
+var _scrollRafScheduled = false;
 function scrollChat() {
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+    if (_scrollRafScheduled) { return; }
+    _scrollRafScheduled = true;
+    requestAnimationFrame(function () {
+        _scrollRafScheduled = false;
+        var threshold = 150;
+        var gap = chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight;
+        // Only auto-scroll if user is near the bottom (avoids forcing scroll when reading history)
+        if (gap < threshold) {
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+    });
 }
 
 function bindPromptKeyboardShortcut() {
@@ -613,8 +730,26 @@ function bindPromptKeyboardShortcut() {
         }
 
         event.preventDefault();
-        addDiagnosticLine('prompt keydown -> submit via Enter', true);
-        submitPrompt();
+        const isQueueVisible = queueBtn && queueBtn.style.display !== 'none';
+        if (isQueueVisible) {
+            addDiagnosticLine('prompt keydown -> addToQueue via Enter', true);
+            addToQueue();
+        } else {
+            addDiagnosticLine('prompt keydown -> submit via Enter', true);
+            submitPrompt();
+        }
+    });
+
+    promptInput.addEventListener('input', function() {
+        var text = promptInput.value;
+        var match = text.match(/(^|\s)@(\d+)(\s|$)/);
+        if (!match) { return; }
+        var seq = parseInt(match[2], 10);
+        var turn = currentTaskTurnHistory.find(function(t) { return t.sequence === seq; });
+        if (!turn) { return; }
+        promptInput.value = text.replace(match[0], match[1] + match[3]);
+        addTurnReference(seq, turn.prompt);
+        promptInput.focus();
     });
 }
 
@@ -656,6 +791,68 @@ function renderImagePreviews() {
     });
 }
 
+function addTurnReference(sequence, promptExcerpt) {
+    if (referencedTurns.some(r => r.sequence === sequence)) { return; }
+    var turnInfo = currentTaskTurnHistory.find(function(t) { return t.sequence === sequence; });
+    var status = turnInfo ? turnInfo.status : undefined;
+    referencedTurns.push({ sequence, prompt: promptExcerpt, status: status });
+    var el = document.querySelector('.message.user[data-sequence="' + sequence + '"]');
+    if (el) { el.classList.add('referenced'); }
+    renderReferenceChips();
+}
+
+function removeTurnReference(sequence) {
+    referencedTurns = referencedTurns.filter(r => r.sequence !== sequence);
+    var el = document.querySelector('.message.user[data-sequence="' + sequence + '"]');
+    if (el) { el.classList.remove('referenced'); }
+    renderReferenceChips();
+}
+
+function clearTurnReferences() {
+    referencedTurns = [];
+    document.querySelectorAll('.message.user.referenced').forEach(function(el) { el.classList.remove('referenced'); });
+    renderReferenceChips();
+}
+
+function renderReferenceChips() {
+    var container = document.getElementById('reference-chips');
+    if (!container) { return; }
+    container.innerHTML = '';
+    if (referencedTurns.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = '';
+    referencedTurns.forEach(function(ref) {
+        var chip = document.createElement('span');
+        chip.className = 'ref-chip';
+        var statusIcon = ref.status === 'completed' ? '\u2705' : ref.status === 'failed' ? '\u274C' : '\u23F3';
+        var label = '#' + ref.sequence + ' ' + statusIcon + ' ' + (ref.prompt.length > 30 ? ref.prompt.substring(0, 27) + '...' : ref.prompt);
+        chip.textContent = label;
+        chip.title = 'Turn ' + ref.sequence + ' \u2014 ' + ref.prompt;
+        var removeBtn = document.createElement('span');
+        removeBtn.className = 'ref-chip-remove';
+        removeBtn.textContent = '\u00D7';
+        removeBtn.title = 'Remove reference';
+        removeBtn.addEventListener('click', function() { removeTurnReference(ref.sequence); });
+        chip.appendChild(removeBtn);
+        container.appendChild(chip);
+    });
+}
+
+function attachRefButton(userMsgEl, sequence, promptExcerpt) {
+    var btn = document.createElement('button');
+    btn.className = 'ref-turn-btn';
+    btn.textContent = '@';
+    btn.title = 'Add this as context for your next message';
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        addTurnReference(sequence, promptExcerpt);
+        promptInput.focus();
+    });
+    userMsgEl.appendChild(btn);
+}
+
 function bindPasteHandler() {
     if (!promptInput) { return; }
     promptInput.addEventListener('paste', event => {
@@ -683,11 +880,27 @@ function getSelectedAgents() {
 }
 
 function submitPrompt() {
-    const text = promptInput.value;
+    let text = promptInput.value;
     addDiagnosticLine('submitPrompt invoked | length=' + text.length, true);
     if (!text.trim() && pendingImages.length === 0) {
         addDiagnosticLine('submitPrompt aborted | empty input', true);
         return;
+    }
+
+    // Parse /plan and /exec prompt prefix shortcuts
+    let effectiveMode = submitMode;
+    const prefixMatch = text.match(/^\/(\w+)\s+/);
+    if (prefixMatch) {
+        const prefix = prefixMatch[1].toLowerCase();
+        if (prefix === 'plan') {
+            effectiveMode = 'plan';
+            text = text.slice(prefixMatch[0].length);
+            addDiagnosticLine('prefix override → plan mode', true);
+        } else if (prefix === 'exec' || prefix === 'direct') {
+            effectiveMode = 'direct';
+            text = text.slice(prefixMatch[0].length);
+            addDiagnosticLine('prefix override → direct mode', true);
+        }
     }
 
     const selectedAgents = getSelectedAgents();
@@ -696,8 +909,10 @@ function submitPrompt() {
         return;
     }
 
+    const turnSeq = currentTaskTurnHistory.length + 1;
     const userMsg = document.createElement('div');
     userMsg.className = 'message user';
+    userMsg.dataset.sequence = String(turnSeq);
     if (text.trim()) {
         const textNode = document.createTextNode(text);
         userMsg.appendChild(textNode);
@@ -714,9 +929,11 @@ function submitPrompt() {
 
     const executor = executorSelector.value;
     const images = pendingImages.length > 0 ? pendingImages.map(img => ({ dataUrl: img.dataUrl, mimeType: img.mimeType })) : undefined;
-    sendToHost({ type: 'askCouncil', value: text, agents: selectedAgents, mode: 'auto', executor: executor, images }, 'submitPrompt');
+    const refSeqs = referencedTurns.length > 0 ? referencedTurns.map(r => r.sequence) : undefined;
+    sendToHost({ type: 'askCouncil', value: text, agents: selectedAgents, mode: effectiveMode, executor: executor, images, referencedTurnSequences: refSeqs }, 'submitPrompt');
     promptInput.value = '';
     clearPendingImages();
+    clearTurnReferences();
 }
 
 function submitCompact() {
@@ -732,11 +949,184 @@ function submitCompact() {
     sendToHost({ type: 'compactContext' }, 'submitCompact');
 }
 
+function updateQueueBadge() {
+    if (queueBadge) {
+        queueBadge.textContent = pendingQueue.length > 0 ? '(' + pendingQueue.length + ')' : '';
+    }
+    // Sync the standalone toggle button visibility and count
+    var viewBtn = document.getElementById('queue-view-btn');
+    var viewCount = document.getElementById('queue-view-count');
+    var isQueueVisible = queueBtn && queueBtn.style.display !== 'none';
+    if (viewBtn) {
+        viewBtn.style.display = (isQueueVisible && pendingQueue.length > 0) ? '' : 'none';
+    }
+    if (viewCount) {
+        viewCount.textContent = pendingQueue.length > 0 ? '(' + pendingQueue.length + ')' : '';
+    }
+    renderQueuePanel();
+}
+
+function syncQueueToHost() {
+    // Strip images to keep message small; host saves to globalState
+    var lite = pendingQueue.map(function(item) {
+        return { text: item.text, agents: item.agents, executor: item.executor, mode: item.mode || 'auto', images: item.images };
+    });
+    sendToHost({ type: 'saveQueue', queue: lite }, 'syncQueue');
+}
+
+function renderQueuePanel() {
+    var panel = document.getElementById('queue-panel');
+    var list = document.getElementById('queue-list');
+    if (!panel || !list) { return; }
+    if (pendingQueue.length === 0) {
+        queuePanelOpen = false;
+        panel.style.display = 'none';
+        return;
+    }
+    // Only show panel when user explicitly toggled it open
+    var isQueueVisible = queueBtn && queueBtn.style.display !== 'none';
+    panel.style.display = (isQueueVisible && queuePanelOpen) ? '' : 'none';
+    if (!queuePanelOpen) { return; }
+    list.innerHTML = '';
+
+    // Render header action buttons (Run/Pause + Clear All)
+    var headerActions = document.getElementById('queue-panel-actions');
+    if (headerActions) {
+        headerActions.innerHTML = '';
+        // Run / Pause toggle
+        var toggleBtn = document.createElement('span');
+        toggleBtn.className = 'queue-header-action';
+        if (queuePaused) {
+            toggleBtn.textContent = '\u25B6 Run';
+            toggleBtn.title = 'Resume auto-dequeue';
+        } else {
+            toggleBtn.textContent = '\u23F8 Pause';
+            toggleBtn.title = 'Pause auto-dequeue';
+        }
+        toggleBtn.addEventListener('click', function() {
+            queuePaused = !queuePaused;
+            renderQueuePanel();
+            addDiagnosticLine('queue ' + (queuePaused ? 'paused' : 'resumed'), true);
+            // If resuming and not running, trigger immediate dequeue
+            if (!queuePaused && pendingQueue.length > 0 && stopBtn.style.display === 'none') {
+                var next = pendingQueue.shift();
+                updateQueueBadge();
+                syncQueueToHost();
+                addDiagnosticLine('manual-dequeue after resume | remaining=' + pendingQueue.length, true);
+                setTimeout(function() { submitFromQueue(next); }, 300);
+            }
+        });
+        headerActions.appendChild(toggleBtn);
+        // Clear All
+        var clearBtn = document.createElement('span');
+        clearBtn.className = 'queue-header-action queue-header-danger';
+        clearBtn.textContent = 'Clear All';
+        clearBtn.title = 'Remove all queued prompts';
+        clearBtn.addEventListener('click', function() {
+            pendingQueue = [];
+            updateQueueBadge();
+            syncQueueToHost();
+            addDiagnosticLine('queue cleared by user', true);
+        });
+        headerActions.appendChild(clearBtn);
+    }
+
+    pendingQueue.forEach(function(item, idx) {
+        var row = document.createElement('div');
+        row.className = 'queue-item';
+        var indexSpan = document.createElement('span');
+        indexSpan.className = 'queue-item-index';
+        indexSpan.textContent = (idx + 1) + '.';
+        // Mode badge
+        var modeBadge = document.createElement('span');
+        modeBadge.className = 'queue-item-mode';
+        var modeLabel = { plan: 'Plan', auto: 'Auto', direct: 'Exec' };
+        modeBadge.textContent = modeLabel[item.mode] || 'Auto';
+        var textSpan = document.createElement('span');
+        textSpan.className = 'queue-item-text';
+        textSpan.textContent = item.text.length > 60 ? item.text.substring(0, 60) + '...' : item.text;
+        textSpan.title = item.text;
+        var removeBtn = document.createElement('span');
+        removeBtn.className = 'queue-item-remove';
+        removeBtn.textContent = '\u2715';
+        removeBtn.title = 'Remove from queue';
+        removeBtn.dataset.idx = String(idx);
+        removeBtn.addEventListener('click', function() {
+            var i = parseInt(removeBtn.dataset.idx, 10);
+            if (i >= 0 && i < pendingQueue.length) {
+                pendingQueue.splice(i, 1);
+                updateQueueBadge();
+                syncQueueToHost();
+                addDiagnosticLine('queue item removed | idx=' + i + ' | remaining=' + pendingQueue.length, true);
+            }
+        });
+        row.appendChild(indexSpan);
+        row.appendChild(modeBadge);
+        row.appendChild(textSpan);
+        row.appendChild(removeBtn);
+        list.appendChild(row);
+    });
+}
+
+function addToQueue() {
+    const text = promptInput.value;
+    addDiagnosticLine('addToQueue invoked | length=' + text.length, true);
+    if (!text.trim() && pendingImages.length === 0) {
+        addDiagnosticLine('addToQueue aborted | empty input', true);
+        return;
+    }
+
+    const selectedAgents = getSelectedAgents();
+    if (selectedAgents.length === 0) {
+        addDiagnosticLine('addToQueue aborted | no selected agents', true);
+        return;
+    }
+
+    const executor = executorSelector.value;
+    const images = pendingImages.length > 0 ? pendingImages.map(img => ({ dataUrl: img.dataUrl, mimeType: img.mimeType })) : undefined;
+    const refSeqs = referencedTurns.length > 0 ? referencedTurns.map(r => r.sequence) : undefined;
+    pendingQueue.push({ text: text, agents: selectedAgents, executor: executor, mode: submitMode, images: images, referencedTurnSequences: refSeqs });
+    promptInput.value = '';
+    clearPendingImages();
+    clearTurnReferences();
+    updateQueueBadge();
+    syncQueueToHost();
+    addDiagnosticLine('addToQueue success | queue length=' + pendingQueue.length, true);
+}
+
+function submitFromQueue(item) {
+    addDiagnosticLine('submitFromQueue | text length=' + item.text.length, true);
+
+    const userMsg = document.createElement('div');
+    userMsg.className = 'message user';
+    if (item.text.trim()) {
+        const textNode = document.createTextNode(item.text);
+        userMsg.appendChild(textNode);
+    }
+    if (item.images) {
+        item.images.forEach(img => {
+            const imgEl = document.createElement('img');
+            imgEl.src = img.dataUrl;
+            imgEl.className = 'chat-image';
+            imgEl.alt = 'Attached image';
+            userMsg.appendChild(imgEl);
+        });
+    }
+    chatHistory.appendChild(userMsg);
+    scrollChat();
+
+    sendToHost({ type: 'askCouncil', value: item.text, agents: item.agents, mode: item.mode || 'auto', executor: item.executor, images: item.images, referencedTurnSequences: item.referencedTurnSequences }, 'submitFromQueue');
+}
+
 function handleButtonAction(actionId) {
     addDiagnosticLine('handleButtonAction -> ' + actionId, true);
     switch (actionId) {
         case 'new-chat-btn':
             chatHistory.innerHTML = '<div class="message agent"><div class="agent-name">Optimus Council</div><p>Welcome! Describe your architecture problem, and I will summon the agents concurrently.</p></div>';
+            pendingQueue = [];
+            clearTurnReferences();
+            currentTaskTurnHistory = [];
+            updateQueueBadge();
             sendToHost({ type: 'newChat' }, 'new chat');
             break;
         case 'config-btn':
@@ -754,6 +1144,9 @@ function handleButtonAction(actionId) {
             break;
         case 'compact-btn':
             submitCompact();
+            break;
+        case 'queue-btn':
+            addToQueue();
             break;
         case 'ask-btn':
             submitPrompt();
@@ -785,6 +1178,7 @@ function getActionIdFromEvent(event) {
         'back-to-chat-btn',
         'stop-btn',
         'compact-btn',
+        'queue-btn',
         'ask-btn'
     ].includes(node.id));
 
@@ -817,12 +1211,27 @@ function renderSessionHistory(message) {
 
         div.appendChild(titleRow);
 
+        if (Array.isArray(session.attachments) && session.attachments.length > 0) {
+            const thumbStrip = document.createElement('div');
+            thumbStrip.className = 'session-image-strip';
+            session.attachments.forEach(function (att) {
+                if (!att || !att.src) { return; }
+                var thumb = document.createElement('img');
+                thumb.className = 'session-image-thumb';
+                thumb.src = att.src;
+                thumb.alt = 'Attached image';
+                thumbStrip.appendChild(thumb);
+            });
+            if (thumbStrip.childElementCount > 0) {
+                div.appendChild(thumbStrip);
+            }
+        }
+
         const meta = document.createElement('div');
         meta.className = 'session-meta';
         meta.textContent = [
             session.taskStatus ? 'Status: ' + session.taskStatus : null,
             typeof session.turnCount === 'number' ? 'Turns: ' + session.turnCount : null,
-            session.attachmentCount ? 'Images: ' + session.attachmentCount : null,
             session.latestSummary || null,
         ].filter(Boolean).join(' | ');
         if (meta.textContent) {
@@ -920,6 +1329,9 @@ function renderSessionHistory(message) {
 function renderRestoredSession(session) {
     const userDiv = document.createElement('div');
     userDiv.className = 'message user';
+    if (session.turnSequence) {
+        userDiv.dataset.sequence = String(session.turnSequence);
+    }
     if (session.prompt) {
         const promptNode = document.createElement('div');
         promptNode.textContent = session.prompt;
@@ -931,6 +1343,9 @@ function renderRestoredSession(session) {
         if (attachmentsWrap.firstElementChild) {
             userDiv.appendChild(attachmentsWrap.firstElementChild);
         }
+    }
+    if (session.turnSequence && session.prompt) {
+        attachRefButton(userDiv, session.turnSequence, session.prompt);
     }
     chatHistory.appendChild(userDiv);
 
@@ -986,8 +1401,8 @@ function renderRestoredSession(session) {
                 content += '</details>';
                 
                 if (response.thinkingHtml) {
-                    content += '<details style="margin-bottom: 8px;"><summary style="cursor: pointer; outline: none; font-weight: bold;">⚙️ Execution Process</summary>';
-                    content += renderProcessHtml(response.thinkingHtml, response.thinking || '');
+                    content += '<details style="margin-bottom: 8px;"><summary style="cursor: pointer; outline: none; font-weight: bold;">⚙️ Execution Trace</summary>';
+                    content += renderProcessHtml(response.thinkingHtml, response.thinking || '', true);
                     content += '</details>';
                 }
 
@@ -1040,10 +1455,27 @@ function setRunningState(running) {
         askBtn.style.display = 'none';
         compactBtn.style.display = 'none';
         stopBtn.style.display = '';
+        if (queueBtn) { queueBtn.style.display = ''; }
+        updateQueueBadge();
     } else {
         stopBtn.style.display = 'none';
-        compactBtn.style.display = '';
-        askBtn.style.display = '';
+        // If queue still has items, keep queue button visible to prevent
+        // the send button from appearing during the auto-dequeue gap
+        if (pendingQueue.length > 0) {
+            if (queueBtn) { queueBtn.style.display = ''; }
+            askBtn.style.display = 'none';
+            compactBtn.style.display = 'none';
+            updateQueueBadge();
+        } else {
+            if (queueBtn) { queueBtn.style.display = 'none'; }
+            compactBtn.style.display = '';
+            askBtn.style.display = '';
+            queuePanelOpen = false;
+            var panel = document.getElementById('queue-panel');
+            if (panel) { panel.style.display = 'none'; }
+            var viewBtn = document.getElementById('queue-view-btn');
+            if (viewBtn) { viewBtn.style.display = 'none'; }
+        }
     }
 }
 
@@ -1084,7 +1516,7 @@ function renderCouncilStart(message) {
         promptHtml += '<details open style="margin-bottom:8px;"><summary style="cursor:pointer;outline:none;font-weight:bold;">📤 Output</summary>'
             + '<div id="stream-output-' + safeId + '" class="markdown-body"></div>'
             + '</details>'
-            + '<details open style="margin-bottom:8px;"><summary style="cursor:pointer;outline:none;font-weight:bold;">⚙️ Execution Process</summary>'
+            + '<details style="margin-bottom:8px;"><summary style="cursor:pointer;outline:none;font-weight:bold;">⚙️ Execution Trace</summary>'
             + '<div id="stream-thinking-wrap-' + safeId + '" class="markdown-body" style="opacity:0.9;border-left:3px solid var(--vscode-editorBracketHighlight-foreground1, #ccc);padding-left:8px;min-height:20px;">'
             + '<div id="stream-thinking-' + safeId + '"></div>'
             + '</div>'
@@ -1119,7 +1551,7 @@ function renderAgentUpdate(message) {
     }
     if (outputSlot) {
         outputSlot.innerHTML = message.outputHtml || '';
-        // Auto-collapse Execution Process when output content arrives
+        // Auto-collapse Execution Trace when output content arrives
         if (message.outputHtml) {
             const thinkingWrap = document.getElementById('stream-thinking-wrap-' + safeId);
             if (thinkingWrap) {
@@ -1268,22 +1700,22 @@ function renderAgentDone(message) {
 
             wrapper.appendChild(outputDetails);
 
-            // Execution Process section (collapsed by default, below output)
+            // Execution Trace section (collapsed by default, below output)
             if (message.thinkingHtml) {
                 const processDetails = document.createElement('details');
                 processDetails.style.marginBottom = '8px';
                 const processSummary = document.createElement('summary');
                 const stepCount = extractProcessEntries(message.thinking || '').length;
                 processSummary.textContent = stepCount > 0
-                    ? '⚙️ Execution Process (' + stepCount + ' steps)'
-                    : '⚙️ Execution Process';
+                    ? '⚙️ Execution Trace (' + stepCount + ' steps)'
+                    : '⚙️ Execution Trace';
                 processSummary.style.cursor = 'pointer';
                 processSummary.style.outline = 'none';
                 processSummary.style.fontWeight = 'bold';
                 processDetails.appendChild(processSummary);
 
                 const thinkingDiv = document.createElement('div');
-                thinkingDiv.innerHTML = renderProcessHtml(message.thinkingHtml || '', message.thinking || '');
+                thinkingDiv.innerHTML = renderProcessHtml(message.thinkingHtml || '', message.thinking || '', true);
                 processDetails.appendChild(thinkingDiv);
 
                 wrapper.appendChild(processDetails);
@@ -1352,7 +1784,7 @@ function renderCouncilComplete() {
         headerEl.textContent = '✅ ' + currentCouncilDoneTitle;
         const detailsEl = headerEl.closest('details');
         if (detailsEl && detailsEl.dataset.hasError !== 'true' && currentCouncilAutoCollapse) {
-            detailsEl.open = false; 
+            detailsEl.open = false;
         }
     }
 }
@@ -1383,7 +1815,26 @@ try {
     bindButtonAction(backToChatBtn, 'back-to-chat-btn');
     bindButtonAction(document.getElementById('stop-btn'), 'stop-btn');
     bindButtonAction(document.getElementById('compact-btn'), 'compact-btn');
+    bindButtonAction(document.getElementById('queue-btn'), 'queue-btn');
     bindButtonAction(askBtn, 'ask-btn');
+
+    // Queue panel: toggle via dedicated view button, close on X
+    var queueViewBtn = document.getElementById('queue-view-btn');
+    if (queueViewBtn) {
+        queueViewBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            queuePanelOpen = !queuePanelOpen;
+            renderQueuePanel();
+        });
+    }
+    var queuePanelClose = document.getElementById('queue-panel-close');
+    if (queuePanelClose) {
+        queuePanelClose.addEventListener('click', function() {
+            queuePanelOpen = false;
+            var panel = document.getElementById('queue-panel');
+            if (panel) { panel.style.display = 'none'; }
+        });
+    }
 
     document.addEventListener('click', event => {
         const actionId = getActionIdFromEvent(event);
@@ -1411,7 +1862,7 @@ try {
     const floatingBar = document.createElement('div');
     floatingBar.id = 'floating-collapse-bar';
     floatingBar.style.display = 'none';
-    document.body.appendChild(floatingBar);
+    chatView.insertBefore(floatingBar, chatHistory);
 
     function updateFloatingCollapseBar() {
         const openSections = chatHistory.querySelectorAll('.agent-child-stack > details[open]');
@@ -1431,19 +1882,28 @@ try {
         }
         floatingBar.style.display = 'flex';
         floatingBar.innerHTML = '';
-        items.forEach(item => {
-            const btn = document.createElement('button');
-            btn.className = 'floating-collapse-btn';
-            btn.textContent = '▲ ' + item.text;
-            btn.addEventListener('click', () => {
-                item.details.open = false;
-                updateFloatingCollapseBar();
-            });
-            floatingBar.appendChild(btn);
+        // Only show the last (most recently scrolled off-screen) section
+        const item = items[items.length - 1];
+        const btn = document.createElement('button');
+        btn.className = 'floating-collapse-btn';
+        btn.textContent = '▲ ' + item.text;
+        btn.addEventListener('click', () => {
+            item.details.open = false;
+            updateFloatingCollapseBar();
         });
+        floatingBar.appendChild(btn);
     }
 
-    chatHistory.addEventListener('scroll', updateFloatingCollapseBar, { passive: true });
+    var _floatingBarRafScheduled = false;
+    function throttledUpdateFloatingCollapseBar() {
+        if (_floatingBarRafScheduled) { return; }
+        _floatingBarRafScheduled = true;
+        requestAnimationFrame(function () {
+            _floatingBarRafScheduled = false;
+            updateFloatingCollapseBar();
+        });
+    }
+    chatHistory.addEventListener('scroll', throttledUpdateFloatingCollapseBar, { passive: true });
     // Also update when details toggle
     chatHistory.addEventListener('toggle', e => {
         if (e.target && e.target.tagName === 'DETAILS') {
@@ -1503,6 +1963,11 @@ try {
         if (message.type === 'updateTaskState') {
             renderTaskState(message);
             updateTokenCounter(message.task);
+            if (message.task && Array.isArray(message.task.turnHistory)) {
+                currentTaskTurnHistory = message.task.turnHistory;
+            } else {
+                currentTaskTurnHistory = [];
+            }
             return;
         }
 
@@ -1527,6 +1992,18 @@ try {
 
             chatHistory.appendChild(compactDiv);
             scrollChat();
+
+            // Force-update the token counter from compactResult data
+            // to avoid stale display if updateTaskState arrived with old values
+            var counter = document.getElementById('context-token-counter');
+            if (counter && message.tokensAfter !== undefined) {
+                var tokens = message.tokensAfter;
+                var cLabel = tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'k' : String(tokens);
+                counter.textContent = '\uD83D\uDCCA ' + cLabel + ' tokens';
+                counter.style.display = '';
+                counter.style.color = 'var(--vscode-descriptionForeground)';
+                counter.title = 'Estimated context token count';
+            }
             return;
         }
 
@@ -1553,6 +2030,17 @@ try {
             historyRestoreLoading = false;
             chatHistory.innerHTML = '';
             message.sessions.forEach(session => renderRestoredSession(session));
+            // Scroll to ~3 turns from the end so the user sees recent context
+            requestAnimationFrame(function () {
+                var userMessages = chatHistory.querySelectorAll('.message.user');
+                var VISIBLE_TAIL = 3;
+                if (userMessages.length > VISIBLE_TAIL) {
+                    var target = userMessages[userMessages.length - VISIBLE_TAIL];
+                    target.scrollIntoView({ block: 'start' });
+                } else {
+                    chatHistory.scrollTop = 0;
+                }
+            });
             return;
         }
 
@@ -1580,18 +2068,88 @@ try {
             renderCouncilComplete();
         }
 
+        if (message.type === 'modeInferred') {
+            const modeLabels = { plan: 'Plan', auto: 'Auto', direct: 'Exec' };
+            const label = modeLabels[message.inferredMode] || message.inferredMode;
+            const indicator = document.createElement('div');
+            indicator.className = 'message system-note';
+            indicator.style.cssText = 'text-align:center;background:none;color:var(--vscode-descriptionForeground);font-size:11px;padding:2px 0;';
+            indicator.textContent = '\u26A1 Auto-routed to ' + label + ' mode';
+            chatHistory.appendChild(indicator);
+            scrollChat();
+            addDiagnosticLine('modeInferred | ' + message.originalMode + ' \u2192 ' + message.inferredMode, true);
+        }
+
+        if (message.type === 'intentDowngrade') {
+            const indicator = document.createElement('div');
+            indicator.className = 'message system-note';
+            indicator.style.cssText = 'text-align:center;background:none;color:var(--vscode-descriptionForeground);font-size:11px;padding:2px 0;';
+            indicator.textContent = '\u2139\uFE0F Planners detected question intent \u2014 skipping executor';
+            chatHistory.appendChild(indicator);
+            scrollChat();
+            addDiagnosticLine('intentDowngrade | plannerIntent=' + message.plannerIntent + ' | ' + message.originalMode + ' \u2192 ' + message.effectiveMode, true);
+        }
+
+        if (message.type === 'turnComplete') {
+            // Auto-dequeue: only process queued prompts after the entire turn
+            // (including executor) has finished and _runningTaskIds is cleared.
+            if (pendingQueue.length > 0 && !queuePaused) {
+                const next = pendingQueue.shift();
+                updateQueueBadge();
+                syncQueueToHost();
+                addDiagnosticLine('auto-dequeue | remaining=' + pendingQueue.length, true);
+                setTimeout(function() { submitFromQueue(next); }, 300);
+            } else if (pendingQueue.length > 0 && queuePaused) {
+                addDiagnosticLine('auto-dequeue skipped | queue paused | remaining=' + pendingQueue.length, true);
+            }
+        }
+
         if (message.type === 'codeBlockApplied') {
             // Mark all buttons for this file as applied
             document.querySelectorAll('.apply-btn').forEach(btn => {
                 if (btn.dataset.filePath === message.filePath) {
-                    btn.textContent = 'Applied ✓';
+                    btn.textContent = 'Applied \u2713';
                     btn.classList.add('apply-btn-done');
                 }
             });
         }
+
+        if (message.type === 'initQueue') {
+            // Restore persisted queue from host globalState
+            if (Array.isArray(message.queue) && message.queue.length > 0) {
+                pendingQueue = message.queue;
+                queuePaused = true; // start paused so user can review before running
+                updateQueueBadge();
+                addDiagnosticLine('initQueue restored | count=' + pendingQueue.length, true);
+                // Show restore toast in chat
+                var toast = document.createElement('div');
+                toast.className = 'message system-note';
+                toast.style.cssText = 'text-align:center;background:var(--vscode-editor-background);border:1px solid var(--vscode-panel-border);border-radius:4px;padding:6px 12px;font-size:12px;color:var(--vscode-descriptionForeground);margin:8px 0;';
+                toast.textContent = '\u{1F504} Queue restored: ' + pendingQueue.length + ' item' + (pendingQueue.length > 1 ? 's' : '') + ' from previous session (paused)';
+                chatHistory.appendChild(toast);
+                scrollChat();
+                // Auto-open queue panel so user can see restored items
+                queuePanelOpen = true;
+                // Make queue button visible so panel can render
+                if (queueBtn) { queueBtn.style.display = ''; }
+                var viewBtn = document.getElementById('queue-view-btn');
+                if (viewBtn) { viewBtn.style.display = ''; }
+                renderQueuePanel();
+            }
+        }
     });
 
     sendToHost({ type: 'webviewReady' }, 'startup');
+
+    // Mode selector button group
+    document.querySelectorAll('.mode-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            submitMode = btn.dataset.mode || 'auto';
+            addDiagnosticLine('mode switched to ' + submitMode, true);
+        });
+    });
 
     setTimeout(() => {
         if (agentSelector.childElementCount === 0) {

@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## [Unreleased]
+
+## [0.0.6] - 2026-03-08
+- **Feature: Smart auto-routing (`inferMode`)**: When mode is set to Auto (default), prompt heuristics now automatically route pure questions to Plan mode and short explicit edits (with prior context) to Direct mode. Reduces unnecessary planner+executor round-trips for straightforward interactions.
+- **Feature: Prompt prefix shortcuts**: Type `/plan <prompt>` or `/exec <prompt>` (or `/direct`) to override the mode for a single submission without touching the mode buttons. The prefix is stripped before the prompt reaches the host.
+- **Feature: Mode inference indicator**: When smart auto-routing changes the mode, a small inline notification ("⚡ Auto-routed to Plan mode") appears in the chat so the user knows which execution path was taken.
+- **Feature: Three-mode execution routing**: Added a Plan / Auto / Exec toggle in the input area. **Plan** runs planners only (analysis without code changes). **Auto** (default) runs the full planner → executor pipeline. **Exec** skips planners and sends user prompt directly to the executor for immediate action. Mode selection is preserved in queue items.
+- **Feature: Queue persistence**: Pending queue items are now saved to VS Code `globalState` and restored when the webview reloads or VS Code restarts, preventing queued prompts from being lost.
+- **Feature: Queue content visibility**: A collapsible panel below the Queue button shows all queued prompts (truncated to 60 chars) with per-item delete (`✕`) support. Click the badge count to toggle.
+- **Fix: Execution Trace leak in summary**: `ExecutorOutcomeRecord.summary` now uses the clean output (post `_extractThinking`) instead of `execCleaned`, preventing tool trace markers (`•`, `✓`, `✗`, `↳`) from leaking into the task state summary strip.
+- **Fix: Multi-line process line handling**: `appendProcessLines` now splits multi-line entries (e.g. `"• tool\n↳ summary"`) into individual lines before dedup, preventing malformed process text accumulation.
+- **Fix: Consistent result preview label**: Unified `first=` to `preview=` in `summarizeStructuredToolResult` for multi-line results, matching the format already used by bash/shell tool-specific summarization.
+- **Fix: Copilot adapter missing `captureProcessLinesAfterOutputStarts`**: `GitHubCopilotAdapter.extractThinking()` now sets `captureProcessLinesAfterOutputStarts: true`, so tool trace lines appearing after LLM output starts are correctly moved to `thinking` instead of leaking into `output`.
+- **Fix: Incomplete process line regexes**: Both `COPILOT_PROCESS_LINE_RE` and `CLAUDE_PROCESS_LINE_RE` now include `↳`, `✓`, and `✗` characters, ensuring continuation and completion markers are recognized as process lines.
+- **Fix: Defense-in-depth in `_summarizeText`**: `_summarizeText()` now strips tool trace lines (starting with `•`, `✓`, `✗`, `↳`, etc.) before collapsing whitespace, preventing any residual trace markers from reaching the summary.
+- **Fix: History resume scrolls to last 3 turns**: `restoreTaskSessions` now positions the scroll to the most recent 3 turns instead of jumping to the top.
+- **Fix: Direct mode hides dropped planner indicator**: The "is not currently available" notification for dropped planners is now suppressed in Direct mode to avoid confusing messages.
+
 ## [0.0.5] - 2026-03-08
 - **Repo Cleanup**: Removed debug log files, temp test scripts, and `temp_debug/` directory from root.
 - **Gitignore Fix**: Replaced garbled `.gitignore` entries with clean rules; added patterns for `*.log`, `[LOG]`, `temp/`, `temp_debug/`.

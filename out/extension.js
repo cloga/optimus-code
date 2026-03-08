@@ -40,7 +40,6 @@ const path = __importStar(require("path"));
 const PersistentAgentAdapter_1 = require("./adapters/PersistentAgentAdapter");
 const ChatViewProvider_1 = require("./providers/ChatViewProvider");
 const debugLogger_1 = require("./debugLogger");
-const configSync_1 = require("./utils/configSync");
 function activate(context) {
     (0, debugLogger_1.registerDebugOutputChannel)(context);
     (0, debugLogger_1.debugLog)('Extension', 'Optimus Code is now active!');
@@ -54,8 +53,6 @@ function activate(context) {
     if (workspacePathHint) {
         PersistentAgentAdapter_1.PersistentAgentAdapter.setWorkspacePathHint(workspacePathHint);
         (0, debugLogger_1.debugLog)('Extension', 'Registered workspace path hint', JSON.stringify({ workspacePathHint }));
-        // Auto-sync OPTIMUS.md to underlying adapters
-        (0, configSync_1.syncOptimusInstructions)(workspacePathHint);
     }
     else {
         (0, debugLogger_1.debugLog)('Extension', 'No workspace path hint available during activation');

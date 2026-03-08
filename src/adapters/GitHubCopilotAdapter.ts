@@ -1,7 +1,7 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 // Copilot CLI uses ● (U+25CF filled circle) and tree-drawing chars for tool trace lines
 // Also handle ⏺ (U+23FA) and • (U+2022) for robustness
-const COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→]/;
+const COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
 
 export class GitHubCopilotAdapter extends PersistentAgentAdapter {
     constructor(id: string = 'github-copilot', name: string = '🛸 GitHub Copilot', modelFlag: string = '', modes?: string[]) {
@@ -40,6 +40,7 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         return this.extractThinkingWithSharedParser(rawText, {
             processLineRe: COPILOT_PROCESS_LINE_RE,
             captureBracketLines: true,
+            captureProcessLinesAfterOutputStarts: true,
             collectUsageLog: true,
         });
     }

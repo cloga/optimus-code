@@ -2,6 +2,287 @@
 
 This document captures the context, rationale, and meaningful discussions (the "Why") behind technical decisions and architectural shifts in Optimus Code.
 
+## [2026-03-08] - Feature: Intent Gate — Planner-Driven Dynamic Mode Switching in Auto Mode
+
+### Motivation
+Auto mode's `_inferMode()` is a static regex classifier that runs **before** any planner executes. This means even if all planners agree that the user's request is a pure question (no code changes needed), the executor still runs with full tool access. This wastes tokens and can produce unnecessary file modifications for advisory questions.
+
+### Design Decisions
+
+**Two-layer intent detection**: `_inferMode()` remains as the fast pre-filter (Layer 1). A new `_computeIntentFromPlanners()` method acts as a post-Phase-1 semantic gate (Layer 2) by analyzing structured tags in planner outputs.
+
+**Planner output tagging**: `buildPlannerPrompt()` now instructs every planner to append an `<action-required>yes/no</action-required>` tag at the end of its response. This is a lightweight structured signal that doesn't affect the planner's natural analysis.
+
+**Intent voting with fallback heuristics**: `_computeIntentFromPlanners()` parses the `<action-required>` tags from successful planner outputs. If tags are missing, it falls back to content heuristics (presence of code fences, file paths, implementation verbs). Returns `'action'`, `'answer'`, or `'unknown'`.
+
+**Dynamic mode downgrade**: When Auto mode and all planners vote "answer-only" (no `yes` votes), `effectiveMode` is set to `'plan'`, which triggers the existing synthesis path:
+- Multi-planner: runs synthesizer (no tool access)
+- Single planner: skips executor entirely, user sees the planner's response directly
+
+**Executor self-regulation (fallback)**: `buildExecutorPrompt()` now accepts an optional `plannerIntent` parameter. When intent is `'answer'`, the executor prompt includes an explicit instruction to not modify files. This provides a second safety net even when the dynamic downgrade doesn't trigger.
+
+**Tag stripping**: `<action-required>` tags are stripped from display output (UI) and synthesis strings passed to executor/synthesizer, keeping the user experience clean.
+
+**UI notification**: A new `intentDowngrade` webview message type displays an inline "Planners detected question intent — skipping executor" note when Auto mode is dynamically downgraded.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `SharedTaskStateManager.ts` | `buildPlannerPrompt()`: added `<action-required>` tag instruction; `buildExecutorPrompt()`: added optional `plannerIntent` param + answer-only hint |
+| `ChatViewProvider.ts` | New `_computeIntentFromPlanners()` method; Phase 2 entry: `effectiveMode` logic with intent gate; strip `<action-required>` tags from display/synthesis |
+| `chatView.js` | New `intentDowngrade` message handler with system note |
+
+## [2026-03-08] - Feature: Plan Mode Auto-Synthesis & Improved Auto-Routing
+
+### Motivation
+Two pain points surfaced:
+1. **Plan mode** ran all planners independently but offered no unified answer — the user had to read 3 separate responses and mentally merge them.
+2. **Auto mode** fell back to full planner+executor pipeline too often because `_inferMode()` regex heuristics were too conservative (required prior context for `direct`, narrow character limits).
+
+### Design Decisions
+
+**Plan synthesis via executor reuse**: When Plan mode produces 2+ successful planner results, the executor is re-invoked with a new `buildPlanSynthesisPrompt()` that instructs it to only synthesize (no file edits, no tool calls). The synthesizer runs in `'plan'` invoke mode so adapters don't provide tool access. A new `'synthesizer'` role distinguishes this phase from regular execution in both the host and webview.
+
+**Removed `hasPriorContext` gate for direct mode**: Previously, short edit commands (把/改/rename/fix etc.) could only route to `direct` if the task already had a prior executor outcome. This blocked obvious edits on the first turn. The gate has been removed — short, unambiguous edit prompts now go `direct` immediately. The character limit was also raised from 150→200.
+
+**Expanded pattern coverage**: Added more Chinese question patterns (有什么/你觉得/比较/告诉我/帮我看) and Chinese edit verbs (修复/修改/替换/加一个/改一下/改成) to reduce false `auto` fallbacks.
+
+**New AgentRole `'synthesizer'`**: Added to `SharedTaskContext.ts` so the type system, session records, and webview all distinguish synthesis from full execution. The webview shows "Synthesizing Planner Results" / "Synthesis Complete" headers for this phase.
+
+### Files Changed
+- `src/types/SharedTaskContext.ts`: Added `'synthesizer'` to `AgentRole` union
+- `src/managers/SharedTaskStateManager.ts`: Added `buildPlanSynthesisPrompt()` method
+- `src/providers/ChatViewProvider.ts`: Updated `_delegateToCouncil()` to run synthesis in plan mode; updated type signatures for `_postPhaseStart`, `_makeStreamingCallback`, `_initializeSessionResponses`; improved `_inferMode()` heuristics
+- `resources/chatView.js`: Updated `getPhasePresentation()` and `isExecutorResponse()` for synthesizer role
+
+## [2026-03-08] - Feature: Smart Auto-Routing (inferMode) & Prompt Prefix Shortcuts
+
+### Motivation
+The three-mode system (Plan/Auto/Exec) already existed, but defaulting to `auto` every time meant simple questions still triggered a full planner + executor cycle, and clear edit commands still went through planning. Users almost never switched modes manually.
+
+### Design Decisions
+
+**Heuristic-first, not LLM-first**: We added a lightweight `_inferMode()` function that uses regex-based pattern matching instead of an extra LLM call. This avoids added latency and cost for the common cases while preserving 'auto' for ambiguous prompts.
+
+**Question patterns → `plan` mode**: Prompts ending in `?`/`？` or starting with question words (为什么, explain, how, etc.) are routed to plan-only mode since they don't need code execution.
+
+**Short edit commands → `direct` mode**: Prompts starting with action verbs (把, 改, rename, fix, etc.) that are under 150 chars are candidates for direct execution — but only when prior planner context exists from earlier turns, avoiding blind execution on the first turn.
+
+**User override always wins**: `_inferMode()` only activates when `mode === 'auto'`. If the user explicitly selects Plan or Exec, no inference runs.
+
+**Prompt prefix shortcuts**: `/plan <prompt>` and `/exec <prompt>` (or `/direct`) let power users force a specific mode without touching the mode buttons. The prefix is stripped before sending to the host.
+
+**UI feedback**: When mode is auto-inferred, a small inline notification ("⚡ Auto-routed to Plan mode") appears in the chat so the user knows what happened.
+
+### Files Changed
+- `src/providers/ChatViewProvider.ts`: Added `_inferMode()` method; integrated mode inference in `_delegateToCouncil()` after turn initialization; sends `modeInferred` message to webview when mode differs from original
+- `resources/chatView.js`: Added `/plan` and `/exec` prefix parsing in `submitPrompt()`; added `modeInferred` message handler for UI badge
+
+## [2026-03-08] - Feature: Three-mode Execution Routing (Plan / Auto / Exec)
+
+### Motivation
+The Auto mode (planner → executor two-phase pipeline) was the only execution path. For simple, clear-cut instructions ("change X to Y") or pure analysis ("explain this code"), forcing the full two-phase round-trip added unnecessary latency. Users requested the ability to skip one phase when appropriate.
+
+### Design Decisions
+
+**Explicit user-controlled modes over automatic heuristics**: We chose a visible three-button toggle (Plan / Auto / Exec) rather than automatic prompt classification. Heuristic misclassification risks are high — in direct-execute mode, the executor modifies code without a planning buffer. Explicit selection costs one click but gives the user full control and predictability.
+
+**Minimal routing changes**: The `_delegateToCouncil()` method already accepted a `mode` parameter (defaulting to `'auto'`). The UI simply stopped hardcoding `'auto'` and passes the user's selection. Inside the method, Phase 1 and Phase 2 are wrapped in mode-aware conditionals.
+
+**Dedicated direct-execute prompt** (`buildDirectExecutorPrompt`): In Exec mode, the executor cannot receive planner synthesis (there are no planners). A new prompt builder provides the same task context but includes the enriched user prompt directly instead of a planner synthesis section.
+
+### Files Changed
+- `src/providers/ChatViewProvider.ts`: Mode selector HTML + CSS added to `_getHtmlForWebview()`; `_delegateToCouncil()` routing logic updated with mode-aware conditionals for Phase 1 skip (direct) and Phase 2 skip (plan); queue persistence includes mode field
+- `resources/chatView.js`: Added `submitMode` state variable; mode button click handler; `submitPrompt()`, `submitFromQueue()`, `addToQueue()`, `syncQueueToHost()` now carry mode
+- `src/managers/SharedTaskStateManager.ts`: Added `buildDirectExecutorPrompt()` method
+- `IDEA_AND_ARCHITECTURE.md`: Updated Section 2.1 to document three-mode routing
+- `.optimus/rules.md`: Updated architecture direction rule
+
+### Architecture Note
+Queue items now include a `mode` field, persisted to globalState. Older queued items without mode default to `'auto'`.
+
+## [2026-03-08] - Feature: OpenClaw-inspired Memory System (.optimus/memory.md)
+
+### Motivation
+Optimus Code's `SharedTaskStateManager` provides per-task multi-turn context, but it lacks cross-task durable memory. Insights discovered in one task (e.g., user preferences, architecture decisions, recurring patterns) are lost when a new task starts. OpenClaw's two-layer memory architecture inspired a minimal hot-cache solution.
+
+### Design Decisions
+
+**File-based hot cache**: `.optimus/memory.md` stores durable facts as a human-readable/editable markdown file — consistent with the existing `.optimus/rules.md` pattern. No external dependencies needed.
+
+**Injection via `<project-memory>` tags**: Both planner and executor prompts receive memory content each turn, alongside `<project-rules>`. This keeps agents aware of accumulated project knowledge.
+
+**Executor-driven updates via `<memory-update>` tags**: The executor prompt instructions tell the agent to emit `<memory-update>` blocks for cross-task facts. The orchestrator extracts these blocks (similar to `<task-summary>` extraction) and appends them to `memory.md` with date timestamps.
+
+**Non-fatal writes**: Memory persistence failures are logged but never block turn completion.
+
+### Files Changed
+- `src/managers/MemoryManager.ts` (new): Encapsulates read/append/clear operations for `.optimus/memory.md`
+- `src/managers/SharedTaskStateManager.ts`: Added `readMemoryMd()` and `writeMemoryMd()` methods; injects `<project-memory>` into both `buildPlannerPrompt` and `buildExecutorPrompt`; added `<memory-update>` instruction to executor prompt
+- `src/providers/ChatViewProvider.ts`: Added `_extractMemoryUpdate()` method; integrated memory extraction and persistence after executor success; added `MemoryManager` dependency
+
+### Architecture Note
+This corresponds to OpenClaw's "durable layer" concept. The deeper storage layer (per-entity files under `.optimus/memory/`) is a future extension. Current `SharedTaskState` handles task-level context; `memory.md` handles cross-task knowledge.
+
+## [2026-03-08] - Fix: Token Count Badge Not Updating After Compact Context
+
+### Problem
+After clicking the "Compact" button (or after auto-compact), the token count badge (`📊 Xk tokens`) in the chat UI did not reflect the new, lower token count. The banner card ("Compacted chat · manual · Xk tokens freed") displayed correctly, but the persistent badge stayed stale.
+
+### Root Cause
+The `compactResult` message handler in `chatView.js` rendered the compaction card but never called `updateTokenCounter()`. The update relied solely on a prior `updateTaskState` message (sent by `_sendCurrentTaskState()` in `ChatViewProvider.ts`). Due to VS Code's `globalState` read-through timing, the `updateTaskState` message could carry stale (pre-compact) token values if `globalState.get()` returned before the async `globalState.update()` fully propagated.
+
+### Fix
+Added a direct token counter update inside the `compactResult` handler using `message.tokensAfter` — data already available in the message payload. This ensures the badge always shows the post-compact value regardless of `updateTaskState` timing.
+
+### Files Changed
+- `resources/chatView.js`: Added token counter update block in the `compactResult` message handler (after line 1813)
+
+## [2026-03-08] - Feature: Turn Reference (@Turn N) for Precise Agent Context
+
+### Problem
+In multi-turn conversations, agent context only includes the last 3 turns automatically. When the user wants an agent to act on a specific earlier turn (e.g., "fix the bug from Turn 5"), the agent receives a compressed summary rather than the original prompt and outcome. This leads to inaccurate or incomplete context.
+
+### Design Decisions
+
+**`@Turn N` reference system**: Users can explicitly reference prior turns via an `@` button that appears on hover over each user message in the chat history. Selected references appear as chips in the input area. The referenced turns' **full prompt + outcome** are injected into the agent prompt verbatim (bypassing summary compression).
+
+**Injection as `<user-referenced-turns>` XML block**: Referenced turns are placed in a dedicated XML section between `</task-context>` and the enriched prompt. This keeps them separate from the automatic "recent turns" section, signaling to the agent that these were explicitly selected by the user.
+
+**Data flow**: `chatView.js` → `askCouncil` message with `referencedTurnSequences: number[]` → `ChatViewProvider` passes to `startTurn()` → stored in `TurnRecord.referencedTurnSequences` → `buildPlannerPrompt` / `buildExecutorPrompt` invoke `buildReferencedTurnsContext()` to expand the sequences into full turn data.
+
+**UI approach (Approach A — hover button)**: Chose the simpler "hover to reveal `@` button" over an `@`-autocomplete dropdown in the textarea. Lower implementation complexity, works well with the existing vanilla JS DOM architecture, and avoids fragile cursor-position tracking in a plain textarea.
+
+### Files Changed
+- `SharedTaskContext.ts`: Added `referencedTurnSequences?: number[]` to `TurnRecord` and `StartTurnInput`
+- `SharedTaskStateManager.ts`: Added `buildReferencedTurnsContext()` private method; updated `buildPlannerPrompt()` and `buildExecutorPrompt()` to inject referenced context; `startTurn()` now stores the field
+- `ChatViewProvider.ts`: `_delegateToCouncil()` accepts and passes `referencedTurnSequences`; `askCouncil` handler extracts the field; `_sendCurrentTaskState()` includes lightweight `turnHistory` array for the frontend; restored sessions include `turnSequence`; added CSS for `.ref-chip`, `.ref-turn-btn`; added `#reference-chips` container in HTML
+- `chatView.js`: Added `referencedTurns[]` and `currentTaskTurnHistory[]` state; added `addTurnReference()`, `removeTurnReference()`, `clearTurnReferences()`, `renderReferenceChips()`, `attachRefButton()` functions; `submitPrompt()` / `addToQueue()` / `submitFromQueue()` pass `referencedTurnSequences`; `renderRestoredSession()` attaches ref buttons on user messages; `updateTaskState` handler stores turn history; new chat clears references
+
+## [2026-03-08] - Feature: Queue Persistence & Content Visibility
+
+### Problem
+The `pendingQueue` array in `chatView.js` was purely in-memory. If VS Code closed or the webview was disposed while prompts were queued, they were lost permanently. Users could only see a badge count `(3)` but not the actual content of queued items.
+
+### Design Decisions
+
+**Persistence via `globalState`**: The queue is serialized (including image `dataUrl`) and stored in VS Code's `globalState` under key `'optimusQueue'`. This was chosen over `workspaceState` because the queue is user-intent data (not project-specific) and survives workspace changes. The host clears this on `newChat`.
+
+**Sync strategy**: The webview sends a `saveQueue` message to the host after every mutation (add, auto-dequeue, manual remove). The host writes to `globalState`. On `webviewReady`, the host sends `initQueue` with the saved array. This avoids complexity of debouncing or batching.
+
+**Queue panel UI**: A collapsible `<div>` rendered inline below the Queue button. Each item shows index + truncated text (60 chars) + a `✕` remove button. The panel auto-shows when entering running state (if items exist) and hides when not running. Users can toggle it via the badge count.
+
+### Files Changed
+- `ChatViewProvider.ts`: Added `saveQueue` / `newChat` globalState handlers; `webviewReady` sends `initQueue`; added queue panel HTML + CSS
+- `chatView.js`: Added `syncQueueToHost()`, `renderQueuePanel()`, `initQueue` handler; wired badge click and close button; updated `setRunningState` to manage panel visibility
+
+## [2026-03-08] - Fix: Completed Tools Stuck Showing "running" Status
+
+### Root Cause (3 independent bugs)
+
+**Bug 1 — Only first `tool_result` processed for parallel tool calls** (`PersistentAgentAdapter.ts:970-983`):
+When Claude calls multiple tools in parallel, the `user` event contains multiple `tool_result` blocks in `message.content`. The code used `.find()` which only retrieves the first one, leaving all other tools without a `✓` completion marker permanently stuck as `running`.
+
+**Bug 2 — `pendingTools` Map overwrites duplicate tool names** (`chatView.js:extractProcessEntries`):
+The frontend parser used `pendingTools.set(title, currentTool)` which is a flat Map. When the same tool (e.g., `Read`) is invoked twice, the second registration overwrites the first, so the first tool's entry can never be matched by its completion `✓` line and stays `running`.
+
+**Bug 3 — Historical "running" status never resolved on session restore** (`chatView.js:renderProcessHtml`):
+When VS Code closes mid-execution, `SessionResponseRecord.status` is persisted as `'running'`. On restore, `TurnRecord.status` is corrected to `'failed'`, but individual tool steps inside the execution trace still render with `running` badges.
+
+### Changes
+
+- `PersistentAgentAdapter.ts`: Changed `.find()` to `.filter()` and loop over all `tool_result` blocks, generating a `✓` completion line for each.
+- `chatView.js` / `extractProcessEntries`: Changed `pendingTools` from `Map<string, entry>` to `Map<string, entry[]>` (FIFO queue per tool name). Completion markers now `.shift()` the oldest matching entry.
+- `chatView.js` / `renderProcessHtml`: Added optional `agentDone` parameter. When `true`, any steps still `running` after parsing are reclassified as `interrupted`.
+- `ChatViewProvider.ts`: Added `.process-step-status-interrupted` CSS class (dimmed italic style).
+
+### Design Decision
+Defense at both source (backend emits all completion markers) and display (frontend reclassifies stale `running` to `interrupted`). This ensures that even if the backend text is incomplete due to crash or interruption, the UI never shows misleading "running" badges for tools that are clearly no longer executing.
+
+## [2026-03-08] - Fix: Execution Trace Leaking into Summary (Complete)
+
+### Root Cause
+Tool trace markers (`•`, `✓`, `✗`, `↳`) were leaking into `ExecutorOutcomeRecord.summary` via two paths:
+
+1. **`GitHubCopilotAdapter` missing `captureProcessLinesAfterOutputStarts`**: When the Copilot CLI outputs LLM text _before_ tool calls (e.g., "I'll compare these files."), `outputStarted` is set to `true`. Without `captureProcessLinesAfterOutputStarts: true`, all subsequent tool trace lines (`• Read`, `✓ Read`, `↳ result=...`) were classified as output instead of process lines, contaminating `cleanOutputForSummary`.
+
+2. **Incomplete process line regexes**: `COPILOT_PROCESS_LINE_RE` lacked `↳`, `✓`, `✗` characters, so even lines starting with these were not recognized as process lines and leaked through.
+
+3. **No defense layer in `_summarizeText`**: The method blindly collapsed whitespace and truncated — never filtering tool trace lines.
+
+### Changes
+- `GitHubCopilotAdapter.ts`: Added `captureProcessLinesAfterOutputStarts: true` to `extractThinking()` options.
+- `GitHubCopilotAdapter.ts`: Expanded `COPILOT_PROCESS_LINE_RE` to `/^[●⏺•└│├▶→↳✓✗]/`.
+- `ClaudeCodeAdapter.ts`: Expanded `CLAUDE_PROCESS_LINE_RE` to `/^[⏺●•└│├↳✓✗]/`.
+- `ChatViewProvider.ts`: `_summarizeText()` now strips lines matching `/^\s*[•●⏺▶→└│├✓✗↳]/` before collapsing whitespace.
+
+### Design Decision
+Defense-in-depth: even if an adapter's `extractThinking` misses a trace line, `_summarizeText` will strip it. This avoids future regressions when new trace markers or adapter behaviors are introduced.
+
+## [2026-03-08] - Replace File Sync with Runtime Prompt Injection (Plan C)
+
+### Context
+Previously, `.optimus/rules.md` was distributed to agents via two parallel mechanisms:
+1. **File sync** — `configSync.ts` copied content to `.claude/CLAUDE.md` and `.github/copilot-instructions.md` on extension activation.
+2. **Prompt injection** — `buildExecutorPrompt()` read `rules.md` fresh each turn and injected it inside `<project-rules>` tags.
+
+This dual-track approach had drawbacks:
+- Created two extra files in the workspace that could drift out of sync
+- Planners only received rules via the file sync path, not guaranteed in the prompt
+- Violated the "adapters stay thin" architecture direction
+
+### Changes Made
+1. **`SharedTaskStateManager.ts`** — Added `readRulesMd()` + `<project-rules>` injection to `buildPlannerPrompt()`, matching the existing executor pattern. Both planner and executor now receive rules via prompt injection.
+2. **`extension.ts`** — Removed `syncOptimusInstructions()` import and call.
+3. **`src/utils/configSync.ts`** — Deleted entirely (no remaining references).
+4. **`.optimus/rules.md`** — Updated header to reflect the new injection-only mechanism.
+
+### Design Decision
+- Chose **single-track prompt injection** over file sync because:
+  - Rules are guaranteed in every agent prompt regardless of CLI adapter behavior
+  - No workspace side-effects (no auto-generated files)
+  - Fresh-read mechanism already existed for executor; extending to planner is minimal change
+  - Aligns with "adapters stay thin and deterministic" architecture
+
+### Note
+- Existing `.claude/CLAUDE.md` and `.github/copilot-instructions.md` on disk are now stale artifacts. They will no longer be updated by Optimus but can be manually removed or left as-is.
+
+## [2026-03-08] - Execution Trace Leak Fixes
+
+### Context
+Two data-leak issues were identified in the Execution Trace pipeline:
+
+1. **`ExecutorOutcomeRecord.summary` mixed in tool trace markers** — The `_buildExecutorOutcomeRecord()` call at line 702 of `ChatViewProvider.ts` received `execCleaned` (which still contains `•`, `✓`, `✗`, `↳` process line markers). `_summarizeText()` blindly truncated the first 220 chars of this text, causing tool trace to appear in the task state summary strip visible to users.
+
+2. **`appendProcessLines` multi-line corruption & inconsistent `first=` label** — `formatStructuredToolCall` returns strings containing `\n` (e.g. `"• tool\n↳ summary"`). `appendProcessLines` treated each entry as a single line, causing the embedded newline to produce malformed process text after `join('\n')`. Additionally, the generic multi-line result summary used `first=` while bash/shell-specific paths used `preview=`, creating inconsistency in the Execution Trace UI badges.
+
+### Changes Made
+1. **ChatViewProvider.ts** — Added optional `cleanOutputForSummary` parameter to `_buildExecutorOutcomeRecord()`. The success call site now passes `output` (already stripped of tool trace by `_extractThinking()`) for summary generation, while `rawText` retains the full `execCleaned` for Execution Trace rendering. Error path unchanged — `err.message` is already clean text.
+
+2. **PersistentAgentAdapter.ts** — `appendProcessLines` now splits each input line on `\n` before dedup and push, correctly handling multi-line entries. Also changed `first=` to `preview=` in `summarizeStructuredToolResult` for consistency.
+
+### Design Decision
+- Chose to add an optional parameter rather than modifying the existing `text` argument to keep `rawText` intact for Execution Trace panel rendering (which needs the full tool trace).
+- The `preview=` label unification is purely cosmetic but aligns the webview badge parsing with the already-established `preview=` convention in tool-specific summarizers.
+
+## [2026-03-08] - Inject .optimus/rules.md into Executor Agent Prompt
+
+### Context
+`.optimus/rules.md` was only synced to external adapter config files (`.claude/CLAUDE.md`, `.github/copilot-instructions.md`) at extension activation via `configSync.ts`. The executor agent's runtime prompt (`buildExecutorPrompt()`) did not include these project rules, so the executor relied solely on each CLI adapter externally reading its own instructions file.
+
+### Problem
+When the executor runs, especially through Claude Code, the rules might not take effect reliably if the adapter's CLI does not process the synced instructions file. Directly embedding rules into the prompt ensures they are always present regardless of adapter behavior.
+
+### Changes Made
+1. **Added `fs` and `path` imports** to `SharedTaskStateManager.ts`.
+2. **Added `readRulesMd()` private method** — reads `.optimus/rules.md` from the workspace root at runtime, with graceful fallback to `null` if absent.
+3. **Injected rules into `buildExecutorPrompt()`** — rules content is wrapped in `<project-rules>` tags and placed immediately after the role declaration, before the task context. When no rules file exists, the prompt is unchanged.
+
+### Design Decision
+- Rules are read fresh each turn (not cached) so edits to `rules.md` take effect immediately.
+- Used `<project-rules>` XML tags to clearly delimit the rules section within the prompt, making it easy for the agent to identify project-specific instructions vs. task context.
+- Only modified the executor prompt. The planner prompt was left unchanged because planners already receive rules via the same external sync mechanism and their role is read-only analysis.
+
 ## [2026-03-08] - Enrich Planner Prompt Context for Better Planning Quality
 
 ### Context
