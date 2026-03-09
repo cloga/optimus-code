@@ -25,6 +25,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     private genStart = 0;
     private streamSeq = 0;
     private currentTaskId?: string;
+    private taskQueue: Array<{ text: string, attachments: any[], agentId: string, modelId?: string }> = [];
     private readonly taskStateManager: SharedTaskStateManager;
 
     constructor(
@@ -41,9 +42,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case "ask":
+                    if (data.text) {
+                        if (data.text.startsWith('/steer ')) {
+                            this.taskQueue = [];
+                            if (this.isGenerating) {
+                                Object.values(this.agents).forEach(entry => entry.adapter.stop?.());
+                                this.taskQueue.push({
+                                    text: data.text.slice(7).trim(),
+                                    attachments: data.attachments || [],
+                                    agentId: data.agentId || data.agent,
+                                    modelId: data.modelId || data.model
+                                });
+                                webviewView.webview.postMessage({ type: "status", content: "Interrupting for steering..." });
+                                return;
+                            } else {
+                                data.text = data.text.slice(7).trim();
+                            }
+                        } else if (data.text.startsWith('/delegate ')) {
+                            // Automatically wrap it to force a delegation
+                            data.text = `[User forced delegation] Please MUST use the \`delegate_task\` tool to complete the following: \n${data.text.slice(10).trim()}`;
+                        }
+                    }
                     return this.handleAsk(webviewView, data.text, data.agent, data.model);
                 case "stop":
-                    // TODO: kill child process
+                    this.taskQueue = [];
+                    Object.values(this.agents).forEach(entry => entry.adapter.stop?.());
                     this.isGenerating = false;
                     webviewView.webview.postMessage({ type: "setGenerating", value: false });
                     return webviewView.webview.postMessage({ type: "status", content: "Stopped." });
@@ -116,13 +139,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         };
     }
 
-    private async handleAsk(wv: vscode.WebviewView, text: string, agentId: string, modelId?: string) {
+    private async handleAsk(wv: vscode.WebviewView, text: string, agentId: string, modelId?: string, skipDisplay?: boolean) {
         // Safety: reset stuck state after 3 min
         if (this.isGenerating && Date.now() - this.genStart > 180_000) {
             this.isGenerating = false;
         }
-        if (this.isGenerating) {
-            return wv.webview.postMessage({ type: "status", content: "Busy — please wait." });
+        
+        if (!skipDisplay) {
+            let htmlText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            if (this.isGenerating) {
+                htmlText += " <i>(⏳ Queued)</i>";
+                wv.webview.postMessage({ type: "addMessage", role: "user", html: htmlText });
+                
+                this.taskQueue.push({ text, attachments: [], agentId, modelId });
+                wv.webview.postMessage({ type: "status", content: `Queued (${this.taskQueue.length} ahead).` });
+                return;
+            }
+            
+            wv.webview.postMessage({ type: "addMessage", role: "user", html: htmlText });
         }
 
         this.isGenerating = true;
@@ -153,9 +188,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 }
                 this.agents[cacheKey] = entry;
             }
-
-            // Show user message immediately
-            wv.webview.postMessage({ type: "addMessage", role: "user", html: text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") });
 
             const { taskState, turnRecord } = await this.taskStateManager.startTurn({
                 taskId: this.currentTaskId,
@@ -189,7 +221,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             };
 
             // Let the CLI agent handle everything: context, tools, memory
-            const reply = await entry.adapter.invoke(orchestratorPrompt, entry.mode, onUpdate) || "No reply.";
+            // We pass taskState.cliSessionId as the CLI's session-id so it naturally resumes history
+            const reply = await entry.adapter.invoke(orchestratorPrompt, entry.mode, taskState.cliSessionId, onUpdate) || "No reply.";
 
             this.persistMemoryUpdates(reply);
 
@@ -229,9 +262,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
             wv.webview.postMessage({ type: "addMessage", role: "system", html: "Error: " + (e.message || e) });
         } finally {
-            wv.webview.postMessage({ type: "status", content: "Idle" });
-            wv.webview.postMessage({ type: "setGenerating", value: false });
             this.isGenerating = false;
+            
+            if (this.taskQueue.length > 0) {
+                wv.webview.postMessage({ type: "status", content: `Starting next task... (${this.taskQueue.length} left)` });
+                const next = this.taskQueue.shift();
+                if (next) {
+                    setTimeout(() => {
+                        this.handleAsk(wv, next.text, next.agentId, next.modelId, true);
+                    }, 500);
+                }
+            } else {
+                wv.webview.postMessage({ type: "status", content: "Idle" });
+                wv.webview.postMessage({ type: "setGenerating", value: false });
+            }
         }
     }
 
@@ -349,6 +393,10 @@ body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscod
 .stream-section { padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.02); border: 1px solid var(--vscode-panel-border); }
 .stream-section-title { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
 .stream-empty { color: var(--vscode-descriptionForeground); }
+.collapsible-section { margin-top: 8px; border-top: 1px solid var(--vscode-panel-border); padding-top: 8px; }
+.collapsible-section summary { cursor: pointer; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--vscode-descriptionForeground); user-select: none; outline: none; }
+.collapsible-section summary:hover { color: var(--vscode-foreground); }
+.collapsible-section[open] summary { margin-bottom: 8px; }
 .phase-strip { display: flex; gap: 8px; flex-wrap: wrap; }
 .phase-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); background: rgba(255,255,255,0.02); font-size: 0.82em; }
 .phase-pill.active { color: var(--vscode-foreground); border-color: var(--vscode-textLink-foreground); background: rgba(31, 111, 235, 0.12); }
@@ -409,12 +457,50 @@ button.stop { background: var(--vscode-errorForeground); color: #fff; }
 #status { font-size: .85em; color: var(--vscode-textLink-activeForeground); min-height: 20px; font-weight: bold; }
 #input-area { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; }
 textarea { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 8px; min-height: 60px; resize: vertical; font-family: inherit; }
-.hint { font-size: .8em; color: var(--vscode-descriptionForeground); }
+
+  #input-area { position: relative; } /* Added for slash menu anchor */
+  #slash-menu {
+      display: none;
+      position: absolute;
+      bottom: calc(100% - 10px);
+      left: 0;
+      right: 0;
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 4px;
+      margin-bottom: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+  .slash-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.9em;
+      display: flex;
+      justify-content: space-between;
+      border-left: 3px solid transparent;
+  }
+  .slash-item:hover, .slash-item.selected {
+      background: var(--vscode-list-hoverBackground);
+      border-left-color: var(--vscode-textLink-foreground);
+  }
+  .slash-label {
+      font-weight: 600;
+      color: var(--vscode-textLink-foreground);
+  }
+  .slash-desc {
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.85em;
+  }
+
+  .hint { font-size: .8em; color: var(--vscode-descriptionForeground); }
 .btns { display: flex; gap: 8px; }
 .btns button { flex: 1; }
 .idle-only { display: inline-flex; }
 .gen-only  { display: none; }
-body.generating .idle-only { display: none; }
+body.generating .idle-only { display: inline-flex; opacity: 0.6; } /* Allow queueing */
 body.generating .gen-only  { display: inline-flex; }
 </style>
 </head>
@@ -431,6 +517,7 @@ body.generating .gen-only  { display: inline-flex; }
     <div id="status">Idle</div>
     <div id="chat"></div>
     <div id="input-area">
+        <div id="slash-menu"></div>
         <textarea id="prompt" placeholder="Message..." onkeydown="handleKey(event)"></textarea>
         <div class="hint">Enter to Send &middot; Shift+Enter newline</div>
         <div class="btns">
@@ -556,6 +643,11 @@ function formatDuration(ms) {
     return (ms / 1000).toFixed(1) + 's';
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function inferPhaseState(traceHtml, reasoningRaw, out, isCompleted) {
     var hasTrace = !!traceHtml && traceHtml.indexOf('Waiting for steps...') === -1;
     var hasReasoning = !!reasoningRaw;
@@ -662,9 +754,96 @@ function doNew() {
     vscode.postMessage({ type: "newChat" }); 
 }
 function handleKey(e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
-}
-function escapeHtml(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+      if (document.getElementById("slash-menu").style.display === "block") {
+          var items = document.querySelectorAll(".slash-item");
+          var selectedIndex = -1;
+          items.forEach((item, index) => {
+              if (item.classList.contains("selected")) selectedIndex = index;
+          });
+          
+          if (e.key === "ArrowDown") {
+              e.preventDefault();
+              if (selectedIndex >= 0) items[selectedIndex].classList.remove("selected");
+              selectedIndex = (selectedIndex + 1) % items.length;
+              items[selectedIndex].classList.add("selected");
+              items[selectedIndex].scrollIntoView({block: "nearest"});
+              return;
+          } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              if (selectedIndex >= 0) items[selectedIndex].classList.remove("selected");
+              selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+              items[selectedIndex].classList.add("selected");
+              items[selectedIndex].scrollIntoView({block: "nearest"});
+              return;
+          } else if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (selectedIndex >= 0) {
+                  items[selectedIndex].click();
+                  return;
+              }
+          } else if (e.key === "Escape") {
+              e.preventDefault();
+              closeSlashMenu();
+              return;
+          }
+      }
+      
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+  }
+  
+  var ta = document.getElementById("prompt");
+  ta.addEventListener("input", function() {
+      var val = ta.value;
+      if (val.startsWith("/")) {
+          var query = val.slice(1).toLowerCase();
+          showSlashMenu(query);
+      } else {
+          closeSlashMenu();
+      }
+  });
+  
+  var builtinCommands = [
+      { cmd: "delegate", desc: "Force the orchestrator to delegate this task to a sub-agent" },
+      { cmd: "steer", desc: "Interrupt and steer the current agent" },
+      { cmd: "new", desc: "Start a new chat session" },
+      { cmd: "stop", desc: "Stop the current generation" },
+      { cmd: "clear", desc: "Clear chat history (same as /new)" }
+  ];
+  
+  function showSlashMenu(query) {
+      var menu = document.getElementById("slash-menu");
+      var filtered = builtinCommands.filter(c => c.cmd.startsWith(query));
+      
+      if (filtered.length === 0) {
+          closeSlashMenu();
+          return;
+      }
+      
+      menu.innerHTML = "";
+      filtered.forEach((c, i) => {
+          var div = document.createElement("div");
+          div.className = "slash-item" + (i === 0 ? " selected" : "");
+          div.innerHTML = "<span class='slash-label'>/" + c.cmd + "</span> <span class='slash-desc'>" + c.desc + "</span>";
+          div.onclick = function() {
+              if (c.cmd === "new" || c.cmd === "clear") {
+                  doNew();
+              } else if (c.cmd === "stop") {
+                  doStop();
+                  ta.value = "";
+              } else {
+                  ta.value = "/" + c.cmd + " ";
+                  ta.focus();
+              }
+              closeSlashMenu();
+          };
+          menu.appendChild(div);
+      });
+      menu.style.display = "block";
+  }
+  
+  function closeSlashMenu() {
+      document.getElementById("slash-menu").style.display = "none";
+  }
 
 function switchTab(streamId, tabName) {
     var box = document.getElementById("stream-" + streamId);
@@ -850,17 +1029,22 @@ window.addEventListener("message", function(event) {
         var ct = document.createElement("div"); 
         ct.className = "stream-content";
         ct.dataset.streamId = String(msg.id);
-        ct.innerHTML = \`
-            <div class="stream-section"><div class="stream-section-title">Input</div><div class="input-view">\${escapeHtml(msg.input || "")}</div></div>
-            <div class="stream-live"><div class="stream-section stream-empty">Starting CLI session...</div></div>
-            <div class="final-answer" hidden></div>
-            <details class="debug-details">
-                <summary>Details</summary>
-                <div class="detail-block"><div class="stream-section-title">Trace</div><div class="detail-trace"></div></div>
-                <div class="detail-block"><div class="stream-section-title">Reasoning</div><div class="reasoning-view detail-reasoning">No reasoning captured yet.</div></div>
-                <div class="detail-block"><div class="stream-section-title">Raw stream</div><div class="log-view detail-log"></div></div>
-            </details>
-        \`;
+        ct.innerHTML = ''
+            + '<div class="final-answer" hidden></div>'
+            + '<details class="collapsible-section section-input">'
+            + '    <summary>Input</summary>'
+            + '    <div class="input-view">' + escapeHtml(msg.input || "") + '</div>'
+            + '</details>'
+            + '<details class="collapsible-section section-progress" open>'
+            + '    <summary>Progress</summary>'
+            + '    <div class="stream-live"><div class="stream-section stream-empty">Starting CLI session...</div></div>'
+            + '</details>'
+            + '<details class="debug-details">'
+            + '    <summary>Details</summary>'
+            + '    <div class="detail-block"><div class="stream-section-title">Trace</div><div class="detail-trace"></div></div>'
+            + '    <div class="detail-block"><div class="stream-section-title">Reasoning</div><div class="reasoning-view detail-reasoning">No reasoning captured yet.</div></div>'
+            + '    <div class="detail-block"><div class="stream-section-title">Raw stream</div><div class="log-view detail-log"></div></div>'
+            + '</details>';
         div.appendChild(ct);
         
         chat.appendChild(div); 
@@ -915,6 +1099,8 @@ window.addEventListener("message", function(event) {
                     finalPane.hidden = false;
                     finalPane.innerHTML = '<div class="final-answer-card"><div class="stream-section-title">Final answer</div>' + msg.html + '</div>';
                 }
+                var prog = box.querySelector('.section-progress');
+                if(prog) prog.removeAttribute('open');
             }
             
             delete streamDivs[msg.id];
