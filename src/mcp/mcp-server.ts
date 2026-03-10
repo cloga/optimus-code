@@ -236,8 +236,85 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Absolute path to the project workspace root. All artifacts (task blackboard, result files) will be isolated under <workspace_path>/.optimus/.",
             },
+            context_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task.",
+            },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
+        }
+      },
+      {
+        name: "delegate_task_async",
+        description: "Delegate a specific execution task to a designated expert role asynchronously without blocking the master agent.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            role: {
+              type: "string",
+              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev').",
+            },
+            task_description: {
+              type: "string",
+              description: "Detailed description of what the agent needs to do.",
+            },
+            output_path: {
+              type: "string",
+              description: "The file path where the agent should write its final result or report.",
+            },
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root.",
+            },
+            context_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task.",
+            },
+          },
+          required: ["role", "task_description", "output_path", "workspace_path"],
+        }
+      },
+      {
+        name: "dispatch_council_async",
+        description: "Trigger an async map-reduce multi-expert review for an architectural proposal.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            proposal_path: {
+              type: "string",
+              description: "The file path to the PROPOSAL.md file",
+            },
+            roles: {
+              type: "array",
+              items: { type: "string" },
+              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
+            },
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root.",
+            },
+          },
+          required: ["proposal_path", "roles", "workspace_path"],
+        }
+      },
+      {
+        name: "check_task_status",
+        description: "Poll the status of async queues or tasks.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            taskId: {
+              type: "string",
+              description: "The ID of the task to check.",
+            },
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root.",
+            },
+          },
+          required: ["taskId", "workspace_path"],
         }
       }
     ],
@@ -265,14 +342,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, task_description, output_path, workspace_path } = request.params.arguments as any;
+    let { role, task_description, output_path, workspace_path, context_files } = request.params.arguments as any;
     if (!role || !task_description || !output_path || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
     
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path
+        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || []
     });
     
     // Spawn background process
@@ -599,7 +676,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    const { role, task_description, output_path } = request.params.arguments as any;
+    const { role, task_description, output_path, context_files } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;
 
     if (!role || !task_description || !output_path) {
@@ -637,8 +714,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
     
     // 2. Delegate to the single worker pool (use canonicalOutputPath so agent writes inside .optimus/)
-    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath);
-
+      const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files);
     return {
       content: [{ type: "text", text: result }]
     };

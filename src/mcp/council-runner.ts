@@ -29,7 +29,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 task.task_description!,
                 task.output_path!,
                 `async_${taskId}`,
-                task.workspacePath
+                task.workspacePath,
+                task.context_files
             );
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(
@@ -50,14 +51,15 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
             synthesisContent += `**Proposal:** \`${task.proposal_path}\`\n`;
             synthesisContent += `**Council:** ${task.roles!.map(r => `\`${r}\``).join(', ')}\n\n`;
             
-            for (const role of task.roles!) {
+for (let i = 0; i < task.roles!.length; i++) {
+                const role = task.roles![i];
                 const reviewFile = path.join(reviewsPath, `${role}_review.md`);
                 if (fs.existsSync(reviewFile)) {
-                    synthesisContent += `## 1. Review from ${role}\n\n`;
+                    synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
                     synthesisContent += fs.readFileSync(reviewFile, 'utf8');
                     synthesisContent += `\n\n---\n\n`;
                 } else {
-                    synthesisContent += `## 1. Review from ${role}\n\n`;
+                    synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
                     synthesisContent += `*Worker failed to produce a review artifact.*\n\n---\n\n`;
                 }
             }

@@ -26013,7 +26013,7 @@ function getAdapterForEngine(engine, sessionId, model) {
   }
   return new ClaudeCodeAdapter(sessionId, "\u{1F996} Claude Code", model);
 }
-async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath) {
+async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles) {
   const parsedRole = parseRoleSpec(roleArg);
   const role = parsedRole.role;
   const legacyT1Dir = import_path.default.join(workspacePath, ".optimus", "personas");
@@ -26084,6 +26084,30 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     const concurrentContent = import_fs.default.readFileSync(t1Path, "utf8");
     personaContext = parseFrontmatter(concurrentContent).body.trim();
   }
+  let contextContent = "";
+  if (contextFiles && contextFiles.length > 0) {
+    contextContent = "\n\n=== CONTEXT FILES ===\n\nThe following files are provided as required context for, and must be strictly adhered to during this task:\n\n";
+    for (const cf of contextFiles) {
+      const absolutePath = import_path.default.resolve(workspacePath, cf);
+      if (import_fs.default.existsSync(absolutePath)) {
+        contextContent += `--- START OF ${cf} ---
+`;
+        contextContent += import_fs.default.readFileSync(absolutePath, "utf8");
+        contextContent += `
+--- END OF ${cf} ---
+
+`;
+      } else {
+        contextContent += `--- START OF ${cf} ---
+`;
+        contextContent += `(File not found at ${absolutePath})
+`;
+        contextContent += `--- END OF ${cf} ---
+
+`;
+      }
+    }
+  }
   const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
@@ -26092,11 +26116,11 @@ ${personaContext ? `--- START PERSONA INSTRUCTIONS ---
 ${personaContext}
 --- END PERSONA INSTRUCTIONS ---` : ""}
 
-Goal: Execute the following task. 
+Goal: Execute the following task.
 System Note: ${personaProof}
 
 Task Description:
-${taskText}
+${taskText}${contextContent}
 
 Please provide your complete execution result below.`;
   try {
@@ -26224,6 +26248,92 @@ var TaskManifestManager = class {
     }
   }
 };
+
+// ../src/mcp/council-runner.ts
+async function runAsyncWorker(taskId, workspacePath) {
+  console.error(`[Runner] Starting async execution for task: ${taskId}`);
+  const manifest = TaskManifestManager.loadManifest(workspacePath);
+  const task = manifest[taskId];
+  if (!task) {
+    console.error(`[Runner] Task not found: ${taskId}`);
+    process.exit(1);
+  }
+  if (task.status !== "pending") {
+    console.error(`[Runner] Task already running or completed: ${taskId}`);
+    process.exit(0);
+  }
+  TaskManifestManager.updateTask(workspacePath, taskId, { status: "running", pid: process.pid });
+  const heartbeatInterval = setInterval(() => {
+    TaskManifestManager.heartbeat(workspacePath, taskId);
+  }, 6e4);
+  try {
+    if (task.type === "delegate_task") {
+      await delegateTaskSingle(
+        task.role,
+        task.task_description,
+        task.output_path,
+        `async_${taskId}`,
+        task.workspacePath,
+        task.context_files
+      );
+    } else if (task.type === "dispatch_council") {
+      await dispatchCouncilConcurrent(
+        task.roles,
+        task.proposal_path,
+        task.output_path,
+        // Actually reviews path
+        `async_council_${taskId}`,
+        task.workspacePath
+      );
+      const fs5 = require("fs");
+      const path5 = require("path");
+      const reviewsPath = task.output_path;
+      const synthesisPath = path5.join(reviewsPath, "COUNCIL_SYNTHESIS.md");
+      let synthesisContent = `# Council Synthesis Report
+
+`;
+      synthesisContent += `**Proposal:** \`${task.proposal_path}\`
+`;
+      synthesisContent += `**Council:** ${task.roles.map((r) => `\`${r}\``).join(", ")}
+
+`;
+      for (let i = 0; i < task.roles.length; i++) {
+        const role = task.roles[i];
+        const reviewFile = path5.join(reviewsPath, `${role}_review.md`);
+        if (fs5.existsSync(reviewFile)) {
+          synthesisContent += `## ${i + 1}. Review from ${role}
+
+`;
+          synthesisContent += fs5.readFileSync(reviewFile, "utf8");
+          synthesisContent += `
+
+---
+
+`;
+        } else {
+          synthesisContent += `## ${i + 1}. Review from ${role}
+
+`;
+          synthesisContent += `*Worker failed to produce a review artifact.*
+
+---
+
+`;
+        }
+      }
+      fs5.writeFileSync(synthesisPath, synthesisContent, "utf8");
+      console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
+    }
+    TaskManifestManager.updateTask(workspacePath, taskId, { status: "completed" });
+    console.error(`[Runner] Task ${taskId} completed successfully.`);
+  } catch (err) {
+    console.error(`[Runner] Task ${taskId} failed:`, err);
+    TaskManifestManager.updateTask(workspacePath, taskId, { status: "failed", error_message: err.message });
+  } finally {
+    clearInterval(heartbeatInterval);
+    process.exit(0);
+  }
+}
 
 // ../src/mcp/mcp-server.ts
 var import_child_process = require("child_process");
@@ -26434,9 +26544,86 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             workspace_path: {
               type: "string",
               description: "Absolute path to the project workspace root. All artifacts (task blackboard, result files) will be isolated under <workspace_path>/.optimus/."
+            },
+            context_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]
+        }
+      },
+      {
+        name: "delegate_task_async",
+        description: "Delegate a specific execution task to a designated expert role asynchronously without blocking the master agent.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            role: {
+              type: "string",
+              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')."
+            },
+            task_description: {
+              type: "string",
+              description: "Detailed description of what the agent needs to do."
+            },
+            output_path: {
+              type: "string",
+              description: "The file path where the agent should write its final result or report."
+            },
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root."
+            },
+            context_files: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task."
+            }
+          },
+          required: ["role", "task_description", "output_path", "workspace_path"]
+        }
+      },
+      {
+        name: "dispatch_council_async",
+        description: "Trigger an async map-reduce multi-expert review for an architectural proposal.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            proposal_path: {
+              type: "string",
+              description: "The file path to the PROPOSAL.md file"
+            },
+            roles: {
+              type: "array",
+              items: { type: "string" },
+              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])"
+            },
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root."
+            }
+          },
+          required: ["proposal_path", "roles", "workspace_path"]
+        }
+      },
+      {
+        name: "check_task_status",
+        description: "Poll the status of async queues or tasks.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            taskId: {
+              type: "string",
+              description: "The ID of the task to check."
+            },
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root."
+            }
+          },
+          required: ["taskId", "workspace_path"]
         }
       }
     ]
@@ -26461,7 +26648,7 @@ Error: ${task.error_message}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, task_description, output_path, workspace_path } = request.params.arguments;
+    let { role, task_description, output_path, workspace_path, context_files } = request.params.arguments;
     if (!role || !task_description || !output_path || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
@@ -26472,7 +26659,8 @@ Error: ${task.error_message}`;
       role,
       task_description,
       output_path,
-      workspacePath: workspace_path
+      workspacePath: workspace_path,
+      context_files: context_files || []
     });
     const child = (0, import_child_process.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
       detached: true,
@@ -26795,7 +26983,7 @@ URL: ${data.html_url}` }] };
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    const { role, task_description, output_path } = request.params.arguments;
+    const { role, task_description, output_path, context_files } = request.params.arguments;
     let workspace_path = request.params.arguments.workspace_path;
     if (!role || !task_description || !output_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
@@ -26817,20 +27005,34 @@ URL: ${data.html_url}` }] };
     import_fs2.default.writeFileSync(taskArtifactPath, task_description, "utf8");
     import_fs2.default.mkdirSync(import_path2.default.dirname(canonicalOutputPath), { recursive: true });
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
-    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath);
+    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files);
     return {
       content: [{ type: "text", text: result }]
     };
   }
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Optimus Spartan Swarm MCP server running on stdio");
+if (process.argv.includes("--run-task")) {
+  const idx = process.argv.indexOf("--run-task");
+  const taskId = process.argv[idx + 1];
+  const workspacePath = process.argv[idx + 2];
+  if (!taskId || !workspacePath) {
+    console.error("[Runner] Usage: --run-task <taskId> <workspacePath>");
+    process.exit(1);
+  }
+  runAsyncWorker(taskId, workspacePath).catch((err) => {
+    console.error("[Runner] Fatal:", err);
+    process.exit(1);
+  });
+} else {
+  async function main() {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("Optimus Spartan Swarm MCP server running on stdio");
+  }
+  main().catch((error2) => {
+    console.error("Server error:", error2);
+    process.exit(1);
+  });
 }
-main().catch((error2) => {
-  console.error("Server error:", error2);
-  process.exit(1);
-});
 //# sourceMappingURL=mcp-server.js.map

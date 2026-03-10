@@ -89,7 +89,7 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string)
 /**
  * Executes a single task delegation synchronously.
  */
-export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string): Promise<string> {
+export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[]): Promise<string> {
     const parsedRole = parseRoleSpec(roleArg);
     const role = parsedRole.role;
     
@@ -166,17 +166,34 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         personaContext = parseFrontmatter(concurrentContent).body.trim();
     }
 
+let contextContent = "";
+    if (contextFiles && contextFiles.length > 0) {
+        contextContent = "\n\n=== CONTEXT FILES ===\n\nThe following files are provided as required context for, and must be strictly adhered to during this task:\n\n";
+        for (const cf of contextFiles) {
+            const absolutePath = path.resolve(workspacePath, cf);
+            if (fs.existsSync(absolutePath)) {
+                contextContent += `--- START OF ${cf} ---\n`;
+                contextContent += fs.readFileSync(absolutePath, 'utf8');
+                contextContent += `\n--- END OF ${cf} ---\n\n`;
+            } else {
+                contextContent += `--- START OF ${cf} ---\n`;
+                contextContent += `(File not found at ${absolutePath})\n`;
+                contextContent += `--- END OF ${cf} ---\n\n`;
+            }
+        }
+    }
+
     const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
 
 ${personaContext ? `--- START PERSONA INSTRUCTIONS ---\n${personaContext}\n--- END PERSONA INSTRUCTIONS ---` : ''}
 
-Goal: Execute the following task. 
+Goal: Execute the following task.
 System Note: ${personaProof}
 
 Task Description:
-${taskText}
+${taskText}${contextContent}
 
 Please provide your complete execution result below.`;
 

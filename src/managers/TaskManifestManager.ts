@@ -8,6 +8,7 @@ export interface TaskRecord {
     role?: string;
     roles?: string[];
     task_description?: string;
+    context_files?: string[];
     proposal_path?: string;
     output_path?: string;
     pid?: number;
