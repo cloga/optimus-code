@@ -2,258 +2,31 @@
   "name": "optimus-code",
   "displayName": "Optimus Code",
   "description": "The Ultimate Multi-Agent Orchestrator",
-  "icon": "resources/logo.png",
   "version": "0.0.8",
   "publisher": "Trinity-Alpha",
   "repository": {
     "type": "git",
     "url": "https://github.com/cloga/optimus-code.git"
   },
-  "engines": {
-    "vscode": "^1.86.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "*"
-  ],
-  "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "optimus-code.openSettings",
-        "title": "Optimus Code: Configure Agents"
-      }
-    ],
-    "configuration": {
-      "title": "Optimus Code",
-      "properties": {
-        "optimusCode.agents": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "adapter": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "modes": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "Supported capabilities: plan, agent"
-              }
-            }
-          },
-          "default": [
-            {
-              "id": "github-copilot-gemini",
-              "name": "🤖 Copilot (Gemini 3.0 Pro)",
-              "adapter": "github-copilot",
-              "model": "gemini-3-pro-preview",
-              "enabled": true,
-              "modes": [
-                "plan"
-              ]
-            },
-            {
-              "id": "github-copilot-gpt5",
-              "name": "🤖 Copilot (GPT-5.4)",
-              "adapter": "github-copilot",
-              "model": "gpt-5.4",
-              "enabled": true,
-              "modes": [
-                "plan"
-              ]
-            },
-            {
-              "id": "github-copilot-opus",
-              "name": "🤖 Copilot (Opus 4.6 1M)",
-              "adapter": "github-copilot",
-              "model": "claude-opus-4.6-1m",
-              "enabled": true,
-              "modes": [
-                "plan"
-              ]
-            },
-            {
-              "id": "claude-code-gpt5",
-              "name": "🦖 Claude Code (GPT-5.4)",
-              "adapter": "claude-code",
-              "model": "gpt-5.4",
-              "enabled": true,
-              "modes": [
-                "agent"
-              ]
-            },
-            {
-              "id": "claude-code-opus",
-              "name": "🦕 Claude Code (Opus 4.6 1M)",
-              "adapter": "claude-code",
-              "model": "claude-opus-4.6-1m",
-              "enabled": true,
-              "modes": [
-                "plan",
-                "agent"
-              ]
-            },
-            {
-              "id": "github-copilot-gpt45",
-              "name": "🤖 Copilot (GPT-4.5)",
-              "adapter": "github-copilot",
-              "model": "gpt-4.5",
-              "enabled": true,
-              "modes": [
-                "plan"
-              ]
-            },
-            {
-              "id": "claude-code-gpt45",
-              "name": "🦖 Claude Code (GPT-4.5)",
-              "adapter": "claude-code",
-              "model": "gpt-4.5",
-              "enabled": true,
-              "modes": [
-                "agent"
-              ]
-            },
-            {
-              "id": "claude-code-gemini",
-              "name": "🦖 Claude Code (Gemini 3.0 Pro)",
-              "adapter": "claude-code",
-              "model": "gemini-3-pro-preview",
-              "enabled": true,
-              "modes": [
-                "agent"
-              ]
-            }
-          ],
-          "description": "Configure the AI Agent combinations (Adapter + Model) summoned by Optimus Code."
-        },
-        "optimusCode.debugMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Show Optimus Code debug panels and enable additional debug logging."
-        },
-        "optimusCode.models": {
-          "type": "object",
-          "properties": {
-            "claude_code": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "default": [
-                "claude-opus-4.6-1m",
-                "gpt-5.4",
-                "gpt-4.5",
-                "gemini-3-pro-preview"
-              ],
-              "description": "Available models for Claude Code."
-            },
-            "copilot_cli": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "default": [
-                "gemini-3-pro-preview",
-                "claude-opus-4.6-1m",
-                "gpt-5.4",
-                "gpt-4.5"
-              ],
-              "description": "Available models for GitHub Copilot CLI."
-            }
-          },
-          "default": {
-            "claude_code": [
-              "claude-opus-4.6-1m",
-              "gpt-5.4",
-              "gpt-4.5",
-              "gemini-3-pro-preview"
-            ],
-            "copilot_cli": [
-              "gemini-3-pro-preview",
-              "claude-opus-4.6-1m",
-              "gpt-5.4",
-              "gpt-4.5"
-            ]
-          },
-          "description": "List of models available for each CLI engine."
-        },
-        "optimusCode.compactThresholdTokens": {
-          "type": "integer",
-          "default": 800000,
-          "minimum": 1000,
-          "description": "Estimated token threshold for automatic context compaction. Default 800000 leaves about 20% buffer for a 1M-token context window."
-        },
-        "optimusCode.promptFileThresholdChars": {
-          "type": "integer",
-          "default": 12000,
-          "minimum": 1000,
-          "description": "Character threshold for switching oversized non-interactive prompts to workspace runtime briefing files instead of inline CLI arguments."
-        }
-      }
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "optimus-code-sidebar",
-          "title": "Optimus Code",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "optimus-code-sidebar": [
-        {
-          "type": "webview",
-          "id": "optimus-code.chatView",
-          "name": "Council Chat",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    }
-  },
   "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "npm run check-types && node esbuild.js",
+    "compile": "tsc --noEmit",
     "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && node esbuild.js --production",
     "check-types": "tsc --noEmit",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
-    "build:vsix": "node -e \"const fs=require('fs'); if(!fs.existsSync('releases')) fs.mkdirSync('releases');\" && vsce package --out releases/optimus-code.vsix"
+    "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
     "@types/marked": "^5.0.2",
     "@types/node": "18.x",
     "@types/strip-ansi": "^3.0.0",
-    "@types/vscode": "^1.86.0",
-    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.25.12",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.3.3"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@vscode/webview-ui-toolkit": "^1.4.0",
     "dotenv": "^17.3.1",
     "iconv-lite": "^0.6.3",
     "marked": "^17.0.4",
