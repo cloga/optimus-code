@@ -35,11 +35,12 @@ module.exports = function init() {
   const cwd = process.cwd();
   const optimusDir = path.join(cwd, '.optimus');
   const scaffoldDir = path.resolve(__dirname, '..', '..', 'scaffold');
+  const pluginRoot = path.resolve(__dirname, '..', '..');
 
   console.log('\n🤖 Optimus Swarm — Initializing workspace...\n');
 
   // 1. Create required subdirectories
-  const dirs = ['personas', 'config', 'tasks', 'reports', 'reviews', 'memory', 'state'];
+  const dirs = ['personas', 'config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state'];
   for (const dir of dirs) {
     const dirPath = path.join(optimusDir, dir);
     if (!fs.existsSync(dirPath)) {
@@ -60,6 +61,20 @@ module.exports = function init() {
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Installing system config...');
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
+  }
+
+  // 3.5 Copy plugin skills (the "operation manuals" for MCP tools)
+  const skillsSrc = path.join(pluginRoot, 'skills');
+  if (fs.existsSync(skillsSrc)) {
+    console.log('\n📚 Installing skills (MCP tool guides)...');
+    copyDirRecursive(skillsSrc, path.join(optimusDir, 'skills'));
+  }
+
+  // 3.6 Copy plugin agents (T2 global agent definitions)
+  const agentsSrc = path.join(pluginRoot, 'agents');
+  if (fs.existsSync(agentsSrc)) {
+    console.log('\n🤺 Installing global agents...');
+    copyDirRecursive(agentsSrc, path.join(optimusDir, 'agents'));
   }
 
   // 4. Append to .gitignore if needed
