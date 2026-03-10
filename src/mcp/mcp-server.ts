@@ -59,7 +59,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               title: { type: "string" },
               head: { type: "string", description: "The name of the branch where your changes are implemented." },
               base: { type: "string", description: "The name of the branch you want the changes pulled into." },
-              body: { type: "string" }
+              body: { type: "string" },
+                agent_role: { type: "string", description: "The role of the agent making this PR (e.g., 'dev')" },
+                session_id: { type: "string", description: "The session ID of the agent" }
             },
             required: ["owner", "repo", "title", "head", "base"]
           }
@@ -74,7 +76,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               repo: { type: "string" },
               pull_number: { type: "number" },
               commit_title: { type: "string" },
-              merge_method: { type: "string", enum: ["merge", "squash", "rebase"] }
+              merge_method: { type: "string", enum: ["merge", "squash", "rebase"] },
+                agent_role: { type: "string", description: "The role of the agent merging this PR (e.g., 'pm')" },
+                session_id: { type: "string", description: "The session ID of the agent" }
             },
             required: ["owner", "repo", "pull_number"]
           }
