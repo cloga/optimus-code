@@ -126,7 +126,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             body: { type: "string", description: "Issue body/contents" },              local_path: { type: "string", description: "The local blackboard file path (e.g. .optimus/proposals/PROPOSAL_XY.md) for A2A cross-reference" },
               session_id: { type: "string", description: "The Session ID or Agent ID creating this issue for traceability" },            labels: { type: "array", items: { type: "string" }, description: "Labels to apply" }
           },
-          required: ["owner", "repo", "title", "body"]
+          required: ["owner", "repo", "title", "body", "local_path"]
         }
       },
         {
@@ -380,6 +380,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     } else if (request.params.name === "github_create_issue") {
     const { owner, repo, title, body, labels, local_path, session_id } = request.params.arguments as any;
+      if (!local_path) {
+        throw new McpError(ErrorCode.InvalidParams, "Violated Issue First Protocol: local_path is mandatory to bind to a blackboard file (e.g. .optimus/tasks/task.md)");
+      }
     const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     if (!token) throw new McpError(ErrorCode.InvalidRequest, "GITHUB_TOKEN env is not set");
     
