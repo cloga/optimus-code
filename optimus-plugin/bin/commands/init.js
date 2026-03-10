@@ -40,6 +40,9 @@ module.exports = function init() {
   console.log('\n🤖 Optimus Swarm — Initializing workspace...\n');
 
   // 1. Create required subdirectories
+  // Note: personas and agents are NOT pre-populated — the Spartan Swarm's
+  // T3→T1 Cascade mechanism auto-generates them at runtime when new roles
+  // are encountered. Only skills (MCP tool manuals) and config are shipped.
   const dirs = ['personas', 'config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state'];
   for (const dir of dirs) {
     const dirPath = path.join(optimusDir, dir);
@@ -49,32 +52,20 @@ module.exports = function init() {
     }
   }
 
-  // 2. Copy scaffold personas
-  const personasSrc = path.join(scaffoldDir, 'personas');
-  if (fs.existsSync(personasSrc)) {
-    console.log('\n📋 Installing starter personas...');
-    copyDirRecursive(personasSrc, path.join(optimusDir, 'personas'));
-  }
-
-  // 3. Copy scaffold config
+  // 2. Copy scaffold config (system instructions — single source of truth)
   const configSrc = path.join(scaffoldDir, 'config');
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Installing system config...');
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
   }
 
-  // 3.5 Copy plugin skills (the "operation manuals" for MCP tools)
+  // 3. Copy plugin skills — these are the CORE deliverable.
+  // Skills teach the AI how to use MCP tools (dispatch_council, delegate_task, etc.)
+  // Without these, the AI has tools but no instruction manual.
   const skillsSrc = path.join(pluginRoot, 'skills');
   if (fs.existsSync(skillsSrc)) {
-    console.log('\n📚 Installing skills (MCP tool guides)...');
+    console.log('\n📚 Installing skills (MCP tool operation manuals)...');
     copyDirRecursive(skillsSrc, path.join(optimusDir, 'skills'));
-  }
-
-  // 3.6 Copy plugin agents (T2 global agent definitions)
-  const agentsSrc = path.join(pluginRoot, 'agents');
-  if (fs.existsSync(agentsSrc)) {
-    console.log('\n🤺 Installing global agents...');
-    copyDirRecursive(agentsSrc, path.join(optimusDir, 'agents'));
   }
 
   // 4. Append to .gitignore if needed
