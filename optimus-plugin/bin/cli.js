@@ -36,7 +36,7 @@ switch (command) {
   case '-h':
   case undefined:
     console.log(`
-Optimus Swarm CLI — Multi-Agent Orchestrator for Claude Code
+Optimus Swarm CLI — Universal Multi-Agent Orchestrator (MCP)
 
 Usage:
   optimus init        Bootstrap .optimus/ workspace in current directory

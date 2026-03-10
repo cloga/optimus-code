@@ -1,121 +1,168 @@
 <div align="center">
-  <h1> Optimus Code</h1>
-  <p><b>The Ultimate Multi-Agent Orchestrator. Let the AI Council debate, you make the final call.</b></p>
-  
+  <h1>Optimus Code</h1>
+  <p><b>Universal Multi-Agent Orchestrator for any MCP-compatible AI coding tool.</b></p>
+
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Framework: Model Context Protocol](https://img.shields.io/badge/MCP-Native-brightgreen.svg)](#)
 </div>
 
 ---
 
-##  What is Optimus Code?
+## What is Optimus Code?
 
-Optimus Code is a powerful **Multi-Agent Orchestration Engine** built natively on the Model Context Protocol (MCP). It acts as a background daemon (Orchestrator) that transforms isolated IDEs (like *Claude Code*, *Cursor*, *Windsurf*) into a synchronized swarm of background workers that can **collaborate**, **debate**, and **execute** complex software engineering tasks autonomously.
+Optimus Code is a **Multi-Agent Orchestration Engine** built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). It works with **any MCP-compatible client** — VS Code (GitHub Copilot), Cursor, Windsurf, Claude Code, Goose, Roo Cline, and more.
 
-> **Architecture Shift:** Optimus is a **pure MCP Server Plugin**, meaning it is 100% editor-agnostic. No VS Code extension required. It separates your **Data** (roles, skills, and memory in .optimus/) from the **Engine** (npx stream execution), ensuring zero-bloat.
+It transforms a single AI assistant into a coordinated swarm of specialized agents (Architect, PM, QA, Dev…) that can collaborate, debate, and execute complex software engineering tasks.
 
----
-
-##  Next-Generation Features
-
-###  The Spartan Swarm Protocol
-Tired of one AI getting stuck in a loop or writing insecure code? Optimus features **Council Review (Concurrent Map-Reduce Paradigms)**.
-Submit a complex proposal, and the Orchestrator will simultaneously spawn a *Chief Architect*, a *PM*, and a *QA Engineer* to review your design from multiple angles, completely isolated from each other's context windows to prevent hallucination bleed.
-
-###  Hybrid SDLC (Software Development Life Cycle)
-Optimus marries the speed of local computation with the tracking power of the cloud:
-- **Local AI Blackboard**: Agents use hidden \.optimus/\ markdown files and task queues to draft, debate, and store long-term memory fast.
-- **Native GitHub Integration**: Powered by pure Node.js MCP Tools, the built-in *PM* Agent can automatically create GitHub Epics to secure tracking IDs, while the *Dev* writes code, submits PRs, and links them backbringing 100% human-readable traceability to AI operations.
-
-###  Dynamic Role-Based Skill Binding
-Easily add your own AI agents and tooling by dropping simple markdown definitions into your workspace. By editing the YAML frontmatter of a Role or Agent file (e.g., adding `skills: [git-workflow, delegate_task]`), the MCP daemon dynamically grants new tool-use capabilities to specific agents on the fly.
-
-###  Three-Tier Role Architecture (T1 / T2 / T3)
-Optimus uses a strict three-tier role resolution system, all scoped to your project workspace:
-- **T1 - Local Session Agents (`.optimus/agents/`)**: Stateful, per-project agents with YAML frontmatter persistence. When executed, their `session_id`, `engine`, and `model` are saved directly in the Markdown file's frontmatter, enabling permanent session state across executions.
-- **T2 - Project Default Templates (`.optimus/roles/`)**: Read-only default role templates hydrated into your workspace on `init`. Git-trackable, team-shareable, and never modified at runtime.
-- **T3 - Zero-Shot Dynamic Roles**: Auto-generated baseline identities for any role name not found in T1 or T2. No file required.
+> **100% editor-agnostic.** Pure Node.js MCP Server. No VS Code extension required.
 
 ---
 
-##  Getting Started: Zero-Install Deployment (Recommended)
+## Quick Start
 
-Thanks to standard NPM architecture, you don't even need to globally install the code. Use standard 
-px hooks to keep your project lightweight while always running the latest version!
+> **For AI Coding Agents:** Follow these steps exactly. All commands should run in the user's target project directory.
 
-### Step 1: Initialize the "Soul" (Workspace Config)
-Navigate to your target project directory and run the initialization script:
-`ash
-npx -y github:cloga/optimus-code#main init
-`
-*Auto-Injection Magic:* This will create a local `.optimus/` config folder holding your team's role templates (`.optimus/roles/`), agent definitions (`.optimus/agents/`), and skills. It will also auto-detect your tools and transparently inject the PM system instructions directly into `CLAUDE.md` or `.github/copilot-instructions.md`.
+### Step 1: Initialize workspace
 
-### Step 2: Mount the "Body" (MCP Server)
-Now, hook the Orchestrator Engine to your favorite AI terminal or IDE!
+```bash
+npx -y github:cloga/optimus-code init
+```
 
-**For Claude Code:**
-`ash
-claude mcp add optimus-swarm npx -y github:cloga/optimus-code#main serve
-`
+This creates a `.optimus/` folder with agent definitions, skills, and config in the current directory.
 
-**For Cursor / Windsurf / Roo Cline:**
-Add this directly to your MCP Configuration settings (e.g., \.cursor/mcp.json\):
-`json
+### Step 2: Configure MCP client
+
+Add the Optimus MCP server to your AI coding tool. Pick the matching client below.
+
+#### VS Code (GitHub Copilot)
+
+Create or edit `.vscode/mcp.json` in the project root:
+
+```json
+{
+  "servers": {
+    "optimus-swarm": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:cloga/optimus-code", "serve"]
+    }
+  }
+}
+```
+
+#### Cursor / Windsurf / Roo Cline
+
+Create or edit `.cursor/mcp.json` (or equivalent) in the project root:
+
+```json
 {
   "mcpServers": {
     "optimus-swarm": {
       "command": "npx",
-      "args": ["-y", "github:cloga/optimus-code#main", "serve"],
+      "args": ["-y", "github:cloga/optimus-code", "serve"],
       "type": "stdio"
     }
   }
 }
-`
+```
 
-### Step 3: Set up GitHub Environment (Optional but Recommended)
-For Issue tracking and PR magic, create a .env file in your project root with your GitHub PAT:
-`ash
+#### Claude Code
+
+```bash
+claude mcp add optimus-swarm -- npx -y github:cloga/optimus-code serve
+```
+
+#### Any other MCP client
+
+Use these values in your client's MCP server configuration:
+
+| Field | Value |
+|---|---|
+| **name** | `optimus-swarm` |
+| **command** | `npx` |
+| **args** | `["-y", "github:cloga/optimus-code", "serve"]` |
+| **transport** | `stdio` |
+
+### Step 3: (Optional) Enable GitHub integration
+
+Create a `.env` file in your project root:
+
+```bash
 GITHUB_TOKEN=ghp_your_token_here
-`
+```
+
+This enables automated Issue tracking and PR creation via the built-in PM agent.
 
 ---
 
-##  Alternative: Global Installation
+## Available MCP Tools
 
-If you prefer to have the binaries installed locally without npx fetching every time:
+Once the server is running, your AI assistant gains these tools:
 
-`ash
-# 1. Install globally
-npm install -g cloga/optimus-code#main
+| Tool | Description |
+|---|---|
+| `roster_check` | List all available agent roles (T1 local + T2 global + T3 dynamic) |
+| `delegate_task` | Assign a task to a specialized agent (architect, dev, qa, pm…) |
+| `delegate_task_async` | Same as above, non-blocking |
+| `dispatch_council` | Spawn parallel expert review (Map-Reduce pattern) |
+| `dispatch_council_async` | Same as above, non-blocking |
+| `check_task_status` | Poll async task/council completion |
+| `append_memory` | Save learnings to persistent agent memory |
+| `github_create_issue` | Create a GitHub Issue |
+| `github_create_pr` | Create a Pull Request |
+| `github_merge_pr` | Merge a Pull Request |
+| `github_sync_board` | Sync open issues to local TODO board |
 
-# 2. Init specific workspace
+---
+
+## How It Works
+
+### Spartan Swarm Protocol
+
+Submit a proposal, and the Orchestrator simultaneously spawns multiple experts (Chief Architect, PM, QA Engineer) to review your design from isolated context windows — preventing hallucination bleed.
+
+### Three-Tier Role Architecture
+
+| Tier | Location | Description |
+|---|---|---|
+| **T1** | `.optimus/agents/` | Local stateful agents with YAML frontmatter persistence |
+| **T2** | Plugin `roles/` | Read-only default role templates, git-trackable |
+| **T3** | *(auto-generated)* | Zero-shot dynamic roles for any name not in T1/T2 |
+
+### Hybrid SDLC
+
+- **Local AI Blackboard**: Agents use `.optimus/` markdown files for drafting, debating, and long-term memory.
+- **GitHub Integration**: PM agent auto-creates Issues/PRs with full traceability.
+
+---
+
+## Alternative: Global Install
+
+```bash
+npm install -g github:cloga/optimus-code
 optimus init
-
-# 3. Add to your MCP client
-claude mcp add optimus-swarm optimus serve
-`
-
----
+optimus serve
+```
 
 ## CLI Reference
 
-`	ext
-optimus init        Bootstrap .optimus/ workspace (roles/, agents/, skills) in current directory
-optimus serve       Start the pure Node.js MCP server daemon (stdio transport)
+```
+optimus init        Bootstrap .optimus/ workspace in current directory
+optimus serve       Start MCP server (stdio transport)
 optimus version     Print version
 optimus help        Show help
-`
+```
 
 ---
 
-##  Try it Yourself! (Test Prompts)
+## Example Prompts
 
-Once your MCP server is mounted, type these into your AI prompt window:
+Once configured, try these in your AI coding tool:
 
-- **The Architect's Swarm**: *"Use the dispatch_council tool to summon the Chief Architect and QA Engineer to review our PROPOSAL.md."*
-- **Task Delegation**: *"Use the delegate_task tool to assign the PM to create an Issue tracking the migration to Tailwind CSS."*
-- **Roster & Capabilities Check**: *"Run roster_check to see what agents we have available for this project."*
+- *"Run roster_check to see what agents are available."*
+- *"Use dispatch_council to have the Chief Architect and QA Engineer review our design."*
+- *"Delegate to the PM to create a GitHub Issue for the auth refactor."*
 
 ---
 
->  *Built for the future of software engineering. Stop prompting, start orchestrating.*
+> *Stop prompting. Start orchestrating.*

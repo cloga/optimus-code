@@ -17,11 +17,12 @@ console.log(`
 ║        🤖 Optimus Swarm MCP Plugin — Installed!            ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  To register with Claude Code, run:                          ║
+║  To register with any MCP Client (Goose, Cursor, Claude):    ║
 ║                                                              ║
-║    claude mcp add optimus-facade node ${serverPath}          ║
+║    Command: node                                             ║
+║    Args:    ${serverPath}      ║
 ║                                                              ║
-║  To bootstrap a workspace with Optimus personas/skills:      ║
+║  To bootstrap a workspace with Optimus agents/skills:        ║
 ║                                                              ║
 ║    npx optimus init                                          ║
 ║                                                              ║
