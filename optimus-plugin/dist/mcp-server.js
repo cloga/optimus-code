@@ -24946,9 +24946,6 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
   shouldUsePersistentSession(mode) {
     return mode === "agent";
   }
-  getChildProcessEnv(_mode) {
-    return { ...process.env, TERM: "dumb", CI: "false", FORCE_COLOR: "0" };
-  }
   getPromptFileThreshold() {
     const configured = Number(process.env.OPTIMUS_PROMPT_FILE_THRESHOLD);
     if (!process.env.OPTIMUS_PROMPT_FILE_THRESHOLD || !Number.isFinite(configured)) {
@@ -25411,7 +25408,7 @@ ${outputBlock}
       let stallWarningTimer = null;
       const child = platformSpawn(cmd, args, {
         cwd: currentCwd,
-        env: this.getChildProcessEnv(mode)
+        env: { ...process.env, TERM: "dumb", CI: "false", FORCE_COLOR: "0" }
       });
       this.lastDebugInfo = {
         command: cmd + " " + args.join(" "),
@@ -25717,7 +25714,7 @@ ${outputBlock}
     debugLog(this.id, "Starting daemon", JSON.stringify({ mode, cwd: currentCwd, cwdSource: workspacePath.source, cmd, args }));
     this.childProcess = platformSpawn(cmd, args, {
       cwd: currentCwd,
-      env: this.getChildProcessEnv(mode)
+      env: { ...process.env, TERM: "dumb", CI: "false", FORCE_COLOR: "0" }
     });
     this.childProcess.stdout.on("data", (data) => {
       const chunk = stripAnsi(decodeBuffer(data));
@@ -25829,8 +25826,6 @@ ${line}` : "";
 };
 
 // ../src/adapters/ClaudeCodeAdapter.ts
-var path2 = __toESM(require("path"));
-var fs2 = __toESM(require("fs"));
 var CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   constructor(id = "claude-code", name = "\u{1F996} Claude Code", modelFlag = "", modes) {
@@ -25884,21 +25879,12 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
     } else if (mode === "agent") {
       args.push("--dangerously-skip-permissions");
     }
-    const workspaceMcpConfig = path2.join(cwd, ".mcp.json");
-    if (fs2.existsSync(workspaceMcpConfig)) {
-      args.push("--mcp-config", workspaceMcpConfig, "--strict-mcp-config");
-    } else {
-      args.push("--mcp-config", '{"mcpServers":{}}', "--strict-mcp-config");
-    }
     return { cmd: "claude", args };
   }
 };
 
 // ../src/adapters/GitHubCopilotAdapter.ts
 var COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
-function shouldForwardGitHubAuthToCopilot(envValue) {
-  return /^(1|true|yes)$/i.test((envValue || "").trim());
-}
 var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   constructor(id = "github-copilot", name = "\u{1F6F8} GitHub Copilot", modelFlag = "", modes) {
     super(id, name, modelFlag, "?>", modes);
@@ -25908,14 +25894,6 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   }
   shouldUseStructuredOutput(mode) {
     return mode === "plan" || mode === "agent";
-  }
-  getChildProcessEnv(mode) {
-    const env = super.getChildProcessEnv(mode);
-    if (!env.COPILOT_GITHUB_TOKEN && !shouldForwardGitHubAuthToCopilot(env.OPTIMUS_FORWARD_GITHUB_AUTH_TO_COPILOT)) {
-      delete env.GITHUB_TOKEN;
-      delete env.GH_TOKEN;
-    }
-    return env;
   }
   getNonInteractiveCommand(mode, prompt, sessionId) {
     const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
@@ -25996,6 +25974,28 @@ function updateFrontmatter(content, updates) {
   const bodyStr = parsed.body.startsWith("\n") ? parsed.body : "\n" + parsed.body;
   return yamlStr + bodyStr;
 }
+var ConcurrencyGovernor = class {
+  static maxConcurrentWorkers = 3;
+  static activeWorkers = 0;
+  static queue = [];
+  static async acquire() {
+    if (this.activeWorkers < this.maxConcurrentWorkers) {
+      this.activeWorkers++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+  static release() {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      if (next) next();
+    } else {
+      this.activeWorkers--;
+    }
+  }
+};
 function parseRoleSpec(roleArg) {
   const segments = import_path.default.basename(roleArg).split("_").filter(Boolean);
   const engineIndex = segments.findIndex((segment) => segment === "claude-code" || segment === "copilot-cli");
@@ -26100,6 +26100,7 @@ ${taskText}
 
 Please provide your complete execution result below.`;
   try {
+    await ConcurrencyGovernor.acquire();
     const response = await adapter.invoke(basePrompt, "agent");
     if (adapter.lastSessionId && import_fs.default.existsSync(t1Path)) {
       const currentStr = import_fs.default.readFileSync(t1Path, "utf8");
@@ -26124,6 +26125,8 @@ Please provide your complete execution result below.`;
 Agent has finished execution. Check standard output at \`${outputPath}\`.`;
   } catch (e) {
     throw new Error(`Worker execution failed: ${e.message}`);
+  } finally {
+    ConcurrencyGovernor.release();
   }
 }
 async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath) {
@@ -26144,7 +26147,86 @@ async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, times
   return Promise.all(promises);
 }
 
+// ../src/managers/TaskManifestManager.ts
+var fs3 = __toESM(require("fs"));
+var path3 = __toESM(require("path"));
+var TaskManifestManager = class {
+  static getManifestPath(workspacePath) {
+    return path3.join(workspacePath, ".optimus", "state", "task-manifest.json");
+  }
+  static loadManifest(workspacePath) {
+    const manifestPath = this.getManifestPath(workspacePath);
+    if (!fs3.existsSync(manifestPath)) {
+      return {};
+    }
+    try {
+      return JSON.parse(fs3.readFileSync(manifestPath, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+  static saveManifest(workspacePath, manifest) {
+    const manifestPath = this.getManifestPath(workspacePath);
+    const tempPath = `${manifestPath}.tmp`;
+    const dir = path3.dirname(manifestPath);
+    if (!fs3.existsSync(dir)) fs3.mkdirSync(dir, { recursive: true });
+    fs3.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
+    fs3.renameSync(tempPath, manifestPath);
+  }
+  static createTask(workspacePath, record2) {
+    const manifest = this.loadManifest(workspacePath);
+    const fullRecord = {
+      ...record2,
+      status: "pending",
+      startTime: Date.now(),
+      heartbeatTime: Date.now()
+    };
+    manifest[record2.taskId] = fullRecord;
+    this.saveManifest(workspacePath, manifest);
+    return fullRecord;
+  }
+  static updateTask(workspacePath, taskId, updates) {
+    const manifest = this.loadManifest(workspacePath);
+    if (manifest[taskId]) {
+      manifest[taskId] = { ...manifest[taskId], ...updates };
+      this.saveManifest(workspacePath, manifest);
+    }
+  }
+  static heartbeat(workspacePath, taskId) {
+    this.updateTask(workspacePath, taskId, { heartbeatTime: Date.now() });
+  }
+  static reapStaleTasks(workspacePath) {
+    const manifest = this.loadManifest(workspacePath);
+    const now = Date.now();
+    const TIMEOUT_MS = 1e3 * 60 * 10;
+    let changed = false;
+    for (const taskId in manifest) {
+      const task = manifest[taskId];
+      if (task.status === "running") {
+        if (now - task.heartbeatTime > TIMEOUT_MS) {
+          task.status = "failed";
+          task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
+          changed = true;
+          try {
+            if (task.output_path) {
+              const dir = path3.dirname(task.output_path);
+              if (!fs3.existsSync(dir)) fs3.mkdirSync(dir, { recursive: true });
+              fs3.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
+`, "utf8");
+            }
+          } catch (e) {
+          }
+        }
+      }
+    }
+    if (changed) {
+      this.saveManifest(workspacePath, manifest);
+    }
+  }
+};
+
 // ../src/mcp/mcp-server.ts
+var import_child_process = require("child_process");
 var import_dotenv = __toESM(require_main());
 import_dotenv.default.config({ path: import_path2.default.resolve(__dirname, "../../.env") });
 import_dotenv.default.config();
@@ -26361,6 +26443,76 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name === "check_task_status") {
+    let { taskId, workspace_path } = request.params.arguments;
+    if (!taskId || !workspace_path) throw new Error("Missing taskId or workspace_path");
+    TaskManifestManager.reapStaleTasks(workspace_path);
+    const manifest = TaskManifestManager.loadManifest(workspace_path);
+    const task = manifest[taskId];
+    if (!task) {
+      return { content: [{ type: "text", text: `Task ${taskId} not found in manifest.` }] };
+    }
+    let details = `Task ${taskId} status: **${task.status}**
+`;
+    if (task.status === "completed") details += `
+Output is ready at ${task.output_path || "the review path"}.`;
+    if (task.status === "failed") details += `
+Error: ${task.error_message}`;
+    return { content: [{ type: "text", text: details }] };
+  }
+  if (request.params.name === "delegate_task_async") {
+    let { role, task_description, output_path, workspace_path } = request.params.arguments;
+    if (!role || !task_description || !output_path || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
+    }
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    TaskManifestManager.createTask(workspace_path, {
+      taskId,
+      type: "delegate_task",
+      role,
+      task_description,
+      output_path,
+      workspacePath: workspace_path
+    });
+    const child = (0, import_child_process.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+    return { content: [{ type: "text", text: `\u2705 Task spawned successfully in background.
+
+**Task ID**: ${taskId}
+**Role**: ${role}
+
+Use check_task_status tool periodically with this task ID to check its completion.` }] };
+  }
+  if (request.params.name === "dispatch_council_async") {
+    let { proposal_path, roles, workspace_path } = request.params.arguments;
+    if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
+    }
+    const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const reviewsPath = import_path2.default.join(workspace_path, ".optimus", "reviews", taskId);
+    TaskManifestManager.createTask(workspace_path, {
+      taskId,
+      type: "dispatch_council",
+      roles,
+      proposal_path,
+      output_path: reviewsPath,
+      workspacePath: workspace_path
+    });
+    const child = (0, import_child_process.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+    return { content: [{ type: "text", text: `\u2705 Council spawned successfully in background.
+
+**Council ID**: ${taskId}
+**Roles**: ${roles.join(", ")}
+
+Use check_task_status tool periodically with this Council ID to check completion.` }] };
+  }
   if (request.params.name === "dispatch_council") {
     let { proposal_path, roles, workspace_path } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {

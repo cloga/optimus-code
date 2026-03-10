@@ -19,7 +19,8 @@ Analyze the user's task request against the roster you just retrieved.
 
 ### Step 3: Deployment
 Once you have determined the exact `role` name from Step 2, summarize your decision clearly to the user (e.g., *"I am delegating this to our T2 chief-architect..."*).
-**Action:** Use the MCP tool `delegate_task` to dispatch the decided `role`, an exhaustively detailed `task_description`, and the designated `output_path` (an artifact inside `.optimus/` usually).
+**Action:** Use the MCP tool `delegate_task_async` (preferred over synchronous `delegate_task`) to dispatch the decided `role`, an exhaustively detailed `task_description`, and the designated `output_path` (an artifact inside `.optimus/` usually). 
+If using `delegate_task_async`, loop and check status via `check_task_status` until it is marked completed, and then read the output path file.
 
 ## Failure Handling
-If `delegate_task` returns an error, DO NOT give up. Immediately analyze the stdout/stderr trace, formulate a fix, and retry the delegation, or fall back to doing the work manually.
+If `delegate_task_async` or `delegate_task` returns an error or task fails, DO NOT give up. Immediately analyze the stdout/stderr trace, formulate a fix, and retry the delegation, or fall back to doing the work manually.

@@ -12,6 +12,9 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle } from "./worker-spawner";
+import { TaskManifestManager } from "../managers/TaskManifestManager";
+import { runAsyncWorker } from "./council-runner";
+import { spawn } from "child_process";
 import dotenv from "dotenv";
 
 // Load environment variables from .env file up to the repository root
@@ -243,7 +246,67 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // 3. Handle Tool Execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+
+  if (request.params.name === "check_task_status") {
+    let { taskId, workspace_path } = request.params.arguments as any;
+    if (!taskId || !workspace_path) throw new Error("Missing taskId or workspace_path");
+    
+    TaskManifestManager.reapStaleTasks(workspace_path); // Trigger reaper
+    const manifest = TaskManifestManager.loadManifest(workspace_path);
+    const task = manifest[taskId];
+    if (!task) {
+      return { content: [{ type: "text", text: `Task ${taskId} not found in manifest.` }] };
+    }
+    let details = `Task ${taskId} status: **${task.status}**\n`;
+    if (task.status === 'completed') details += `\nOutput is ready at ${task.output_path || 'the review path'}.`;
+    if (task.status === 'failed') details += `\nError: ${task.error_message}`;
+    
+    return { content: [{ type: "text", text: details }] };
+  }
+  
+  if (request.params.name === "delegate_task_async") {
+    let { role, task_description, output_path, workspace_path } = request.params.arguments as any;
+    if (!role || !task_description || !output_path || !workspace_path) {
+        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
+    }
+    
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
+    TaskManifestManager.createTask(workspace_path, {
+        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path
+    });
+    
+    // Spawn background process
+    const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
+        detached: true, stdio: "ignore"
+    });
+    child.unref();
+    
+    return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}\n\nUse check_task_status tool periodically with this task ID to check its completion.` }] };
+  }
+  
+  if (request.params.name === "dispatch_council_async") {
+    let { proposal_path, roles, workspace_path } = request.params.arguments as any;
+    if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
+        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
+    }
+    
+    const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
+    const reviewsPath = path.join(workspace_path, ".optimus", "reviews", taskId);
+    TaskManifestManager.createTask(workspace_path, {
+        taskId, type: "dispatch_council", roles, proposal_path, output_path: reviewsPath, workspacePath: workspace_path
+    });
+    
+    // Spawn background process
+    const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
+        detached: true, stdio: "ignore"
+    });
+    child.unref();
+    
+    return { content: [{ type: "text", text: `✅ Council spawned successfully in background.\n\n**Council ID**: ${taskId}\n**Roles**: ${roles.join(", ")}\n\nUse check_task_status tool periodically with this Council ID to check completion.` }] };
+  }
+
   if (request.params.name === "dispatch_council") {
+
     let { proposal_path, roles, workspace_path } = request.params.arguments as any;
     
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {

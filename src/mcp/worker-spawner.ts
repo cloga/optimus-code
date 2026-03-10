@@ -40,6 +40,31 @@ function updateFrontmatter(content: string, updates: Record<string, string>): st
     return yamlStr + bodyStr;
 }
 
+export class ConcurrencyGovernor {
+    private static maxConcurrentWorkers = 3;
+    private static activeWorkers = 0;
+    private static queue: (() => void)[] = [];
+
+    public static async acquire(): Promise<void> {
+        if (this.activeWorkers < this.maxConcurrentWorkers) {
+            this.activeWorkers++;
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            this.queue.push(resolve);
+        });
+    }
+
+    public static release(): void {
+        if (this.queue.length > 0) {
+            const next = this.queue.shift();
+            if (next) next();
+        } else {
+            this.activeWorkers--;
+        }
+    }
+}
+
 function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?: string } {
     const segments = path.basename(roleArg).split('_').filter(Boolean);
     const engineIndex = segments.findIndex(segment => segment === 'claude-code' || segment === 'copilot-cli');
@@ -156,8 +181,9 @@ ${taskText}
 Please provide your complete execution result below.`;
 
     try {
+        await ConcurrencyGovernor.acquire();
         const response = await adapter.invoke(basePrompt, 'agent');
-        
+
         // --- Core Protocol: Native Session Capture & Binding ---
         if (adapter.lastSessionId && fs.existsSync(t1Path)) {
             const currentStr = fs.readFileSync(t1Path, 'utf8');
@@ -171,11 +197,13 @@ Please provide your complete execution result below.`;
 
         const dir = path.dirname(outputPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        
+
         fs.writeFileSync(outputPath, response, 'utf8');
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
     } catch (e: any) {
         throw new Error(`Worker execution failed: ${e.message}`);
+    } finally {
+        ConcurrencyGovernor.release();
     }
 }
 

@@ -14,7 +14,7 @@ This project utilizes an artifact-driven "Blackboard Pattern". The actual "Exper
 
 ### Step 2: Request the Council Dispatch via MCP Tool
 1. Tell the user you have finalized the `PROPOSAL_<task_topic>.md` and are requesting the Orchestrator to dispatch the expert council.
-2. You MUST use your available MCP tool `dispatch_council` to trigger the underlying concurrency engine.
+2. You MUST use your available MCP tool `dispatch_council_async` (preferred) or `dispatch_council` to trigger the underlying concurrency engine.
 3. Pass the `proposal_path` and the `roles` (array of strings) of the experts you want to summon.
 
 **(Experts are instantiated entirely on-demand dynamically using the T3->T1->T2 Cascade Rule. Just use descriptive role names.)**
@@ -25,9 +25,9 @@ Commonly requested dynamic roles:
 - `refactoring-architect`: Identifies code smelles, outlines clean abstractions.
 
 ### Step 3: Await and Read The Reviews (The Gather)
-1. The `dispatch_council` tool will run asynchronously and handle workspace isolation implicitly.
-2. It will return a precise folder path matching the isolated execution timestamp: (e.g., `.optimus/reviews/<timestamp>/`).
-3. Once the tool returns success, read the generated review files from that directory (e.g., `<role>_review.md`).
+1. If using `dispatch_council_async`, the tool will return a `taskId`. Use the `check_task_status` tool in a loop (wait 10 seconds between checks) until the task is marked `completed`.
+2. The tool (or status check) will return a precise folder path matching the isolated execution timestamp: (e.g., `.optimus/reviews/<timestamp>/`).
+3. Once the tool returns success or is completed, read the generated review files from that directory (e.g., `<role>_review.md`).
 
 ### Step 4: Arbitration and Action (The Arbiter)
 Analyze the gathered reviews.
