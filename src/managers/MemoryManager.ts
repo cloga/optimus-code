@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
+import { PersistentAgentAdapter } from '../adapters/PersistentAgentAdapter';
 import { debugLog } from '../debugLogger';
 
 export class MemoryManager {
@@ -8,9 +8,9 @@ export class MemoryManager {
     private static readonly optimusDir = '.optimus';
 
     private getMemoryFilePath(): string | null {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
-        return path.join(workspaceFolders[0].uri.fsPath, MemoryManager.optimusDir, MemoryManager.memoryFileName);
+        const rootPath = PersistentAgentAdapter.getWorkspacePath();
+        if (!rootPath) { return null; }
+        return path.join(rootPath, MemoryManager.optimusDir, MemoryManager.memoryFileName);
     }
 
     public readMemory(): string | null {

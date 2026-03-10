@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { PersistentAgentAdapter } from '../adapters/PersistentAgentAdapter';
 import {
     CompleteTurnInput,
@@ -11,15 +10,110 @@ import {
     TurnRecord,
 } from '../types/SharedTaskContext';
 
+export interface StateStore {
+    get<T>(key: string, defaultValue?: T): T;
+    update(key: string, value: any): Promise<void>;
+}
+
+export interface OptimusConfig {
+    get<T>(key: string): T | undefined;
+}
+
+export class FileSystemStateStore implements StateStore {
+    private filePath: string;
+    private cache: Record<string, any> | undefined;
+
+    constructor(workspacePath: string) {
+        const dir = path.join(workspacePath, '.optimus', 'state');
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        this.filePath = path.join(dir, 'state.json');
+    }
+
+    private load(): Record<string, any> {
+        if (this.cache) return this.cache;
+        try {
+            if (fs.existsSync(this.filePath)) {
+                this.cache = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+            } else {
+                this.cache = {};
+            }
+        } catch {
+            this.cache = {};
+        }
+        return this.cache!;
+    }
+
+    public get<T>(key: string, defaultValue?: T): T {
+        const data = this.load();
+        return data[key] !== undefined ? data[key] : (defaultValue as T);
+    }
+
+    public async update(key: string, value: any): Promise<void> {
+        const data = this.load();
+        data[key] = value;
+        fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf8');
+        this.cache = data;
+    }
+}
+
+export class FileSystemConfig implements OptimusConfig {
+    private filePath: string;
+    private cache: Record<string, any> | undefined;
+
+    constructor(workspacePath: string) {
+        this.filePath = path.join(workspacePath, 'package.json');
+    }
+
+    private load(): Record<string, any> {
+        if (this.cache) return this.cache;
+        try {
+            if (fs.existsSync(this.filePath)) {
+                const pkg = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
+                this.cache = pkg.contributes?.configuration?.properties || {};
+            } else {
+                this.cache = {};
+            }
+        } catch {
+            this.cache = {};
+        }
+        return this.cache!;
+    }
+
+    public get<T>(key: string): T | undefined {
+        const data = this.load();
+        const settingsPath = path.join(PersistentAgentAdapter.getWorkspacePath(), '.vscode', 'settings.json');
+        try {
+            if (fs.existsSync(settingsPath)) {
+                const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+                if (settings[`optimusCode.${key}`] !== undefined) {
+                    return settings[`optimusCode.${key}`] as T;
+                }
+            }
+        } catch {
+            // ignore
+        }
+        return data[`optimusCode.${key}`]?.default as T | undefined;
+    }
+}
+
 export class SharedTaskStateManager {
     private static readonly storageKey = 'optimusTaskStates';
     private static readonly maxTasks = 25;
     private static readonly defaultCompactThreshold = 800000;
+    
+    private globalState: StateStore;
+    private config: OptimusConfig;
 
-    constructor(private readonly globalState: vscode.Memento) {}
+    constructor(workspacePath?: string) {
+        const resolvedWorkspace = workspacePath || PersistentAgentAdapter.getWorkspacePath();
+        this.globalState = new FileSystemStateStore(resolvedWorkspace);
+        this.config = new FileSystemConfig(resolvedWorkspace);
+    }
 
     public getCompactThreshold(): number {
-        const configured = vscode.workspace.getConfiguration('optimusCode').get<number>('compactThresholdTokens');
+        const configured = this.config.get<number>('compactThresholdTokens');
         if (typeof configured !== 'number' || !Number.isFinite(configured) || configured < 1000) {
             return SharedTaskStateManager.defaultCompactThreshold;
         }
@@ -773,9 +867,8 @@ export class SharedTaskStateManager {
 
     public readRulesMd(): string | null {
         try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
-            const rootPath = workspaceFolders[0].uri.fsPath;
+            const rootPath = PersistentAgentAdapter.getWorkspacePath();
+            if (!rootPath) { return null; }
             const rulesPath = path.join(rootPath, '.optimus', 'config', 'system-instructions.md');
             
             let rulesContent = "";
@@ -790,7 +883,7 @@ export class SharedTaskStateManager {
             }
 
             // Inject available engines and models dynamically from settings
-            const modelsConfig = vscode.workspace.getConfiguration('optimusCode').get<any>('models');
+            const modelsConfig = this.config.get<any>('models');
             if (modelsConfig) {
                 rulesContent += `\n\n## Available CLI Engines and Models (Dynamic)\n`;
                 if (modelsConfig.claude_code) {
@@ -809,9 +902,9 @@ export class SharedTaskStateManager {
 
     public readMemoryMd(): string | null {
         try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
-            const memPath = path.join(workspaceFolders[0].uri.fsPath, '.optimus', 'state', 'memory.md');
+            const rootPath = PersistentAgentAdapter.getWorkspacePath();
+            if (!rootPath) { return null; }
+            const memPath = path.join(rootPath, '.optimus', 'state', 'memory.md');
             if (!fs.existsSync(memPath)) { return null; }
             return fs.readFileSync(memPath, 'utf8');
         } catch {
@@ -821,9 +914,9 @@ export class SharedTaskStateManager {
 
     public writeMemoryMd(newContent: string): void {
         try {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length === 0) { return; }
-            const optimusDir = path.join(workspaceFolders[0].uri.fsPath, '.optimus');
+            const rootPath = PersistentAgentAdapter.getWorkspacePath();
+            if (!rootPath) { return; }
+            const optimusDir = path.join(rootPath, '.optimus');
             if (!fs.existsSync(optimusDir)) { fs.mkdirSync(optimusDir, { recursive: true }); }
             const memPath = path.join(optimusDir, 'state', 'memory.md');
             fs.writeFileSync(memPath, newContent, 'utf8');
