@@ -163,7 +163,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             required: ["owner", "repo", "pull_number"]
           }
-        },,
+        },
         {
           name: "github_sync_board",
         description: "Fetches open issues from a GitHub repository and dumps them into the local blackboard.",
@@ -194,7 +194,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
             },
           },
-          required: ["proposal_path", "roles", "workspace_path"],
+          required: ["proposal_path", "roles"],
         },
       },
       {
@@ -246,11 +246,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "dispatch_council") {
     let { proposal_path, roles, workspace_path } = request.params.arguments as any;
     
-    if (!workspace_path || !proposal_path || !Array.isArray(roles) || roles.length === 0) {
+    if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
-
-    const timestampId = Date.now();
     
     // Resolve workspace root from the proposal_path instead of process.cwd().
     // Global MCP servers boot in the user home directory, so we must calculate the project root dynamically.
@@ -265,6 +263,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       workspacePath = path.resolve(path.dirname(proposal_path));
     }
 
+    const timestampId = Date.now();
     const reviewsPath = path.join(workspacePath, ".optimus", "reviews", timestampId.toString());
     
     fs.mkdirSync(reviewsPath, { recursive: true });
@@ -492,8 +491,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires workspace_path");
     }
 
-    const t1Dir = path.join(workspace_path, ".optimus", "personas");
-    const t2Dir = path.join(__dirname, "..", "agents");
+    const t1Dir = path.join(workspace_path, ".optimus", "agents");
+    const t2Dir = path.join(__dirname, "..", "..", "optimus-plugin", "roles");
 
     let roster = "📋 **Spartan Swarm Active Roster**\n\n";
 
