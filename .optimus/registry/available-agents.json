@@ -1,0 +1,27 @@
+{
+  "engines": {
+    "claude-code": {
+      "path": "npx @anthropic-ai/claude-code",
+      "available_models": ["claude-3-5-sonnet", "claude-3-opus", "claude-3-haiku"],
+      "cli_flags": "--model"
+    },
+    "copilot-cli": {
+      "path": "github-copilot-cli",
+      "available_models": ["gpt-4o", "gpt-4-turbo", "o1-preview", "opus-4.6"],
+      "cli_flags": "-m"
+    },
+    "deepseek-local": {
+      "path": "node ./custom-runners/deepseek-bridge.js",
+      "available_models": ["deepseek-r1", "deepseek-coder"],
+      "cli_flags": "--backend"
+    }
+  },
+  "roles": {
+    "chief-architect": {
+      "strategies": ["conservative", "radical", "cost-driven"]
+    },
+    "security-auditor": {
+      "strategies": ["compliance-strict", "hacker-mindset"]
+    }
+  }
+}

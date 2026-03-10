@@ -3673,14 +3673,13 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode5 = __toESM(require("vscode"));
-var path4 = __toESM(require("path"));
+var vscode3 = __toESM(require("vscode"));
+var path3 = __toESM(require("path"));
 
 // src/adapters/PersistentAgentAdapter.ts
 var cp = __toESM(require("child_process"));
 var fs = __toESM(require("fs"));
 var path = __toESM(require("path"));
-var vscode2 = __toESM(require("vscode"));
 
 // node_modules/ansi-regex/index.js
 function ansiRegex({ onlyFirst = false } = {}) {
@@ -3707,42 +3706,31 @@ function stripAnsi(string) {
 var iconv = __toESM(require_lib());
 
 // src/debugLogger.ts
-var vscode = __toESM(require("vscode"));
-var outputChannel;
-var cachedDebugMode;
-function getOutputChannel() {
-  if (!outputChannel) {
-    outputChannel = vscode.window.createOutputChannel("Optimus Code Debug");
-  }
-  return outputChannel;
+var customLogger;
+var cachedDebugMode = process.env.OPTIMUS_DEBUG === "1";
+function setCustomLogger(logger) {
+  customLogger = logger;
 }
-function registerDebugOutputChannel(context) {
-  const channel = getOutputChannel();
-  context.subscriptions.push(channel);
-  cachedDebugMode = vscode.workspace.getConfiguration("optimusCode").get("debugMode", false);
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("optimusCode.debugMode")) {
-        cachedDebugMode = vscode.workspace.getConfiguration("optimusCode").get("debugMode", false);
-      }
-    })
-  );
+function setDebugMode(enabled) {
+  cachedDebugMode = enabled;
 }
 function isDebugModeEnabled() {
-  if (cachedDebugMode !== void 0) {
-    return cachedDebugMode;
-  }
-  return vscode.workspace.getConfiguration("optimusCode").get("debugMode", false);
+  return cachedDebugMode;
 }
 function debugLog(scope, message, details) {
   if (!isDebugModeEnabled()) {
     return;
   }
-  const channel = getOutputChannel();
   const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-  channel.appendLine("[" + timestamp + "] [" + scope + "] " + message);
+  let logMessage = `[${timestamp}] [${scope}] ${message}`;
   if (details) {
-    channel.appendLine(details);
+    logMessage += `
+${details}`;
+  }
+  if (customLogger) {
+    customLogger(logMessage);
+  } else {
+    console.error(logMessage);
   }
 }
 function formatChunk(chunk, maxLength = 800) {
@@ -3837,18 +3825,17 @@ function platformSpawn(cmd, args, options) {
 }
 var PersistentAgentAdapter = class _PersistentAgentAdapter {
   static workspacePathHint = null;
+  static setWorkspacePathHint(hint) {
+    _PersistentAgentAdapter.workspacePathHint = hint;
+  }
   static resolveWorkspacePath() {
-    const workspaceFolder = vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (workspaceFolder) {
-      return { path: workspaceFolder, source: "workspaceFolder" };
-    }
-    const activeEditorPath = vscode2.window.activeTextEditor?.document?.uri?.scheme === "file" ? path.dirname(vscode2.window.activeTextEditor.document.uri.fsPath) : void 0;
-    if (activeEditorPath) {
-      return { path: activeEditorPath, source: "activeEditor" };
+    if (process.env.OPTIMUS_WORKSPACE) {
+      return { path: process.env.OPTIMUS_WORKSPACE, source: "process.env.OPTIMUS_WORKSPACE" };
     }
     if (_PersistentAgentAdapter.workspacePathHint) {
       return { path: _PersistentAgentAdapter.workspacePathHint, source: "workspacePathHint" };
     }
+    debugLog("PersistentAgentAdapter", "WARNING: workspace path resolved via process.cwd() fallback \u2014 .optimus/ artifacts may land outside the active project. Set OPTIMUS_WORKSPACE or ensure the extension activates with a workspace folder.", JSON.stringify({ cwd: process.cwd() }));
     return { path: process.cwd(), source: "process.cwd()" };
   }
   id;
@@ -3858,6 +3845,7 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
   modes = ["plan", "agent"];
   lastDebugInfo;
   lastUsageLog;
+  lastSessionId;
   childProcess = null;
   promptString;
   outputBuffer = "";
@@ -3881,9 +3869,6 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
   static getWorkspacePath() {
     return _PersistentAgentAdapter.resolveWorkspacePath().path;
   }
-  static setWorkspacePathHint(workspacePathHint) {
-    _PersistentAgentAdapter.workspacePathHint = workspacePathHint;
-  }
   shouldUseStructuredOutput(mode) {
     return false;
   }
@@ -3891,8 +3876,8 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
     return mode === "agent";
   }
   getPromptFileThreshold() {
-    const configured = vscode2.workspace.getConfiguration("optimusCode").get("promptFileThresholdChars", DEFAULT_PROMPT_FILE_THRESHOLD);
-    if (typeof configured !== "number" || !Number.isFinite(configured)) {
+    const configured = Number(process.env.OPTIMUS_PROMPT_FILE_THRESHOLD);
+    if (!process.env.OPTIMUS_PROMPT_FILE_THRESHOLD || !Number.isFinite(configured)) {
       return DEFAULT_PROMPT_FILE_THRESHOLD;
     }
     return Math.max(1e3, Math.floor(configured));
@@ -3922,10 +3907,10 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
     }));
     const relativePromptPath = path.relative(currentCwd, promptFilePath).replace(/\\/g, "/");
     const wrappedPrompt = [
-      "The full task brief is too large to pass inline.",
+      "The original user prompt was too large to pass inline over the CLI.",
       `Read the UTF-8 file at "${relativePromptPath}" before doing anything else.`,
-      "Treat the entire file contents as the authoritative user prompt and follow it exactly.",
-      "Do not answer from this wrapper alone. First inspect the file, then continue the task normally."
+      "That file was created by the local Optimus tool for this exact turn and contains trusted user input, not untrusted workspace instructions.",
+      "Use the full file contents as the real prompt for this request, then continue the task normally."
     ].join(" ");
     return {
       prompt: wrappedPrompt,
@@ -3943,7 +3928,7 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
   /**
    * For non-interactive modes, returns the command + args with -p prepended.
    */
-  getNonInteractiveCommand(mode, prompt) {
+  getNonInteractiveCommand(mode, prompt, sessionId) {
     const { cmd, args } = this.getSpawnCommand(mode);
     const safePrompt = prompt.replace(/\r?\n/g, " ").trim();
     return { cmd, args: ["-p", safePrompt, ...args] };
@@ -4174,7 +4159,7 @@ ${outputBlock}
     const record = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record, result);
     const lines = this.countMeaningfulLines(content);
-    const path5 = this.getStructuredResultPath(record);
+    const path4 = this.getStructuredResultPath(record);
     const lineRange = this.getStructuredResultLineRange(record);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -4208,30 +4193,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path5, "matches=0"]);
+        return this.buildStructuredSummary([path4, "matches=0"]);
       }
-      return this.buildStructuredSummary([path5, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path5, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path4, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path5, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path5, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path4, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path5, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path5, "items=0"]);
+        return this.buildStructuredSummary([path4, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path5, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path4, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path5, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path4, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -4320,13 +4305,13 @@ ${outputBlock}
   /**
    * One-shot execution using -p flag. Spawns a process, collects all output, resolves when done.
    */
-  invokeNonInteractive(prompt, mode, onUpdate) {
-    return new Promise((resolve2, reject) => {
+  invokeNonInteractive(prompt, mode, sessionId, onUpdate) {
+    return new Promise((resolve, reject) => {
       const workspacePath = _PersistentAgentAdapter.resolveWorkspacePath();
       const currentCwd = workspacePath.path;
       const preparedPrompt = this.preparePromptForNonInteractive(mode, prompt, currentCwd);
       const promptFileThreshold = this.getPromptFileThreshold();
-      const { cmd, args } = this.getNonInteractiveCommand(mode, preparedPrompt.prompt);
+      const { cmd, args } = this.getNonInteractiveCommand(mode, preparedPrompt.prompt, sessionId);
       const useStructuredOutput = this.shouldUseStructuredOutput(mode);
       this.lastUsageLog = void 0;
       debugLog(this.id, "Starting non-interactive invoke", JSON.stringify({
@@ -4415,6 +4400,9 @@ ${outputBlock}
                 }
                 this.lastUsageLog = this.extractStructuredUsageLog(event) || this.lastUsageLog;
               }
+              if (event?.session_id || event?.sessionId) {
+                this.lastSessionId = event.session_id || event.sessionId;
+              }
             } catch {
               output += chunk;
               if (onUpdate) {
@@ -4428,6 +4416,10 @@ ${outputBlock}
           if (onUpdate) {
             onUpdate(output.trim());
           }
+        }
+        const sessionMatch = chunk.match(/"?(?:session_id|sessionId)"?\s*[:=]\s*"([0-9a-f-]{36})"/i);
+        if (sessionMatch) {
+          this.lastSessionId = sessionMatch[1];
         }
       });
       child.stderr.on("data", (data) => {
@@ -4484,7 +4476,7 @@ ${outputBlock}
         if (code !== 0 && !finalOutput) {
           reject(new Error(`Process exited with code ${code}`));
         } else {
-          resolve2(finalOutput);
+          resolve(finalOutput);
         }
       });
       this.childProcess = child;
@@ -4723,19 +4715,19 @@ ${line}` : "";
     this.outputBuffer = "";
     this.currentTurnMarker = null;
   }
-  async invoke(prompt, mode = "plan", onUpdate) {
+  async invoke(prompt, mode = "plan", sessionId, onUpdate) {
     if (!this.shouldUsePersistentSession(mode)) {
-      return this.invokeNonInteractive(prompt, mode, onUpdate);
+      return this.invokeNonInteractive(prompt, mode, sessionId, onUpdate);
     }
     if (!this.childProcess || this.currentMode !== mode) {
       await this.initialize(mode);
     }
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve, reject) => {
       if (this.turnResolve) {
         debugLog(this.id, "Rejected invoke because agent is already busy", JSON.stringify({ mode }));
         return reject(new Error(`[${this.id}] Agent is already processing a request.`));
       }
-      this.turnResolve = resolve2;
+      this.turnResolve = resolve;
       this.turnReject = reject;
       this.turnOnUpdate = onUpdate || null;
       this.outputBuffer = "";
@@ -4763,7 +4755,7 @@ ${line}` : "";
 };
 
 // src/providers/ChatViewProvider.ts
-var vscode4 = __toESM(require("vscode"));
+var vscode2 = __toESM(require("vscode"));
 
 // src/adapters/ClaudeCodeAdapter.ts
 var CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
@@ -4777,10 +4769,13 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   shouldUseStructuredOutput(mode) {
     return mode === "plan" || mode === "agent";
   }
-  getNonInteractiveCommand(mode, prompt) {
-    const command = super.getNonInteractiveCommand(mode, prompt);
+  getNonInteractiveCommand(mode, prompt, sessionId) {
+    const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
     if (this.shouldUseStructuredOutput(mode)) {
       command.args.push("--output-format", "stream-json", "--include-partial-messages", "--verbose");
+    }
+    if (sessionId) {
+      command.args.push("--resume", sessionId);
     }
     return command;
   }
@@ -4821,8 +4816,6 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
 };
 
 // src/adapters/GitHubCopilotAdapter.ts
-var fs2 = __toESM(require("fs"));
-var path2 = __toESM(require("path"));
 var COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
 var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   constructor(id = "github-copilot", name = "\u{1F6F8} GitHub Copilot", modelFlag = "", modes) {
@@ -4834,10 +4827,13 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   shouldUseStructuredOutput(mode) {
     return mode === "plan" || mode === "agent";
   }
-  getNonInteractiveCommand(mode, prompt) {
-    const command = super.getNonInteractiveCommand(mode, prompt);
+  getNonInteractiveCommand(mode, prompt, sessionId) {
+    const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
     if (this.shouldUseStructuredOutput(mode)) {
       command.args.push("--output-format", "json", "--stream", "on");
+    }
+    if (sessionId) {
+      command.args.push("--resume", sessionId);
     }
     return command;
   }
@@ -4866,22 +4862,6 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
     const args = [];
     const cwd = PersistentAgentAdapter.getWorkspacePath();
     args.push("--add-dir", cwd);
-    const mcpServerPath = path2.resolve(__dirname, "mcp", "optimus-agents.js");
-    if (fs2.existsSync(mcpServerPath)) {
-      args.push("--additional-mcp-config", JSON.stringify({
-        mcpServers: {
-          "optimus-agents": {
-            type: "stdio",
-            command: "node",
-            args: [mcpServerPath],
-            env: {
-              OPTIMUS_WORKSPACE: cwd,
-              PATH: process.env.PATH || ""
-            }
-          }
-        }
-      }));
-    }
     if (this.modelFlag) {
       args.push("--model", this.modelFlag);
     }
@@ -4895,9 +4875,9 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
 };
 
 // src/managers/SharedTaskStateManager.ts
-var fs3 = __toESM(require("fs"));
-var path3 = __toESM(require("path"));
-var vscode3 = __toESM(require("vscode"));
+var fs2 = __toESM(require("fs"));
+var path2 = __toESM(require("path"));
+var vscode = __toESM(require("vscode"));
 var SharedTaskStateManager = class _SharedTaskStateManager {
   constructor(globalState) {
     this.globalState = globalState;
@@ -4906,7 +4886,7 @@ var SharedTaskStateManager = class _SharedTaskStateManager {
   static maxTasks = 25;
   static defaultCompactThreshold = 8e5;
   getCompactThreshold() {
-    const configured = vscode3.workspace.getConfiguration("optimusCode").get("compactThresholdTokens");
+    const configured = vscode.workspace.getConfiguration("optimusCode").get("compactThresholdTokens");
     if (typeof configured !== "number" || !Number.isFinite(configured) || configured < 1e3) {
       return _SharedTaskStateManager.defaultCompactThreshold;
     }
@@ -4916,10 +4896,14 @@ var SharedTaskStateManager = class _SharedTaskStateManager {
     const tasks = this.getTasks();
     const now = Date.now();
     let taskState = input.taskId ? tasks.find((task) => task.taskId === input.taskId) : void 0;
+    if (taskState && taskState.masterAgentType && input.masterAgentType && taskState.masterAgentType !== input.masterAgentType) {
+      throw new Error(`Task '${taskState.title}' is bound to agent '${taskState.masterAgentType}'. You cannot switch to '${input.masterAgentType}' mid-session.`);
+    }
     const isNewTask = !taskState;
     if (!taskState) {
       taskState = {
         taskId: this.buildId("task"),
+        masterAgentType: input.masterAgentType,
         createdAt: now,
         updatedAt: now,
         title: this.buildTaskTitle(input.prompt),
@@ -4954,7 +4938,8 @@ var SharedTaskStateManager = class _SharedTaskStateManager {
       executorId: input.executorId,
       status: "in_progress",
       plannerContributions: [],
-      referencedTurnSequences: input.referencedTurnSequences
+      referencedTurnSequences: input.referencedTurnSequences,
+      attachments: input.attachments
     };
     taskState.turnHistory.push(turnRecord);
     await this.saveTasks(tasks);
@@ -5004,6 +4989,12 @@ var SharedTaskStateManager = class _SharedTaskStateManager {
       blockedReasons,
       "</task-context>"
     ];
+    if (turnRecord.attachments && turnRecord.attachments.length > 0) {
+      parts.push("", "User provided attachments:");
+      for (const att of turnRecord.attachments) {
+        parts.push(`- [${att.mimeType}] ${att.filePath}`);
+      }
+    }
     if (referencedContext) {
       parts.push("", referencedContext);
     }
@@ -5037,6 +5028,13 @@ Outcome: ${executorSummary}`;
     const referencedContext = this.buildReferencedTurnsContext(taskState, turnRecord.referencedTurnSequences);
     const parts = [
       "You are the executor agent for Optimus Code.",
+      "",
+      "RESPONSE GUIDELINES:",
+      "- Lead with the direct answer or result first.",
+      "- Be concise and direct. Avoid filler words.",
+      "- Use bullet points for lists and steps.",
+      "- Do not repeat task context unless necessary.",
+      "- Prioritize code snippets and technical details.",
       ...rulesParts,
       ...memoryParts,
       "",
@@ -5133,6 +5131,13 @@ Outcome: ${executorSummary}`;
     const parts = [
       "You are the executor agent for Optimus Code.",
       "This task was initially routed as DIRECT EXECUTION, but a validation planner detected it requires more careful planning.",
+      "",
+      "RESPONSE GUIDELINES:",
+      "- Lead with the direct answer or result first.",
+      "- Be concise and direct. Avoid filler words.",
+      "- Use bullet points for lists and steps.",
+      "- Do not repeat task context unless necessary.",
+      "- Prioritize code snippets and technical details.",
       "You have both the original user request and the planner's analysis below. Use the planner insight to guide your approach, but execute the full user request.",
       ...rulesParts,
       ...memoryParts,
@@ -5153,12 +5158,18 @@ Outcome: ${executorSummary}`;
       "Known blockers:",
       blockedReasons
     ];
+    if (turnRecord.attachments && turnRecord.attachments.length > 0) {
+      parts.push("", "User provided attachments:");
+      for (const att of turnRecord.attachments) {
+        parts.push(`- [${att.mimeType}] ${att.filePath}`);
+      }
+    }
     if (referencedContext) {
       parts.push("", referencedContext);
     }
     parts.push(
       "",
-      "Validation planner analysis (explains why this task needs careful execution):",
+      "Validation planner analysis(explains why this task needs careful execution):",
       plannerInsight,
       "",
       enrichedPrompt,
@@ -5193,6 +5204,13 @@ Outcome: ${executorSummary}`;
     const parts = [
       "You are the executor agent for Optimus Code.",
       "This is a DIRECT EXECUTION turn \u2014 no planner analysis was performed. Execute the user request directly.",
+      "",
+      "RESPONSE GUIDELINES:",
+      "- Lead with the direct answer or result first.",
+      "- Be concise and direct. Avoid filler words.",
+      "- Use bullet points for lists and steps.",
+      "- Do not repeat task context unless necessary.",
+      "- Prioritize code snippets and technical details.",
       ...rulesParts,
       ...memoryParts,
       "",
@@ -5212,6 +5230,12 @@ Outcome: ${executorSummary}`;
       "Known blockers:",
       blockedReasons
     ];
+    if (turnRecord.attachments && turnRecord.attachments.length > 0) {
+      parts.push("", "User provided attachments:");
+      for (const att of turnRecord.attachments) {
+        parts.push(`- [${att.mimeType}] ${att.filePath}`);
+      }
+    }
     if (referencedContext) {
       parts.push("", referencedContext);
     }
@@ -5286,6 +5310,7 @@ Outcome: ${executorSummary}`;
   listTaskSnapshots() {
     return this.getTasks().map((task) => ({
       taskId: task.taskId,
+      masterAgentType: task.masterAgentType,
       title: task.title,
       status: task.status,
       pinned: task.pinned,
@@ -5339,6 +5364,17 @@ Outcome: ${executorSummary}`;
       return false;
     }
     taskState.pinned = !taskState.pinned;
+    taskState.updatedAt = Date.now();
+    await this.saveTasks(tasks);
+    return true;
+  }
+  async updateTaskCliSessionId(taskId, cliSessionId) {
+    const tasks = this.getTasks();
+    const taskState = tasks.find((task) => task.taskId === taskId);
+    if (!taskState) {
+      return false;
+    }
+    taskState.cliSessionId = cliSessionId;
     taskState.updatedAt = Date.now();
     await this.saveTasks(tasks);
     return true;
@@ -5480,21 +5516,21 @@ Executor outcome: ${outcome}
   }
   readRulesMd() {
     try {
-      const workspaceFolders = vscode3.workspace.workspaceFolders;
+      const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return null;
       }
       const rootPath = workspaceFolders[0].uri.fsPath;
-      const rulesPath = path3.join(rootPath, ".optimus", "rules.md");
+      const rulesPath = path2.join(rootPath, ".optimus", "config", "rules.md");
       let rulesContent = "";
-      if (fs3.existsSync(rulesPath)) {
-        rulesContent += fs3.readFileSync(rulesPath, "utf8") + "\n\n";
+      if (fs2.existsSync(rulesPath)) {
+        rulesContent += fs2.readFileSync(rulesPath, "utf8") + "\n\n";
       }
-      const delegateSkillPath = path3.join(rootPath, "resources", "plugins", "skills", "delegate_task.md");
-      if (fs3.existsSync(delegateSkillPath)) {
-        rulesContent += "---\n[SYSTEM: INJECTED SKILL - delegate_task]\n" + fs3.readFileSync(delegateSkillPath, "utf8");
+      const delegateSkillPath = path2.join(rootPath, "resources", "plugins", "skills", "delegate_task.md");
+      if (fs2.existsSync(delegateSkillPath)) {
+        rulesContent += "---\n[SYSTEM: INJECTED SKILL - delegate_task]\n" + fs2.readFileSync(delegateSkillPath, "utf8");
       }
-      const modelsConfig = vscode3.workspace.getConfiguration("optimusCode").get("models");
+      const modelsConfig = vscode.workspace.getConfiguration("optimusCode").get("models");
       if (modelsConfig) {
         rulesContent += `
 
@@ -5518,31 +5554,31 @@ ${JSON.stringify(modelsConfig, null, 2)}
   }
   readMemoryMd() {
     try {
-      const workspaceFolders = vscode3.workspace.workspaceFolders;
+      const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return null;
       }
-      const memPath = path3.join(workspaceFolders[0].uri.fsPath, ".optimus", "memory.md");
-      if (!fs3.existsSync(memPath)) {
+      const memPath = path2.join(workspaceFolders[0].uri.fsPath, ".optimus", "state", "memory.md");
+      if (!fs2.existsSync(memPath)) {
         return null;
       }
-      return fs3.readFileSync(memPath, "utf8");
+      return fs2.readFileSync(memPath, "utf8");
     } catch {
       return null;
     }
   }
   writeMemoryMd(newContent) {
     try {
-      const workspaceFolders = vscode3.workspace.workspaceFolders;
+      const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
         return;
       }
-      const optimusDir = path3.join(workspaceFolders[0].uri.fsPath, ".optimus");
-      if (!fs3.existsSync(optimusDir)) {
-        fs3.mkdirSync(optimusDir, { recursive: true });
+      const optimusDir = path2.join(workspaceFolders[0].uri.fsPath, ".optimus");
+      if (!fs2.existsSync(optimusDir)) {
+        fs2.mkdirSync(optimusDir, { recursive: true });
       }
-      const memPath = path3.join(optimusDir, "memory.md");
-      fs3.writeFileSync(memPath, newContent, "utf8");
+      const memPath = path2.join(optimusDir, "state", "memory.md");
+      fs2.writeFileSync(memPath, newContent, "utf8");
     } catch {
     }
   }
@@ -6770,15 +6806,48 @@ var ChatViewProvider = class {
   genStart = 0;
   streamSeq = 0;
   currentTaskId;
+  taskQueue = [];
   taskStateManager;
   resolveWebviewView(webviewView) {
-    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        this._extensionUri,
+        ...vscode2.workspace.workspaceFolders?.map((f) => f.uri) || []
+      ]
+    };
     webviewView.webview.html = this.getHtml();
     webviewView.webview.onDidReceiveMessage(async (data) => {
       switch (data.type) {
         case "ask":
-          return this.handleAsk(webviewView, data.text, data.agent, data.model);
+          if (data.text) {
+            if (data.text.startsWith("/steer ")) {
+              this.taskQueue = [];
+              if (this.isGenerating) {
+                Object.values(this.agents).forEach((entry) => entry.adapter.stop?.());
+                this.taskQueue.push({
+                  text: data.text.slice(7).trim(),
+                  attachments: data.attachments || [],
+                  agentId: data.agentId || data.agent,
+                  modelId: data.modelId || data.model
+                });
+                webviewView.webview.postMessage({ type: "status", content: "Interrupting for steering..." });
+                return;
+              } else {
+                data.text = data.text.slice(7).trim();
+              }
+            } else if (data.text.startsWith("/delegate ")) {
+              data.text = `[User forced delegation] Please use the delegate_task skill to complete the following task. IMPORTANT: Do NOT spawn a separate CLI process. Adopt the appropriate role (pm/architect/dev/qa) and execute the work WITHIN THIS SESSION using your own tools.
+${data.text.slice(10).trim()}`;
+            } else if (data.text.startsWith("/council ")) {
+              data.text = `[User forced council review] Please use the council_review skill to orchestrate a multi-expert map-reduce review for the following architecture task. Outline your initial proposal to a dynamically named file like .optimus/PROPOSAL_<topic>.md first, and then request to spawn the parallel expert backends passing the specific proposal path.
+${data.text.slice(9).trim()}`;
+            }
+          }
+          return this.handleAsk(webviewView, data.text, data.agent, data.model, void 0, data.attachments);
         case "stop":
+          this.taskQueue = [];
+          Object.values(this.agents).forEach((entry) => entry.adapter.stop?.());
           this.isGenerating = false;
           webviewView.webview.postMessage({ type: "setGenerating", value: false });
           return webviewView.webview.postMessage({ type: "status", content: "Stopped." });
@@ -6804,11 +6873,15 @@ var ChatViewProvider = class {
             role: "system",
             html: `UI error: ${(data.payload?.message || "unknown error").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}`
           });
+        case "requestSessions":
+          return this.sendSessionsToUI(webviewView);
+        case "loadSession":
+          return this.loadSessionToUI(webviewView, data.taskId);
       }
     });
   }
   getModelListsByEngine() {
-    const config = vscode4.workspace.getConfiguration("optimusCode");
+    const config = vscode2.workspace.getConfiguration("optimusCode");
     const rawModelsCfg = config.get("models");
     const fallback = {
       claude_code: Array.isArray(rawModelsCfg?.claude_code) ? rawModelsCfg.claude_code : ["claude-opus-4.6-1m", "gpt-5.4"],
@@ -6840,12 +6913,60 @@ var ChatViewProvider = class {
       copilot_cli: copilotModels.length > 0 ? copilotModels : fallback.copilot_cli
     };
   }
-  async handleAsk(wv, text, agentId, modelId) {
+  async handleAsk(wv, text, agentId, modelId, skipDisplay, attachments) {
     if (this.isGenerating && Date.now() - this.genStart > 18e4) {
       this.isGenerating = false;
     }
-    if (this.isGenerating) {
-      return wv.webview.postMessage({ type: "status", content: "Busy \u2014 please wait." });
+    const savedAttachments = [];
+    let attachmentImgHtml = "";
+    if (attachments && attachments.length > 0) {
+      const fs3 = require("fs");
+      const path4 = require("path");
+      const workspacePath = vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (workspacePath) {
+        const imgDir = path4.join(workspacePath, ".optimus", "images");
+        if (!fs3.existsSync(imgDir)) {
+          fs3.mkdirSync(imgDir, { recursive: true });
+        }
+        for (const att of attachments) {
+          try {
+            if (att.filePath && att.mimeType) {
+              savedAttachments.push({ filePath: att.filePath, mimeType: att.mimeType });
+              const webviewUri = wv.webview.asWebviewUri(vscode2.Uri.file(att.filePath));
+              attachmentImgHtml += `<img src="${webviewUri}" alt="attachment" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:6px;margin-right:4px;" />`;
+            } else if (att.src) {
+              const base64Match = att.src.match(/^data:[^;]+;base64,(.+)$/);
+              if (!base64Match) {
+                continue;
+              }
+              const ext = (att.name || "image.png").split(".").pop() || "png";
+              const fileName = `image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+              const filePath = path4.join(imgDir, fileName);
+              fs3.writeFileSync(filePath, Buffer.from(base64Match[1], "base64"));
+              const mimeType = att.mime || "image/png";
+              savedAttachments.push({ filePath, mimeType });
+              const webviewUri = wv.webview.asWebviewUri(vscode2.Uri.file(filePath));
+              attachmentImgHtml += `<img src="${webviewUri}" alt="${(att.name || "image").replace(/"/g, "&quot;")}" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:6px;margin-right:4px;" />`;
+            }
+          } catch (err) {
+            debugLog("ChatView", "Failed to save attachment", err?.message || String(err));
+          }
+        }
+      }
+    }
+    if (!skipDisplay) {
+      let htmlText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      if (attachmentImgHtml) {
+        htmlText += '<div style="margin-top:6px;">' + attachmentImgHtml + "</div>";
+      }
+      if (this.isGenerating) {
+        htmlText += " <i>(\u23F3 Queued)</i>";
+        wv.webview.postMessage({ type: "addMessage", role: "user", html: htmlText });
+        this.taskQueue.push({ text, attachments: savedAttachments, agentId, modelId });
+        wv.webview.postMessage({ type: "status", content: `Queued (${this.taskQueue.length} ahead).` });
+        return;
+      }
+      wv.webview.postMessage({ type: "addMessage", role: "user", html: htmlText });
     }
     this.isGenerating = true;
     this.genStart = Date.now();
@@ -6872,12 +6993,13 @@ var ChatViewProvider = class {
         }
         this.agents[cacheKey] = entry;
       }
-      wv.webview.postMessage({ type: "addMessage", role: "user", html: text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") });
       const { taskState, turnRecord } = await this.taskStateManager.startTurn({
         taskId: this.currentTaskId,
         prompt: text,
         selectedAgentIds: [cacheKey],
-        executorId: agentId
+        executorId: agentId,
+        masterAgentType: agentId,
+        attachments: savedAttachments.length > 0 ? savedAttachments : void 0
       });
       this.currentTaskId = taskState.taskId;
       const orchestratorPrompt = this.taskStateManager.buildDirectExecutorPrompt(
@@ -6887,10 +7009,14 @@ var ChatViewProvider = class {
         [
           "You are the MAIN ORCHESTRATOR for this Optimus Code sidebar session.",
           "Do not default to doing all substantive implementation work yourself.",
-          "For any non-trivial feature, architectural work, multi-file change, PRD, breakdown, testing pass, or review workflow, use the delegate_task tool and route work to the proper specialized role.",
-          "Use role_prompt values exactly from the roster: pm, architect, dev, qa.",
+          "For any non-trivial feature, architectural work, multi-file change, PRD, breakdown, testing pass, or review workflow, use the delegate_task skill and adopt the proper specialized role.",
+          "Use role names exactly from the roster: pm, architect, dev, qa.",
           "Keep the main agent focused on coordination, synthesis, routing, and acceptance.",
-          "Only skip delegation when the user request is obviously trivial and can be completed safely in one short direct step."
+          "Only skip delegation when the user request is obviously trivial and can be completed safely in one short direct step.",
+          "",
+          "CRITICAL DELEGATION RULE: Delegation means YOU adopt a specialized role and execute the work WITHIN THIS SESSION using your own tools.",
+          "Do NOT spawn separate CLI processes (e.g., `node .optimus/delegate.js`). Do NOT switch to a different agent session.",
+          "All delegated work must happen inside your current session so that context, memory, and history are preserved."
         ].join("\n")
       );
       const sid = ++this.streamSeq;
@@ -6899,7 +7025,7 @@ var ChatViewProvider = class {
       const onUpdate = (chunk) => {
         wv.webview.postMessage({ type: "streamUpdate", id: sid, text: chunk });
       };
-      const reply = await entry.adapter.invoke(orchestratorPrompt, entry.mode, onUpdate) || "No reply.";
+      const reply = await entry.adapter.invoke(orchestratorPrompt, entry.mode, taskState.cliSessionId, onUpdate) || "No reply.";
       this.persistMemoryUpdates(reply);
       const clean = this.cleanForDisplay(this.stripControlTags(reply));
       await this.taskStateManager.completeTurn(taskState.taskId, turnRecord.turnId, {
@@ -6925,16 +7051,92 @@ var ChatViewProvider = class {
         }
       });
       wv.webview.postMessage({ type: "streamEnd", id: sid, role: agentId, html: await g.parse(clean) });
+      await this.handleCouncilDispatch(reply, wv, agentId, modelId);
     } catch (e) {
       if (this.currentTaskId) {
         await this.taskStateManager.failTurn(this.currentTaskId, this.taskStateManager.getTask(this.currentTaskId)?.turnHistory.slice(-1)[0]?.turnId || "", String(e?.message || e));
       }
       wv.webview.postMessage({ type: "addMessage", role: "system", html: "Error: " + (e.message || e) });
     } finally {
-      wv.webview.postMessage({ type: "status", content: "Idle" });
-      wv.webview.postMessage({ type: "setGenerating", value: false });
       this.isGenerating = false;
+      if (this.taskQueue.length > 0) {
+        wv.webview.postMessage({ type: "status", content: `Starting next task... (${this.taskQueue.length} left)` });
+        const next = this.taskQueue.shift();
+        if (next) {
+          setTimeout(() => {
+            this.handleAsk(wv, next.text, next.agentId, next.modelId, true, next.attachments);
+          }, 500);
+        }
+      } else {
+        wv.webview.postMessage({ type: "status", content: "Idle" });
+        wv.webview.postMessage({ type: "setGenerating", value: false });
+      }
     }
+  }
+  async handleCouncilDispatch(rawText, wv, agentId, modelId) {
+    const councilBlocks = this.extractTaggedContent(rawText, "council-dispatch");
+    if (councilBlocks.length === 0) return;
+    const roles = [];
+    const roleRegex = /<role>(.*?)<\/role>/gi;
+    let roleMatch;
+    while ((roleMatch = roleRegex.exec(councilBlocks[0])) !== null) {
+      if (roleMatch[1]) roles.push(roleMatch[1].trim());
+    }
+    let proposalPath = ".optimus/PROPOSAL.md";
+    const proposalRegex = /<proposal>(.*?)<\/proposal>/i;
+    const proposalMatch = proposalRegex.exec(councilBlocks[0]);
+    if (proposalMatch && proposalMatch[1]) {
+      proposalPath = proposalMatch[1].trim();
+    }
+    if (roles.length === 0) return;
+    wv.webview.postMessage({ type: "addMessage", role: "system", html: `\u2696\uFE0F **Council Dispatch Triggered**: Spawning experts: ${roles.join(", ")} to review \`${proposalPath}\`...` });
+    wv.webview.postMessage({ type: "status", content: "Orchestrator is running Map-Reduce Council..." });
+    const fs3 = require("fs");
+    const path4 = require("path");
+    const workspacePath = vscode2.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const timestampId = Date.now();
+    if (workspacePath) {
+      const reviewsPath = path4.join(workspacePath, ".optimus", "reviews", timestampId.toString());
+      if (!fs3.existsSync(reviewsPath)) {
+        fs3.mkdirSync(reviewsPath, { recursive: true });
+      }
+    }
+    const promises = roles.map((role) => {
+      const tempAdapter = new ClaudeCodeAdapter("claude", `Expert: ${role}`, "");
+      const prompt = `You are a specialized expert: ${role}.
+1. Read the ${proposalPath} file thoroughly.
+2. Analyze it objectively from your specific domain's perspective.
+3. Write your review formatted as Markdown strictly to .optimus/reviews/${timestampId}/${role}_review.md. Be detailed but concise. Identify blockers, risks, or approvals.
+4. Exit immediately once the file is written. Do not wait for further input.`.replace(/\n/g, " ");
+      const workerSessionId = `council-${role}-${timestampId}`;
+      let personaConfig = "";
+      if (workspacePath) {
+        const personaPath = path4.join(workspacePath, ".optimus", "personas", `${role}.md`);
+        if (fs3.existsSync(personaPath)) {
+          try {
+            personaConfig = fs3.readFileSync(personaPath, "utf8");
+          } catch (e) {
+          }
+        }
+      }
+      const fullPrompt = [prompt, personaConfig ? `
+
+Your Persona Configuration:
+${personaConfig}` : ""].join("");
+      return tempAdapter.invoke(fullPrompt, "agent", workerSessionId).then((res) => ({ role, success: true, res })).catch((err) => ({ role, success: false, err: String(err) }));
+    });
+    const results = await Promise.all(promises);
+    let systemLog = "\u2696\uFE0F **Council Review Completed**:<br>";
+    results.forEach((res) => {
+      systemLog += `- **${res.role}**: ${res.success ? "\u2705 Finished" : "\u274C Failed"}<br>`;
+    });
+    wv.webview.postMessage({ type: "addMessage", role: "system", html: systemLog });
+    this.taskQueue.push({
+      text: `[System] The Council Review Map-Reduce tasks have finished. The experts have dumped their reviews into the \`.optimus/reviews/${timestampId}/\` directory. Please read and synthesize them into \`TODO.md\` or \`CONFLICTS.md\` as per the council_review skill.`,
+      agentId,
+      modelId: modelId || "",
+      attachments: []
+    });
   }
   buildTurnSummary(raw, clean) {
     const tagged = this.extractTaggedContent(raw, "task-summary")[0];
@@ -6948,7 +7150,7 @@ var ChatViewProvider = class {
     return normalized.length > 220 ? normalized.slice(0, 217) + "..." : normalized;
   }
   stripControlTags(raw) {
-    return raw.replace(/<task-summary>[\s\S]*?<\/task-summary>/gi, "").replace(/<memory-update>[\s\S]*?<\/memory-update>/gi, "").trim();
+    return raw.replace(/<task-summary>[\s\S]*?<\/task-summary>/gi, "").replace(/<memory-update>[\s\S]*?<\/memory-update>/gi, "").replace(/<council-dispatch>[\s\S]*?<\/council-dispatch>/gi, "").trim();
   }
   extractTaggedContent(raw, tagName) {
     const regex2 = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "gi");
@@ -6991,6 +7193,50 @@ var ChatViewProvider = class {
       }
       return true;
     }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  sendSessionsToUI(wv) {
+    const snapshots = this.taskStateManager.listTaskSnapshots();
+    wv.webview.postMessage({ type: "sessions", sessions: snapshots });
+  }
+  loadSessionToUI(wv, taskId) {
+    const task = this.taskStateManager.getTask(taskId);
+    if (!task) {
+      wv.webview.postMessage({ type: "addMessage", role: "system", html: "Session not found." });
+      return;
+    }
+    this.currentTaskId = task.taskId;
+    wv.webview.postMessage({ type: "chatCleared" });
+    for (const turn of task.turnHistory) {
+      let userHtml = (turn.prompt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      if (turn.attachments && turn.attachments.length > 0) {
+        let imgTags = "";
+        for (const att of turn.attachments) {
+          if (att.filePath) {
+            try {
+              const webviewUri = wv.webview.asWebviewUri(vscode2.Uri.file(att.filePath));
+              imgTags += `<img src="${webviewUri}" alt="attachment" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:6px;margin-right:4px;" />`;
+            } catch (_2) {
+            }
+          }
+        }
+        if (imgTags) {
+          userHtml += '<div style="margin-top:6px;">' + imgTags + "</div>";
+        }
+      }
+      wv.webview.postMessage({ type: "addMessage", role: "user", html: userHtml });
+      const summary = turn.executorOutcome?.summary || "No output recorded.";
+      const agentName = turn.executorOutcome?.agentName || "Agent";
+      wv.webview.postMessage({
+        type: "addMessage",
+        role: turn.executorOutcome?.agentId || "system",
+        html: `<strong>${agentName}</strong><div>${summary.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`
+      });
+    }
+    wv.webview.postMessage({ type: "status", content: `Resumed: ${task.title}` });
+    if (task.masterAgentType) {
+      wv.webview.postMessage({ type: "selectAgent", agentId: task.masterAgentType, locked: true });
+    }
+    wv.webview.postMessage({ type: "showChat" });
   }
   getHtml() {
     const { claude_code: claudeModels, copilot_cli: copilotModels } = this.getModelListsByEngine();
@@ -7040,6 +7286,10 @@ body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscod
 .stream-section { padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.02); border: 1px solid var(--vscode-panel-border); }
 .stream-section-title { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
 .stream-empty { color: var(--vscode-descriptionForeground); }
+.collapsible-section { margin-top: 8px; border-top: 1px solid var(--vscode-panel-border); padding-top: 8px; }
+.collapsible-section summary { cursor: pointer; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--vscode-descriptionForeground); user-select: none; outline: none; }
+.collapsible-section summary:hover { color: var(--vscode-foreground); }
+.collapsible-section[open] summary { margin-bottom: 8px; }
 .phase-strip { display: flex; gap: 8px; flex-wrap: wrap; }
 .phase-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); background: rgba(255,255,255,0.02); font-size: 0.82em; }
 .phase-pill.active { color: var(--vscode-foreground); border-color: var(--vscode-textLink-foreground); background: rgba(31, 111, 235, 0.12); }
@@ -7100,12 +7350,78 @@ button.stop { background: var(--vscode-errorForeground); color: #fff; }
 #status { font-size: .85em; color: var(--vscode-textLink-activeForeground); min-height: 20px; font-weight: bold; }
 #input-area { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; }
 textarea { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 8px; min-height: 60px; resize: vertical; font-family: inherit; }
-.hint { font-size: .8em; color: var(--vscode-descriptionForeground); }
+
+  #input-area { position: relative; } /* Added for slash menu anchor */
+  #slash-menu {
+      display: none;
+      position: absolute;
+      bottom: calc(100% - 10px);
+      left: 0;
+      right: 0;
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 4px;
+      margin-bottom: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+  .slash-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.9em;
+      display: flex;
+      justify-content: space-between;
+      border-left: 3px solid transparent;
+  }
+  .slash-item:hover, .slash-item.selected {
+      background: var(--vscode-list-hoverBackground);
+      border-left-color: var(--vscode-textLink-foreground);
+  }
+  .slash-label {
+      font-weight: 600;
+      color: var(--vscode-textLink-foreground);
+  }
+  .slash-desc {
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.85em;
+  }
+
+  /* Sessions History Panel */
+  #sessions-view { display: none; flex: 1; overflow-y: auto; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  #sessions-view.visible { display: flex; }
+  .session-item { padding: 10px; border-radius: 6px; background: var(--vscode-editor-inactiveSelectionBackground); cursor: pointer; border-left: 3px solid transparent; }
+  .session-item:hover { border-left-color: var(--vscode-textLink-foreground); background: var(--vscode-list-hoverBackground); }
+  .session-title { font-weight: 600; font-size: 0.9em; color: var(--vscode-foreground); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-meta { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+  .session-summary { font-size: 0.82em; color: var(--vscode-descriptionForeground); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sessions-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .sessions-header-title { font-weight: bold; font-size: 14px; }
+  .sessions-empty { color: var(--vscode-descriptionForeground); font-style: italic; text-align: center; padding: 20px; }
+
+  .hint { font-size: .8em; color: var(--vscode-descriptionForeground); }
+
+/* Image attachment styles */
+#attachment-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+#attachment-preview:empty { display: none; }
+.att-thumb { position: relative; display: inline-block; border-radius: 4px; overflow: hidden; border: 1px solid var(--vscode-panel-border); }
+.att-thumb img { display: block; max-width: 80px; max-height: 60px; object-fit: cover; }
+.att-thumb .att-remove { position: absolute; top: -2px; right: -2px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--vscode-errorForeground); color: #fff; border: none; cursor: pointer;
+    font-size: 12px; line-height: 18px; text-align: center; padding: 0; display: flex; align-items: center; justify-content: center; }
+.att-thumb .att-remove:hover { opacity: 0.85; }
+#attach-btn { background: transparent; color: var(--vscode-descriptionForeground); border: none; cursor: pointer;
+    padding: 4px 6px; font-size: 16px; line-height: 1; border-radius: 3px; flex-shrink: 0; }
+#attach-btn:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
+.input-row { display: flex; align-items: flex-end; gap: 4px; }
+.input-row textarea { flex: 1; }
+.msg.user img { max-width: 200px; max-height: 150px; border-radius: 4px; margin-top: 6px; }
 .btns { display: flex; gap: 8px; }
 .btns button { flex: 1; }
 .idle-only { display: inline-flex; }
 .gen-only  { display: none; }
-body.generating .idle-only { display: none; }
+body.generating .idle-only { display: inline-flex; opacity: 0.6; } /* Allow queueing */
 body.generating .gen-only  { display: inline-flex; }
 </style>
 </head>
@@ -7118,12 +7434,26 @@ body.generating .gen-only  { display: inline-flex; }
         <select id="model">
         </select>
         <button onclick="doNew()" class="sec">+ New</button>
+        <button onclick="toggleHistory()" class="sec" id="history-btn">🕒 History</button>
     </div>
     <div id="status">Idle</div>
+    <div id="sessions-view">
+        <div class="sessions-header">
+            <div class="sessions-header-title">Sessions History</div>
+            <button onclick="toggleHistory()" class="sec">Back to Chat</button>
+        </div>
+        <div id="sessions-panel"><div class="sessions-empty">Loading...</div></div>
+    </div>
     <div id="chat"></div>
     <div id="input-area">
-        <textarea id="prompt" placeholder="Message..." onkeydown="handleKey(event)"></textarea>
-        <div class="hint">Enter to Send &middot; Shift+Enter newline</div>
+        <div id="slash-menu"></div>
+        <div id="attachment-preview"></div>
+        <div class="input-row">
+            <textarea id="prompt" placeholder="Message..." onkeydown="handleKey(event)"></textarea>
+            <button id="attach-btn" title="Attach image" onclick="document.getElementById('file-input').click()">📎</button>
+        </div>
+        <input type="file" id="file-input" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this.files)" />
+        <div class="hint">Enter to Send &middot; Shift+Enter newline &middot; 📎 or drag image</div>
         <div class="btns">
             <button onclick="doSend()" class="idle-only">Send</button>
             <button onclick="doStop()" class="gen-only stop">Stop</button>
@@ -7247,6 +7577,11 @@ function formatDuration(ms) {
     return (ms / 1000).toFixed(1) + 's';
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function inferPhaseState(traceHtml, reasoningRaw, out, isCompleted) {
     var hasTrace = !!traceHtml && traceHtml.indexOf('Waiting for steps...') === -1;
     var hasReasoning = !!reasoningRaw;
@@ -7330,32 +7665,253 @@ function scheduleSlowStartHint(id) {
     }, 2500);
 }
 
+// ── Image attachment handling ──
+var pendingAttachments = []; // Array of { name, mime, dataUrl }
+
+function handleFileSelect(files) {
+    if (!files || !files.length) return;
+    for (var i = 0; i < files.length; i++) {
+        addImageFile(files[i]);
+    }
+    document.getElementById('file-input').value = '';
+}
+
+function addImageFile(file) {
+    if (!file.type.startsWith('image/')) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        pendingAttachments.push({ name: file.name, mime: file.type, dataUrl: ev.target.result });
+        renderAttachmentPreviews();
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeAttachment(idx) {
+    pendingAttachments.splice(idx, 1);
+    renderAttachmentPreviews();
+}
+
+function renderAttachmentPreviews() {
+    var container = document.getElementById('attachment-preview');
+    container.innerHTML = '';
+    pendingAttachments.forEach(function(att, idx) {
+        var thumb = document.createElement('div');
+        thumb.className = 'att-thumb';
+        var img = document.createElement('img');
+        img.src = att.dataUrl;
+        img.alt = att.name;
+        thumb.appendChild(img);
+        var btn = document.createElement('button');
+        btn.className = 'att-remove';
+        btn.textContent = '×';
+        btn.onclick = function(e) { e.stopPropagation(); removeAttachment(idx); };
+        thumb.appendChild(btn);
+        container.appendChild(thumb);
+    });
+}
+
+// Drag-and-drop on the input area
+(function() {
+    var inputArea = document.getElementById('input-area');
+    inputArea.addEventListener('dragover', function(e) { e.preventDefault(); e.stopPropagation(); inputArea.style.outline = '2px dashed var(--vscode-textLink-foreground)'; });
+    inputArea.addEventListener('dragleave', function(e) { e.preventDefault(); e.stopPropagation(); inputArea.style.outline = ''; });
+    inputArea.addEventListener('drop', function(e) {
+        e.preventDefault(); e.stopPropagation(); inputArea.style.outline = '';
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) {
+            for (var i = 0; i < files.length; i++) { addImageFile(files[i]); }
+        }
+    });
+})();
+
 function doSend() {
     var text = ta.value ? ta.value.trim() : "";
-    if (!text) return;
+    if (!text && pendingAttachments.length === 0) return;
     
     // Lock engine
     lockEngine(true);
     
+    // Build attachment payload
+    var attachments = pendingAttachments.map(function(a) {
+        return { name: a.name, mime: a.mime, src: a.dataUrl };
+    });
+
     statusEls.textContent = "Sending...";
     vscode.postMessage({ 
         type: "ask", 
         text: text, 
         agent: engineSelect.value, 
-        model: modelSelect.value 
+        model: modelSelect.value,
+        attachments: attachments
     });
     ta.value = "";
+    pendingAttachments = [];
+    renderAttachmentPreviews();
 }
 function doStop() { vscode.postMessage({ type: "stop" }); }
-function doNew() { 
-    chat.innerHTML = ""; 
+function doNew() {
+    chat.innerHTML = "";
     lockEngine(false);
-    vscode.postMessage({ type: "newChat" }); 
+    showView("chat");
+    vscode.postMessage({ type: "newChat" });
+}
+
+var sessionsView = document.getElementById("sessions-view");
+var inputArea = document.getElementById("input-area");
+
+function toggleHistory() {
+    var isShowingSessions = sessionsView.classList.contains("visible");
+    if (isShowingSessions) {
+        showView("chat");
+    } else {
+        showView("sessions");
+        vscode.postMessage({ type: "requestSessions" });
+    }
+}
+
+function showView(view) {
+    if (view === "sessions") {
+        sessionsView.classList.add("visible");
+        chat.style.display = "none";
+        inputArea.style.display = "none";
+    } else {
+        sessionsView.classList.remove("visible");
+        chat.style.display = "flex";
+        inputArea.style.display = "flex";
+    }
+}
+
+function renderSessions(sessions) {
+    var panel = document.getElementById("sessions-panel");
+    if (!sessions || sessions.length === 0) {
+        panel.innerHTML = '<div class="sessions-empty">No sessions yet.</div>';
+        return;
+    }
+    panel.innerHTML = "";
+    sessions.forEach(function(s) {
+        var div = document.createElement("div");
+        div.className = "session-item";
+        var time = new Date(s.updatedAt).toLocaleString();
+        var turns = s.turnCount || 0;
+        div.innerHTML = '<div class="session-title">' + escapeHtml(s.title) + '</div>'
+            + '<div class="session-meta">' + turns + ' turn' + (turns !== 1 ? 's' : '') + ' · ' + escapeHtml(time) + '</div>'
+            + (s.latestSummary ? '<div class="session-summary">' + escapeHtml(s.latestSummary) + '</div>' : '');
+        div.onclick = function() {
+            lockEngine(true);
+            vscode.postMessage({ type: "loadSession", taskId: s.taskId });
+        };
+        panel.appendChild(div);
+    });
 }
 function handleKey(e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
-}
-function escapeHtml(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+      if (document.getElementById("slash-menu").style.display === "block") {
+          var items = document.querySelectorAll(".slash-item");
+          var selectedIndex = -1;
+          items.forEach((item, index) => {
+              if (item.classList.contains("selected")) selectedIndex = index;
+          });
+          
+          if (e.key === "ArrowDown") {
+              e.preventDefault();
+              if (selectedIndex >= 0) items[selectedIndex].classList.remove("selected");
+              selectedIndex = (selectedIndex + 1) % items.length;
+              items[selectedIndex].classList.add("selected");
+              items[selectedIndex].scrollIntoView({block: "nearest"});
+              return;
+          } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              if (selectedIndex >= 0) items[selectedIndex].classList.remove("selected");
+              selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+              items[selectedIndex].classList.add("selected");
+              items[selectedIndex].scrollIntoView({block: "nearest"});
+              return;
+          } else if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (selectedIndex >= 0) {
+                  items[selectedIndex].click();
+                  return;
+              }
+          } else if (e.key === "Escape") {
+              e.preventDefault();
+              closeSlashMenu();
+              return;
+          }
+      }
+      
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+  }
+  
+  var ta = document.getElementById("prompt");
+  ta.addEventListener("input", function() {
+      var val = ta.value;
+      if (val.startsWith("/")) {
+          var query = val.slice(1).toLowerCase();
+          showSlashMenu(query);
+      } else {
+          closeSlashMenu();
+      }
+  });
+
+  ta.addEventListener("paste", function(e) {
+      var items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      var hasImage = false;
+      for (var i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf("image") === 0) {
+              var file = items[i].getAsFile();
+              if (file) {
+                  addImageFile(file);
+                  hasImage = true;
+              }
+          }
+      }
+      if (hasImage) {
+          e.preventDefault();
+      }
+  });
+  
+  var builtinCommands = [
+      { cmd: "council", desc: "Force a multi-expert Map-Reduce architecture review for a complex task" },
+      { cmd: "delegate", desc: "Force the orchestrator to delegate this task to a sub-agent" },
+      { cmd: "steer", desc: "Interrupt and steer the current agent" },
+      { cmd: "new", desc: "Start a new chat session" },
+      { cmd: "stop", desc: "Stop the current generation" },
+      { cmd: "clear", desc: "Clear chat history (same as /new)" }
+  ];
+  
+  function showSlashMenu(query) {
+      var menu = document.getElementById("slash-menu");
+      var filtered = builtinCommands.filter(c => c.cmd.startsWith(query));
+      
+      if (filtered.length === 0) {
+          closeSlashMenu();
+          return;
+      }
+      
+      menu.innerHTML = "";
+      filtered.forEach((c, i) => {
+          var div = document.createElement("div");
+          div.className = "slash-item" + (i === 0 ? " selected" : "");
+          div.innerHTML = "<span class='slash-label'>/" + c.cmd + "</span> <span class='slash-desc'>" + c.desc + "</span>";
+          div.onclick = function() {
+              if (c.cmd === "new" || c.cmd === "clear") {
+                  doNew();
+              } else if (c.cmd === "stop") {
+                  doStop();
+                  ta.value = "";
+              } else {
+                  ta.value = "/" + c.cmd + " ";
+                  ta.focus();
+              }
+              closeSlashMenu();
+          };
+          menu.appendChild(div);
+      });
+      menu.style.display = "block";
+  }
+  
+  function closeSlashMenu() {
+      document.getElementById("slash-menu").style.display = "none";
+  }
 
 function switchTab(streamId, tabName) {
     var box = document.getElementById("stream-" + streamId);
@@ -7541,17 +8097,22 @@ window.addEventListener("message", function(event) {
         var ct = document.createElement("div"); 
         ct.className = "stream-content";
         ct.dataset.streamId = String(msg.id);
-        ct.innerHTML = \`
-            <div class="stream-section"><div class="stream-section-title">Input</div><div class="input-view">\${escapeHtml(msg.input || "")}</div></div>
-            <div class="stream-live"><div class="stream-section stream-empty">Starting CLI session...</div></div>
-            <div class="final-answer" hidden></div>
-            <details class="debug-details">
-                <summary>Details</summary>
-                <div class="detail-block"><div class="stream-section-title">Trace</div><div class="detail-trace"></div></div>
-                <div class="detail-block"><div class="stream-section-title">Reasoning</div><div class="reasoning-view detail-reasoning">No reasoning captured yet.</div></div>
-                <div class="detail-block"><div class="stream-section-title">Raw stream</div><div class="log-view detail-log"></div></div>
-            </details>
-        \`;
+        ct.innerHTML = ''
+            + '<div class="final-answer" hidden></div>'
+            + '<details class="collapsible-section section-input">'
+            + '    <summary>Input</summary>'
+            + '    <div class="input-view">' + escapeHtml(msg.input || "") + '</div>'
+            + '</details>'
+            + '<details class="collapsible-section section-progress" open>'
+            + '    <summary>Progress</summary>'
+            + '    <div class="stream-live"><div class="stream-section stream-empty">Starting CLI session...</div></div>'
+            + '</details>'
+            + '<details class="debug-details">'
+            + '    <summary>Details</summary>'
+            + '    <div class="detail-block"><div class="stream-section-title">Trace</div><div class="detail-trace"></div></div>'
+            + '    <div class="detail-block"><div class="stream-section-title">Reasoning</div><div class="reasoning-view detail-reasoning">No reasoning captured yet.</div></div>'
+            + '    <div class="detail-block"><div class="stream-section-title">Raw stream</div><div class="log-view detail-log"></div></div>'
+            + '</details>';
         div.appendChild(ct);
         
         chat.appendChild(div); 
@@ -7606,6 +8167,8 @@ window.addEventListener("message", function(event) {
                     finalPane.hidden = false;
                     finalPane.innerHTML = '<div class="final-answer-card"><div class="stream-section-title">Final answer</div>' + msg.html + '</div>';
                 }
+                var prog = box.querySelector('.section-progress');
+                if(prog) prog.removeAttribute('open');
             }
             
             delete streamDivs[msg.id];
@@ -7621,6 +8184,19 @@ window.addEventListener("message", function(event) {
         streamStartedAt = {};
         chat.innerHTML = "";
     }
+    else if (msg.type === "sessions") {
+        renderSessions(msg.sessions);
+    }
+    else if (msg.type === "selectAgent") {
+        if (msg.agentId && engineSelect.querySelector('option[value="' + msg.agentId + '"]')) {
+            engineSelect.value = msg.agentId;
+            updateModels();
+        }
+        if (msg.locked) lockEngine(true);
+    }
+    else if (msg.type === "showChat") {
+        showView("chat");
+    }
 });
 </script>
 </body>
@@ -7629,10 +8205,29 @@ window.addEventListener("message", function(event) {
 };
 
 // src/extension.ts
+var outputChannel;
 function activate(context) {
-  registerDebugOutputChannel(context);
+  outputChannel = vscode3.window.createOutputChannel("Optimus Code Debug");
+  context.subscriptions.push(outputChannel);
+  setCustomLogger((msg) => outputChannel.appendLine(msg));
+  const updateDebugMode = () => {
+    setDebugMode(vscode3.workspace.getConfiguration("optimusCode").get("debugMode", false));
+  };
+  updateDebugMode();
+  context.subscriptions.push(vscode3.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration("optimusCode.debugMode")) {
+      updateDebugMode();
+    }
+  }));
   debugLog("Extension", "Optimus Code is now active!");
-  const workspacePathHint = vscode5.workspace.workspaceFolders?.[0]?.uri.fsPath || (vscode5.window.activeTextEditor?.document?.uri.scheme === "file" ? path4.dirname(vscode5.window.activeTextEditor.document.uri.fsPath) : void 0) || (context.extensionMode === vscode5.ExtensionMode.Development ? context.extensionUri.fsPath : void 0);
+  const workspacePathHint = vscode3.workspace.workspaceFolders?.[0]?.uri.fsPath || (vscode3.window.activeTextEditor?.document?.uri.scheme === "file" ? path3.dirname(vscode3.window.activeTextEditor.document.uri.fsPath) : void 0) || (context.extensionMode === vscode3.ExtensionMode.Development ? context.extensionUri.fsPath : void 0);
+  if (workspacePathHint) {
+    const fs3 = require("fs");
+    const dDir = path3.join(workspacePathHint, ".optimus");
+    if (!fs3.existsSync(dDir)) {
+      fs3.mkdirSync(dDir, { recursive: true });
+    }
+  }
   if (workspacePathHint) {
     PersistentAgentAdapter.setWorkspacePathHint(workspacePathHint);
     debugLog("Extension", "Registered workspace path hint", JSON.stringify({ workspacePathHint }));
@@ -7641,7 +8236,7 @@ function activate(context) {
   }
   const provider = new ChatViewProvider(context.extensionUri, context);
   context.subscriptions.push(
-    vscode5.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider)
+    vscode3.window.registerWebviewViewProvider(ChatViewProvider.viewType, provider)
   );
 }
 function deactivate() {

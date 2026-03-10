@@ -3,11 +3,10 @@ import { GitHubCopilotAdapter } from './GitHubCopilotAdapter';
 import { ClaudeCodeAdapter } from './ClaudeCodeAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import { debugLog } from '../debugLogger';
-import * as vscode from 'vscode';
 
 type AdapterKind = 'github-copilot' | 'claude-code';
 
-interface AgentConfig {
+export interface AgentConfig {
     id: string;
     name: string;
     adapter: AdapterKind;
@@ -17,12 +16,9 @@ interface AgentConfig {
 }
 
 /**
- * Get all adapters that are dynamically configured and enabled by the user in settings
+ * Get adapters based on a provided configuration array
  */
-export function getActiveAdapters(): AgentAdapter[] {
-    const config = vscode.workspace.getConfiguration('optimusCode');
-    const agentsConfig: AgentConfig[] = config.get('agents') || [];
-
+export function getActiveAdapters(agentsConfig: AgentConfig[] = []): AgentAdapter[] {
     const adapters: AgentAdapter[] = [];
 
     for (const agent of agentsConfig) {

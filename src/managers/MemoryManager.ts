@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { debugLog } from '../debugLogger';
 
 export class MemoryManager {
-    private static readonly memoryFileName = 'memory.md';
+    private static readonly memoryFileName = 'state/memory.md';
     private static readonly optimusDir = '.optimus';
 
     private getMemoryFilePath(): string | null {

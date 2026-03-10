@@ -2,10 +2,26 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { PersistentAgentAdapter } from './adapters/PersistentAgentAdapter';
 import { ChatViewProvider } from './providers/ChatViewProvider';
-import { debugLog, registerDebugOutputChannel } from './debugLogger';
+import { debugLog, setCustomLogger, setDebugMode } from './debugLogger';
+
+let outputChannel: vscode.OutputChannel | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-    registerDebugOutputChannel(context);
+    // Setup vscode debug logger
+    outputChannel = vscode.window.createOutputChannel('Optimus Code Debug');
+    context.subscriptions.push(outputChannel);
+    setCustomLogger((msg) => outputChannel!.appendLine(msg));
+    
+    const updateDebugMode = () => {
+        setDebugMode(vscode.workspace.getConfiguration('optimusCode').get<boolean>('debugMode', false));
+    };
+    updateDebugMode();
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('optimusCode.debugMode')) {
+            updateDebugMode();
+        }
+    }));
+    
     debugLog('Extension', 'Optimus Code is now active!');
 
     const workspacePathHint = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
@@ -15,6 +31,15 @@ export function activate(context: vscode.ExtensionContext) {
         || (context.extensionMode === vscode.ExtensionMode.Development
             ? context.extensionUri.fsPath
             : undefined);
+    
+
+    // Ensure .optimus directory exists for runtime prompts, memory, etc.
+    if (workspacePathHint) {
+        const fs = require('fs');
+        const dDir = path.join(workspacePathHint, '.optimus');
+        if (!fs.existsSync(dDir)) { fs.mkdirSync(dDir, { recursive: true }); }
+    }
+
     if (workspacePathHint) {
         PersistentAgentAdapter.setWorkspacePathHint(workspacePathHint);
         debugLog('Extension', 'Registered workspace path hint', JSON.stringify({ workspacePathHint }));

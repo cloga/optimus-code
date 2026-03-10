@@ -1,35 +1,17 @@
-import * as vscode from 'vscode';
+// Core logging implementation without vscode dependencies
+let customLogger: ((message: string) => void) | undefined;
+let cachedDebugMode: boolean = process.env.OPTIMUS_DEBUG === '1';
 
-let outputChannel: vscode.OutputChannel | undefined;
-let cachedDebugMode: boolean | undefined;
-
-function getOutputChannel(): vscode.OutputChannel {
-    if (!outputChannel) {
-        outputChannel = vscode.window.createOutputChannel('Optimus Code Debug');
-    }
-    return outputChannel;
+export function setCustomLogger(logger: (message: string) => void) {
+    customLogger = logger;
 }
 
-export function registerDebugOutputChannel(context: vscode.ExtensionContext) {
-    const channel = getOutputChannel();
-    context.subscriptions.push(channel);
-
-    // Cache the initial value and listen for changes
-    cachedDebugMode = vscode.workspace.getConfiguration('optimusCode').get<boolean>('debugMode', false);
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('optimusCode.debugMode')) {
-                cachedDebugMode = vscode.workspace.getConfiguration('optimusCode').get<boolean>('debugMode', false);
-            }
-        })
-    );
+export function setDebugMode(enabled: boolean) {
+    cachedDebugMode = enabled;
 }
 
 export function isDebugModeEnabled(): boolean {
-    if (cachedDebugMode !== undefined) {
-        return cachedDebugMode;
-    }
-    return vscode.workspace.getConfiguration('optimusCode').get<boolean>('debugMode', false);
+    return cachedDebugMode;
 }
 
 export function debugLog(scope: string, message: string, details?: string) {
@@ -37,16 +19,21 @@ export function debugLog(scope: string, message: string, details?: string) {
         return;
     }
 
-    const channel = getOutputChannel();
     const timestamp = new Date().toISOString();
-    channel.appendLine('[' + timestamp + '] [' + scope + '] ' + message);
+    let logMessage = `[${timestamp}] [${scope}] ${message}`;
     if (details) {
-        channel.appendLine(details);
+        logMessage += `\n${details}`;
+    }
+
+    if (customLogger) {
+        customLogger(logMessage);
+    } else {
+        console.error(logMessage);
     }
 }
 
 export function showDebugOutputChannel(preserveFocus: boolean = true) {
-    getOutputChannel().show(preserveFocus);
+    // No-op for pure node context
 }
 
 export function formatChunk(chunk: string, maxLength: number = 800): string {

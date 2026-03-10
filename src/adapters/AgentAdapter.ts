@@ -25,7 +25,7 @@ export interface AgentAdapter {
      * The core execution function that sends the prompt to the tool and returns the response.
      * Optionally accepts an onUpdate callback for streaming output progressively.
      */
-    invoke(prompt: string, mode: AgentMode, onUpdate?: (chunk: string) => void): Promise<string>;
+    invoke(prompt: string, mode: AgentMode, sessionId?: string, onUpdate?: (chunk: string) => void): Promise<string>;
 
     /**
      * Forces the agent to stop generating and clear its current queue.
@@ -47,6 +47,11 @@ export interface AgentAdapter {
         sentPromptLength?: number;
         promptFileThreshold?: number;
     };
+
+    /**
+     * The physical session ID returned by the CLI for resuming context.
+     */
+    lastSessionId?: string;
 
     /**
      * Optional normalized usage log captured from the most recent invocation.

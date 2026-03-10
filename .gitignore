@@ -18,3 +18,5 @@ temp_debug/
 # Env Files
 .env
 .env.*
+
+/temp_scripts/

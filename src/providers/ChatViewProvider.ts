@@ -36,7 +36,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView) {
-        webviewView.webview.options = { enableScripts: true };
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                this._extensionUri,
+                ...(vscode.workspace.workspaceFolders?.map(f => f.uri) || []),
+            ],
+        };
         webviewView.webview.html = this.getHtml();
 
         webviewView.webview.onDidReceiveMessage(async (data) => {
@@ -59,11 +65,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                                 data.text = data.text.slice(7).trim();
                             }
                         } else if (data.text.startsWith('/delegate ')) {
-                            // Automatically wrap it to force a delegation
-                            data.text = `[User forced delegation] Please MUST use the \`delegate_task\` tool to complete the following: \n${data.text.slice(10).trim()}`;
+                            // Automatically wrap it to force in-session delegation
+                            data.text = `[User forced delegation] Please use the delegate_task skill to complete the following task. IMPORTANT: Do NOT spawn a separate CLI process. Adopt the appropriate role (pm/architect/dev/qa) and execute the work WITHIN THIS SESSION using your own tools.\n${data.text.slice(10).trim()}`;
+                        } else if (data.text.startsWith('/council ')) {
+                            // Automatically wrap it to trigger Map-Reduce architecture review
+                            data.text = `[User forced council review] Please use the council_review skill to orchestrate a multi-expert map-reduce review for the following architecture task. Outline your initial proposal to a dynamically named file like .optimus/PROPOSAL_<topic>.md first, and then request to spawn the parallel expert backends passing the specific proposal path.\n${data.text.slice(9).trim()}`;
                         }
                     }
-                    return this.handleAsk(webviewView, data.text, data.agent, data.model);
+                    return this.handleAsk(webviewView, data.text, data.agent, data.model, undefined, data.attachments);
                 case "stop":
                     this.taskQueue = [];
                     Object.values(this.agents).forEach(entry => entry.adapter.stop?.());
@@ -92,6 +101,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                         role: "system",
                         html: `UI error: ${(data.payload?.message || "unknown error").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}`,
                     });
+                case "requestSessions":
+                    return this.sendSessionsToUI(webviewView);
+                case "loadSession":
+                    return this.loadSessionToUI(webviewView, data.taskId);
             }
         });
     }
@@ -139,20 +152,62 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         };
     }
 
-    private async handleAsk(wv: vscode.WebviewView, text: string, agentId: string, modelId?: string, skipDisplay?: boolean) {
+    private async handleAsk(wv: vscode.WebviewView, text: string, agentId: string, modelId?: string, skipDisplay?: boolean, attachments?: Array<{name?: string; mime?: string; src?: string; filePath?: string; mimeType?: string}>) {
         // Safety: reset stuck state after 3 min
         if (this.isGenerating && Date.now() - this.genStart > 180_000) {
             this.isGenerating = false;
         }
-        
+
+        // Process image attachments: save Base64 data to disk, build clean references
+        const savedAttachments: Array<{filePath: string; mimeType: string}> = [];
+        let attachmentImgHtml = '';
+        if (attachments && attachments.length > 0) {
+            const fs = require('fs');
+            const path = require('path');
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspacePath) {
+                const imgDir = path.join(workspacePath, '.optimus', 'images');
+                if (!fs.existsSync(imgDir)) {
+                    fs.mkdirSync(imgDir, { recursive: true });
+                }
+                for (const att of attachments) {
+                    try {
+                        if (att.filePath && att.mimeType) {
+                            // Already saved to disk (e.g. from queue) — reuse
+                            savedAttachments.push({ filePath: att.filePath, mimeType: att.mimeType });
+                            const webviewUri = wv.webview.asWebviewUri(vscode.Uri.file(att.filePath));
+                            attachmentImgHtml += `<img src="${webviewUri}" alt="attachment" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:6px;margin-right:4px;" />`;
+                        } else if (att.src) {
+                            // Raw Base64 from webview — write to file
+                            const base64Match = att.src.match(/^data:[^;]+;base64,(.+)$/);
+                            if (!base64Match) { continue; }
+                            const ext = (att.name || 'image.png').split('.').pop() || 'png';
+                            const fileName = `image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+                            const filePath = path.join(imgDir, fileName);
+                            fs.writeFileSync(filePath, Buffer.from(base64Match[1], 'base64'));
+                            const mimeType = att.mime || 'image/png';
+                            savedAttachments.push({ filePath, mimeType });
+                            const webviewUri = wv.webview.asWebviewUri(vscode.Uri.file(filePath));
+                            attachmentImgHtml += `<img src="${webviewUri}" alt="${(att.name || 'image').replace(/"/g, '&quot;')}" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:6px;margin-right:4px;" />`;
+                        }
+                    } catch (err: any) {
+                        debugLog("ChatView", "Failed to save attachment", err?.message || String(err));
+                    }
+                }
+            }
+        }
+
         if (!skipDisplay) {
             let htmlText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            if (attachmentImgHtml) {
+                htmlText += '<div style="margin-top:6px;">' + attachmentImgHtml + '</div>';
+            }
             
             if (this.isGenerating) {
                 htmlText += " <i>(⏳ Queued)</i>";
                 wv.webview.postMessage({ type: "addMessage", role: "user", html: htmlText });
                 
-                this.taskQueue.push({ text, attachments: [], agentId, modelId });
+                this.taskQueue.push({ text, attachments: savedAttachments as any[], agentId, modelId });
                 wv.webview.postMessage({ type: "status", content: `Queued (${this.taskQueue.length} ahead).` });
                 return;
             }
@@ -194,6 +249,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 prompt: text,
                 selectedAgentIds: [cacheKey],
                 executorId: agentId,
+                masterAgentType: agentId,
+                attachments: savedAttachments.length > 0 ? savedAttachments : undefined,
             });
             this.currentTaskId = taskState.taskId;
 
@@ -204,10 +261,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 [
                     'You are the MAIN ORCHESTRATOR for this Optimus Code sidebar session.',
                     'Do not default to doing all substantive implementation work yourself.',
-                    'For any non-trivial feature, architectural work, multi-file change, PRD, breakdown, testing pass, or review workflow, use the delegate_task tool and route work to the proper specialized role.',
-                    'Use role_prompt values exactly from the roster: pm, architect, dev, qa.',
+                    'For any non-trivial feature, architectural work, multi-file change, PRD, breakdown, testing pass, or review workflow, use the delegate_task skill and adopt the proper specialized role.',
+                    'Use role names exactly from the roster: pm, architect, dev, qa.',
                     'Keep the main agent focused on coordination, synthesis, routing, and acceptance.',
-                    'Only skip delegation when the user request is obviously trivial and can be completed safely in one short direct step.'
+                    'Only skip delegation when the user request is obviously trivial and can be completed safely in one short direct step.',
+                    '',
+                    'CRITICAL DELEGATION RULE: Delegation means YOU adopt a specialized role and execute the work WITHIN THIS SESSION using your own tools.',
+                    'Do NOT spawn separate CLI processes (e.g., `node .optimus/delegate.js`). Do NOT switch to a different agent session.',
+                    'All delegated work must happen inside your current session so that context, memory, and history are preserved.',
                 ].join('\n')
             );
 
@@ -256,6 +317,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             });
             wv.webview.postMessage({ type: "streamEnd", id: sid, role: agentId, html: await marked.parse(clean) });
 
+            // Detect and run council dispatch
+            await this.handleCouncilDispatch(reply, wv, agentId, modelId);
+
         } catch (e: any) {
             if (this.currentTaskId) {
                 await this.taskStateManager.failTurn(this.currentTaskId, this.taskStateManager.getTask(this.currentTaskId)?.turnHistory.slice(-1)[0]?.turnId || "", String(e?.message || e));
@@ -269,7 +333,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 const next = this.taskQueue.shift();
                 if (next) {
                     setTimeout(() => {
-                        this.handleAsk(wv, next.text, next.agentId, next.modelId, true);
+                        this.handleAsk(wv, next.text, next.agentId, next.modelId, true, next.attachments);
                     }, 500);
                 }
             } else {
@@ -277,6 +341,91 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 wv.webview.postMessage({ type: "setGenerating", value: false });
             }
         }
+    }
+
+    private async handleCouncilDispatch(rawText: string, wv: vscode.WebviewView, agentId: string, modelId: string | undefined) {
+        const councilBlocks = this.extractTaggedContent(rawText, 'council-dispatch');
+        if (councilBlocks.length === 0) return;
+
+        // Parse the requested roles and proposal file
+        const roles: string[] = [];
+        const roleRegex = /<role>(.*?)<\/role>/gi;
+        let roleMatch;
+        while ((roleMatch = roleRegex.exec(councilBlocks[0])) !== null) {
+            if (roleMatch[1]) roles.push(roleMatch[1].trim());
+        }
+
+        let proposalPath = ".optimus/PROPOSAL.md";
+        const proposalRegex = /<proposal>(.*?)<\/proposal>/i;
+        const proposalMatch = proposalRegex.exec(councilBlocks[0]);
+        if (proposalMatch && proposalMatch[1]) {
+            proposalPath = proposalMatch[1].trim();
+        }
+
+        if (roles.length === 0) return;
+
+        wv.webview.postMessage({ type: "addMessage", role: "system", html: `⚖️ **Council Dispatch Triggered**: Spawning experts: ${roles.join(', ')} to review \`${proposalPath}\`...` });
+        wv.webview.postMessage({ type: "status", content: "Orchestrator is running Map-Reduce Council..." });
+
+        const fs = require('fs');
+        const path = require('path');
+        const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const timestampId = Date.now();
+        if (workspacePath) {
+            const reviewsPath = path.join(workspacePath, '.optimus', 'reviews', timestampId.toString());
+            if (!fs.existsSync(reviewsPath)) {
+                fs.mkdirSync(reviewsPath, { recursive: true });
+            }
+        }
+
+        const promises = roles.map(role => {
+            // Instantiate temporary headless CLI adapter for the child
+            const tempAdapter = new ClaudeCodeAdapter("claude", `Expert: ${role}`, "");
+            
+            const prompt = `You are a specialized expert: ${role}.
+1. Read the ${proposalPath} file thoroughly.
+2. Analyze it objectively from your specific domain's perspective.
+3. Write your review formatted as Markdown strictly to .optimus/reviews/${timestampId}/${role}_review.md. Be detailed but concise. Identify blockers, risks, or approvals.
+4. Exit immediately once the file is written. Do not wait for further input.`.replace(/\n/g, ' ');
+
+            const workerSessionId = `council-${role}-${timestampId}`;
+            
+            // Read persona from .optimus/personas/<role>.md if it exists
+            let personaConfig = "";
+            if (workspacePath) {
+                const personaPath = path.join(workspacePath, '.optimus', 'personas', `${role}.md`);
+                if (fs.existsSync(personaPath)) {
+                    try {
+                        personaConfig = fs.readFileSync(personaPath, 'utf8');
+                    } catch (e) {
+                        // ignore error
+                    }
+                }
+            }
+            
+            const fullPrompt = [prompt, personaConfig ? `\n\nYour Persona Configuration:\n${personaConfig}` : ""].join('');
+
+            return tempAdapter.invoke(fullPrompt, 'agent', workerSessionId)
+                .then(res => ({ role, success: true, res }))
+                .catch(err => ({ role, success: false, err: String(err) }));
+        });
+
+        const results = await Promise.all(promises);
+
+        let systemLog = "⚖️ **Council Review Completed**:<br>";
+        results.forEach(res => {
+            systemLog += `- **${res.role}**: ${res.success ? '✅ Finished' : '❌ Failed'}<br>`;
+        });
+
+        wv.webview.postMessage({ type: "addMessage", role: "system", html: systemLog });
+
+        // Auto-enqueue the next master step to read the reviews
+        this.taskQueue.push({
+            text: `[System] The Council Review Map-Reduce tasks have finished. The experts have dumped their reviews into the \`.optimus/reviews/${timestampId}/\` directory. Please read and synthesize them into \`TODO.md\` or \`CONFLICTS.md\` as per the council_review skill.`,
+            agentId: agentId,
+            modelId: modelId || "",
+            attachments: []
+        });
     }
 
     private buildTurnSummary(raw: string, clean: string): string {
@@ -295,6 +444,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return raw
             .replace(/<task-summary>[\s\S]*?<\/task-summary>/gi, '')
             .replace(/<memory-update>[\s\S]*?<\/memory-update>/gi, '')
+            .replace(/<council-dispatch>[\s\S]*?<\/council-dispatch>/gi, '')
             .trim();
     }
 
@@ -342,6 +492,53 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             .join("\n")
             .replace(/\n{3,}/g, "\n\n")
             .trim();
+    }
+
+    private sendSessionsToUI(wv: vscode.WebviewView) {
+        const snapshots = this.taskStateManager.listTaskSnapshots();
+        wv.webview.postMessage({ type: "sessions", sessions: snapshots });
+    }
+
+    private loadSessionToUI(wv: vscode.WebviewView, taskId: string) {
+        const task = this.taskStateManager.getTask(taskId);
+        if (!task) {
+            wv.webview.postMessage({ type: "addMessage", role: "system", html: "Session not found." });
+            return;
+        }
+        this.currentTaskId = task.taskId;
+        wv.webview.postMessage({ type: "chatCleared" });
+
+        // Replay turns as messages
+        for (const turn of task.turnHistory) {
+            let userHtml = (turn.prompt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            if (turn.attachments && turn.attachments.length > 0) {
+                let imgTags = '';
+                for (const att of turn.attachments) {
+                    if (att.filePath) {
+                        try {
+                            const webviewUri = wv.webview.asWebviewUri(vscode.Uri.file(att.filePath));
+                            imgTags += `<img src="${webviewUri}" alt="attachment" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:6px;margin-right:4px;" />`;
+                        } catch (_) { /* file may no longer exist */ }
+                    }
+                }
+                if (imgTags) {
+                    userHtml += '<div style="margin-top:6px;">' + imgTags + '</div>';
+                }
+            }
+            wv.webview.postMessage({ type: "addMessage", role: "user", html: userHtml });
+            const summary = turn.executorOutcome?.summary || "No output recorded.";
+            const agentName = turn.executorOutcome?.agentName || "Agent";
+            wv.webview.postMessage({
+                type: "addMessage",
+                role: turn.executorOutcome?.agentId || "system",
+                html: `<strong>${agentName}</strong><div>${summary.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`,
+            });
+        }
+        wv.webview.postMessage({ type: "status", content: `Resumed: ${task.title}` });
+        if (task.masterAgentType) {
+            wv.webview.postMessage({ type: "selectAgent", agentId: task.masterAgentType, locked: true });
+        }
+        wv.webview.postMessage({ type: "showChat" });
     }
 
     private getHtml() {
@@ -495,7 +692,35 @@ textarea { background: var(--vscode-input-background); color: var(--vscode-input
       font-size: 0.85em;
   }
 
+  /* Sessions History Panel */
+  #sessions-view { display: none; flex: 1; overflow-y: auto; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  #sessions-view.visible { display: flex; }
+  .session-item { padding: 10px; border-radius: 6px; background: var(--vscode-editor-inactiveSelectionBackground); cursor: pointer; border-left: 3px solid transparent; }
+  .session-item:hover { border-left-color: var(--vscode-textLink-foreground); background: var(--vscode-list-hoverBackground); }
+  .session-title { font-weight: 600; font-size: 0.9em; color: var(--vscode-foreground); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-meta { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+  .session-summary { font-size: 0.82em; color: var(--vscode-descriptionForeground); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sessions-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .sessions-header-title { font-weight: bold; font-size: 14px; }
+  .sessions-empty { color: var(--vscode-descriptionForeground); font-style: italic; text-align: center; padding: 20px; }
+
   .hint { font-size: .8em; color: var(--vscode-descriptionForeground); }
+
+/* Image attachment styles */
+#attachment-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+#attachment-preview:empty { display: none; }
+.att-thumb { position: relative; display: inline-block; border-radius: 4px; overflow: hidden; border: 1px solid var(--vscode-panel-border); }
+.att-thumb img { display: block; max-width: 80px; max-height: 60px; object-fit: cover; }
+.att-thumb .att-remove { position: absolute; top: -2px; right: -2px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--vscode-errorForeground); color: #fff; border: none; cursor: pointer;
+    font-size: 12px; line-height: 18px; text-align: center; padding: 0; display: flex; align-items: center; justify-content: center; }
+.att-thumb .att-remove:hover { opacity: 0.85; }
+#attach-btn { background: transparent; color: var(--vscode-descriptionForeground); border: none; cursor: pointer;
+    padding: 4px 6px; font-size: 16px; line-height: 1; border-radius: 3px; flex-shrink: 0; }
+#attach-btn:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground); }
+.input-row { display: flex; align-items: flex-end; gap: 4px; }
+.input-row textarea { flex: 1; }
+.msg.user img { max-width: 200px; max-height: 150px; border-radius: 4px; margin-top: 6px; }
 .btns { display: flex; gap: 8px; }
 .btns button { flex: 1; }
 .idle-only { display: inline-flex; }
@@ -513,13 +738,26 @@ body.generating .gen-only  { display: inline-flex; }
         <select id="model">
         </select>
         <button onclick="doNew()" class="sec">+ New</button>
+        <button onclick="toggleHistory()" class="sec" id="history-btn">🕒 History</button>
     </div>
     <div id="status">Idle</div>
+    <div id="sessions-view">
+        <div class="sessions-header">
+            <div class="sessions-header-title">Sessions History</div>
+            <button onclick="toggleHistory()" class="sec">Back to Chat</button>
+        </div>
+        <div id="sessions-panel"><div class="sessions-empty">Loading...</div></div>
+    </div>
     <div id="chat"></div>
     <div id="input-area">
         <div id="slash-menu"></div>
-        <textarea id="prompt" placeholder="Message..." onkeydown="handleKey(event)"></textarea>
-        <div class="hint">Enter to Send &middot; Shift+Enter newline</div>
+        <div id="attachment-preview"></div>
+        <div class="input-row">
+            <textarea id="prompt" placeholder="Message..." onkeydown="handleKey(event)"></textarea>
+            <button id="attach-btn" title="Attach image" onclick="document.getElementById('file-input').click()">📎</button>
+        </div>
+        <input type="file" id="file-input" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this.files)" />
+        <div class="hint">Enter to Send &middot; Shift+Enter newline &middot; 📎 or drag image</div>
         <div class="btns">
             <button onclick="doSend()" class="idle-only">Send</button>
             <button onclick="doStop()" class="gen-only stop">Stop</button>
@@ -731,27 +969,143 @@ function scheduleSlowStartHint(id) {
     }, 2500);
 }
 
+// ── Image attachment handling ──
+var pendingAttachments = []; // Array of { name, mime, dataUrl }
+
+function handleFileSelect(files) {
+    if (!files || !files.length) return;
+    for (var i = 0; i < files.length; i++) {
+        addImageFile(files[i]);
+    }
+    document.getElementById('file-input').value = '';
+}
+
+function addImageFile(file) {
+    if (!file.type.startsWith('image/')) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        pendingAttachments.push({ name: file.name, mime: file.type, dataUrl: ev.target.result });
+        renderAttachmentPreviews();
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeAttachment(idx) {
+    pendingAttachments.splice(idx, 1);
+    renderAttachmentPreviews();
+}
+
+function renderAttachmentPreviews() {
+    var container = document.getElementById('attachment-preview');
+    container.innerHTML = '';
+    pendingAttachments.forEach(function(att, idx) {
+        var thumb = document.createElement('div');
+        thumb.className = 'att-thumb';
+        var img = document.createElement('img');
+        img.src = att.dataUrl;
+        img.alt = att.name;
+        thumb.appendChild(img);
+        var btn = document.createElement('button');
+        btn.className = 'att-remove';
+        btn.textContent = '×';
+        btn.onclick = function(e) { e.stopPropagation(); removeAttachment(idx); };
+        thumb.appendChild(btn);
+        container.appendChild(thumb);
+    });
+}
+
+// Drag-and-drop on the input area
+(function() {
+    var inputArea = document.getElementById('input-area');
+    inputArea.addEventListener('dragover', function(e) { e.preventDefault(); e.stopPropagation(); inputArea.style.outline = '2px dashed var(--vscode-textLink-foreground)'; });
+    inputArea.addEventListener('dragleave', function(e) { e.preventDefault(); e.stopPropagation(); inputArea.style.outline = ''; });
+    inputArea.addEventListener('drop', function(e) {
+        e.preventDefault(); e.stopPropagation(); inputArea.style.outline = '';
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) {
+            for (var i = 0; i < files.length; i++) { addImageFile(files[i]); }
+        }
+    });
+})();
+
 function doSend() {
     var text = ta.value ? ta.value.trim() : "";
-    if (!text) return;
+    if (!text && pendingAttachments.length === 0) return;
     
     // Lock engine
     lockEngine(true);
     
+    // Build attachment payload
+    var attachments = pendingAttachments.map(function(a) {
+        return { name: a.name, mime: a.mime, src: a.dataUrl };
+    });
+
     statusEls.textContent = "Sending...";
     vscode.postMessage({ 
         type: "ask", 
         text: text, 
         agent: engineSelect.value, 
-        model: modelSelect.value 
+        model: modelSelect.value,
+        attachments: attachments
     });
     ta.value = "";
+    pendingAttachments = [];
+    renderAttachmentPreviews();
 }
 function doStop() { vscode.postMessage({ type: "stop" }); }
-function doNew() { 
-    chat.innerHTML = ""; 
+function doNew() {
+    chat.innerHTML = "";
     lockEngine(false);
-    vscode.postMessage({ type: "newChat" }); 
+    showView("chat");
+    vscode.postMessage({ type: "newChat" });
+}
+
+var sessionsView = document.getElementById("sessions-view");
+var inputArea = document.getElementById("input-area");
+
+function toggleHistory() {
+    var isShowingSessions = sessionsView.classList.contains("visible");
+    if (isShowingSessions) {
+        showView("chat");
+    } else {
+        showView("sessions");
+        vscode.postMessage({ type: "requestSessions" });
+    }
+}
+
+function showView(view) {
+    if (view === "sessions") {
+        sessionsView.classList.add("visible");
+        chat.style.display = "none";
+        inputArea.style.display = "none";
+    } else {
+        sessionsView.classList.remove("visible");
+        chat.style.display = "flex";
+        inputArea.style.display = "flex";
+    }
+}
+
+function renderSessions(sessions) {
+    var panel = document.getElementById("sessions-panel");
+    if (!sessions || sessions.length === 0) {
+        panel.innerHTML = '<div class="sessions-empty">No sessions yet.</div>';
+        return;
+    }
+    panel.innerHTML = "";
+    sessions.forEach(function(s) {
+        var div = document.createElement("div");
+        div.className = "session-item";
+        var time = new Date(s.updatedAt).toLocaleString();
+        var turns = s.turnCount || 0;
+        div.innerHTML = '<div class="session-title">' + escapeHtml(s.title) + '</div>'
+            + '<div class="session-meta">' + turns + ' turn' + (turns !== 1 ? 's' : '') + ' · ' + escapeHtml(time) + '</div>'
+            + (s.latestSummary ? '<div class="session-summary">' + escapeHtml(s.latestSummary) + '</div>' : '');
+        div.onclick = function() {
+            lockEngine(true);
+            vscode.postMessage({ type: "loadSession", taskId: s.taskId });
+        };
+        panel.appendChild(div);
+    });
 }
 function handleKey(e) {
       if (document.getElementById("slash-menu").style.display === "block") {
@@ -801,8 +1155,26 @@ function handleKey(e) {
           closeSlashMenu();
       }
   });
+
+  ta.addEventListener("paste", function(e) {
+      var items = (e.clipboardData || e.originalEvent.clipboardData).items;
+      var hasImage = false;
+      for (var i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf("image") === 0) {
+              var file = items[i].getAsFile();
+              if (file) {
+                  addImageFile(file);
+                  hasImage = true;
+              }
+          }
+      }
+      if (hasImage) {
+          e.preventDefault();
+      }
+  });
   
   var builtinCommands = [
+      { cmd: "council", desc: "Force a multi-expert Map-Reduce architecture review for a complex task" },
       { cmd: "delegate", desc: "Force the orchestrator to delegate this task to a sub-agent" },
       { cmd: "steer", desc: "Interrupt and steer the current agent" },
       { cmd: "new", desc: "Start a new chat session" },
@@ -1115,6 +1487,19 @@ window.addEventListener("message", function(event) {
         streamStates = {};
         streamStartedAt = {};
         chat.innerHTML = "";
+    }
+    else if (msg.type === "sessions") {
+        renderSessions(msg.sessions);
+    }
+    else if (msg.type === "selectAgent") {
+        if (msg.agentId && engineSelect.querySelector('option[value="' + msg.agentId + '"]')) {
+            engineSelect.value = msg.agentId;
+            updateModels();
+        }
+        if (msg.locked) lockEngine(true);
+    }
+    else if (msg.type === "showChat") {
+        showView("chat");
     }
 });
 </script>

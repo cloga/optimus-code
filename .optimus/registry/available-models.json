@@ -1,0 +1,18 @@
+{
+  "models": {
+    "default": "claude-3-5-sonnet",
+    "vendors": {
+      "anthropic": ["claude-3-5-sonnet", "claude-3-opus-20240229"],
+      "openai": ["gpt-4o", "gpt-4-turbo"],
+      "deepseek": ["deepseek-coder", "deepseek-reasoner"]
+    }
+  },
+  "roles": {
+    "chief-architect": {
+      "strategies": ["conservative", "radical", "cost-driven"]
+    },
+    "security-auditor": {
+      "strategies": ["compliance-strict", "hacker-mindset"]
+    }
+  }
+}

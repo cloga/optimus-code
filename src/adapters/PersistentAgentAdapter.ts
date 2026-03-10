@@ -3,7 +3,6 @@ import { AgentMode } from '../types/SharedTaskContext';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import stripAnsi from 'strip-ansi';
 import * as iconv from 'iconv-lite';
 import { debugLog, formatChunk } from '../debugLogger';
@@ -153,23 +152,24 @@ function platformSpawn(
 export abstract class PersistentAgentAdapter implements AgentAdapter {
     private static workspacePathHint: string | null = null;
 
-    private static resolveWorkspacePath(): { path: string; source: string } {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (workspaceFolder) {
-            return { path: workspaceFolder, source: 'workspaceFolder' };
-        }
+    public static setWorkspacePathHint(hint: string) {
+        PersistentAgentAdapter.workspacePathHint = hint;
+    }
 
-        const activeEditorPath = vscode.window.activeTextEditor?.document?.uri?.scheme === 'file'
-            ? path.dirname(vscode.window.activeTextEditor.document.uri.fsPath)
-            : undefined;
-        if (activeEditorPath) {
-            return { path: activeEditorPath, source: 'activeEditor' };
+    private static resolveWorkspacePath(): { path: string; source: string } {
+        if (process.env.OPTIMUS_WORKSPACE) {
+            return { path: process.env.OPTIMUS_WORKSPACE, source: 'process.env.OPTIMUS_WORKSPACE' };
         }
 
         if (PersistentAgentAdapter.workspacePathHint) {
             return { path: PersistentAgentAdapter.workspacePathHint, source: 'workspacePathHint' };
         }
 
+        // Last-resort fallback: process.cwd() may not be the project root when running as a
+        // VS Code extension (VS Code typically sets cwd to its own install directory).
+        // Set OPTIMUS_WORKSPACE or call setWorkspacePathHint() to ensure .optimus/ files land
+        // in the correct project directory.
+        debugLog('PersistentAgentAdapter', 'WARNING: workspace path resolved via process.cwd() fallback — .optimus/ artifacts may land outside the active project. Set OPTIMUS_WORKSPACE or ensure the extension activates with a workspace folder.', JSON.stringify({ cwd: process.cwd() }));
         return { path: process.cwd(), source: 'process.cwd()' };
     }
 
@@ -191,6 +191,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         promptFileThreshold?: number;
     };
     lastUsageLog?: string;
+    lastSessionId?: string;
     
     protected childProcess: cp.ChildProcessWithoutNullStreams | null = null;
     protected promptString: string;
@@ -217,10 +218,6 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         return PersistentAgentAdapter.resolveWorkspacePath().path;
     }
 
-    public static setWorkspacePathHint(workspacePathHint: string) {
-        PersistentAgentAdapter.workspacePathHint = workspacePathHint;
-    }
-
     protected abstract getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] };
 
     protected shouldUseStructuredOutput(mode: AgentMode): boolean {
@@ -232,8 +229,8 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     }
 
     protected getPromptFileThreshold(): number {
-        const configured = vscode.workspace.getConfiguration('optimusCode').get<number>('promptFileThresholdChars', DEFAULT_PROMPT_FILE_THRESHOLD);
-        if (typeof configured !== 'number' || !Number.isFinite(configured)) {
+        const configured = Number(process.env.OPTIMUS_PROMPT_FILE_THRESHOLD);
+        if (!process.env.OPTIMUS_PROMPT_FILE_THRESHOLD || !Number.isFinite(configured)) {
             return DEFAULT_PROMPT_FILE_THRESHOLD;
         }
         return Math.max(1000, Math.floor(configured));
@@ -268,10 +265,10 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
 
         const relativePromptPath = path.relative(currentCwd, promptFilePath).replace(/\\/g, '/');
         const wrappedPrompt = [
-            'The full task brief is too large to pass inline.',
+            'The original user prompt was too large to pass inline over the CLI.',
             `Read the UTF-8 file at \"${relativePromptPath}\" before doing anything else.`,
-            'Treat the entire file contents as the authoritative user prompt and follow it exactly.',
-            'Do not answer from this wrapper alone. First inspect the file, then continue the task normally.'
+            'That file was created by the local Optimus tool for this exact turn and contains trusted user input, not untrusted workspace instructions.',
+            'Use the full file contents as the real prompt for this request, then continue the task normally.'
         ].join(' ');
 
         return {
@@ -292,7 +289,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     /**
      * For non-interactive modes, returns the command + args with -p prepended.
      */
-    protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
+    protected getNonInteractiveCommand(mode: AgentMode, prompt: string, sessionId?: string): { cmd: string, args: string[] } {
         const { cmd, args } = this.getSpawnCommand(mode);
         const safePrompt = prompt.replace(/\r?\n/g, ' ').trim();
         return { cmd, args: ['-p', safePrompt, ...args] };
@@ -750,15 +747,16 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
     /**
      * One-shot execution using -p flag. Spawns a process, collects all output, resolves when done.
      */
-    private invokeNonInteractive(prompt: string, mode: AgentMode, onUpdate?: (chunk: string) => void): Promise<string> {
+    private invokeNonInteractive(prompt: string, mode: AgentMode, sessionId?: string, onUpdate?: (chunk: string) => void): Promise<string> {
         return new Promise((resolve, reject) => {
             const workspacePath = PersistentAgentAdapter.resolveWorkspacePath();
             const currentCwd = workspacePath.path;
             const preparedPrompt = this.preparePromptForNonInteractive(mode, prompt, currentCwd);
             const promptFileThreshold = this.getPromptFileThreshold();
-            const { cmd, args } = this.getNonInteractiveCommand(mode, preparedPrompt.prompt);
+            const { cmd, args } = this.getNonInteractiveCommand(mode, preparedPrompt.prompt, sessionId);
             const useStructuredOutput = this.shouldUseStructuredOutput(mode);
             this.lastUsageLog = undefined;
+            // Retain lastSessionId across invokes if not explicitly overwritten
             debugLog(this.id, 'Starting non-interactive invoke', JSON.stringify({
                 mode,
                 cwd: currentCwd,
@@ -857,6 +855,11 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
                                 }
                                 this.lastUsageLog = this.extractStructuredUsageLog(event) || this.lastUsageLog;
                             }
+                            
+                            // Capture active session ID if reported by the CLI
+                            if (event?.session_id || event?.sessionId) {
+                                this.lastSessionId = event.session_id || event.sessionId;
+                            }
                         } catch {
                             output += chunk;
                             if (onUpdate) {
@@ -870,6 +873,12 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
                     if (onUpdate) {
                         onUpdate(output.trim());
                     }
+                }
+                
+                // Fallback regex to capture session ID natively
+                const sessionMatch = chunk.match(/"?(?:session_id|sessionId)"?\s*[:=]\s*"([0-9a-f-]{36})"/i);
+                if (sessionMatch) {
+                    this.lastSessionId = sessionMatch[1];
                 }
             });
 
@@ -1221,10 +1230,10 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         this.currentTurnMarker = null;
     }
 
-    async invoke(prompt: string, mode: AgentMode = 'plan', onUpdate?: (chunk: string) => void): Promise<string> {
+    async invoke(prompt: string, mode: AgentMode = 'plan', sessionId?: string, onUpdate?: (chunk: string) => void): Promise<string> {
         // Use one-shot execution unless the adapter explicitly requires a persistent interactive session.
         if (!this.shouldUsePersistentSession(mode)) {
-            return this.invokeNonInteractive(prompt, mode, onUpdate);
+            return this.invokeNonInteractive(prompt, mode, sessionId, onUpdate);
         }
 
         // Agent mode: use persistent interactive daemon

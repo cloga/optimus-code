@@ -74,15 +74,18 @@ export interface TurnRecord {
     synthesisPrompt?: string;
     failureReason?: string;
     referencedTurnSequences?: number[];
+    attachments?: SessionImageAttachment[];
 }
 
 export interface SharedTaskState {
     taskId: string;
+    cliSessionId?: string;
     createdAt: number;
     updatedAt: number;
     title: string;
     status: TaskStatus;
     pinned?: boolean;
+    masterAgentType?: string;
     workspacePath?: string;
     userIntentHistory: string[];
     plannerContributions: ContributionRecord[];
@@ -101,6 +104,7 @@ export interface TaskSnapshot {
     pinned?: boolean;
     updatedAt: number;
     turnCount: number;
+    masterAgentType?: string;
     latestSummary: string;
     latestPrompt?: string;
     workspacePath?: string;
@@ -109,9 +113,11 @@ export interface TaskSnapshot {
 export interface StartTurnInput {
     taskId?: string;
     prompt: string;
+    masterAgentType?: string;
     selectedAgentIds: string[];
     executorId?: string;
     referencedTurnSequences?: number[];
+    attachments?: SessionImageAttachment[];
 }
 
 export interface StartTurnResult {

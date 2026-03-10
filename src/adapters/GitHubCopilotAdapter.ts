@@ -19,10 +19,13 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         return mode === 'plan' || mode === 'agent';
     }
 
-    protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
-        const command = super.getNonInteractiveCommand(mode, prompt);
+    protected getNonInteractiveCommand(mode: AgentMode, prompt: string, sessionId?: string): { cmd: string, args: string[] } {
+        const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
         if (this.shouldUseStructuredOutput(mode)) {
             command.args.push('--output-format', 'json', '--stream', 'on');
+        }
+        if (sessionId) {
+            command.args.push('--resume', sessionId);
         }
         return command;
     }
@@ -56,23 +59,6 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         const args: string[] = [];
         const cwd = PersistentAgentAdapter.getWorkspacePath();
         args.push('--add-dir', cwd);
-
-        const mcpServerPath = path.resolve(__dirname, 'mcp', 'optimus-agents.js');
-        if (fs.existsSync(mcpServerPath)) {
-            args.push('--additional-mcp-config', JSON.stringify({
-                mcpServers: {
-                    'optimus-agents': {
-                        type: 'stdio',
-                        command: 'node',
-                        args: [mcpServerPath],
-                        env: {
-                            OPTIMUS_WORKSPACE: cwd,
-                            PATH: process.env.PATH || ''
-                        }
-                    }
-                }
-            }));
-        }
 
         if (this.modelFlag) {
             args.push('--model', this.modelFlag);

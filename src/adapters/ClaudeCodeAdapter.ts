@@ -16,10 +16,13 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
         return mode === 'plan' || mode === 'agent';
     }
 
-    protected getNonInteractiveCommand(mode: AgentMode, prompt: string): { cmd: string, args: string[] } {
-        const command = super.getNonInteractiveCommand(mode, prompt);
+    protected getNonInteractiveCommand(mode: AgentMode, prompt: string, sessionId?: string): { cmd: string, args: string[] } {
+        const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
         if (this.shouldUseStructuredOutput(mode)) {
             command.args.push('--output-format', 'stream-json', '--include-partial-messages', '--verbose');
+        }
+        if (sessionId) {
+            command.args.push('--resume', sessionId);
         }
         return command;
     }

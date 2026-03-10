@@ -33,11 +33,17 @@ export class SharedTaskStateManager {
         let taskState = input.taskId
             ? tasks.find(task => task.taskId === input.taskId)
             : undefined;
+
+        if (taskState && taskState.masterAgentType && input.masterAgentType && taskState.masterAgentType !== input.masterAgentType) {
+            throw new Error(`Task '${taskState.title}' is bound to agent '${taskState.masterAgentType}'. You cannot switch to '${input.masterAgentType}' mid-session.`);
+        }
+
         const isNewTask = !taskState;
 
         if (!taskState) {
             taskState = {
                 taskId: this.buildId('task'),
+                masterAgentType: input.masterAgentType,
                 createdAt: now,
                 updatedAt: now,
                 title: this.buildTaskTitle(input.prompt),
@@ -77,6 +83,7 @@ export class SharedTaskStateManager {
             status: 'in_progress',
             plannerContributions: [],
             referencedTurnSequences: input.referencedTurnSequences,
+            attachments: input.attachments,
         };
 
         taskState.turnHistory.push(turnRecord);
@@ -147,6 +154,13 @@ export class SharedTaskStateManager {
             '</task-context>',
         ];
 
+        if (turnRecord.attachments && turnRecord.attachments.length > 0) {
+            parts.push('', 'User provided attachments:');
+            for (const att of turnRecord.attachments) {
+                parts.push(`- [${att.mimeType}] ${att.filePath}`);
+            }
+        }
+
         if (referencedContext) {
             parts.push('', referencedContext);
         }
@@ -196,6 +210,13 @@ export class SharedTaskStateManager {
 
         const parts = [
             'You are the executor agent for Optimus Code.',
+            '',
+            'RESPONSE GUIDELINES:',
+            '- Lead with the direct answer or result first.',
+            '- Be concise and direct. Avoid filler words.',
+            '- Use bullet points for lists and steps.',
+            '- Do not repeat task context unless necessary.',
+            '- Prioritize code snippets and technical details.',
             ...rulesParts,
             ...memoryParts,
             '',
@@ -315,6 +336,13 @@ export class SharedTaskStateManager {
         const parts = [
             'You are the executor agent for Optimus Code.',
             'This task was initially routed as DIRECT EXECUTION, but a validation planner detected it requires more careful planning.',
+            '',
+            'RESPONSE GUIDELINES:',
+            '- Lead with the direct answer or result first.',
+            '- Be concise and direct. Avoid filler words.',
+            '- Use bullet points for lists and steps.',
+            '- Do not repeat task context unless necessary.',
+            '- Prioritize code snippets and technical details.',
             'You have both the original user request and the planner\'s analysis below. Use the planner insight to guide your approach, but execute the full user request.',
             ...rulesParts,
             ...memoryParts,
@@ -336,13 +364,20 @@ export class SharedTaskStateManager {
             blockedReasons,
         ];
 
+        if (turnRecord.attachments && turnRecord.attachments.length > 0) {
+            parts.push('', 'User provided attachments:');
+            for (const att of turnRecord.attachments) {
+                parts.push(`- [${att.mimeType}] ${att.filePath}`);
+            }
+        }
+
         if (referencedContext) {
             parts.push('', referencedContext);
         }
 
         parts.push(
             '',
-            'Validation planner analysis (explains why this task needs careful execution):',
+            'Validation planner analysis(explains why this task needs careful execution):',
             plannerInsight,
             '',
             enrichedPrompt,
@@ -391,6 +426,13 @@ export class SharedTaskStateManager {
         const parts = [
             'You are the executor agent for Optimus Code.',
             'This is a DIRECT EXECUTION turn — no planner analysis was performed. Execute the user request directly.',
+            '',
+            'RESPONSE GUIDELINES:',
+            '- Lead with the direct answer or result first.',
+            '- Be concise and direct. Avoid filler words.',
+            '- Use bullet points for lists and steps.',
+            '- Do not repeat task context unless necessary.',
+            '- Prioritize code snippets and technical details.',
             ...rulesParts,
             ...memoryParts,
             '',
@@ -410,6 +452,13 @@ export class SharedTaskStateManager {
             'Known blockers:',
             blockedReasons,
         ];
+
+        if (turnRecord.attachments && turnRecord.attachments.length > 0) {
+            parts.push('', 'User provided attachments:');
+            for (const att of turnRecord.attachments) {
+                parts.push(`- [${att.mimeType}] ${att.filePath}`);
+            }
+        }
 
         if (referencedContext) {
             parts.push('', referencedContext);
@@ -502,6 +551,7 @@ export class SharedTaskStateManager {
     public listTaskSnapshots(): TaskSnapshot[] {
         return this.getTasks().map(task => ({
             taskId: task.taskId,
+            masterAgentType: task.masterAgentType,
             title: task.title,
             status: task.status,
             pinned: task.pinned,
@@ -552,6 +602,16 @@ export class SharedTaskStateManager {
         const taskState = tasks.find(task => task.taskId === taskId);
         if (!taskState) { return false; }
         taskState.pinned = !taskState.pinned;
+        taskState.updatedAt = Date.now();
+        await this.saveTasks(tasks);
+        return true;
+    }
+
+    public async updateTaskCliSessionId(taskId: string, cliSessionId: string): Promise<boolean> {
+        const tasks = this.getTasks();
+        const taskState = tasks.find(task => task.taskId === taskId);
+        if (!taskState) { return false; }
+        taskState.cliSessionId = cliSessionId;
         taskState.updatedAt = Date.now();
         await this.saveTasks(tasks);
         return true;
@@ -693,7 +753,7 @@ export class SharedTaskStateManager {
         return this.clone(taskState);
     }
 
-    private getTasks(): SharedTaskState[] {
+    public getTasks(): SharedTaskState[] {
         return this.globalState.get<SharedTaskState[]>(SharedTaskStateManager.storageKey, []);
     }
 
@@ -711,12 +771,12 @@ export class SharedTaskStateManager {
         return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     }
 
-    private readRulesMd(): string | null {
+    public readRulesMd(): string | null {
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
             const rootPath = workspaceFolders[0].uri.fsPath;
-            const rulesPath = path.join(rootPath, '.optimus', 'rules.md');
+            const rulesPath = path.join(rootPath, '.optimus', 'config', 'rules.md');
             
             let rulesContent = "";
             if (fs.existsSync(rulesPath)) {
@@ -751,7 +811,7 @@ export class SharedTaskStateManager {
         try {
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders || workspaceFolders.length === 0) { return null; }
-            const memPath = path.join(workspaceFolders[0].uri.fsPath, '.optimus', 'memory.md');
+            const memPath = path.join(workspaceFolders[0].uri.fsPath, '.optimus', 'state', 'memory.md');
             if (!fs.existsSync(memPath)) { return null; }
             return fs.readFileSync(memPath, 'utf8');
         } catch {
@@ -765,7 +825,7 @@ export class SharedTaskStateManager {
             if (!workspaceFolders || workspaceFolders.length === 0) { return; }
             const optimusDir = path.join(workspaceFolders[0].uri.fsPath, '.optimus');
             if (!fs.existsSync(optimusDir)) { fs.mkdirSync(optimusDir, { recursive: true }); }
-            const memPath = path.join(optimusDir, 'memory.md');
+            const memPath = path.join(optimusDir, 'state', 'memory.md');
             fs.writeFileSync(memPath, newContent, 'utf8');
         } catch {
             // non-fatal: memory write failure should never block turn completion
