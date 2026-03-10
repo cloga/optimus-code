@@ -37,10 +37,11 @@ Group logically related changes into an atomic commit.
 Push the newly created branch to the remote repository.
 - Command: `git push -u origin <branch-name>`
 
-### 5. Create Pull Request (Using `gh` CLI or `cloud_board_create_ticket`)
+### 5. Create Pull Request (MUST use MCP Tool)
 Create the PR and assign the corresponding tracking metadata.
-- If using `gh` CLI: `gh pr create --title "feat: Implement T1/T2 instantiation" --body "Resolves #<ID>. Contains architectural refactor."`
-- *Note: If `gh` encounters an auth error (e.g., "Enterprise Managed User"), fall back to gracefully instructing the user to click the "Compare & pull request" link generated in the `git push` stdout.*
+- **You MUST use the MCP Tool `github_create_pr`** to create the Pull Request. **DO NOT** use `gh` CLI or manual terminal commands for this step. The system is configured with correct credentials internally.
+- Use your registered MCP tool calls explicitly passing `owner`, `repo`, `title`, `head`, `base` (usually 'main'), and `body`.
+- If the PR needs to be merged after checking, use the MCP Tool `github_merge_pr`.
 
 ### 6. Update Blackboard / T1 Memory
 Once the PR is open, update the local Project Blackboard and/or the T1 Agent Memory `.optimus/agents/<your_role>.md` to record that the implementation is complete and pending review.
