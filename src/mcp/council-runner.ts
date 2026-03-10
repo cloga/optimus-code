@@ -39,6 +39,31 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 `async_council_${taskId}`,
                 task.workspacePath
             );
+
+            // Phase 3: Concatenate into COUNCIL_SYNTHESIS.md
+            const fs = require('fs');
+            const path = require('path');
+            const reviewsPath = task.output_path!;
+            const synthesisPath = path.join(reviewsPath, 'COUNCIL_SYNTHESIS.md');
+            
+            let synthesisContent = `# Council Synthesis Report\n\n`;
+            synthesisContent += `**Proposal:** \`${task.proposal_path}\`\n`;
+            synthesisContent += `**Council:** ${task.roles!.map(r => `\`${r}\``).join(', ')}\n\n`;
+            
+            for (const role of task.roles!) {
+                const reviewFile = path.join(reviewsPath, `${role}_review.md`);
+                if (fs.existsSync(reviewFile)) {
+                    synthesisContent += `## 1. Review from ${role}\n\n`;
+                    synthesisContent += fs.readFileSync(reviewFile, 'utf8');
+                    synthesisContent += `\n\n---\n\n`;
+                } else {
+                    synthesisContent += `## 1. Review from ${role}\n\n`;
+                    synthesisContent += `*Worker failed to produce a review artifact.*\n\n---\n\n`;
+                }
+            }
+            
+            fs.writeFileSync(synthesisPath, synthesisContent, 'utf8');
+            console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
         }
 
         TaskManifestManager.updateTask(workspacePath, taskId, { status: 'completed' });
