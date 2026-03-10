@@ -28,7 +28,7 @@ When the user asks to assign/delegate a task to a specific agent, follow the **3
    - **T1 (Local Session Agents)**: Stateful local instances mapped in `.optimus/agents/`.
    - **T2 (Project Default Roles)**: Standard project repository templates in `.optimus/roles/` — first choice for project domain knowledge.
    - **T3 (Dynamic Outsourcing)**: Invent a descriptive role name (e.g., `webgl-shader-guru`) for niche tasks — the engine auto-generates a zero-shot worker.
-3. **Deployment**: Announce your choice, then call `delegate_task` with `role`, `task_description`, and `output_path`.
+3. **Deployment**: Announce your choice, then call `mcp_spartan-swarm_delegate_task` (or `delegate_task`) with `role`, `task_description`, and `output_path`. **NEVER simulate the work yourself or write local test scripts when delegation is requested. You MUST invoke the tool.**
 
 If `delegate_task` fails, analyze the error trace, fix, and retry — or fall back to doing the work manually.
 
