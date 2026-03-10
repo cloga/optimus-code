@@ -20,3 +20,5 @@ temp_debug/
 .env.*
 
 /temp_scripts/
+/.optimus/reports/
+/.optimus/reviews/

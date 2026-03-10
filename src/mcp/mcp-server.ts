@@ -130,7 +130,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
             },
           },
-          required: ["proposal_path", "roles"],
+          required: ["proposal_path", "roles", "workspace_path"],
         },
       },
       {
@@ -180,9 +180,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // 3. Handle Tool Execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "dispatch_council") {
-    const { proposal_path, roles } = request.params.arguments as any;
+    let { proposal_path, roles, workspace_path } = request.params.arguments as any;
     
-    if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
+    if (!workspace_path || !proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
 
