@@ -40,9 +40,9 @@ module.exports = function init() {
   console.log('\n🤖 Optimus Swarm — Initializing workspace...\n');
 
   // 1. Create required subdirectories
-  // Note: personas and agents are NOT pre-populated — the Spartan Swarm's
-  // T3→T1 Cascade mechanism auto-generates them at runtime when new roles
-  // are encountered. Only skills (MCP tool manuals) and config are shipped.
+  // Most personas/agents are auto-generated at runtime via the T3→T1 Cascade.
+  // Only the PM (Master Agent) is pre-installed — it bootstraps the entire
+  // workflow and cannot be dynamically generated since it's the entry point.
   const dirs = ['personas', 'config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state'];
   for (const dir of dirs) {
     const dirPath = path.join(optimusDir, dir);
@@ -57,6 +57,13 @@ module.exports = function init() {
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Installing system config...');
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
+  }
+
+  // 2.5 Install bootstrap personas (PM is mandatory — it's the Master Agent)
+  const bootstrapPersonas = path.join(scaffoldDir, 'personas');
+  if (fs.existsSync(bootstrapPersonas)) {
+    console.log('\n👔 Installing bootstrap persona (PM - Master Agent)...');
+    copyDirRecursive(bootstrapPersonas, path.join(optimusDir, 'personas'));
   }
 
   // 3. Copy plugin skills — these are the CORE deliverable.
