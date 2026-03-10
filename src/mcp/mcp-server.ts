@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -24,15 +26,77 @@ const server = new Server(
   },
   {
     capabilities: {
+      resources: {},
       tools: {},
     },
   }
 );
 
+// 1.5 Register Resources
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  return {
+    resources: [
+      {
+        uri: "optimus://system/instructions",
+        name: "Optimus System Instructions",
+        description: "Master workflow protocols and agnostic system instructions for Optimus agents.",
+        mimeType: "text/markdown"
+      }
+    ]
+  };
+});
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  if (request.params.uri === "optimus://system/instructions") {
+    // Resolve workspace path securely
+    const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    const instructionsPath = path.resolve(workspacePath, '.optimus', 'config', 'system-instructions.md');
+    
+    // Security check: Ensure it doesn't escape workspace
+    if (!instructionsPath.startsWith(path.resolve(workspacePath))) {
+       throw new McpError(ErrorCode.InvalidRequest, `Path traversal detected`);
+    }
+
+    try {
+      if (fs.existsSync(instructionsPath)) {
+        const content = fs.readFileSync(instructionsPath, 'utf8');
+        return {
+          contents: [
+            {
+              uri: request.params.uri,
+              mimeType: "text/markdown",
+              text: content
+            }
+          ]
+        };
+      } else {
+        // Fallback for transition
+        throw new McpError(ErrorCode.InvalidRequest, `The system-instructions.md file does not exist at ${instructionsPath}`);
+      }
+    } catch (e: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to read instructions: ${e.message}`);
+    }
+  }
+  throw new McpError(ErrorCode.InvalidRequest, `Resource not found: ${request.params.uri}`);
+});
+
 // 2. Register tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+        {
+          name: "append_memory",
+          description: "Write experience, architectural decisions, and important project facts into the continuous memory system to evolve the project context.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
+              tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
+              content: { type: "string", description: "The actual memory content to solidify" }
+            },
+            required: ["category", "tags", "content"]
+          }
+        },
         {
           name: "github_update_issue",
           description: "Updates an existing issue in a GitHub repository (e.g. to close it or add comments).",
@@ -62,7 +126,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             body: { type: "string", description: "Issue body/contents" },              local_path: { type: "string", description: "The local blackboard file path (e.g. .optimus/proposals/PROPOSAL_XY.md) for A2A cross-reference" },
               session_id: { type: "string", description: "The Session ID or Agent ID creating this issue for traceability" },            labels: { type: "array", items: { type: "string" }, description: "Labels to apply" }
           },
-          required: ["owner", "repo", "title", "body"]
+          required: ["owner", "repo", "title", "body", "local_path"]
         }
       },
         {
@@ -130,7 +194,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
             },
           },
-          required: ["proposal_path", "roles"],
+          required: ["proposal_path", "roles", "workspace_path"],
         },
       },
       {
@@ -180,9 +244,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // 3. Handle Tool Execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "dispatch_council") {
-    const { proposal_path, roles } = request.params.arguments as any;
+    let { proposal_path, roles, workspace_path } = request.params.arguments as any;
     
-    if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
+    if (!workspace_path || !proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
 
@@ -218,6 +282,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       ],
     };
+        } else if (request.params.name === "append_memory") {
+      let { category, tags, content } = request.params.arguments as any;
+      const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+      const memoryDir = path.resolve(workspacePath, '.optimus', 'memory');
+      const memoryFile = path.join(memoryDir, 'continuous-memory.md');
+
+      if (!fs.existsSync(memoryDir)) {
+        fs.mkdirSync(memoryDir, { recursive: true });
+      }
+
+      // Memory Lock for concurrency within the MCP server process
+      if (!(global as any).memoryLock) {
+        (global as any).memoryLock = Promise.resolve();
+      }
+
+      try {
+        await (global as any).memoryLock; // Wait for any pending write
+
+        // Create new write promise
+        const writePromise = new Promise<void>((resolve, reject) => {
+          try {
+            const timestamp = new Date().toISOString();
+            const memoryId = 'mem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            
+            const freshEntry = [
+              '---',
+              'id: ' + memoryId,
+              'category: ' + (category || 'uncategorized'),
+              'tags: [' + (tags ? tags.join(', ') : '') + ']',
+              'created: ' + timestamp,
+              '---',
+              content,
+              '\n'
+            ].join('\n');
+
+            fs.appendFileSync(memoryFile, freshEntry, 'utf8');
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        });
+        
+        (global as any).memoryLock = writePromise;
+        await writePromise;
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: `✅ Experience solidifed to memory!\nTags: ${tags.join(', ')}\nMemory appended to: ${memoryFile}`
+            }
+          ]
+        };
+      } catch (err: any) {
+        return {
+           content: [{ type: "text", text: `Failed to append memory: ${err.message}` }],
+           isError: true
+        };
+      }
     } else if (request.params.name === "github_update_issue") {
       const { owner, repo, issue_number, state, body, agent_role, session_id } = request.params.arguments as any;
       const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -257,6 +380,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     } else if (request.params.name === "github_create_issue") {
     const { owner, repo, title, body, labels, local_path, session_id } = request.params.arguments as any;
+      if (!local_path) {
+        throw new McpError(ErrorCode.InvalidParams, "Violated Issue First Protocol: local_path is mandatory to bind to a blackboard file (e.g. .optimus/tasks/task.md)");
+      }
     const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     if (!token) throw new McpError(ErrorCode.InvalidRequest, "GITHUB_TOKEN env is not set");
     

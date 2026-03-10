@@ -1,0 +1,8 @@
+{
+  "name": "optimus-swarm",
+  "version": "0.1.0",
+  "description": "Spartan Swarm Orchestrator Plugin for Claude Code",
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "mcpServers": "./.mcp.json"
+}

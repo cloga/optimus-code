@@ -1,0 +1,5 @@
+# .optimus directories
+.optimus/reports/
+.optimus/reviews/
+.optimus/state/
+.optimus/memory/
