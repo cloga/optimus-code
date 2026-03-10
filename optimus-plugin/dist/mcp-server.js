@@ -1423,7 +1423,21 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   if (t1Content) {
     personaContext = parseFrontmatter(t1Content).body.trim();
   } else {
-    personaContext = "No persona found.";
+    const formattedRole = role.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    personaContext = `You are a ${formattedRole} expert operating within the Optimus Spartan Swarm. Your purpose is to fulfill tasks autonomously within your specialized domain of expertise.
+As a dynamically provisioned "T3" agent, apply industry best practices, solve complex problems, and deliver professional-grade results associated with your role.`;
+    const systemInstructionsPath = import_path.default.join(workspacePath, ".optimus", "config", "system-instructions.md");
+    if (import_fs.default.existsSync(systemInstructionsPath)) {
+      try {
+        const systemInstructions = import_fs.default.readFileSync(systemInstructionsPath, "utf8");
+        personaContext += `
+
+--- START WORKSPACE SYSTEM INSTRUCTIONS ---
+${systemInstructions.trim()}
+--- END WORKSPACE SYSTEM INSTRUCTIONS ---`;
+      } catch (e) {
+      }
+    }
   }
   let contextContent = "";
   if (contextFiles && contextFiles.length > 0) {
