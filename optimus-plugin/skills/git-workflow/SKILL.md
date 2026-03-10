@@ -11,7 +11,7 @@ triggers:
 
 # Git Workflow & Pull Request Skill (Standard SDLC)
 
-You are operating under the strict **"Issue First" Hybrid SDLC Protocol**. It is an architectural violation to implement code and merge it straight to `main` without creating a PR or updating the tracking Issue.
+You are operating under the strict **"Issue First" Hybrid SDLC Protocol**. It is an architectural violation to implement code and merge it straight to `master` without creating a PR or updating the tracking Issue.
 
 ## The Standard Protocol
 
@@ -28,12 +28,12 @@ Local `git` commands are acceptable for branch management, staging, committing, 
 - Commit (Conventional Commits + Issue ref): `git commit -m "feat: Implement T1/T2 instantiation, closes #29"`
 - Push: `git push -u origin <branch-name>`
 
-**Never commit directly to `main`** for standard feature work unless explicitly overridden by the User (PM).
+**Never commit directly to `master`** for standard feature work unless explicitly overridden by the User (PM).
 
 ### 5. Create Pull Request (MUST use MCP Tool)
 Create the PR and assign the corresponding tracking metadata.
 - **You MUST use the MCP Tool `github_create_pr`** to create the Pull Request. **DO NOT** use `gh` CLI or manual terminal commands for this step. The system is configured with correct credentials internally.
-- Use your registered MCP tool calls explicitly passing `owner`, `repo`, `title`, `head`, `base` (usually 'main'), and `body`.
+- Use your registered MCP tool calls explicitly passing `owner`, `repo`, `title`, `head`, `base` (usually 'master'), and `body`.
 - If the PR needs to be merged after checking, use the MCP Tool `github_merge_pr`.
 
 ### 6. Update Blackboard / T1 Memory
