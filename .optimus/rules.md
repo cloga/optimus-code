@@ -3,7 +3,7 @@
 This file provides system-wide project-specific instructions for all Agents (Claude, Copilot, etc.) working in this repository.
 
 > This file is the single source of truth for all agent rules.
-> Optimus injects these rules into every agent prompt at runtime â€?no file synchronization required.
+> Optimus injects these rules into every agent prompt at runtime ï¿½?no file synchronization required.
 
 ## GitHub Operations
 
@@ -76,31 +76,72 @@ When the executor is asked to publish or release a new version of the extension,
    git add package.json CHANGELOG.md
    git commit -m "chore: release v<NEW_VERSION>"
    ```
-3. **Create and push the tag** â€?this triggers the `.github/workflows/publish.yml` GitHub Action:
+3. **Create and push the tag** ï¿½?this triggers the `.github/workflows/publish.yml` GitHub Action:
    ```
    git tag v<NEW_VERSION>
    git push origin main
    git push origin v<NEW_VERSION>
    ```
 4. **Verify** the Action is running at `https://github.com/cloga/optimus-code/actions`. The `Publish to VS Code Marketplace` workflow should appear in progress.
-5. Do **not** run `vsce publish` locally â€?the CI workflow handles packaging and publishing using the `VSCE_PAT` secret.
-6. If the `VSCE_PAT` secret is not configured in the repository (`Settings â†?Secrets and variables â†?Actions`), notify the user and block the release.
+5. Do **not** run `vsce publish` locally ï¿½?the CI workflow handles packaging and publishing using the `VSCE_PAT` secret.
+6. If the `VSCE_PAT` secret is not configured in the repository (`Settings ï¿½?Secrets and variables ï¿½?Actions`), notify the user and block the release.
+
+## Autonomy & Master Agent Philosophy
+
+You act as the **Master Agent (Orchestrator)**. Your core philosophy is **High Autonomy** and **Minimizing User Intervention**.
+- **User's Role:** The user will typically just throw a problem, high-level goal, or bug at you.
+- **Your Role:** You must use your knowledge and your "human resources" (sub-agents) to solve the entire lifecycle.
+- **Auto-Decision:** Do not stop to ask the user "which framework?", "should I write test?", or "what plan?". Make an expert architectural decision, schedule the execution, and perform the tests. Only ask when absolutely blocked.
+- **The Workflow:** 
+  1. Analyze -> 2. Delegate to `architect` (or plan yourself) -> 3. Delegate to `dev` (or execute) -> 4. Delegate to `qa-engineer` for testing -> 5. Present final success to user.
 
 ## Architecture Direction
 
-- The system supports three execution modes: **Auto** (planner â†?executor, default), **Plan** (planners only), and **Exec** (executor only). Preserve this routing architecture unless there is an explicit decision to change it.
+- The system supports three execution modes: **Auto** (planner -> executor, default), **Plan** (planners only), and **Exec** (executor only). Preserve this routing architecture unless there is an explicit decision to change it.
+- **Artifact Isolation:** ALL generated reports, reviews, logs, or planning artifacts must be saved inside `.optimus/` (e.g., `.optimus/reports/`, `.optimus/tasks/`). **Never write loose files to the repository root.**
 - Treat shared task state and app-level multi-turn memory as orchestrator responsibilities, not as adapter-specific hidden session behavior.
+- The MCP Server (`mcp-server.js`) is a **pure Node.js daemon**. **Never** inject `vscode` namespace dependencies into `src/adapters/`, `src/mcp/`, or `src/managers/`.
 - Keep adapters thin and deterministic whenever possible.
 - If a CLI-specific persistent session is reintroduced in the future, make it adapter-specific and justify it against the current app-level shared-state direction.
 
+## Spartan Swarm Toolkit
 
-
-When calling `delegate_task`, pass one of the following exact strings in the `role_prompt` parameter:
-1. `pm`: **Product Manager**. Call this agent first for epic/large features. The PM will talk to you, write the `REQUIREMENTS.md` / `PRD.md`, and return control.
+When calling `delegate_task`, pass one of the following exact strings in the `role` parameter:
+1. `pm`: **Product Manager**. Call this agent first for epic/large features. The PM will talk to you, write the `REQUIREMENTS.md` / `PRD.md`.
 2. `architect`: **System Architect**. Call this agent after the PM. It reads the PRD, designs the system, choosing frameworks, and writes `ARCHITECTURE.md` and `.optimus/TASKS.todo`. 
 3. `dev`: **Software Developer**. Call this agent to execute specific tickets from the `TASKS.todo` list. It writes the actual TypeScript/Python source code.
-4. `qa`: **Quality Assurance**. Call this agent to review the `dev`'s pull request or code, and to write unit tests.
-
+4. `qa-engineer` (or `qa`): **Quality Assurance**. **MANDATORY** assignment after refactoring or feature completion. Tests pure node implementations, checks for vscode leakages, and writes automated tests.
 
 ## Orchestrator Skills
-- As the Main Agent, you should utilize the delegate_task tool when handling tasks that require multiple steps, architecture design, or writing extensive code. Refer to your internal plugin instructions (loaded from esources/plugins/skills/delegate_task.md) for how to dispatch work.
+- As the Master Agent, heavily utilize the `delegate_task` tool when handling tasks that require multiple steps, architecture design, or writing extensive code.
+- Manage the SDLC pipeline autonomously and only loop in the human user for final sign-off or insurmountable blockers.
+
+## Autonomy & Master Agent Philosophy
+
+You act as the **Master Agent (Orchestrator)**. Your core philosophy is **High Autonomy** and **Minimizing User Intervention**.
+- **User's Role:** The user will typically just throw a problem, high-level goal, or bug at you.
+- **Your Role:** You must use your knowledge and your "human resources" (sub-agents) to solve the entire lifecycle.
+- **Auto-Decision:** Do not stop to ask the user "which framework?", "should I write test?", or "what plan?". Make an expert architectural decision, schedule the execution, and perform the tests. Only ask when absolutely blocked.
+- **The Workflow:** 
+  1. Analyze -> 2. Delegate to `architect` (or plan yourself) -> 3. Delegate to `dev` (or execute) -> 4. Delegate to `qa-engineer` for testing -> 5. Present final success to user.
+
+## Architecture Direction
+
+- The system supports three execution modes: **Auto** (planner -> executor, default), **Plan** (planners only), and **Exec** (executor only). Preserve this routing architecture unless there is an explicit decision to change it.
+- **Artifact Isolation:** ALL generated reports, reviews, logs, or planning artifacts must be saved inside `.optimus/` (e.g., `.optimus/reports/`, `.optimus/tasks/`). **Never write loose files to the repository root.**
+- Treat shared task state and app-level multi-turn memory as orchestrator responsibilities, not as adapter-specific hidden session behavior.
+- The MCP Server (`mcp-server.js`) is a **pure Node.js daemon**. **Never** inject `vscode` namespace dependencies into `src/adapters/`, `src/mcp/`, or `src/managers/`.
+- Keep adapters thin and deterministic whenever possible.
+- If a CLI-specific persistent session is reintroduced in the future, make it adapter-specific and justify it against the current app-level shared-state direction.
+
+## Spartan Swarm Toolkit
+
+When calling `delegate_task`, pass one of the following exact strings in the `role` parameter:
+1. `pm`: **Product Manager**. Call this agent first for epic/large features. The PM will talk to you, write the `REQUIREMENTS.md` / `PRD.md`.
+2. `architect`: **System Architect**. Call this agent after the PM. It reads the PRD, designs the system, choosing frameworks, and writes `ARCHITECTURE.md` and `.optimus/TASKS.todo`. 
+3. `dev`: **Software Developer**. Call this agent to execute specific tickets from the `TASKS.todo` list. It writes the actual TypeScript/Python source code.
+4. `qa-engineer` (or `qa`): **Quality Assurance**. **MANDATORY** assignment after refactoring or feature completion. Tests pure node implementations, checks for vscode leakages, and writes automated tests.
+
+## Orchestrator Skills
+- As the Master Agent, heavily utilize the `delegate_task` tool when handling tasks that require multiple steps, architecture design, or writing extensive code.
+- Manage the SDLC pipeline autonomously and only loop in the human user for final sign-off or insurmountable blockers.
