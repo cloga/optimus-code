@@ -59,7 +59,8 @@ Add this directly to your MCP Configuration settings (e.g., \.cursor/mcp.json\):
   "mcpServers": {
     "optimus-swarm": {
       "command": "npx",
-      "args": ["-y", "github:cloga/optimus-code#main", "serve"]
+      "args": ["-y", "github:cloga/optimus-code#main", "serve"],
+      "type": "stdio"
     }
   }
 }
