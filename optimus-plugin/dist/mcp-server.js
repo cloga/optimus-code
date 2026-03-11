@@ -1282,15 +1282,8 @@ function trackT3Usage(workspacePath, role, success, engine, model) {
   }).catch(() => {
   });
 }
-var PRECIPITATION_THRESHOLD = 3;
-var PRECIPITATION_SUCCESS_RATE = 0.8;
 function checkAndPrecipitate(workspacePath, role, engine, model) {
   const safeRole = sanitizeRoleName(role);
-  const log = loadT3UsageLog(workspacePath);
-  const entry = log[safeRole];
-  if (!entry || entry.invocations < PRECIPITATION_THRESHOLD) return null;
-  const successRate = entry.successes / entry.invocations;
-  if (successRate < PRECIPITATION_SUCCESS_RATE) return null;
   const t2Dir = import_path.default.join(workspacePath, ".optimus", "roles");
   const t2Path = import_path.default.join(t2Dir, `${safeRole}.md`);
   if (import_fs.default.existsSync(t2Path)) return null;
@@ -1299,21 +1292,21 @@ function checkAndPrecipitate(workspacePath, role, engine, model) {
   const template = `---
 role: ${safeRole}
 tier: T2
-description: "Auto-precipitated from T3 after ${entry.successes} successes in ${entry.invocations} invocations"
+description: "Auto-precipitated from T3 on first use"
 engine: ${engine}
-model: ${model || "claude-opus-4.6-1m"}
+model: ${model || ""}
 precipitated: ${(/* @__PURE__ */ new Date()).toISOString()}
 ---
 
 # ${formattedRole}
 
 You are a **${formattedRole}** expert operating within the Optimus Spartan Swarm.
-This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default) based on consistent successful usage (${entry.successes}/${entry.invocations} success rate).
+This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default).
 
 Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
 `;
   import_fs.default.writeFileSync(t2Path, template, "utf8");
-  console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
+  console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path}`);
   return t2Path;
 }
 var AgentLockManager = class {
@@ -2757,8 +2750,7 @@ URL: ${data.html_url}` }] };
           roster += "\n### \u{1F4CA} T3 Dynamic Role Usage Stats\n";
           for (const e of entries) {
             const rate = e.invocations > 0 ? Math.round(e.successes / e.invocations * 100) : 0;
-            const precipNote = e.invocations >= 3 && rate >= 80 ? " \u2B06\uFE0F Ready for precipitation" : "";
-            roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)${precipNote}
+            roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)
 `;
           }
         }
@@ -2768,7 +2760,7 @@ URL: ${data.html_url}` }] };
     roster += "\n### \u2699\uFE0F Fallback Behavior\n";
     roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
     roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
-    roster += "- T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).\n";
+    roster += "- T3 roles auto-precipitate to T2 immediately on first use.\n";
     return {
       content: [{ type: "text", text: roster }]
     };

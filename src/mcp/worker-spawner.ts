@@ -101,21 +101,12 @@ function trackT3Usage(workspacePath: string, role: string, success: boolean, eng
     }).catch(() => {});
 }
 
-const PRECIPITATION_THRESHOLD = 3;
-const PRECIPITATION_SUCCESS_RATE = 0.8;
-
 /**
- * Check if a T3 role should be precipitated to T2 based on usage metrics.
- * If threshold is met, auto-generate the T2 role template.
+ * Precipitate a T3 role to T2 immediately on first use if no T2 exists.
+ * This ensures every T3 dynamic role gets a persistent template.
  */
 function checkAndPrecipitate(workspacePath: string, role: string, engine: string, model?: string): string | null {
     const safeRole = sanitizeRoleName(role);
-    const log = loadT3UsageLog(workspacePath);
-    const entry = log[safeRole];
-    if (!entry || entry.invocations < PRECIPITATION_THRESHOLD) return null;
-    
-    const successRate = entry.successes / entry.invocations;
-    if (successRate < PRECIPITATION_SUCCESS_RATE) return null;
 
     const t2Dir = path.join(workspacePath, '.optimus', 'roles');
     const t2Path = path.join(t2Dir, `${safeRole}.md`);
@@ -131,22 +122,22 @@ function checkAndPrecipitate(workspacePath: string, role: string, engine: string
     const template = `---
 role: ${safeRole}
 tier: T2
-description: "Auto-precipitated from T3 after ${entry.successes} successes in ${entry.invocations} invocations"
+description: "Auto-precipitated from T3 on first use"
 engine: ${engine}
-model: ${model || 'claude-opus-4.6-1m'}
+model: ${model || ''}
 precipitated: ${new Date().toISOString()}
 ---
 
 # ${formattedRole}
 
 You are a **${formattedRole}** expert operating within the Optimus Spartan Swarm.
-This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default) based on consistent successful usage (${entry.successes}/${entry.invocations} success rate).
+This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default).
 
 Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
 `;
 
     fs.writeFileSync(t2Path, template, 'utf8');
-    console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
+    console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path}`);
     return t2Path;
 }
 

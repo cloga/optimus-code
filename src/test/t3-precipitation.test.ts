@@ -61,17 +61,12 @@ function trackT3Usage(wp: string, role: string, success: boolean, engine: string
     saveT3UsageLog(wp, log);
 }
 function checkAndPrecipitate(wp: string, role: string, engine: string, model?: string): string | null {
-    const log = loadT3UsageLog(wp);
-    const entry = log[role];
-    if (!entry || entry.invocations < 3) return null;
-    const successRate = entry.successes / entry.invocations;
-    if (successRate < 0.8) return null;
     const t2Dir = path.join(wp, '.optimus', 'roles');
     const t2Path = path.join(t2Dir, `${role}.md`);
-    if (fs.existsSync(t2Path)) return null;
+    if (fs.existsSync(t2Path)) return null; // Already a T2
     if (!fs.existsSync(t2Dir)) fs.mkdirSync(t2Dir, { recursive: true });
     const formattedRole = role.split(/[-_]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const template = `---\nrole: ${role}\ntier: T2\ndescription: "Auto-precipitated from T3 after ${entry.invocations} successful invocations"\nengine: ${engine}\nmodel: ${model || 'claude-opus-4.6-1m'}\nprecipitated: ${new Date().toISOString()}\n---\n\n# ${formattedRole}\n\nAuto-promoted from T3.\n`;
+    const template = `---\nrole: ${role}\ntier: T2\ndescription: "Auto-precipitated from T3 on first use"\nengine: ${engine}\nmodel: ${model || ''}\nprecipitated: ${new Date().toISOString()}\n---\n\n# ${formattedRole}\n\nAuto-promoted from T3.\n`;
     fs.writeFileSync(t2Path, template, 'utf8');
     return t2Path;
 }
@@ -100,57 +95,42 @@ assert('Tracks 0 failures', log['security-auditor']?.failures === 0);
 assert('Records engine', log['security-auditor']?.engine === 'claude-code');
 assert('Records model', log['security-auditor']?.model === 'claude-opus-4.6-1m');
 
-// ─── TEST 2: No precipitation below threshold ───
-console.log('\n━━━ Test 2: No Precipitation Below Threshold ━━━');
+// ─── TEST 2: Immediate precipitation on first use ───
+console.log('\n━━━ Test 2: Immediate Precipitation (no T2 exists) ━━━');
 let result = checkAndPrecipitate(tmpDir, 'security-auditor', 'claude-code', 'claude-opus-4.6-1m');
-assert('Does NOT precipitate at 2 invocations', result === null);
 const t2Path = path.join(tmpDir, '.optimus', 'roles', 'security-auditor.md');
-assert('No T2 file created', !fs.existsSync(t2Path));
-
-// ─── TEST 3: Precipitation at threshold ───
-console.log('\n━━━ Test 3: Precipitation at Threshold (3 invocations, 100% success) ━━━');
-trackT3Usage(tmpDir, 'security-auditor', true, 'claude-code', 'claude-opus-4.6-1m');
-result = checkAndPrecipitate(tmpDir, 'security-auditor', 'claude-code', 'claude-opus-4.6-1m');
-assert('Precipitates at 3 invocations', result !== null);
+assert('Precipitates immediately on first call', result !== null);
 assert('T2 file created', fs.existsSync(t2Path));
 const t2Content = fs.readFileSync(t2Path, 'utf8');
 const fm = parseFrontmatter(t2Content);
 assert('Frontmatter has role', fm.frontmatter.role === 'security-auditor');
 assert('Frontmatter has tier T2', fm.frontmatter.tier === 'T2');
 assert('Frontmatter has engine binding', fm.frontmatter.engine === 'claude-code');
-assert('Frontmatter has model binding', fm.frontmatter.model === 'claude-opus-4.6-1m');
 assert('Frontmatter has precipitated timestamp', !!fm.frontmatter.precipitated);
 
-// ─── TEST 4: No duplicate precipitation ───
-console.log('\n━━━ Test 4: No Duplicate Precipitation ━━━');
-trackT3Usage(tmpDir, 'security-auditor', true, 'claude-code');
+// ─── TEST 3: No duplicate precipitation ───
+console.log('\n━━━ Test 3: No Duplicate Precipitation ━━━');
 result = checkAndPrecipitate(tmpDir, 'security-auditor', 'claude-code');
 assert('Does NOT re-precipitate existing T2', result === null);
 
-// ─── TEST 5: Low success rate does NOT precipitate ───
-console.log('\n━━━ Test 5: Low Success Rate (below 80%) ━━━');
-trackT3Usage(tmpDir, 'flaky-role', true, 'claude-code');
-trackT3Usage(tmpDir, 'flaky-role', false, 'claude-code');
-trackT3Usage(tmpDir, 'flaky-role', false, 'claude-code');
-result = checkAndPrecipitate(tmpDir, 'flaky-role', 'claude-code');
-assert('Does NOT precipitate at 33% success rate', result === null);
-const flakyPath = path.join(tmpDir, '.optimus', 'roles', 'flaky-role.md');
-assert('No T2 file for flaky role', !fs.existsSync(flakyPath));
+// ─── TEST 4: Precipitation with different engine/model ───
+console.log('\n━━━ Test 4: Precipitation with copilot-cli engine ━━━');
+result = checkAndPrecipitate(tmpDir, 'frontend-dev', 'copilot-cli', 'gpt-5.4');
+assert('Precipitates new role immediately', result !== null);
+const frontendFm = parseFrontmatter(fs.readFileSync(path.join(tmpDir, '.optimus', 'roles', 'frontend-dev.md'), 'utf8'));
+assert('Uses copilot-cli engine', frontendFm.frontmatter.engine === 'copilot-cli');
+assert('Uses gpt-5.4 model', frontendFm.frontmatter.model === 'gpt-5.4');
 
-// ─── TEST 6: Boundary — exactly 80% success ───
-console.log('\n━━━ Test 6: Boundary — Exactly 80% Success Rate ━━━');
-for (let i = 0; i < 4; i++) trackT3Usage(tmpDir, 'boundary-role', true, 'copilot-cli', 'gpt-5.4');
-trackT3Usage(tmpDir, 'boundary-role', false, 'copilot-cli', 'gpt-5.4');
-log = loadT3UsageLog(tmpDir);
-assert('5 invocations, 4 successes (80%)', log['boundary-role']?.invocations === 5 && log['boundary-role']?.successes === 4);
-result = checkAndPrecipitate(tmpDir, 'boundary-role', 'copilot-cli', 'gpt-5.4');
-assert('Precipitates at exactly 80%', result !== null);
-const boundaryFm = parseFrontmatter(fs.readFileSync(path.join(tmpDir, '.optimus', 'roles', 'boundary-role.md'), 'utf8'));
-assert('Uses copilot-cli engine', boundaryFm.frontmatter.engine === 'copilot-cli');
-assert('Uses gpt-5.4 model', boundaryFm.frontmatter.model === 'gpt-5.4');
+// ─── TEST 5: Precipitation without model (optional) ───
+console.log('\n━━━ Test 5: Precipitation Without Model (optional) ━━━');
+result = checkAndPrecipitate(tmpDir, 'data-analyst', 'claude-code');
+assert('Precipitates without model', result !== null);
+const daFm = parseFrontmatter(fs.readFileSync(path.join(tmpDir, '.optimus', 'roles', 'data-analyst.md'), 'utf8'));
+assert('Engine is set', daFm.frontmatter.engine === 'claude-code');
+assert('Model is empty string (optional)', daFm.frontmatter.model === '');
 
-// ─── TEST 7: T2 Frontmatter Reading (existing roles) ───
-console.log('\n━━━ Test 7: T2 Frontmatter Engine/Model Reading ━━━');
+// ─── TEST 6: T2 Frontmatter Reading (existing roles) ───
+console.log('\n━━━ Test 6: T2 Frontmatter Engine/Model Reading ━━━');
 const realChiefArchitect = fs.readFileSync(path.join(process.cwd(), '.optimus', 'roles', 'chief-architect.md'), 'utf8');
 const caFm = parseFrontmatter(realChiefArchitect);
 assert('chief-architect has engine in frontmatter', caFm.frontmatter.engine === 'claude-code');
@@ -247,16 +227,12 @@ const lcAgentsDir = path.join(lifecycleDir, '.optimus', 'agents');
 fs.mkdirSync(lcRolesDir, { recursive: true });
 fs.mkdirSync(lcAgentsDir, { recursive: true });
 
-// Phase 1: T3 dynamic role used 3 times successfully
+// Phase 1: T3 dynamic role — precipitate immediately on first use
 const testRole = 'data-engineer';
-trackT3Usage(lifecycleDir, testRole, true, 'claude-code', 'claude-opus-4.6-1m');
-trackT3Usage(lifecycleDir, testRole, true, 'claude-code', 'claude-opus-4.6-1m');
-trackT3Usage(lifecycleDir, testRole, true, 'claude-code', 'claude-opus-4.6-1m');
-assert('T3 usage logged (3 invocations)', loadT3UsageLog(lifecycleDir)[testRole]?.invocations === 3);
 
-// Phase 2: Auto-precipitate T3→T2
+// Phase 2: Auto-precipitate T3→T2 (immediate, no threshold)
 const t2Result = checkAndPrecipitate(lifecycleDir, testRole, 'claude-code', 'claude-opus-4.6-1m');
-assert('T3→T2 precipitation triggered', t2Result !== null);
+assert('T3→T2 precipitation triggered immediately', t2Result !== null);
 const t2RolePath = path.join(lcRolesDir, `${testRole}.md`);
 assert('T2 role file created', fs.existsSync(t2RolePath));
 
@@ -266,7 +242,6 @@ const t2Fm = parseFrontmatter(t2Template);
 assert('T2 template has correct role', t2Fm.frontmatter.role === testRole);
 assert('T2 template has tier T2', t2Fm.frontmatter.tier === 'T2');
 assert('T2 template has engine binding', t2Fm.frontmatter.engine === 'claude-code');
-assert('T2 template has model binding', t2Fm.frontmatter.model === 'claude-opus-4.6-1m');
 assert('T2 template has precipitated timestamp', !!t2Fm.frontmatter.precipitated);
 assert('T2 body contains formatted role name', t2Fm.body.includes('Data Engineer'));
 

@@ -807,8 +807,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           roster += "\n### 📊 T3 Dynamic Role Usage Stats\n";
           for (const e of entries) {
             const rate = e.invocations > 0 ? Math.round((e.successes / e.invocations) * 100) : 0;
-            const precipNote = e.invocations >= 3 && rate >= 80 ? ' ⬆️ Ready for precipitation' : '';
-            roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)${precipNote}\n`;
+            roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)\n`;
           }
         }
       } catch {}
@@ -817,7 +816,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     roster += "\n### ⚙️ Fallback Behavior\n";
     roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
     roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
-    roster += "- T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).\n";
+    roster += "- T3 roles auto-precipitate to T2 immediately on first use.\n";
 
     return {
       content: [{ type: "text", text: roster }]
