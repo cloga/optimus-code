@@ -220,5 +220,13 @@
     "failures": 2,
     "lastUsed": "2026-03-11T17:17:26.817Z",
     "engine": "github-copilot"
+  },
+  "integration-tester": {
+    "role": "integration-tester",
+    "invocations": 1,
+    "successes": 1,
+    "failures": 0,
+    "lastUsed": "2026-03-11T17:22:17.807Z",
+    "engine": "claude-code"
   }
 }

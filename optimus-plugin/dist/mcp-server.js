@@ -1785,7 +1785,8 @@ function ensureT2Role(workspacePath, role, engine, model, masterInfo) {
   const t2Path = import_path.default.join(t2Dir, `${safeRole}.md`);
   if (!import_fs.default.existsSync(t2Dir)) import_fs.default.mkdirSync(t2Dir, { recursive: true });
   const formattedRole = safeRole.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
-  const desc = masterInfo?.description || `${formattedRole} expert`;
+  const rawDesc = masterInfo?.description || `${formattedRole} expert`;
+  const desc = rawDesc.replace(/\\n/g, "\n");
   const eng = masterInfo?.engine || engine;
   const mod = masterInfo?.model || model || "";
   if (import_fs.default.existsSync(t2Path)) {

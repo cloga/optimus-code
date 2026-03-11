@@ -146,7 +146,9 @@ function ensureT2Role(workspacePath: string, role: string, engine: string, model
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
 
-    const desc = masterInfo?.description || `${formattedRole} expert`;
+    const rawDesc = masterInfo?.description || `${formattedRole} expert`;
+    // Unescape literal \n sequences from JSON/MCP transport into real newlines
+    const desc = rawDesc.replace(/\\n/g, '\n');
     const eng = masterInfo?.engine || engine;
     const mod = masterInfo?.model || model || '';
 
