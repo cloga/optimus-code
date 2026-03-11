@@ -1567,14 +1567,35 @@ Please provide your complete execution result below.`;
   try {
     await ConcurrencyGovernor.acquire();
     const response = await adapter.invoke(basePrompt, "agent");
-    if (adapter.lastSessionId && import_fs.default.existsSync(t1Path)) {
-      const currentStr = import_fs.default.readFileSync(t1Path, "utf8");
-      const updated = updateFrontmatter(currentStr, {
-        engine: activeEngine,
-        session_id: adapter.lastSessionId
-      });
-      import_fs.default.writeFileSync(t1Path, updated, "utf8");
-      console.error(`[Orchestrator] Captured native session ID '${adapter.lastSessionId}' to ${t1Path}`);
+    if (adapter.lastSessionId) {
+      const agentsDir = import_path.default.join(workspacePath, ".optimus", "agents");
+      if (!import_fs.default.existsSync(agentsDir)) import_fs.default.mkdirSync(agentsDir, { recursive: true });
+      if (import_fs.default.existsSync(t1Path)) {
+        const currentStr = import_fs.default.readFileSync(t1Path, "utf8");
+        const updated = updateFrontmatter(currentStr, {
+          engine: activeEngine,
+          session_id: adapter.lastSessionId
+        });
+        import_fs.default.writeFileSync(t1Path, updated, "utf8");
+        console.error(`[Orchestrator] Updated session ID '${adapter.lastSessionId}' in ${t1Path}`);
+      } else {
+        const t1Template = import_fs.default.existsSync(t2Path) ? import_fs.default.readFileSync(t2Path, "utf8") : `---
+role: ${role}
+---
+
+# ${role}
+`;
+        const t1Instance = updateFrontmatter(t1Template, {
+          role,
+          base_tier: "T1",
+          engine: activeEngine,
+          ...activeModel ? { model: activeModel } : {},
+          session_id: adapter.lastSessionId,
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        import_fs.default.writeFileSync(t1Path, t1Instance, "utf8");
+        console.error(`[Orchestrator] T2\u2192T1: Created agent instance '${role}' with session '${adapter.lastSessionId}'`);
+      }
     }
     const dir = import_path.default.dirname(outputPath);
     if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });

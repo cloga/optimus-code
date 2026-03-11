@@ -367,8 +367,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
     console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || 'New/Ephemeral'}`);
 
-    // Removed the "Promotion to T1" behavior so T2 strictly remains a global fallback 
-    // and does not pollute the workspace-level .optimus mapping unless explicitly overridden by user.
+    // T2→T1 instantiation happens AFTER task execution (when session_id is captured).
 
     const taskText = fs.existsSync(taskPath) ? fs.readFileSync(taskPath, 'utf8') : taskPath;
 
@@ -431,15 +430,36 @@ Please provide your complete execution result below.`;
         await ConcurrencyGovernor.acquire();
         const response = await adapter.invoke(basePrompt, 'agent');
 
-        // --- Core Protocol: Native Session Capture & Binding ---
-        if (adapter.lastSessionId && fs.existsSync(t1Path)) {
-            const currentStr = fs.readFileSync(t1Path, 'utf8');
-            const updated = updateFrontmatter(currentStr, {
-                engine: activeEngine,
-                session_id: adapter.lastSessionId
-            });
-            fs.writeFileSync(t1Path, updated, 'utf8');
-            console.error(`[Orchestrator] Captured native session ID '${adapter.lastSessionId}' to ${t1Path}`);
+        // --- Core Protocol: Session Capture & T2→T1 Instantiation ---
+        if (adapter.lastSessionId) {
+            const agentsDir = path.join(workspacePath, '.optimus', 'agents');
+            if (!fs.existsSync(agentsDir)) fs.mkdirSync(agentsDir, { recursive: true });
+
+            if (fs.existsSync(t1Path)) {
+                // T1 already exists — update session_id
+                const currentStr = fs.readFileSync(t1Path, 'utf8');
+                const updated = updateFrontmatter(currentStr, {
+                    engine: activeEngine,
+                    session_id: adapter.lastSessionId
+                });
+                fs.writeFileSync(t1Path, updated, 'utf8');
+                console.error(`[Orchestrator] Updated session ID '${adapter.lastSessionId}' in ${t1Path}`);
+            } else {
+                // T1 does not exist — instantiate from T2 template (T2→T1 promotion)
+                const t1Template = fs.existsSync(t2Path)
+                    ? fs.readFileSync(t2Path, 'utf8')
+                    : `---\nrole: ${role}\n---\n\n# ${role}\n`;
+                const t1Instance = updateFrontmatter(t1Template, {
+                    role: role,
+                    base_tier: 'T1',
+                    engine: activeEngine,
+                    ...(activeModel ? { model: activeModel } : {}),
+                    session_id: adapter.lastSessionId,
+                    created_at: new Date().toISOString()
+                });
+                fs.writeFileSync(t1Path, t1Instance, 'utf8');
+                console.error(`[Orchestrator] T2→T1: Created agent instance '${role}' with session '${adapter.lastSessionId}'`);
+            }
         }
 
         const dir = path.dirname(outputPath);
