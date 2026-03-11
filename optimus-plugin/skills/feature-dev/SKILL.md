@@ -1,133 +1,128 @@
 ---
 name: feature-dev
-description: Guided 7-phase feature development workflow. Use when the user requests a new feature, complex implementation, or multi-file change that needs codebase understanding, architecture design, and quality review. The Master Agent delegates to a PM, who orchestrates code-explorer, code-architect, code-reviewer, and dev roles.
+description: Guided 6-phase feature development workflow. Use when the user requests a new feature, complex implementation, or multi-file change. Master Agent communicates requirements and clarifying questions with the user, then delegates to PM who orchestrates exploration, architecture, implementation, and review.
 ---
 
 # Feature Development Workflow
 
-A structured 7-phase approach to building features. Instead of jumping straight
-into code, this workflow ensures the codebase is understood, requirements are
-clarified, architecture is designed, and quality is reviewed.
+A structured 6-phase approach to building features. Master Agent handles user
+communication, PM handles technical orchestration.
 
 ## Orchestration Model
 
 ```
-User → Master Agent → PM (this skill)
-                        ├─ Phase 2: dispatch_council → code-explorer ×2-3
-                        ├─ Phase 4: dispatch_council → code-architect ×2-3
-                        ├─ Phase 5: delegate_task   → dev
-                        └─ Phase 6: dispatch_council → code-reviewer ×3
+User ↔ Master Agent (Phase 1: requirements + questions)
+           │
+           └→ delegate_task_async → PM (Phase 2-6)
+                ├─ Phase 2: delegate_task (sync) → code-explorer
+                ├─ Phase 3: dispatch_council (sync) → code-architect ×2-3
+                ├─ Phase 4: delegate_task (sync) → senior-dev
+                └─ Phase 5: dispatch_council (sync) → code-reviewer ×3
 ```
 
-The PM reads user requirements, drives each phase, and delegates the heavy
-lifting to specialists. The PM does NOT write code — the dev role does that.
+---
+
+## Phase 1: Requirements & Clarifying Questions (Master Agent ↔ User)
+
+**Who**: Master Agent talks directly with the user. NOT delegated.
+
+**Goal**: Gather enough context so PM can work independently.
+
+1. Understand what the user wants built — the problem, expected behavior, constraints
+2. Proactively identify ambiguities that will block downstream work:
+   - Edge cases and error handling expectations
+   - Integration points with existing code
+   - Scope boundaries (what's in vs. out)
+   - Performance requirements
+   - Backward compatibility concerns
+3. Ask the user **all questions in one organized list** — avoid back-and-forth drip
+4. Once answers are collected, bundle everything into a clear task description for PM
+
+**Output**: A comprehensive task description that includes the feature request
+AND all clarified requirements. PM should be able to work without asking the
+user anything.
 
 ---
 
-## Phase 1: Discovery
+## Phase 2: Codebase Exploration (PM → code-explorer, sync)
 
-**Goal**: Understand what needs to be built.
+**Who**: PM delegates to `code-explorer` using `delegate_task` (synchronous).
 
-The PM clarifies the feature request with the user:
-1. What problem does this solve?
-2. What should the feature do?
-3. Any constraints or requirements?
-4. Summarize understanding and confirm with user before proceeding.
+**Goal**: Understand the relevant codebase before designing.
 
-No delegation needed — this is a conversation between the PM and the user.
+PM delegates with a prompt like:
+- "Explore the codebase to understand [feature area]. Trace execution paths,
+  map architecture layers, identify patterns and key files."
 
----
-
-## Phase 2: Codebase Exploration
-
-**Goal**: Understand relevant existing code and patterns.
-
-**Action**: Use `dispatch_council_async` with 2-3 `code-explorer` roles.
-
-Each explorer should focus on a different aspect:
-- "Find features similar to [feature] and trace their implementation"
-- "Map the architecture and abstractions for [feature area]"
-- "Analyze the current implementation of [related existing feature]"
-
-After the council completes, read the explorer reports and synthesize findings
-for the user. Identify key files, patterns, and integration points.
+PM reads the explorer's report and synthesizes key findings:
+- Existing patterns and conventions
+- Key files and integration points
+- Dependencies and potential risks
 
 ---
 
-## Phase 3: Clarifying Questions
+## Phase 3: Architecture Design (PM → code-architect ×2-3, council sync)
 
-**Goal**: Fill in gaps and resolve all ambiguities before designing.
+**Who**: PM uses `dispatch_council` (synchronous) with 2-3 `code-architect` roles.
 
-Based on the exploration results, the PM identifies underspecified aspects:
-- Edge cases and error handling
-- Integration points with existing code
-- Backward compatibility concerns
-- Performance requirements
-- Scope boundaries
+**Goal**: Design the implementation approach.
 
-Present all questions to the user in a clear list. **Wait for answers before
-proceeding.** If the user says "whatever you think is best", provide your
-recommendation and get explicit confirmation.
-
----
-
-## Phase 4: Architecture Design
-
-**Goal**: Design implementation approaches with trade-offs.
-
-**Action**: Use `dispatch_council_async` with 2-3 `code-architect` roles, each
-given a different focus:
-- **Minimal changes**: Smallest diff, maximum reuse of existing code
+Each architect gets a different focus:
+- **Minimal changes**: Smallest diff, maximum reuse
 - **Clean architecture**: Maintainability, elegant abstractions
 - **Pragmatic balance**: Speed + quality
 
-After the council completes, review all approaches, form an opinion on which
-fits best, and present to the user with a recommendation. Ask which approach
-they prefer.
+PM reads all architecture proposals, selects the best approach (or synthesizes
+a hybrid), and documents the chosen design.
 
 ---
 
-## Phase 5: Implementation
+## Phase 4: Implementation (PM → senior-dev, sync)
+
+**Who**: PM delegates to `senior-dev` using `delegate_task` (synchronous).
 
 **Goal**: Build the feature.
 
-**Action**: Use `delegate_task_async` to the `dev` role with:
-- The chosen architecture from Phase 4
+PM provides the dev with:
+- The chosen architecture from Phase 3
 - Key files identified in Phase 2
-- User's answers from Phase 3
+- All clarified requirements from Phase 1
 - Required skills: `["git-workflow"]`
 
 The dev will:
 1. Create a feature branch
 2. Implement the chosen architecture
 3. Build and verify
-4. Create a PR
+4. Create and merge PR
 
 ---
 
-## Phase 6: Quality Review
+## Phase 5: Quality Review (PM → code-reviewer ×3, council sync)
 
-**Goal**: Ensure code quality before merge.
+**Who**: PM uses `dispatch_council` (synchronous) with 3 `code-reviewer` roles.
 
-**Action**: Use `dispatch_council_async` with 3 `code-reviewer` roles, each
-with a different focus:
+**Goal**: Ensure code quality.
+
+Each reviewer focuses on a different dimension:
 - **Simplicity & DRY**: Code quality and maintainability
-- **Bugs & Correctness**: Functional correctness and logic errors
-- **Conventions**: Project standards and patterns
+- **Bugs & Correctness**: Logic errors, edge cases, security
+- **Conventions**: Project patterns and standards
 
-After the council completes, consolidate findings. If there are critical issues,
-delegate back to `dev` to fix them. If clean, proceed to merge.
+If critical issues found → PM delegates back to `senior-dev` for fixes.
+If clean → proceed to summary.
 
 ---
 
-## Phase 7: Summary
+## Phase 6: Summary (PM)
 
-**Goal**: Wrap up and document what was accomplished.
+**Who**: PM wraps up.
 
-The PM summarizes:
+**Goal**: Document what was accomplished.
+
+PM summarizes:
 - What was built
 - Key decisions made
 - Files modified
-- Suggested next steps (tests, documentation, follow-up features)
+- Suggested next steps (tests, docs, follow-ups)
 
-Update the VCS work item with the completion summary via `vcs_add_comment`.
+Updates the VCS work item via `vcs_add_comment` with the completion summary.
