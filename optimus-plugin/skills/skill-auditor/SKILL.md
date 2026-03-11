@@ -1,82 +1,101 @@
 ---
 name: skill-auditor
-description: Audits skills for Optimus compliance — correct paths, valid MCP tool references, proper structure, and error handling.
+description: Audits new or modified skills for Optimus compliance before deployment. Use this skill whenever reviewing a skill that has been created or changed — check file paths, MCP tool references, structural quality, and error handling. Also use when doing a quality sweep of all skills in the project.
 ---
 
-# Skill Auditor (Optimus Meta-Skill)
+# Skill Auditor
 
-<purpose>
-This skill activates when the Master Agent needs to validate a new or updated skill before it is deployed.
-It checks file paths, naming conventions, MCP tool accuracy, and structural compliance.
-</purpose>
+Validates that skills meet Optimus standards before they ship. Think of this as a
+linter for SKILL.md files — it catches problems that would cause runtime failures
+or confuse agents.
 
-<instructions>
+## When to audit
 
-## Step 1: Use the Official Skill Creator
+- After creating a new skill (via `skill-creator` or manually)
+- After modifying an existing skill
+- Before a release to verify all skills are consistent
+- When an agent reports a skill-related failure
 
-Invoke the official Claude Code `skill-creator` plugin to generate a high-quality skill:
-- Use `/skill-creator` in Create mode
-- Describe what the skill should teach (e.g., "Create a skill that teaches agents how to run database migrations")
-- The plugin will guide you through requirements gathering and generate a well-structured skill file
+## What to check
 
-If the official plugin is not available, write the skill manually following the template in Step 3.
+### 1. File structure
 
-## Step 2: Apply Optimus Registration Rules
+The skill must live at `.optimus/skills/<skill-name>/SKILL.md`. The directory name
+must be lowercase, hyphenated, and match the `name` field in frontmatter.
 
-Before saving, ensure the generated skill complies with these project-specific rules:
+```
+✅  .optimus/skills/data-migration/SKILL.md
+❌  .optimus/skills/DataMigration/skill.md
+❌  .optimus/skills/data-migration.md  (no subdirectory)
+```
 
-<rules>
-  <rule>**File path**: The skill MUST be saved at `.optimus/skills/<skill-name>/SKILL.md`</rule>
-  <rule>**Skill name**: Lowercase, hyphenated only. Characters allowed: `[a-z0-9-]`. Example: `data-migration`, `api-testing`</rule>
-  <rule>**YAML frontmatter**: Must include `name` and `description` fields</rule>
-  <rule>**MCP tool names**: Only reference tools that actually exist. Use `vcs_*` tools (NOT legacy `github_*`). Never hallucinate tool names.</rule>
-  <rule>**Error handling**: Every skill that references MCP tools must include error recovery instructions</rule>
-  <rule>**No loose files**: Skills must be in their own subdirectory under `.optimus/skills/`</rule>
-</rules>
+### 2. YAML frontmatter
 
-## Step 3: Manual Template (Fallback)
+Required fields:
+- `name`: Must match the directory name
+- `description`: Should be specific about WHEN to trigger, not just WHAT it does.
+  A good description is slightly "pushy" — it tells the model to use this skill
+  even in borderline cases.
 
-If the official `/skill-creator` plugin is unavailable, use this minimal template:
+```yaml
+# Bad — too vague
+description: Helps with database tasks.
 
-<template>
----
-name: "<skill-name>"
-description: "<one-line description>"
----
+# Good — tells the model when to trigger
+description: Manages database migration workflows including schema changes,
+  seed data, and rollbacks. Use whenever the user mentions migrations, schema
+  updates, database versioning, or Flyway/Liquibase.
+```
 
-# <Skill Title>
+### 3. MCP tool accuracy
 
-<purpose>
-When and why this skill activates.
-</purpose>
+Every tool name referenced in the skill must actually exist in the MCP server.
+Current valid tools:
 
-<workflow>
-### Step 1: <Action>
-- **Tool**: `exact_tool_name`
-- **Parameters**: `param`: description
-- **Action**: What to do
+| Tool | Purpose |
+|------|---------|
+| `vcs_create_work_item` | Create Issue / Work Item |
+| `vcs_create_pr` | Create Pull Request |
+| `vcs_merge_pr` | Merge Pull Request |
+| `vcs_add_comment` | Comment on Issue or PR |
+| `github_update_issue` | Update Issue state |
+| `github_sync_board` | Sync Issues to local board |
+| `roster_check` | List available agents/roles/skills |
+| `delegate_task` / `delegate_task_async` | Dispatch work |
+| `dispatch_council` / `dispatch_council_async` | Multi-expert review |
+| `check_task_status` | Poll async task |
+| `append_memory` | Save learnings |
 
-### Step 2: <Action>
-...
-</workflow>
+Red flags:
+- `github_create_issue` → replaced by `vcs_create_work_item`
+- `github_create_pr` → replaced by `vcs_create_pr`
+- Any tool name not in the table above → likely hallucinated
 
-<error_handling>
-- If `tool_name` fails with error X, do Y.
-</error_handling>
-</template>
+### 4. Error handling
 
-## Step 4: Sync to Plugin (Optimus Developers Only)
+Skills that reference MCP tools should include recovery guidance. At minimum:
+- What to do on auth/credential errors (401/403)
+- What to do on invalid parameters
+- When to halt vs. retry
 
-If you are working on the `optimus-code` repository itself, also copy the new skill to:
-- `optimus-plugin/skills/<skill-name>/SKILL.md`
+### 5. Writing quality (per skill-creator guidelines)
 
-This ensures new users get the skill when they run `optimus init`.
+- Explain the WHY, not just impose rules. Heavy-handed MUSTs and NEVERs are a
+  yellow flag — reframe as reasoning when possible.
+- Include at least one concrete example showing correct usage.
+- Keep the skill under 500 lines. If approaching the limit, split into
+  reference files in the skill's subdirectory.
+- Anti-patterns section should describe real mistakes, not hypothetical ones.
 
-</instructions>
+## Audit output
 
-<anti_patterns>
-- Do NOT duplicate existing skills — run `ls .optimus/skills/` first
-- Do NOT reference MCP tools without verifying they exist
-- Do NOT put skill files directly in `.optimus/skills/` — they must be in a named subdirectory
-- Do NOT use legacy `github_create_issue` or `github_create_pr` — use `vcs_create_work_item` and `vcs_create_pr`
-</anti_patterns>
+After reviewing, report:
+1. **Pass/Fail** for each check
+2. **Specific fixes** needed (with line references if possible)
+3. **Severity**: blocking (must fix before use) vs. advisory (improve later)
+
+## Syncing audited skills
+
+If working on the `optimus-code` repository, remember to sync changes to both:
+- `.optimus/skills/<name>/SKILL.md` (host project)
+- `optimus-plugin/skills/<name>/SKILL.md` (ships to users)
