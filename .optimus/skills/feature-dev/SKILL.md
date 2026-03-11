@@ -87,15 +87,19 @@ After this phase, Master hands off to PM via `delegate_task_async` for Phase 2-6
 
 **product-manager → code-explorer ×2-3 (dispatch_council, sync)** · Output: enriched requirements doc
 
-PM dispatches 2-3 explorers, each looking at a different angle of the codebase.
-Tailor the prompts to the specific feature:
+PM calls:
+```
+dispatch_council(
+  proposal_path: ".optimus/tasks/requirements_<feature>.md",
+  roles: ["code-explorer", "code-explorer", "code-explorer"],
+  workspace_path: "<project root>"
+)
+```
 
-- If building auth: "Trace the current auth flow from login to session. List 5-10 key files."
-- If adding an API: "Map existing API patterns — routing, middleware, error handling. List key files."
-- If modifying the build: "Trace the build pipeline and identify extension points. List key files."
-
-Explorers may ask questions about how code works. PM answers using the
-requirements doc — providing business context the explorers lack.
+Tailor each explorer's focus in the proposal. Example prompts to include:
+- "Trace [feature area] execution paths. List 5-10 key files."
+- "Map architecture and integration points for [affected components]."
+- "Identify patterns, conventions, and risks in [relevant modules]."
 
 PM reads explorer reports and all key files they identify, then updates the
 requirements doc with project context: patterns to follow, files to touch, risks.
@@ -106,8 +110,16 @@ requirements doc with project context: patterns to follow, files to touch, risks
 
 **product-manager → code-architect ×2-3 (dispatch_council, sync)** · Output: chosen architecture
 
-PM sends each architect the enriched requirements doc. Each designs from a
-different angle:
+PM calls:
+```
+dispatch_council(
+  proposal_path: ".optimus/tasks/requirements_<feature>.md",  // enriched with project context
+  roles: ["code-architect", "code-architect", "code-architect"],
+  workspace_path: "<project root>"
+)
+```
+
+Each architect designs from a different angle:
 - **Minimal**: smallest diff, maximum reuse
 - **Clean**: best abstractions, long-term maintainability
 - **Pragmatic**: best balance of speed and quality
@@ -121,11 +133,17 @@ documents the decision with rationale.
 
 **product-manager → senior-full-stack-builder (delegate_task, sync)** · Output: open PR
 
-PM provides dev with:
-- Chosen architecture (Phase 3)
-- Key files and patterns (Phase 2)
-- Requirements and context (Phase 1)
-- Required skills: `["git-workflow"]`
+PM calls:
+```
+delegate_task(
+  role: "senior-full-stack-builder",
+  task_description: "<chosen architecture + requirements + key files>",
+  required_skills: ["git-workflow"],
+  output_path: ".optimus/reports/implementation_<feature>.md",
+  workspace_path: "<project root>",
+  context_files: ["<requirements doc>", "<architecture review files>"]
+)
+```
 
 Dev creates a branch, implements, builds, verifies, and **creates a PR but does
 NOT merge**. The PR stays open for review in Phase 5.
@@ -135,6 +153,15 @@ NOT merge**. The PR stays open for review in Phase 5.
 ## Phase 5: Quality Review + Merge
 
 **product-manager → code-reviewer ×3 (dispatch_council, sync)** · Output: merged or fixed
+
+PM calls:
+```
+dispatch_council(
+  proposal_path: ".optimus/reports/implementation_<feature>.md",
+  roles: ["code-reviewer", "code-reviewer", "code-reviewer"],
+  workspace_path: "<project root>"
+)
+```
 
 Three reviewers, three lenses:
 - **Quality**: simplicity, DRY, readability, elegance
