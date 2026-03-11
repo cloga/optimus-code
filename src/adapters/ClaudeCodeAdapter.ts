@@ -54,7 +54,33 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
     protected getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] } {
         const args: string[] = [];
         const cwd = PersistentAgentAdapter.getWorkspacePath();
+        const fs = require('fs');
+        const path = require('path');
+        
         args.push('--add-dir', cwd);
+
+        // Auto-detect and isolate local MCP context specifically for Claude-code -> prevents "128 tools" global bug
+        const localMcpPath = path.join(cwd, '.vscode', 'mcp.json');
+        if (fs.existsSync(localMcpPath)) {
+            try {
+                let mcpContent = fs.readFileSync(localMcpPath, 'utf8');
+                // Replace VS Code specific macros with absolute paths so Claude can execute them
+                mcpContent = mcpContent.replace(/\$\{workspaceFolder\}/g, cwd.replace(/\\/g, '/'));
+                const localMcp = JSON.parse(mcpContent);
+                // Normalize "servers" -> "mcpServers" for Claude
+                const claudeMcp = { mcpServers: localMcp.servers || localMcp.mcpServers || {} };
+                const proxyMcpPath = path.join(cwd, '.optimus', '.claude-mcp.json');
+                fs.mkdirSync(path.dirname(proxyMcpPath), { recursive: true });
+                fs.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
+                args.push('--mcp-config', proxyMcpPath);
+            } catch (e) {
+                // Silently ignore parse errors
+            }
+            args.push('--strict-mcp-config');
+        } else {
+            // Strictly isolate to prevent global leaky MCP tools from causing 500 error if there's no project config
+            args.push('--strict-mcp-config'); 
+        }
 
         if (this.modelFlag) {
             args.push('--model', this.modelFlag);

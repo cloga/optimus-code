@@ -6,16 +6,10 @@
       "available_models": ["gemini-3.0-pro", "gpt-5.4", "claude-opus-4.6-1m"],
       "cli_flags": "--model"
     },
-    "copilot-cli": {
+    "github-copilot": {
       "path": "github-copilot-cli",
       "available_models": ["gemini-3.0-pro", "gpt-5.4", "claude-opus-4.6-1m"],
       "cli_flags": "-m"
-    },
-    "deepseek-local": {
-      "path": "node ./custom-runners/deepseek-bridge.js",
-      "available_models": ["deepseek-r1", "deepseek-coder"],
-      "cli_flags": "--backend",
-      "status": "demo - for future extension, not implemented yet"
     }
   }
 }

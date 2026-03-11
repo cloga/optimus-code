@@ -311,7 +311,7 @@ export class ConcurrencyGovernor {
 
 function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?: string } {
     const segments = path.basename(roleArg).split('_').filter(Boolean);
-    const engineIndex = segments.findIndex(segment => segment === 'claude-code' || segment === 'copilot-cli');
+    const engineIndex = segments.findIndex(segment => segment === 'claude-code' || segment === 'copilot-cli' || segment === 'github-copilot');
 
     if (engineIndex === -1) {
         return { role: path.basename(roleArg) };
@@ -324,7 +324,7 @@ function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?
 }
 
 function getAdapterForEngine(engine: string, sessionId?: string, model?: string): AgentAdapter {
-    if (engine === 'copilot-cli') {
+    if (engine === 'copilot-cli' || engine === 'github-copilot') {
         return new GitHubCopilotAdapter(sessionId, '🛸 GitHub Copilot', model);
     }
     return new ClaudeCodeAdapter(sessionId, '🦖 Claude Code', model);
@@ -392,7 +392,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
                     e => !config.engines[e].status?.includes('demo')
                 );
                 if (engines.length > 0) {
-                    activeEngine = engines[0];
+                    // Prefer github-copilot if available, else first engine
+                    activeEngine = engines.includes('github-copilot') ? 'github-copilot' : engines[0];
                     if (!activeModel) {
                         const models = config.engines[activeEngine]?.available_models;
                         if (Array.isArray(models) && models.length > 0) {
@@ -403,8 +404,14 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
             }
         } catch {}
     }
-    // Ultimate fallback
-    if (!activeEngine) activeEngine = 'claude-code';
+
+    if (!activeEngine) {
+        throw new Error(
+            `⚠️ **Engine Resolution Failed**: Unable to resolve a viable engine (e.g., 'github-copilot', 'claude-code') for role \`${role}\`.\n` +
+            `No engine was specified in the caller arguments, local frontmatter, or T2 metadata. ` +
+            `Please explicitly specify an engine or create the role with proper configurations first.`
+        );
+    }
 
     // --- Skill Pre-Flight Check ---
     // If Master specified required_skills, verify they all exist before proceeding.
