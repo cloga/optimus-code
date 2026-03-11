@@ -169,5 +169,14 @@
     "lastUsed": "2026-03-11T14:25:20.768Z",
     "engine": "github-copilot",
     "model": "gemini-3.0-pro"
+  },
+  "pm": {
+    "role": "pm",
+    "invocations": 2,
+    "successes": 0,
+    "failures": 2,
+    "lastUsed": "2026-03-11T15:12:29.541Z",
+    "engine": "github-copilot",
+    "model": "gemini-3-pro-preview"
   }
 }

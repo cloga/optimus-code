@@ -734,5 +734,48 @@
     "heartbeatTime": 1773239572994,
     "pid": 110884,
     "error_message": "Worker execution failed: ⚠️ **Delegation Failed (Engine Error)**: Role `prompt-engineering-lead` on engine `github-copilot` returned an error.\n\n**Error output**:\n```\n> [LOG] error: option '--model <model>' argument 'gemini-3.0-pro' is invalid. Allowed choices are claude-sonnet-4.6, claude-sonnet-4.5, claude-haiku-4.5, claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5, claude-sonnet-4, gemini-3-pro-preview, gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5.1-codex-mini, gpt-5-mini, gpt-4.1.\n```\n\n**Suggested actions**:\n- Re-delegate with a different engine (e.g., `claude-code` instead of `github-copilot`)\n- Check if the model name is valid for this engine\n- Verify CLI authentication (e.g., `copilot login`, `claude auth`)"
+  },
+  "task_1773241449460_yls6s5": {
+    "taskId": "task_1773241449460_yls6s5",
+    "type": "delegate_task",
+    "role": "pm",
+    "task_description": "We just shipped v0.2.0 which introduced the unified VCS abstraction layer (supporting both GitHub and Azure DevOps). All skills and code now use `vcs_*` tools instead of `github_*` tools. \n\nYour task is to update ALL documentation files to reflect this change. Specifically:\n\n1. **`.optimus/config/system-instructions.md`** — This is the most critical file:\n   - \"Issue First Protocol\" section: Change \"GitHub Issue\" to \"VCS Work Item (Issue)\" throughout\n   - \"Workflow\" section step 1: Change \"Create a GitHub Issue via MCP\" to \"Create a VCS Work Item via MCP (`vcs_create_work_item`)\"\n   - \"GitHub Auto-Tagging\" section: Rename to \"VCS Auto-Tagging\" and update to mention both GitHub and ADO\n   - Any other \"GitHub Issue\" or \"GitHub\" specific references in Part 1 (Universal) should become VCS-agnostic\n   - Part 2 (Optimus Code Repository specific) can keep GitHub references since the host project IS on GitHub\n\n2. **Sync to scaffold**: After updating `.optimus/config/system-instructions.md`, copy it to `optimus-plugin/scaffold/config/system-instructions.md` so new users get the updated version.\n\n3. **`.github/copilot-instructions.md`** and **`.claude/CLAUDE.md`**: Check these files too. If they reference `github_create_pr` or `github_create_issue`, update them to use `vcs_create_pr` and `vcs_create_work_item` respectively. Keep `github_update_issue` and `github_sync_board` references as-is since those legacy tools still exist.\n\n4. **`docs/HYBRID_SDLC.md`**: Already partially updated but double-check it is fully VCS-agnostic in the workflow description sections.\n\nIMPORTANT RULES:\n- Do NOT modify any TypeScript source code\n- Do NOT run `npm run build`\n- Only modify Markdown documentation files\n- After all edits, commit with message: \"docs: update system instructions and docs for unified VCS v0.2.0\"\n- Push to master",
+    "output_path": ".optimus/reports/pm_docs_vcs_update_report.md",
+    "workspacePath": "C:\\Users\\lochen\\optimus-code",
+    "context_files": [
+      ".optimus/config/system-instructions.md",
+      ".optimus/skills/git-workflow/SKILL.md",
+      "optimus-plugin/scaffold/config/system-instructions.md",
+      ".github/copilot-instructions.md",
+      ".claude/CLAUDE.md",
+      "docs/HYBRID_SDLC.md"
+    ],
+    "status": "failed",
+    "startTime": 1773241449461,
+    "heartbeatTime": 1773241449461,
+    "pid": 116884,
+    "error_message": "Worker execution failed: ⚠️ **Delegation Failed (Engine Error)**: Role `pm` on engine `github-copilot` returned an error.\n\n**Error output**:\n```\n> [LOG] Error: No authentication information found.\n\nCopilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.\n\nTo authenticate, you can use any of the following methods:\n  • Start 'copilot' and run the '/login' command\n  • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN environment variable\n  • Run 'gh auth login' to authenticate with the GitHub CLI\n```\n\n**Suggested actions**:\n- Re-delegate with a different engine (e.g., `claude-code` instead of `github-copilot`)\n- Check if the model name is valid for this engine\n- Verify CLI authentication (e.g., `copilot login`, `claude auth`)"
+  },
+  "task_1773241946451_tvb51j": {
+    "taskId": "task_1773241946451_tvb51j",
+    "type": "delegate_task",
+    "role": "pm",
+    "task_description": "We just released v0.2.0 with the unified VCS abstraction (GitHub + Azure DevOps). Several documentation updates are needed.\n\n## Task 1: Add Troubleshooting to README.md\n\nUsers are hitting this error when running `npx -y github:cloga/optimus-code init`:\n```\nnpm error code ENOENT\nnpm error syscall spawn git\nnpm error path git\n```\n\nThis happens because `github:` npm references require `git` in PATH, and some terminals (especially VS Code integrated terminals on Windows) don't inherit the system PATH properly.\n\nAdd a **Troubleshooting** section to README.md (before the \"Example Prompts\" section) with these two fixes:\n\n1. **Quick fix**: Add git to PATH manually:\n   ```powershell\n   $env:PATH += \";C:\\Program Files\\Git\\cmd\"\n   npx -y github:cloga/optimus-code init\n   ```\n2. **Permanent fix for VS Code**: Add to VS Code settings.json:\n   ```json\n   \"terminal.integrated.env.windows\": {\n       \"PATH\": \"${env:PATH};C:\\\\Program Files\\\\Git\\\\cmd\"\n   }\n   ```\n\n## Task 2: Add ADO/Azure DevOps setup to README.md\n\nIn the \"Step 3: Enable GitHub integration\" section, add a parallel section for Azure DevOps:\n- Users need to set `ADO_PAT` in `.env`\n- They need to configure `.optimus/config/vcs.json` with `provider: \"azure-devops\"`, organization, and project\n\n## Task 3: Full Documentation Audit for VCS Migration\n\nCheck ALL these files and update any remaining `github_create_issue`, `github_create_pr`, `github_merge_pr` references in Part 1 (Universal) sections to use the new `vcs_*` tool names:\n- `.optimus/config/system-instructions.md` — Update \"Issue First Protocol\" to say \"VCS Work Item\" instead of \"GitHub Issue\", update \"GitHub Auto-Tagging\" to \"VCS Auto-Tagging\"\n- `optimus-plugin/scaffold/config/system-instructions.md` — Must match the above exactly\n- `.github/copilot-instructions.md` — Check for old github_* tool references\n- `.claude/CLAUDE.md` — Check for old github_* tool references\n- `docs/HYBRID_SDLC.md` — Already partially updated, verify complete\n\n## Rules\n- Only modify Markdown files. Do NOT touch TypeScript or build anything.\n- After all edits, commit with: \"docs: add troubleshooting, ADO setup, and VCS terminology updates\"\n- Push to master.",
+    "output_path": ".optimus/reports/pm_readme_troubleshoot_update.md",
+    "workspacePath": "C:\\Users\\lochen\\optimus-code",
+    "context_files": [
+      "README.md",
+      ".optimus/config/system-instructions.md",
+      "optimus-plugin/scaffold/config/system-instructions.md",
+      ".github/copilot-instructions.md",
+      ".claude/CLAUDE.md",
+      "docs/HYBRID_SDLC.md",
+      "CHANGELOG.md"
+    ],
+    "status": "failed",
+    "startTime": 1773241946452,
+    "heartbeatTime": 1773241946452,
+    "pid": 90336,
+    "error_message": "Worker execution failed: ⚠️ **Delegation Failed (Engine Error)**: Role `pm` on engine `github-copilot` returned an error.\n\n**Error output**:\n```\n> [LOG] Error: No authentication information found.\n\nCopilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.\n\nTo authenticate, you can use any of the following methods:\n  • Start 'copilot' and run the '/login' command\n  • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN environment variable\n  • Run 'gh auth login' to authenticate with the GitHub CLI\n```\n\n**Suggested actions**:\n- Re-delegate with a different engine (e.g., `claude-code` instead of `github-copilot`)\n- Check if the model name is valid for this engine\n- Verify CLI authentication (e.g., `copilot login`, `claude auth`)"
   }
 }

@@ -128,56 +128,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           }
         },
         {
-          name: "github_create_issue",
-        description: "Creates a new issue in a GitHub repository.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            owner: { type: "string", description: "Repository owner (e.g. cloga)" },
-            repo: { type: "string", description: "Repository name (e.g. optimus-code)" },
-            title: { type: "string", description: "Issue title" },
-            body: { type: "string", description: "Issue body/contents" },              local_path: { type: "string", description: "The local blackboard file path (e.g. .optimus/proposals/PROPOSAL_XY.md) for A2A cross-reference" },
-              session_id: { type: "string", description: "The Session ID or Agent ID creating this issue for traceability" },            labels: { type: "array", items: { type: "string" }, description: "Labels to apply" }
-          },
-          required: ["owner", "repo", "title", "body", "local_path"]
-        }
-      },
-        {
-          name: "github_create_pr",
-          description: "Creates a new pull request in a GitHub repository.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              owner: { type: "string" },
-              repo: { type: "string" },
-              title: { type: "string" },
-              head: { type: "string", description: "The name of the branch where your changes are implemented." },
-              base: { type: "string", description: "The name of the branch you want the changes pulled into." },
-              body: { type: "string" },
-                agent_role: { type: "string", description: "The role of the agent making this PR (e.g., 'dev')" },
-                session_id: { type: "string", description: "The session ID of the agent" }
-            },
-            required: ["owner", "repo", "title", "head", "base"]
-          }
-        },
-        {
-          name: "github_merge_pr",
-          description: "Merges a pull request in a GitHub repository.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              owner: { type: "string" },
-              repo: { type: "string" },
-              pull_number: { type: "number" },
-              commit_title: { type: "string" },
-              merge_method: { type: "string", enum: ["merge", "squash", "rebase"] },
-                agent_role: { type: "string", description: "The role of the agent merging this PR (e.g., 'pm')" },
-                session_id: { type: "string", description: "The session ID of the agent" }
-            },
-            required: ["owner", "repo", "pull_number"]
-          }
-        },
-        {
           name: "github_sync_board",
         description: "Fetches open issues from a GitHub repository and dumps them into the local blackboard.",
         inputSchema: {

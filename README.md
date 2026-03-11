@@ -112,8 +112,8 @@ Once the server is running, your AI assistant gains these tools:
 | `vcs_create_pr` | Create a Pull Request via unified VCS abstraction |
 | `vcs_merge_pr` | Merge a Pull Request via unified VCS abstraction |
 | `vcs_add_comment` | Add a comment to a work item or PR (requires `item_type`) |
-| `github_update_issue` | Update an existing GitHub Issue (legacy, still available) |
-| `github_sync_board` | Sync open issues to local TODO board (legacy, still available) |
+| `github_update_issue` | Update an existing GitHub Issue |
+| `github_sync_board` | Sync open issues to local TODO board |
 
 ### delegate_task Extended Parameters
 
