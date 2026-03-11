@@ -21,6 +21,11 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
         if (this.shouldUseStructuredOutput(mode)) {
             command.args.push('--output-format', 'stream-json', '--include-partial-messages', '--verbose');
         }
+        
+        // BUGFIX: Prevent 128 tool overflow error from global Claude settings.
+        // --strict-mcp-config isolates the agent to only use the workspace tooling, completely ignoring ~/.claude.json global MCP bloat.
+        command.args.push('--strict-mcp-config');
+        
         if (sessionId) {
             command.args.push('--resume', sessionId);
         }
