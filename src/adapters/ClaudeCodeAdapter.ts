@@ -1,5 +1,7 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
+import * as path from 'path';
+
 // Claude CLI process line prefixes: spinning indicator (⏺), bullets (•), tree chars (└│├)
 const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 
@@ -18,6 +20,30 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
 
     protected getNonInteractiveCommand(mode: AgentMode, prompt: string, sessionId?: string): { cmd: string, args: string[] } {
         const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
+        
+        // Prevent 128 tools per request error: block all global MCP servers
+        // (Azure, WorkIQ, etc.) but re-inject only the project's spartan-swarm.
+        command.args.push('--strict-mcp-config');
+        try {
+            const workspacePath = PersistentAgentAdapter.getWorkspacePath();
+            const mcpServerJs = path.join(workspacePath, 'optimus-plugin', 'dist', 'mcp-server.js');
+            const mcpConfig = JSON.stringify({
+                mcpServers: {
+                    'spartan-swarm': {
+                        command: 'node',
+                        args: [mcpServerJs],
+                        env: {
+                            OPTIMUS_WORKSPACE_ROOT: workspacePath,
+                            DOTENV_PATH: path.join(workspacePath, '.env'),
+                        }
+                    }
+                }
+            });
+            command.args.push('--mcp-config', mcpConfig);
+        } catch (e) {
+            // fallback: strict-mcp-config still prevents 128 tool overflow
+        }
+
         if (this.shouldUseStructuredOutput(mode)) {
             command.args.push('--output-format', 'stream-json', '--include-partial-messages', '--verbose');
         }

@@ -1,14 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface RoleSpec {
+    role: string;
+    role_engine?: string;
+    role_model?: string;
+    role_description?: string;
+}
+
 export interface TaskRecord {
     taskId: string;
     type: 'delegate_task' | 'dispatch_council';
     status: 'pending' | 'running' | 'completed' | 'partial' | 'verified' | 'failed';
     role?: string;
     roles?: string[];
+    role_specs?: RoleSpec[];
     task_description?: string;
     context_files?: string[];
+    master_info?: { description?: string; engine?: string; model?: string; requiredSkills?: string[] };
     proposal_path?: string;
     output_path?: string;
     pid?: number;

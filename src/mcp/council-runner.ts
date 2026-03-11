@@ -48,11 +48,12 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 task.output_path!,
                 `async_${taskId}`,
                 task.workspacePath,
-                task.context_files
+                task.context_files,
+                task.master_info
             );
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(
-                task.roles!,
+                task.role_specs || task.roles!,
                 task.proposal_path!,
                 task.output_path!, // Actually reviews path
                 `async_council_${taskId}`,

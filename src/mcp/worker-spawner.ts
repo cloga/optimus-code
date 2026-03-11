@@ -4,6 +4,7 @@ import os from "os";
 import { AgentAdapter } from "../adapters/AgentAdapter";
 import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
+import type { RoleSpec } from "../managers/TaskManifestManager";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -502,9 +503,11 @@ Please provide your complete execution result below.`;
         if (!fs.existsSync(agentsDir)) fs.mkdirSync(agentsDir, { recursive: true });
 
         if (!fs.existsSync(t1Path)) {
+            const formattedRoleForT1 = role.split(/[-_]+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            const fallbackBody = masterInfo?.description || personaContext;
             const t1Template = fs.existsSync(t2Path)
                 ? fs.readFileSync(t2Path, 'utf8')
-                : `---\nrole: ${role}\n---\n\n# ${role}\n`;
+                : `---\nrole: ${role}\n---\n\n# ${formattedRoleForT1}\n\n${fallbackBody}\n`;
             const t1Instance = updateFrontmatter(t1Template, {
                 role: role,
                 base_tier: 'T1',
@@ -565,11 +568,16 @@ Please provide your complete execution result below.`;
 /**
  * Spawns a single expert worker process for council review.
  */
-export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string): Promise<string> {
+export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, masterInfo?: MasterRoleInfo): Promise<string> {
     try {
         console.error(`[Spawner] Launching Real Worker ${role} for council review`);
+        // Enrich masterInfo with role-derived description if Master didn't provide one
+        const enrichedInfo: MasterRoleInfo = {
+            ...masterInfo,
+            description: masterInfo?.description || `Expert council reviewer specializing as ${role.split(/[-_]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}. Provides deep architectural critique, identifies risks, and proposes concrete improvements.`,
+        };
         return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}. 
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, enrichedInfo);
     } catch (err: any) {
         console.error(`[Spawner] Worker ${role} failed to start:`, err);
         return `❌ ${role}: exited with errors (${err.message}).`;
@@ -578,11 +586,16 @@ Provide your expert critique from the perspective of your role (${role}). Identi
 
 /**
  * Dispatches the council of experts concurrently.
+ * Accepts RoleSpec[] (structured with engine/model) or plain string[] (backward compat).
  */
-export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string): Promise<string[]> {
-  const promises = roles.map(role => {
-    const outputPath = path.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath);
+export async function dispatchCouncilConcurrent(roles: (string | RoleSpec)[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string): Promise<string[]> {
+  const promises = roles.map(entry => {
+    const spec: RoleSpec = typeof entry === 'string' ? { role: entry } : entry;
+    const masterInfo: MasterRoleInfo | undefined = (spec.role_engine || spec.role_model || spec.role_description)
+        ? { engine: spec.role_engine, model: spec.role_model, description: spec.role_description }
+        : undefined;
+    const outputPath = path.join(reviewsPath, `${spec.role}_review.md`);
+    return spawnWorker(spec.role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, masterInfo);
   });
 
   return Promise.all(promises);

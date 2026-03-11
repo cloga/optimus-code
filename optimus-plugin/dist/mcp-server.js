@@ -490,7 +490,7 @@ ${outputBlock}
     const record = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record, result);
     const lines = this.countMeaningfulLines(content);
-    const path6 = this.getStructuredResultPath(record);
+    const path7 = this.getStructuredResultPath(record);
     const lineRange = this.getStructuredResultLineRange(record);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -524,30 +524,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, "matches=0"]);
+        return this.buildStructuredSummary([path7, "matches=0"]);
       }
-      return this.buildStructuredSummary([path6, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path7, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path7, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path6, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path7, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path7, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path6, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path7, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path6, "items=0"]);
+        return this.buildStructuredSummary([path7, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path6, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path7, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path6, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path7, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -1094,6 +1094,7 @@ ${line}` : "";
 };
 
 // ../src/adapters/ClaudeCodeAdapter.ts
+var path2 = __toESM(require("path"));
 var CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   constructor(id = "claude-code", name = "\u{1F996} Claude Code", modelFlag = "", modes) {
@@ -1107,6 +1108,25 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   }
   getNonInteractiveCommand(mode, prompt, sessionId) {
     const command = super.getNonInteractiveCommand(mode, prompt, sessionId);
+    command.args.push("--strict-mcp-config");
+    try {
+      const workspacePath = PersistentAgentAdapter.getWorkspacePath();
+      const mcpServerJs = path2.join(workspacePath, "optimus-plugin", "dist", "mcp-server.js");
+      const mcpConfig = JSON.stringify({
+        mcpServers: {
+          "spartan-swarm": {
+            command: "node",
+            args: [mcpServerJs],
+            env: {
+              OPTIMUS_WORKSPACE_ROOT: workspacePath,
+              DOTENV_PATH: path2.join(workspacePath, ".env")
+            }
+          }
+        }
+      });
+      command.args.push("--mcp-config", mcpConfig);
+    } catch (e) {
+    }
     if (this.shouldUseStructuredOutput(mode)) {
       command.args.push("--output-format", "stream-json", "--include-partial-messages", "--verbose");
     }
@@ -1623,11 +1643,15 @@ Please provide your complete execution result below.`;
     const agentsDir = import_path.default.join(workspacePath, ".optimus", "agents");
     if (!import_fs.default.existsSync(agentsDir)) import_fs.default.mkdirSync(agentsDir, { recursive: true });
     if (!import_fs.default.existsSync(t1Path)) {
+      const formattedRoleForT1 = role.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+      const fallbackBody = masterInfo?.description || personaContext;
       const t1Template = import_fs.default.existsSync(t2Path) ? import_fs.default.readFileSync(t2Path, "utf8") : `---
 role: ${role}
 ---
 
-# ${role}
+# ${formattedRoleForT1}
+
+${fallbackBody}
 `;
       const t1Instance = updateFrontmatter(t1Template, {
         role,
@@ -1693,30 +1717,36 @@ Agent has finished execution. Check standard output at \`${outputPath}\`.`;
     lockManager.releaseLock(role);
   }
 }
-async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath) {
+async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath, masterInfo) {
   try {
     console.error(`[Spawner] Launching Real Worker ${role} for council review`);
+    const enrichedInfo = {
+      ...masterInfo,
+      description: masterInfo?.description || `Expert council reviewer specializing as ${role.split(/[-_]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}. Provides deep architectural critique, identifies risks, and proposes concrete improvements.`
+    };
     return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}. 
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, void 0, enrichedInfo);
   } catch (err) {
     console.error(`[Spawner] Worker ${role} failed to start:`, err);
     return `\u274C ${role}: exited with errors (${err.message}).`;
   }
 }
 async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath) {
-  const promises = roles.map((role) => {
-    const outputPath = import_path.default.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath);
+  const promises = roles.map((entry) => {
+    const spec = typeof entry === "string" ? { role: entry } : entry;
+    const masterInfo = spec.role_engine || spec.role_model || spec.role_description ? { engine: spec.role_engine, model: spec.role_model, description: spec.role_description } : void 0;
+    const outputPath = import_path.default.join(reviewsPath, `${spec.role}_review.md`);
+    return spawnWorker(spec.role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, masterInfo);
   });
   return Promise.all(promises);
 }
 
 // ../src/managers/TaskManifestManager.ts
 var fs3 = __toESM(require("fs"));
-var path3 = __toESM(require("path"));
+var path4 = __toESM(require("path"));
 var TaskManifestManager = class {
   static getManifestPath(workspacePath) {
-    return path3.join(workspacePath, ".optimus", "state", "task-manifest.json");
+    return path4.join(workspacePath, ".optimus", "state", "task-manifest.json");
   }
   static loadManifest(workspacePath) {
     const manifestPath = this.getManifestPath(workspacePath);
@@ -1732,7 +1762,7 @@ var TaskManifestManager = class {
   static saveManifest(workspacePath, manifest) {
     const manifestPath = this.getManifestPath(workspacePath);
     const tempPath = `${manifestPath}.tmp`;
-    const dir = path3.dirname(manifestPath);
+    const dir = path4.dirname(manifestPath);
     if (!fs3.existsSync(dir)) fs3.mkdirSync(dir, { recursive: true });
     fs3.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
     fs3.renameSync(tempPath, manifestPath);
@@ -1773,7 +1803,7 @@ var TaskManifestManager = class {
           changed = true;
           try {
             if (task.output_path) {
-              const dir = path3.dirname(task.output_path);
+              const dir = path4.dirname(task.output_path);
               if (!fs3.existsSync(dir)) fs3.mkdirSync(dir, { recursive: true });
               fs3.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
 `, "utf8");
@@ -1907,11 +1937,12 @@ async function runAsyncWorker(taskId, workspacePath) {
         task.output_path,
         `async_${taskId}`,
         task.workspacePath,
-        task.context_files
+        task.context_files,
+        task.master_info
       );
     } else if (task.type === "dispatch_council") {
       await dispatchCouncilConcurrent(
-        task.roles,
+        task.role_specs || task.roles,
         task.proposal_path,
         task.output_path,
         // Actually reviews path
@@ -2038,6 +2069,33 @@ async function updateTaskGitHubIssue(workspacePath, taskId, status, outputPath, 
 // ../src/mcp/mcp-server.ts
 var import_child_process2 = require("child_process");
 var import_dotenv = __toESM(require("dotenv"));
+var MODEL_NAME_PATTERNS = /^(claude|gpt|gemini|llama|mistral|phi|o1|o3|copilot|opus|sonnet|haiku)[-_.\s]?\d/i;
+function validateRoleName(name) {
+  if (MODEL_NAME_PATTERNS.test(name)) {
+    throw new import_types.McpError(
+      import_types.ErrorCode.InvalidParams,
+      `Invalid role name "${name}": looks like a model name, not a domain-expert title. Use a descriptive role like "security-architect" and pass the model via role_model instead.`
+    );
+  }
+}
+function normalizeRoleSpecs(rawRoles) {
+  return rawRoles.map((entry) => {
+    if (typeof entry === "string") {
+      validateRoleName(entry);
+      return { role: entry };
+    }
+    if (entry && typeof entry === "object" && typeof entry.role === "string") {
+      validateRoleName(entry.role);
+      return {
+        role: entry.role,
+        role_engine: entry.role_engine,
+        role_model: entry.role_model,
+        role_description: entry.role_description
+      };
+    }
+    throw new import_types.McpError(import_types.ErrorCode.InvalidParams, `Invalid role entry: ${JSON.stringify(entry)}. Must be a string or {role, role_engine?, role_model?, role_description?}.`);
+  });
+}
 function reloadEnv() {
   if (process.env.DOTENV_PATH) {
     import_dotenv.default.config({ path: import_path3.default.resolve(process.env.DOTENV_PATH), override: true });
@@ -2208,8 +2266,22 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             },
             roles: {
               type: "array",
-              items: { type: "string" },
-              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])"
+              items: {
+                oneOf: [
+                  { type: "string" },
+                  {
+                    type: "object",
+                    properties: {
+                      role: { type: "string", description: "Domain-expert role name (e.g., 'security-architect'). MUST be a job title, NOT a model name." },
+                      role_engine: { type: "string", description: "Execution engine (e.g., 'claude-code'). Optional." },
+                      role_model: { type: "string", description: "Model to use (e.g., 'claude-opus-4-6-1m', 'gemini-3.0-pro', 'gpt-5.4'). Optional." },
+                      role_description: { type: "string", description: "Expert description for T2 template generation." }
+                    },
+                    required: ["role"]
+                  }
+                ]
+              },
+              description: "Array of expert roles. Each can be a string name OR an object {role, role_engine?, role_model?, role_description?}. Role names MUST be domain-expert titles (e.g., 'security-architect'), NEVER model names (e.g., 'claude-opus')."
             }
           },
           required: ["proposal_path", "roles"]
@@ -2337,8 +2409,22 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             },
             roles: {
               type: "array",
-              items: { type: "string" },
-              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])"
+              items: {
+                oneOf: [
+                  { type: "string" },
+                  {
+                    type: "object",
+                    properties: {
+                      role: { type: "string", description: "Domain-expert role name (e.g., 'security-architect'). MUST be a job title, NOT a model name." },
+                      role_engine: { type: "string", description: "Execution engine (e.g., 'claude-code'). Optional." },
+                      role_model: { type: "string", description: "Model to use (e.g., 'claude-opus-4-6-1m', 'gemini-3.0-pro', 'gpt-5.4'). Optional." },
+                      role_description: { type: "string", description: "Expert description for T2 template generation." }
+                    },
+                    required: ["role"]
+                  }
+                ]
+              },
+              description: "Array of expert roles. Each can be a string name OR an object {role, role_engine?, role_model?, role_description?}. Role names MUST be domain-expert titles (e.g., 'security-architect'), NEVER model names (e.g., 'claude-opus')."
             },
             workspace_path: {
               type: "string",
@@ -2429,11 +2515,12 @@ Error: ${task.error_message}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, task_description, output_path, workspace_path, context_files } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
     if (!role || !task_description || !output_path || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const masterInfo = role_description || role_engine || role_model || required_skills ? { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills } : void 0;
     TaskManifestManager.createTask(workspace_path, {
       taskId,
       type: "delegate_task",
@@ -2441,7 +2528,8 @@ Error: ${task.error_message}`;
       task_description,
       output_path,
       workspacePath: workspace_path,
-      context_files: context_files || []
+      context_files: context_files || [],
+      master_info: masterInfo
     });
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);
@@ -2485,12 +2573,15 @@ Use check_task_status tool periodically with this task ID to check its completio
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
+    const roleSpecs = normalizeRoleSpecs(roles);
+    const roleNames = roleSpecs.map((s) => s.role);
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const reviewsPath = import_path3.default.join(workspace_path, ".optimus", "reviews", taskId);
     TaskManifestManager.createTask(workspace_path, {
       taskId,
       type: "dispatch_council",
-      roles,
+      roles: roleNames,
+      role_specs: roleSpecs,
       proposal_path,
       output_path: reviewsPath,
       workspacePath: workspace_path
@@ -2501,11 +2592,11 @@ Use check_task_status tool periodically with this task ID to check its completio
       const issue = await createGitHubIssue(
         remote.owner,
         remote.repo,
-        `[swarm-council] ${roles.join(", ")}: ${taskId}`,
+        `[swarm-council] ${roleNames.join(", ")}: ${taskId}`,
         `## Auto-generated Council Review Tracker
 
 **Council ID:** \`${taskId}\`
-**Roles:** ${roles.map((r) => `\`${r}\``).join(", ")}
+**Roles:** ${roleNames.map((r) => `\`${r}\``).join(", ")}
 **Proposal:** \`${proposal_path}\`
 **Reviews Path:** \`${reviewsPath}\``,
         ["swarm-council"]
@@ -2525,7 +2616,7 @@ Use check_task_status tool periodically with this task ID to check its completio
     return { content: [{ type: "text", text: `\u2705 Council spawned successfully in background.
 
 **Council ID**: ${taskId}
-**Roles**: ${roles.join(", ")}${issueInfo}
+**Roles**: ${roleNames.join(", ")}${issueInfo}
 
 Use check_task_status tool periodically with this Council ID to check completion.` }] };
   }
@@ -2534,6 +2625,8 @@ Use check_task_status tool periodically with this Council ID to check completion
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
+    const roleSpecs = normalizeRoleSpecs(roles);
+    const roleNames = roleSpecs.map((s) => s.role);
     let workspacePath;
     const optimusIndex = proposal_path.indexOf(".optimus");
     if (optimusIndex !== -1) {
@@ -2544,8 +2637,8 @@ Use check_task_status tool periodically with this Council ID to check completion
     const timestampId = Date.now();
     const reviewsPath = import_path3.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
     import_fs3.default.mkdirSync(reviewsPath, { recursive: true });
-    console.error(`[MCP] Dispatching council with roles: ${roles.join(", ")}`);
-    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath);
+    console.error(`[MCP] Dispatching council with roles: ${roleNames.join(", ")}`);
+    const results = await dispatchCouncilConcurrent(roleSpecs, proposal_path, reviewsPath, timestampId.toString(), workspacePath);
     return {
       content: [
         {

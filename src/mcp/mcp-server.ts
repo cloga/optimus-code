@@ -14,10 +14,44 @@ import os from "os";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle } from "./worker-spawner";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
+import type { RoleSpec } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker } from "./council-runner";
 import { spawn } from "child_process";
 import dotenv from "dotenv";
+
+// ─── Model Name Guard ───
+// Rejects role names that look like base model identifiers instead of domain-expert titles.
+const MODEL_NAME_PATTERNS = /^(claude|gpt|gemini|llama|mistral|phi|o1|o3|copilot|opus|sonnet|haiku)[-_.\s]?\d/i;
+
+function validateRoleName(name: string): void {
+    if (MODEL_NAME_PATTERNS.test(name)) {
+        throw new McpError(
+            ErrorCode.InvalidParams,
+            `Invalid role name "${name}": looks like a model name, not a domain-expert title. ` +
+            `Use a descriptive role like "security-architect" and pass the model via role_model instead.`
+        );
+    }
+}
+
+function normalizeRoleSpecs(rawRoles: any[]): RoleSpec[] {
+    return rawRoles.map(entry => {
+        if (typeof entry === 'string') {
+            validateRoleName(entry);
+            return { role: entry };
+        }
+        if (entry && typeof entry === 'object' && typeof entry.role === 'string') {
+            validateRoleName(entry.role);
+            return {
+                role: entry.role,
+                role_engine: entry.role_engine,
+                role_model: entry.role_model,
+                role_description: entry.role_description,
+            };
+        }
+        throw new McpError(ErrorCode.InvalidParams, `Invalid role entry: ${JSON.stringify(entry)}. Must be a string or {role, role_engine?, role_model?, role_description?}.`);
+    });
+}
 
 // Load environment variables: prefer DOTENV_PATH from mcp.json env mount, fallback to cwd
 function reloadEnv() {
@@ -201,8 +235,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             roles: {
               type: "array",
-              items: { type: "string" },
-              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
+              items: {
+                oneOf: [
+                  { type: "string" },
+                  {
+                    type: "object",
+                    properties: {
+                      role: { type: "string", description: "Domain-expert role name (e.g., 'security-architect'). MUST be a job title, NOT a model name." },
+                      role_engine: { type: "string", description: "Execution engine (e.g., 'claude-code'). Optional." },
+                      role_model: { type: "string", description: "Model to use (e.g., 'claude-opus-4-6-1m', 'gemini-3.0-pro', 'gpt-5.4'). Optional." },
+                      role_description: { type: "string", description: "Expert description for T2 template generation." }
+                    },
+                    required: ["role"]
+                  }
+                ]
+              },
+              description: "Array of expert roles. Each can be a string name OR an object {role, role_engine?, role_model?, role_description?}. Role names MUST be domain-expert titles (e.g., 'security-architect'), NEVER model names (e.g., 'claude-opus').",
             },
           },
           required: ["proposal_path", "roles"],
@@ -330,8 +378,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             roles: {
               type: "array",
-              items: { type: "string" },
-              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
+              items: {
+                oneOf: [
+                  { type: "string" },
+                  {
+                    type: "object",
+                    properties: {
+                      role: { type: "string", description: "Domain-expert role name (e.g., 'security-architect'). MUST be a job title, NOT a model name." },
+                      role_engine: { type: "string", description: "Execution engine (e.g., 'claude-code'). Optional." },
+                      role_model: { type: "string", description: "Model to use (e.g., 'claude-opus-4-6-1m', 'gemini-3.0-pro', 'gpt-5.4'). Optional." },
+                      role_description: { type: "string", description: "Expert description for T2 template generation." }
+                    },
+                    required: ["role"]
+                  }
+                ]
+              },
+              description: "Array of expert roles. Each can be a string name OR an object {role, role_engine?, role_model?, role_description?}. Role names MUST be domain-expert titles (e.g., 'security-architect'), NEVER model names (e.g., 'claude-opus').",
             },
             workspace_path: {
               type: "string",
@@ -419,14 +481,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, task_description, output_path, workspace_path, context_files } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments as any;
     if (!role || !task_description || !output_path || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
     
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
+    const masterInfo = (role_description || role_engine || role_model || required_skills) ? { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills } : undefined;
     TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || []
+        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [], master_info: masterInfo
     });
 
     // Best-effort: auto-create GitHub Issue for traceability
@@ -460,10 +523,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
     
+    const roleSpecs = normalizeRoleSpecs(roles);
+    const roleNames = roleSpecs.map(s => s.role);
+    
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     const reviewsPath = path.join(workspace_path, ".optimus", "reviews", taskId);
     TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "dispatch_council", roles, proposal_path, output_path: reviewsPath, workspacePath: workspace_path
+        taskId, type: "dispatch_council", roles: roleNames, role_specs: roleSpecs, proposal_path, output_path: reviewsPath, workspacePath: workspace_path
     });
 
     // Best-effort: auto-create GitHub Issue for traceability
@@ -471,8 +537,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const remote = parseGitRemote(workspace_path);
     if (remote) {
         const issue = await createGitHubIssue(remote.owner, remote.repo,
-            `[swarm-council] ${roles.join(', ')}: ${taskId}`,
-            `## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roles.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\``,
+            `[swarm-council] ${roleNames.join(', ')}: ${taskId}`,
+            `## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roleNames.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\``,
             ['swarm-council']
         );
         if (issue) {
@@ -487,7 +553,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     });
     child.unref();
     
-    return { content: [{ type: "text", text: `✅ Council spawned successfully in background.\n\n**Council ID**: ${taskId}\n**Roles**: ${roles.join(", ")}${issueInfo}\n\nUse check_task_status tool periodically with this Council ID to check completion.` }] };
+    return { content: [{ type: "text", text: `✅ Council spawned successfully in background.\n\n**Council ID**: ${taskId}\n**Roles**: ${roleNames.join(", ")}${issueInfo}\n\nUse check_task_status tool periodically with this Council ID to check completion.` }] };
   }
 
   if (request.params.name === "dispatch_council") {
@@ -497,6 +563,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
+    
+    const roleSpecs = normalizeRoleSpecs(roles);
+    const roleNames = roleSpecs.map(s => s.role);
     
     // Resolve workspace root from the proposal_path instead of process.cwd().
     // Global MCP servers boot in the user home directory, so we must calculate the project root dynamically.
@@ -518,8 +587,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // In Phase 2 implementation, this is where we invoke worker-spawner.js for Promise.all
     // Launching autonomous CLI instances concurrently
-    console.error(`[MCP] Dispatching council with roles: ${roles.join(', ')}`);
-    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath);
+    console.error(`[MCP] Dispatching council with roles: ${roleNames.join(', ')}`);
+    const results = await dispatchCouncilConcurrent(roleSpecs, proposal_path, reviewsPath, timestampId.toString(), workspacePath);
 
     return {
       content: [
