@@ -70,7 +70,13 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 task.output_path!,
                 `async_${taskId}`,
                 task.workspacePath,
-                task.context_files
+                task.context_files,
+                {
+                    description: task.role_description,
+                    engine: task.role_engine,
+                    model: task.role_model,
+                    requiredSkills: task.required_skills
+                }
             );
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(

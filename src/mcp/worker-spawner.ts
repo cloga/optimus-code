@@ -407,8 +407,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
                     e => !config.engines[e].status?.includes('demo')
                 );
                 if (engines.length > 0) {
-                    // Prefer github-copilot if available, else first engine
-                    activeEngine = engines.includes('github-copilot') ? 'github-copilot' : engines[0];
+                    // Prefer claude-code if available, else first engine
+                    activeEngine = engines.includes('claude-code') ? 'claude-code' : engines[0];
                     if (!activeModel) {
                         const models = config.engines[activeEngine]?.available_models;
                         if (Array.isArray(models) && models.length > 0) {

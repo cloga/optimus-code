@@ -1983,7 +1983,7 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
           (e) => !config.engines[e].status?.includes("demo")
         );
         if (engines.length > 0) {
-          activeEngine = engines.includes("github-copilot") ? "github-copilot" : engines[0];
+          activeEngine = engines.includes("claude-code") ? "claude-code" : engines[0];
           if (!activeModel) {
             const models = config.engines[activeEngine]?.available_models;
             if (Array.isArray(models) && models.length > 0) {
@@ -2423,7 +2423,13 @@ async function runAsyncWorker(taskId, workspacePath) {
         task.output_path,
         `async_${taskId}`,
         task.workspacePath,
-        task.context_files
+        task.context_files,
+        {
+          description: task.role_description,
+          engine: task.role_engine,
+          model: task.role_model,
+          requiredSkills: task.required_skills
+        }
       );
     } else if (task.type === "dispatch_council") {
       await dispatchCouncilConcurrent(
@@ -3125,7 +3131,7 @@ Error: ${task.error_message}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, task_description, output_path, workspace_path, context_files } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
     if (!role || !task_description || !output_path || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
@@ -3137,7 +3143,11 @@ Error: ${task.error_message}`;
       task_description,
       output_path,
       workspacePath: workspace_path,
-      context_files: context_files || []
+      context_files: context_files || [],
+      role_description,
+      role_engine,
+      role_model,
+      required_skills
     });
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);

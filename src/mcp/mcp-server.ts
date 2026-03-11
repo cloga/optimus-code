@@ -429,14 +429,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, task_description, output_path, workspace_path, context_files } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments as any;
     if (!role || !task_description || !output_path || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
     
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || []
+        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [],
+        role_description, role_engine, role_model, required_skills
     });
 
     // Best-effort: auto-create GitHub Issue for traceability
