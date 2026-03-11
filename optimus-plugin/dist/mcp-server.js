@@ -1212,10 +1212,11 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
 
 // ../src/mcp/worker-spawner.ts
 function parseFrontmatter(content) {
+  const normalized = content.replace(/\r\n/g, "\n");
   const yamlRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
-  const match = content.match(yamlRegex);
+  const match = normalized.match(yamlRegex);
   let frontmatter = {};
-  let body = content;
+  let body = normalized;
   if (match) {
     const yamlBlock = match[1];
     body = match[2];

@@ -6,10 +6,11 @@ import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
+    const normalized = content.replace(/\r\n/g, '\n');
     const yamlRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
-    const match = content.match(yamlRegex);
+    const match = normalized.match(yamlRegex);
     let frontmatter: Record<string, string> = {};
-    let body = content;
+    let body = normalized;
     
     if (match) {
         const yamlBlock = match[1];
