@@ -6,41 +6,42 @@ description: End-to-end feature development — from requirements to merged code
 # Feature Development
 
 Build features the right way: understand the codebase first, clarify ambiguities
-before designing, design before coding, and review before shipping. Each phase
+before designing, design before coding, review before merging. Each phase
 produces a concrete artifact that feeds the next — no phase operates on
 assumptions.
 
 Why this order matters: coding without understanding the codebase produces code
 that fights existing patterns. Designing without clarifying requirements produces
-architecture that solves the wrong problem. Reviewing after merge is too late.
+architecture that solves the wrong problem. Merging without review lets bugs ship.
 
 ## Required Tools
 
 | Tool | Used In | Purpose |
 |------|---------|---------|
 | `delegate_task` | Phase 1, 4 | Sync delegation to PM and dev |
-| `delegate_task_async` | Phase 2-6 handoff | Async delegation to PM for autonomous phases |
+| `delegate_task_async` | Phase 2-6 handoff | Master hands off to PM for autonomous phases |
 | `dispatch_council` | Phase 2, 3, 5 | Parallel expert exploration / design / review |
-| `check_task_status` | After async dispatch | Monitor PM progress |
-| `vcs_create_work_item` | Phase 1 | Create tracking issue |
+| `vcs_create_work_item` | Phase 1 | Create tracking issue before work starts |
+| `vcs_create_pr` | Phase 4 | Dev creates PR (does NOT merge yet) |
+| `vcs_merge_pr` | Phase 5 | PM merges after review passes |
 | `vcs_add_comment` | Phase 6 | Update work item with summary |
-| `roster_check` | Before delegation | Verify roles exist |
+| `roster_check` | Before delegation | Verify roles and skills exist |
 
 ## Required Roles
 
 | Role | Used In | Purpose |
 |------|---------|---------|
-| `pm` | Phase 1-6 | Orchestrates the entire workflow |
+| `product-manager` | Phase 1-6 | Orchestrates the entire workflow |
 | `code-explorer` | Phase 2 | Traces codebase execution paths and patterns |
 | `code-architect` | Phase 3 | Designs implementation approaches |
-| `dev` | Phase 4 | Implements the chosen architecture |
+| `senior-full-stack-builder` | Phase 4 | Implements the chosen architecture |
 | `code-reviewer` | Phase 5 | Reviews code quality, bugs, conventions |
 
 ## Required Skills (for dev in Phase 4)
 
 | Skill | Purpose |
 |-------|---------|
-| `git-workflow` | Branch → build → PR → merge workflow |
+| `git-workflow` | Branch → build → PR workflow (no merge — PM merges after review) |
 
 ## How it works
 
@@ -52,13 +53,13 @@ Phase 1.
 ```
 User ↔ Master Agent
            │
-           ├─ Phase 1 (sync): Master ↔ PM — align on requirements
+           ├─ Phase 1 (sync): Master ↔ product-manager — align on requirements
            │
-           └─ Phase 2-6 (async): PM runs autonomously
-                ├─ 2. Explore codebase (council → code-explorer ×2-3)
-                ├─ 3. Design architecture (council → code-architect ×2-3)
-                ├─ 4. Implement (delegate → dev)
-                ├─ 5. Review quality (council → code-reviewer ×3)
+           └─ Phase 2-6 (async): product-manager runs autonomously
+                ├─ 2. Explore (council sync → code-explorer ×2-3)
+                ├─ 3. Design (council sync → code-architect ×2-3)
+                ├─ 4. Implement (delegate sync → senior-full-stack-builder)
+                ├─ 5. Review + Merge (council sync → code-reviewer ×3)
                 └─ 6. Summarize and close
 ```
 
@@ -66,7 +67,7 @@ User ↔ Master Agent
 
 ## Phase 1: Requirements Alignment
 
-**Master ↔ PM (sync)** · Output: requirements doc
+**Master ↔ product-manager (delegate_task, sync)** · Output: requirements doc
 
 Master sends the user's request to PM. PM reads it and asks back:
 - What's unclear or underspecified?
@@ -74,82 +75,81 @@ Master sends the user's request to PM. PM reads it and asks back:
 - What scope is in vs. out?
 - What existing behavior must not break?
 
-Master answers from user context. PM writes a requirements doc at
-`.optimus/tasks/requirements_<feature>.md` that's complete enough for all
-downstream work. After this, no more user interaction.
+Master answers from user context (PM does NOT talk to the user directly).
+PM writes a requirements doc at `.optimus/tasks/requirements_<feature>.md`
+that's complete enough for all downstream work.
+
+After this phase, Master hands off to PM via `delegate_task_async` for Phase 2-6.
 
 ---
 
 ## Phase 2: Codebase Exploration
 
-**PM → code-explorer ×2-3 (council, sync)** · Output: enriched requirements doc
+**product-manager → code-explorer ×2-3 (dispatch_council, sync)** · Output: enriched requirements doc
 
 PM dispatches 2-3 explorers, each looking at a different angle of the codebase.
-Tailor the prompts to the specific feature — don't use generic exploration:
+Tailor the prompts to the specific feature:
 
-- If building auth: "Trace the current auth flow from login to session creation.
-  List 5-10 key files."
-- If adding an API: "Map existing API patterns — routing, middleware, error
-  handling. List key files."
-- If modifying the build: "Trace the build pipeline and identify extension points.
-  List key files."
+- If building auth: "Trace the current auth flow from login to session. List 5-10 key files."
+- If adding an API: "Map existing API patterns — routing, middleware, error handling. List key files."
+- If modifying the build: "Trace the build pipeline and identify extension points. List key files."
 
-The explorers will surface questions about how code works. PM answers these using
-the requirements doc — providing business context the explorers lack.
+Explorers may ask questions about how code works. PM answers using the
+requirements doc — providing business context the explorers lack.
 
-After reading the explorer reports and the key files they identify, PM updates
-the requirements doc with project context: which patterns to follow, which files
-to touch, what risks exist.
+PM reads explorer reports and all key files they identify, then updates the
+requirements doc with project context: patterns to follow, files to touch, risks.
 
 ---
 
 ## Phase 3: Architecture Design
 
-**PM → code-architect ×2-3 (council, sync)** · Output: chosen architecture
+**product-manager → code-architect ×2-3 (dispatch_council, sync)** · Output: chosen architecture
 
-PM sends each architect the enriched requirements doc. Each architect designs
-from a different angle:
+PM sends each architect the enriched requirements doc. Each designs from a
+different angle:
 - **Minimal**: smallest diff, maximum reuse
 - **Clean**: best abstractions, long-term maintainability
 - **Pragmatic**: best balance of speed and quality
 
 PM reads all proposals, picks the best fit (or synthesizes a hybrid), and
-documents the decision with rationale. The chosen architecture specifies exactly
-which files to create, modify, and how they connect.
+documents the decision with rationale.
 
 ---
 
 ## Phase 4: Implementation
 
-**PM → dev (sync, with git-workflow)** · Output: merged PR
+**product-manager → senior-full-stack-builder (delegate_task, sync)** · Output: open PR
 
-PM provides the dev with everything accumulated so far:
+PM provides dev with:
 - Chosen architecture (Phase 3)
 - Key files and patterns (Phase 2)
 - Requirements and context (Phase 1)
 - Required skills: `["git-workflow"]`
 
-Dev creates a branch, implements, builds, verifies, creates PR, and merges.
+Dev creates a branch, implements, builds, verifies, and **creates a PR but does
+NOT merge**. The PR stays open for review in Phase 5.
 
 ---
 
-## Phase 5: Quality Review
+## Phase 5: Quality Review + Merge
 
-**PM → code-reviewer ×3 (council, sync)** · Output: clean or fix list
+**product-manager → code-reviewer ×3 (dispatch_council, sync)** · Output: merged or fixed
 
 Three reviewers, three lenses:
 - **Quality**: simplicity, DRY, readability, elegance
 - **Correctness**: logic errors, edge cases, security
 - **Conventions**: project patterns, naming, error handling
 
-PM reads all reviews and ranks issues by severity. Critical issues go back to
-dev for fixes (then re-review). Clean results move to summary.
+PM reads all reviews and ranks issues by severity:
+- **Critical issues found** → PM delegates back to dev for fixes, then re-reviews
+- **Clean** → PM merges the PR via `vcs_merge_pr`
 
 ---
 
 ## Phase 6: Summary
 
-**PM** · Output: VCS work item update
+**product-manager** · Output: VCS work item update
 
 PM documents:
 - What was built and the problem it solves
