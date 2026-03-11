@@ -42,7 +42,16 @@ function updateFrontmatter(content: string, updates: Record<string, string>): st
     return yamlStr + bodyStr;
 }
 
+// ─── Role Name Sanitization (prevents path traversal) ───
+
+function sanitizeRoleName(role: string): string {
+    return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
+}
+
 // ─── T3 Usage Tracking & Precipitation ───
+
+// File-level mutex to prevent concurrent read-modify-write on t3-usage-log.json
+let t3LogMutex: Promise<void> = Promise.resolve();
 
 interface T3UsageEntry {
     role: string;
@@ -76,17 +85,20 @@ function saveT3UsageLog(workspacePath: string, log: Record<string, T3UsageEntry>
 }
 
 function trackT3Usage(workspacePath: string, role: string, success: boolean, engine: string, model?: string): void {
-    const log = loadT3UsageLog(workspacePath);
-    if (!log[role]) {
-        log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: '', engine, model };
-    }
-    log[role].invocations++;
-    if (success) log[role].successes++;
-    else log[role].failures++;
-    log[role].lastUsed = new Date().toISOString();
-    log[role].engine = engine;
-    if (model) log[role].model = model;
-    saveT3UsageLog(workspacePath, log);
+    // Serialize access via mutex to prevent concurrent overwrites
+    t3LogMutex = t3LogMutex.then(() => {
+        const log = loadT3UsageLog(workspacePath);
+        if (!log[role]) {
+            log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: '', engine, model };
+        }
+        log[role].invocations++;
+        if (success) log[role].successes++;
+        else log[role].failures++;
+        log[role].lastUsed = new Date().toISOString();
+        log[role].engine = engine;
+        if (model) log[role].model = model;
+        saveT3UsageLog(workspacePath, log);
+    }).catch(() => {});
 }
 
 const PRECIPITATION_THRESHOLD = 3;
@@ -97,28 +109,29 @@ const PRECIPITATION_SUCCESS_RATE = 0.8;
  * If threshold is met, auto-generate the T2 role template.
  */
 function checkAndPrecipitate(workspacePath: string, role: string, engine: string, model?: string): string | null {
+    const safeRole = sanitizeRoleName(role);
     const log = loadT3UsageLog(workspacePath);
-    const entry = log[role];
+    const entry = log[safeRole];
     if (!entry || entry.invocations < PRECIPITATION_THRESHOLD) return null;
     
     const successRate = entry.successes / entry.invocations;
     if (successRate < PRECIPITATION_SUCCESS_RATE) return null;
 
     const t2Dir = path.join(workspacePath, '.optimus', 'roles');
-    const t2Path = path.join(t2Dir, `${role}.md`);
+    const t2Path = path.join(t2Dir, `${safeRole}.md`);
     if (fs.existsSync(t2Path)) return null; // Already a T2
 
     if (!fs.existsSync(t2Dir)) fs.mkdirSync(t2Dir, { recursive: true });
 
-    const formattedRole = role
+    const formattedRole = safeRole
         .split(/[-_]+/)
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
 
     const template = `---
-role: ${role}
+role: ${safeRole}
 tier: T2
-description: "Auto-precipitated from T3 after ${entry.invocations} successful invocations"
+description: "Auto-precipitated from T3 after ${entry.successes} successes in ${entry.invocations} invocations"
 engine: ${engine}
 model: ${model || 'claude-opus-4.6-1m'}
 precipitated: ${new Date().toISOString()}
@@ -133,7 +146,7 @@ Apply industry best practices, solve complex problems, and deliver professional-
 `;
 
     fs.writeFileSync(t2Path, template, 'utf8');
-    console.error(`[Precipitation] T3 role '${role}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
+    console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
     return t2Path;
 }
 
@@ -286,7 +299,7 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string)
  */
 export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[]): Promise<string> {
     const parsedRole = parseRoleSpec(roleArg);
-    const role = parsedRole.role;
+    const role = sanitizeRoleName(parsedRole.role);
     
     // Auto-migrate legacy folder `.optimus/personas` to `.optimus/agents`
     const legacyT1Dir = path.join(workspacePath, '.optimus', 'personas');

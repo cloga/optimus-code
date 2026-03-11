@@ -1243,6 +1243,10 @@ function updateFrontmatter(content, updates) {
   const bodyStr = parsed.body.startsWith("\n") ? parsed.body : "\n" + parsed.body;
   return yamlStr + bodyStr;
 }
+function sanitizeRoleName(role) {
+  return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
+}
+var t3LogMutex = Promise.resolve();
 function getT3UsageLogPath(workspacePath) {
   return import_path.default.join(workspacePath, ".optimus", "state", "t3-usage-log.json");
 }
@@ -1263,35 +1267,39 @@ function saveT3UsageLog(workspacePath, log) {
   import_fs.default.writeFileSync(logPath, JSON.stringify(log, null, 2), "utf8");
 }
 function trackT3Usage(workspacePath, role, success, engine, model) {
-  const log = loadT3UsageLog(workspacePath);
-  if (!log[role]) {
-    log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: "", engine, model };
-  }
-  log[role].invocations++;
-  if (success) log[role].successes++;
-  else log[role].failures++;
-  log[role].lastUsed = (/* @__PURE__ */ new Date()).toISOString();
-  log[role].engine = engine;
-  if (model) log[role].model = model;
-  saveT3UsageLog(workspacePath, log);
+  t3LogMutex = t3LogMutex.then(() => {
+    const log = loadT3UsageLog(workspacePath);
+    if (!log[role]) {
+      log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: "", engine, model };
+    }
+    log[role].invocations++;
+    if (success) log[role].successes++;
+    else log[role].failures++;
+    log[role].lastUsed = (/* @__PURE__ */ new Date()).toISOString();
+    log[role].engine = engine;
+    if (model) log[role].model = model;
+    saveT3UsageLog(workspacePath, log);
+  }).catch(() => {
+  });
 }
 var PRECIPITATION_THRESHOLD = 3;
 var PRECIPITATION_SUCCESS_RATE = 0.8;
 function checkAndPrecipitate(workspacePath, role, engine, model) {
+  const safeRole = sanitizeRoleName(role);
   const log = loadT3UsageLog(workspacePath);
-  const entry = log[role];
+  const entry = log[safeRole];
   if (!entry || entry.invocations < PRECIPITATION_THRESHOLD) return null;
   const successRate = entry.successes / entry.invocations;
   if (successRate < PRECIPITATION_SUCCESS_RATE) return null;
   const t2Dir = import_path.default.join(workspacePath, ".optimus", "roles");
-  const t2Path = import_path.default.join(t2Dir, `${role}.md`);
+  const t2Path = import_path.default.join(t2Dir, `${safeRole}.md`);
   if (import_fs.default.existsSync(t2Path)) return null;
   if (!import_fs.default.existsSync(t2Dir)) import_fs.default.mkdirSync(t2Dir, { recursive: true });
-  const formattedRole = role.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  const formattedRole = safeRole.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
   const template = `---
-role: ${role}
+role: ${safeRole}
 tier: T2
-description: "Auto-precipitated from T3 after ${entry.invocations} successful invocations"
+description: "Auto-precipitated from T3 after ${entry.successes} successes in ${entry.invocations} invocations"
 engine: ${engine}
 model: ${model || "claude-opus-4.6-1m"}
 precipitated: ${(/* @__PURE__ */ new Date()).toISOString()}
@@ -1305,7 +1313,7 @@ This role was automatically promoted from T3 (dynamic outsourcing) to T2 (projec
 Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
 `;
   import_fs.default.writeFileSync(t2Path, template, "utf8");
-  console.error(`[Precipitation] T3 role '${role}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
+  console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
   return t2Path;
 }
 var AgentLockManager = class {
@@ -1436,7 +1444,7 @@ function getAdapterForEngine(engine, sessionId, model) {
 }
 async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles) {
   const parsedRole = parseRoleSpec(roleArg);
-  const role = parsedRole.role;
+  const role = sanitizeRoleName(parsedRole.role);
   const legacyT1Dir = import_path.default.join(workspacePath, ".optimus", "personas");
   const t1Dir = import_path.default.join(workspacePath, ".optimus", "agents");
   if (import_fs.default.existsSync(legacyT1Dir) && !import_fs.default.existsSync(t1Dir)) {
