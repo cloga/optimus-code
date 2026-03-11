@@ -737,19 +737,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!fs.existsSync(t2Dir)) {
         fs.mkdirSync(t2Dir, { recursive: true });
     }
-    // Lazy sync from native plugin to project's .optimus/roles if needed
-    const builtInRolesDir = path.join(__dirname, "..", "..", "optimus-plugin", "roles");
-    if (fs.existsSync(builtInRolesDir)) {
-        const builtinFiles = fs.readdirSync(builtInRolesDir);
-        for (const file of builtinFiles) {
-            if (file.endsWith('.md')) {
-                const projectFilePath = path.join(t2Dir, file);
-                if (!fs.existsSync(projectFilePath)) {
-                    try { fs.copyFileSync(path.join(builtInRolesDir, file), projectFilePath); } catch(e) {}
-                }
-            }
-        }
-    }
+    // T2 roles are created ONLY via T3 precipitation or manual user creation.
+    // No lazy-sync from plugin built-in roles.
 
     let roster = "📋 **Spartan Swarm Active Roster**\n\n";
 

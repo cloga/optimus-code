@@ -312,20 +312,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     if (!fs.existsSync(t2Dir)) {
         fs.mkdirSync(t2Dir, { recursive: true });
     }
-
-    // Lazy load/sync default roles to project profile
-    const builtInRolesDir = path.join(__dirname, '..', '..', 'optimus-plugin', 'roles');
-    if (fs.existsSync(builtInRolesDir)) {
-        const builtinFiles = fs.readdirSync(builtInRolesDir);
-        for (const file of builtinFiles) {
-            if (file.endsWith('.md')) {
-                const projectFilePath = path.join(t2Dir, file);
-                if (!fs.existsSync(projectFilePath)) {
-                    try { fs.copyFileSync(path.join(builtInRolesDir, file), projectFilePath); } catch(e) {}
-                }
-            }
-        }
-    }
+    // T2 roles are created ONLY via T3 precipitation or manual user creation.
+    // No lazy-sync from plugin built-in roles.
 
     const t1Path = path.join(t1Dir, `${role}.md`);
     const t2Path = path.join(t2Dir, `${role}.md`);

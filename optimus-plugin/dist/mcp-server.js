@@ -1457,21 +1457,6 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   if (!import_fs.default.existsSync(t2Dir)) {
     import_fs.default.mkdirSync(t2Dir, { recursive: true });
   }
-  const builtInRolesDir = import_path.default.join(__dirname, "..", "..", "optimus-plugin", "roles");
-  if (import_fs.default.existsSync(builtInRolesDir)) {
-    const builtinFiles = import_fs.default.readdirSync(builtInRolesDir);
-    for (const file of builtinFiles) {
-      if (file.endsWith(".md")) {
-        const projectFilePath = import_path.default.join(t2Dir, file);
-        if (!import_fs.default.existsSync(projectFilePath)) {
-          try {
-            import_fs.default.copyFileSync(import_path.default.join(builtInRolesDir, file), projectFilePath);
-          } catch (e) {
-          }
-        }
-      }
-    }
-  }
   const t1Path = import_path.default.join(t1Dir, `${role}.md`);
   const t2Path = import_path.default.join(t2Dir, `${role}.md`);
   let activeEngine = parsedRole.engine;
@@ -2706,21 +2691,6 @@ URL: ${data.html_url}` }] };
     const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
     if (!import_fs3.default.existsSync(t2Dir)) {
       import_fs3.default.mkdirSync(t2Dir, { recursive: true });
-    }
-    const builtInRolesDir = import_path3.default.join(__dirname, "..", "..", "optimus-plugin", "roles");
-    if (import_fs3.default.existsSync(builtInRolesDir)) {
-      const builtinFiles = import_fs3.default.readdirSync(builtInRolesDir);
-      for (const file of builtinFiles) {
-        if (file.endsWith(".md")) {
-          const projectFilePath = import_path3.default.join(t2Dir, file);
-          if (!import_fs3.default.existsSync(projectFilePath)) {
-            try {
-              import_fs3.default.copyFileSync(import_path3.default.join(builtInRolesDir, file), projectFilePath);
-            } catch (e) {
-            }
-          }
-        }
-      }
     }
     let roster = "\u{1F4CB} **Spartan Swarm Active Roster**\n\n";
     roster += "### T1: Local Project Experts\n";
