@@ -1,10 +1,35 @@
 ﻿# Changelog
 
 ## [Unreleased]
-- **Major Architectural Update: Redefined the Agent instantiation model (T1, T2, T3) via `PROPOSAL_UNIFY_AGENTS_PERSONAS.md`.**
-  - **T3 (Base LLM)**: Baseline model capability. Strictly stateless.
-  - **T2 (Role)**: Renamed from Persona to Role. System-wide curated templates defining rules and principles. Resides in `optimus-plugin/roles/`.
-  - **T1 (Agent)**: The stateful instantiation of a Role within a project context. Inherits T2 and adds persistent Project Memory so role context is never blank (Fixes Issue #29).
+
+### Self-Evolving Agent System (T3→T2→T1 Complete Lifecycle)
+- **T3→T2 Immediate Precipitation**: First-time T3 role usage auto-creates a T2 role template in `.optimus/roles/`. No threshold — instant on first delegation.
+- **T2→T1 Session Instantiation**: When a task completes and returns a session_id, the system auto-creates a T1 agent instance in `.optimus/agents/` from the T2 template. T1 is frozen after creation.
+- **Master-Driven T2 Evolution**: Master Agent can update T2 templates with new `role_description`, `role_engine`, `role_model` via `delegate_task` params. T1 instances are never retroactively modified.
+- **Structured `delegate_task` Params**: Added `role_description`, `role_engine`, `role_model`, `required_skills` fields. Master Agent provides all T2 info — no more guessing.
+- **Engine/Model Fallback Chain**: Master override → frontmatter → `available-agents.json` → `claude-code` hardcoded fallback.
+
+### Skill System
+- **Skill Pre-Flight Check**: `required_skills` field in `delegate_task`/`delegate_task_async`. Missing skills → rejection with actionable error listing what to create.
+- **Skill Auto-Injection**: Found skills automatically injected into agent prompt as EQUIPPED SKILLS section.
+- **`skill-creator` Bootstrap Meta-Skill**: Teaches agents how to create new SKILL.md files.
+- **`agent-creator` Bootstrap Meta-Skill**: Teaches Master Agent the T3→T2→T1 lifecycle, role selection, engine binding.
+
+### Infrastructure
+- **DOTENV_PATH via `mcp.json` env mount**: Replaces hardcoded `.env` path. Users can point to any env file.
+- **Auto-generate `.vscode/mcp.json`**: `optimus init` creates or merges MCP config for VS Code/Copilot users.
+- **`[Optimus]` Auto-Tagging**: All Issues/PRs created via MCP tools get `[Optimus]` prefix and `optimus-bot` label.
+- **Zero-Config Scaffold**: `optimus init` ships no pre-built roles/agents. System bootstraps at runtime.
+- **Inject-Only Instruction Bridging**: `optimus init` appends reference to existing `CLAUDE.md`/`copilot-instructions.md` but never creates new ones.
+- **Windows CRLF Fix**: `parseFrontmatter` normalizes `\r\n` for cross-platform compatibility.
+- **Path Traversal Prevention**: `sanitizeRoleName()` strips dangerous characters from role names.
+- **T3 Log File Mutex**: Prevents concurrent write corruption on `t3-usage-log.json`.
+- **`windowsHide: true`**: Background child processes no longer pop up terminal windows.
+
+### Removed
+- Lazy-sync of built-in roles to user projects (was polluting `.optimus/roles/` with phantom T2 files)
+- Instruction bridging that copied full `system-instructions.md` content into `CLAUDE.md`
+- Threshold-based precipitation (was 3 invocations + 80% success rate, now immediate)
 
 ## [0.0.8] - 2026-03-08
 - **Enhancement: Planner Consensus Voting Threshold**: `_computeIntentFromPlanners()` now requires `min(2, numPlanners)` agreeing votes before routing to `action` or `skip`. Single-planner setups behave as before; with 2+ planners, at least 2 must agree, preventing a single aggressive planner from overriding the majority.

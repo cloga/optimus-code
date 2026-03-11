@@ -101,38 +101,94 @@ Once the server is running, your AI assistant gains these tools:
 
 | Tool | Description |
 |---|---|
-| `roster_check` | List all available agent roles (T1 local + T2 global + T3 dynamic) |
-| `delegate_task` | Assign a task to a specialized agent (architect, dev, qa, pm…) |
-| `delegate_task_async` | Same as above, non-blocking |
+| `roster_check` | List all available agent roles (T1 local + T2 project + T3 dynamic) and engine/model bindings |
+| `delegate_task` | Assign a task to a specialized agent with structured role info |
+| `delegate_task_async` | Same as above, non-blocking (preferred) |
 | `dispatch_council` | Spawn parallel expert review (Map-Reduce pattern) |
-| `dispatch_council_async` | Same as above, non-blocking |
+| `dispatch_council_async` | Same as above, non-blocking (preferred) |
 | `check_task_status` | Poll async task/council completion |
 | `append_memory` | Save learnings to persistent agent memory |
-| `github_create_issue` | Create a GitHub Issue |
-| `github_create_pr` | Create a Pull Request |
+| `github_create_issue` | Create a GitHub Issue (auto-tagged `[Optimus]` + `optimus-bot` label) |
+| `github_create_pr` | Create a Pull Request (auto-tagged) |
 | `github_merge_pr` | Merge a Pull Request |
+| `github_update_issue` | Update an existing GitHub Issue |
 | `github_sync_board` | Sync open issues to local TODO board |
+
+### delegate_task Extended Parameters
+
+| Parameter | Required | Description |
+|---|---|---|
+| `role` | ✅ | Role name (e.g., `security-auditor`) |
+| `role_description` | | What this role does — used to generate T2 template |
+| `role_engine` | | Which engine (e.g., `claude-code`, `copilot-cli`) |
+| `role_model` | | Which model (e.g., `claude-opus-4.6-1m`) |
+| `task_description` | ✅ | Detailed task instructions |
+| `output_path` | ✅ | Where to write results |
+| `workspace_path` | ✅ | Project root path |
+| `context_files` | | Files the agent must read |
+| `required_skills` | | Skills the agent needs (pre-flight checked) |
 
 ---
 
 ## How It Works
 
-### Spartan Swarm Protocol
+### Self-Evolving Agent Lifecycle (T3→T2→T1)
 
-Submit a proposal, and the Orchestrator simultaneously spawns multiple experts (Chief Architect, PM, QA Engineer) to review your design from isolated context windows — preventing hallucination bleed.
+```
+User request → Master Agent
+                   │
+                   ├─① roster_check (see who's available)
+                   │
+                   ├─② Select/create role (agent-creator meta-skill)
+                   │     └─ T3 first use → auto-creates T2 role template
+                   │
+                   ├─③ Check/create skills (skill-creator meta-skill)
+                   │     └─ Missing? → delegate to skill-creator → retry
+                   │
+                   ├─④ delegate_task_async → agent executes
+                   │
+                   └─⑤ Session captured → T2 instantiates to T1
+```
 
-### Three-Tier Role Architecture
+| Tier | Location | What It Is | Created By |
+|------|----------|-----------|------------|
+| **T3** | *(ephemeral)* | Zero-shot dynamic worker, no file | Master Agent names it |
+| **T2** | `.optimus/roles/<name>.md` | Role template with engine/model binding | Auto-precipitated on first use, Master can evolve it |
+| **T1** | `.optimus/agents/<name>.md` | Frozen instance snapshot + session state | Auto-created when task completes with session_id |
 
-| Tier | Location | Description |
-|---|---|---|
-| **T1** | `.optimus/agents/` | Local stateful agents with YAML frontmatter persistence |
-| **T2** | Plugin `roles/` | Read-only default role templates, git-trackable |
-| **T3** | *(auto-generated)* | Zero-shot dynamic roles for any name not in T1/T2 |
+**Key invariants:**
+- T2 ≥ T1 (every agent instance has a role template)
+- T1 is frozen — only `session_id` updates on re-use
+- T2 is alive — Master Agent evolves it over time
+
+### Bootstrap Meta-Skills
+
+The system ships with 5 pre-installed skills. Two are **meta-skills** that enable self-evolution:
+
+| Skill | Type | Purpose |
+|-------|------|---------|
+| `agent-creator` | 🧬 Meta | Teaches Master how to build & evolve the team |
+| `skill-creator` | 🧬 Meta | Teaches Master how to create new skills |
+| `delegate-task` | Core | Async-first task delegation protocol |
+| `council-review` | Core | Parallel expert review (Map-Reduce) |
+| `git-workflow` | Core | Issue First + PR workflow |
+
+### Engine/Model Resolution
+
+When delegating a task, engine and model are resolved in priority order:
+1. Master-provided `role_engine` / `role_model`
+2. T2 role frontmatter `engine` / `model`
+3. `available-agents.json` (first non-demo engine)
+4. Hardcoded fallback: `claude-code`
+
+### Skill Pre-Flight
+
+If `required_skills` is specified, the system verifies all skills exist before execution. Missing skills cause a rejection with actionable error — Master creates them via `skill-creator`, then retries.
 
 ### Hybrid SDLC
 
 - **Local AI Blackboard**: Agents use `.optimus/` markdown files for drafting, debating, and long-term memory.
-- **GitHub Integration**: PM agent auto-creates Issues/PRs with full traceability.
+- **GitHub Integration**: All Issues/PRs auto-tagged with `[Optimus]` prefix and `optimus-bot` label for traceability.
 
 ---
 
