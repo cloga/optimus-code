@@ -223,6 +223,14 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
 
     protected abstract getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] };
 
+    /**
+     * Hook for subclasses to sanitize spawn environment variables.
+     * E.g., Copilot adapter strips GITHUB_TOKEN to prevent auth shadowing.
+     */
+    protected sanitizeSpawnEnv(_env: NodeJS.ProcessEnv): void {
+        // Default: no-op. Subclasses override as needed.
+    }
+
     protected shouldUseStructuredOutput(mode: AgentMode): boolean {
         return false;
     }
@@ -786,6 +794,8 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
             if (process.platform === 'win32' && !safeEnv.CLAUDE_CODE_GIT_BASH_PATH) {
                 safeEnv.CLAUDE_CODE_GIT_BASH_PATH = 'C:\\Program Files\\Git\\bin\\bash.exe';
             }
+            // Allow subclasses to sanitize env (e.g., strip tokens that would shadow auth)
+            this.sanitizeSpawnEnv(safeEnv);
             
             const child = platformSpawn(cmd, args, {
                 cwd: currentCwd,
@@ -1156,6 +1166,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
         if (process.platform === 'win32' && !safeEnv.CLAUDE_CODE_GIT_BASH_PATH) {
             safeEnv.CLAUDE_CODE_GIT_BASH_PATH = 'C:\\Program Files\\Git\\bin\\bash.exe';
         }
+        this.sanitizeSpawnEnv(safeEnv);
 
         this.childProcess = platformSpawn(cmd, args, {
             cwd: currentCwd,

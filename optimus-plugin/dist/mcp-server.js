@@ -644,6 +644,12 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
   static getWorkspacePath() {
     return _PersistentAgentAdapter.resolveWorkspacePath().path;
   }
+  /**
+   * Hook for subclasses to sanitize spawn environment variables.
+   * E.g., Copilot adapter strips GITHUB_TOKEN to prevent auth shadowing.
+   */
+  sanitizeSpawnEnv(_env) {
+  }
   shouldUseStructuredOutput(mode) {
     return false;
   }
@@ -1114,6 +1120,7 @@ ${outputBlock}
       if (process.platform === "win32" && !safeEnv.CLAUDE_CODE_GIT_BASH_PATH) {
         safeEnv.CLAUDE_CODE_GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe";
       }
+      this.sanitizeSpawnEnv(safeEnv);
       const child = platformSpawn(cmd, args, {
         cwd: currentCwd,
         env: safeEnv
@@ -1424,6 +1431,7 @@ ${outputBlock}
     if (process.platform === "win32" && !safeEnv.CLAUDE_CODE_GIT_BASH_PATH) {
       safeEnv.CLAUDE_CODE_GIT_BASH_PATH = "C:\\Program Files\\Git\\bin\\bash.exe";
     }
+    this.sanitizeSpawnEnv(safeEnv);
     this.childProcess = platformSpawn(cmd, args, {
       cwd: currentCwd,
       env: safeEnv
@@ -1670,6 +1678,19 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
       args.push("--no-ask-user");
     }
     return { cmd: "copilot", args };
+  }
+  /**
+   * Strip GITHUB_TOKEN and GH_TOKEN from the spawn environment.
+   * Copilot CLI treats these as auth inputs, but in Optimus they contain
+   * a generic GitHub PAT (from .env) for VCS operations — not a Copilot token.
+   * This shadowing breaks Copilot's own keyring-based authentication.
+   * Only forward if COPILOT_GITHUB_TOKEN is explicitly set.
+   */
+  sanitizeSpawnEnv(env) {
+    if (!env.COPILOT_GITHUB_TOKEN) {
+      delete env.GITHUB_TOKEN;
+      delete env.GH_TOKEN;
+    }
   }
 };
 
