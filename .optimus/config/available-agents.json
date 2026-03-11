@@ -7,7 +7,7 @@
       "cli_flags": "--model"
     },
     "github-copilot": {
-      "path": "github-copilot-cli",
+      "path": "copilot",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
       "cli_flags": "-m"
     }

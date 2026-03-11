@@ -70,11 +70,6 @@ function resolveWindowsSpawnResolution(cmd: string): WindowsSpawnResolution | nu
         .filter(Boolean)
         .filter(candidate => fs.existsSync(candidate))
         .sort((left, right) => {
-            // Prefer VS Code's bundled CLI (in globalStorage) over npm-global installs.
-            // The bundled CLI inherits VS Code's OAuth auth; npm-global may not be logged in.
-            const vscodeBundledBonus = (filePath: string) =>
-                filePath.includes('globalStorage') ? -10 : 0;
-
             const extRank = (filePath: string) => {
                 const ext = path.extname(filePath).toLowerCase();
                 if (ext === '.exe' || ext === '.com') {
@@ -89,7 +84,7 @@ function resolveWindowsSpawnResolution(cmd: string): WindowsSpawnResolution | nu
                 return 3;
             };
 
-            return (extRank(left) + vscodeBundledBonus(left)) - (extRank(right) + vscodeBundledBonus(right));
+            return extRank(left) - extRank(right);
         });
 
     for (const candidate of candidates) {

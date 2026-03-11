@@ -543,7 +543,6 @@ function resolveWindowsSpawnResolution(cmd) {
     return null;
   }
   const candidates = whereResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).filter((candidate) => fs.existsSync(candidate)).sort((left, right) => {
-    const vscodeBundledBonus = (filePath) => filePath.includes("globalStorage") ? -10 : 0;
     const extRank = (filePath) => {
       const ext = path.extname(filePath).toLowerCase();
       if (ext === ".exe" || ext === ".com") {
@@ -557,7 +556,7 @@ function resolveWindowsSpawnResolution(cmd) {
       }
       return 3;
     };
-    return extRank(left) + vscodeBundledBonus(left) - (extRank(right) + vscodeBundledBonus(right));
+    return extRank(left) - extRank(right);
   });
   for (const candidate of candidates) {
     const ext = path.extname(candidate).toLowerCase();
@@ -2175,6 +2174,7 @@ role: ${role}
       console.error(`[Orchestrator] T2\u2192T1: Created temp agent placeholder '${role}' at ${import_path.default.basename(t1TempPath)}`);
     }
     const response = await adapter.invoke(basePrompt, "agent", activeSessionId);
+    const nonLogLines = response.split("\n").filter((l) => !l.startsWith("> [LOG]")).join("\n").trim();
     const firstLines = response.slice(0, 500);
     const errorPatterns = [
       /^> \[LOG\] [Ee]rror:/m,
@@ -2184,7 +2184,7 @@ role: ${role}
       /^Worker execution failed:/m
     ];
     const matchedError = errorPatterns.find((p) => p.test(firstLines));
-    if (matchedError) {
+    if (matchedError && nonLogLines.length < 100) {
       const tempFile = t1Path || import_path.default.join(workspacePath, ".optimus", "agents", `${role}_pending_${tempId}.md`);
       if (import_fs.default.existsSync(tempFile) && tempFile.includes("pending_")) {
         try {

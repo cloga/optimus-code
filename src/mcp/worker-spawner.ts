@@ -605,8 +605,11 @@ Please provide your complete execution result below.`;
         const response = await adapter.invoke(basePrompt, 'agent', activeSessionId);
 
         // --- Fail-Fast: Detect CLI-level errors in output ---
-        // Some CLIs (e.g., Copilot) exit code 0 but output error text.
-        // Detect these immediately so the Master Agent can re-delegate.
+        // Some CLIs (e.g., Copilot) exit code 0 but output error text to stderr,
+        // which gets mixed into the response as "> [LOG] ..." lines.
+        // Only treat as fatal if the ACTUAL content (non-LOG lines) is very short,
+        // indicating the CLI failed to produce real output.
+        const nonLogLines = response.split('\n').filter(l => !l.startsWith('> [LOG]')).join('\n').trim();
         const firstLines = response.slice(0, 500);
         const errorPatterns = [
             /^> \[LOG\] [Ee]rror:/m,
@@ -616,7 +619,8 @@ Please provide your complete execution result below.`;
             /^Worker execution failed:/m,
         ];
         const matchedError = errorPatterns.find(p => p.test(firstLines));
-        if (matchedError) {
+        // Only fail if error pattern matched AND there's no meaningful non-log output
+        if (matchedError && nonLogLines.length < 100) {
             // Clean up temp T1 — don't leave zombies
             const tempFile = t1Path || path.join(workspacePath, '.optimus', 'agents', `${role}_pending_${tempId}.md`);
             if (fs.existsSync(tempFile) && tempFile.includes('pending_')) {
