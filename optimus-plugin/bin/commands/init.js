@@ -71,12 +71,10 @@ module.exports = function init() {
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
   }
 
-  // 2.5 Install bootstrap agents (PM is mandatory — it's the Master Agent)
-  const bootstrapAgents = path.join(scaffoldDir, 'roles');
-  if (fs.existsSync(bootstrapAgents)) {
-    console.log('\n👔 Installing bootstrap Agent (PM - Master Agent)...');
-    copyDirRecursive(bootstrapAgents, path.join(optimusDir, 'agents'));
-  }
+  // 2.5 No bootstrap roles/agents are pre-installed.
+  // The system defaults to PM (Master Agent) behavior when no roles exist.
+  // All roles are created dynamically via T3→T2→T1 cascade at runtime,
+  // or manually by the user. The fallback is hardcoded in worker-spawner.
 
   // 3. Copy plugin skills — these are the CORE deliverable.
   // Skills teach the AI how to use MCP tools (dispatch_council, delegate_task, etc.)

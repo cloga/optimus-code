@@ -825,7 +825,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch {}
     }
 
-    roster += "\n*Note: Master Agent may still summon T3 Generic Roles dynamically if needed. T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).*";
+    roster += "\n### ⚙️ Fallback Behavior\n";
+    roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
+    roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
+    roster += "- T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).\n";
 
     return {
       content: [{ type: "text", text: roster }]

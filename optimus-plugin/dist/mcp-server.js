@@ -1474,7 +1474,7 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   }
   const t1Path = import_path.default.join(t1Dir, `${role}.md`);
   const t2Path = import_path.default.join(t2Dir, `${role}.md`);
-  let activeEngine = parsedRole.engine || "claude-code";
+  let activeEngine = parsedRole.engine;
   let activeModel = parsedRole.model;
   let activeSessionId = void 0;
   let t1Content = "";
@@ -1497,6 +1497,28 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     if (fm.frontmatter.session_id) activeSessionId = fm.frontmatter.session_id;
     if (fm.frontmatter.model) activeModel = fm.frontmatter.model;
   }
+  if (!activeEngine) {
+    const configPath = import_path.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+    try {
+      if (import_fs.default.existsSync(configPath)) {
+        const config = JSON.parse(import_fs.default.readFileSync(configPath, "utf8"));
+        const engines = Object.keys(config.engines || {}).filter(
+          (e) => !config.engines[e].status?.includes("demo")
+        );
+        if (engines.length > 0) {
+          activeEngine = engines[0];
+          if (!activeModel) {
+            const models = config.engines[activeEngine]?.available_models;
+            if (Array.isArray(models) && models.length > 0) {
+              activeModel = models[0];
+            }
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  if (!activeEngine) activeEngine = "claude-code";
   const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel);
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
@@ -2773,7 +2795,10 @@ URL: ${data.html_url}` }] };
       } catch {
       }
     }
-    roster += "\n*Note: Master Agent may still summon T3 Generic Roles dynamically if needed. T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).*";
+    roster += "\n### \u2699\uFE0F Fallback Behavior\n";
+    roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
+    roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
+    roster += "- T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).\n";
     return {
       content: [{ type: "text", text: roster }]
     };

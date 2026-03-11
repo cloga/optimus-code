@@ -330,7 +330,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     const t1Path = path.join(t1Dir, `${role}.md`);
     const t2Path = path.join(t2Dir, `${role}.md`);
 
-    let activeEngine = parsedRole.engine || 'claude-code';
+    // Resolve engine/model: role spec override > frontmatter > available-agents.json > hardcoded fallback
+    let activeEngine = parsedRole.engine;
     let activeModel = parsedRole.model;
     let activeSessionId: string | undefined = undefined;
 
@@ -356,6 +357,30 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         if (fm.frontmatter.session_id) activeSessionId = fm.frontmatter.session_id;
         if (fm.frontmatter.model) activeModel = fm.frontmatter.model;
     }
+
+    // Fallback: if engine/model still unset, try reading available-agents.json
+    if (!activeEngine) {
+        const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+        try {
+            if (fs.existsSync(configPath)) {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                const engines = Object.keys(config.engines || {}).filter(
+                    e => !config.engines[e].status?.includes('demo')
+                );
+                if (engines.length > 0) {
+                    activeEngine = engines[0];
+                    if (!activeModel) {
+                        const models = config.engines[activeEngine]?.available_models;
+                        if (Array.isArray(models) && models.length > 0) {
+                            activeModel = models[0];
+                        }
+                    }
+                }
+            }
+        } catch {}
+    }
+    // Ultimate fallback
+    if (!activeEngine) activeEngine = 'claude-code';
 
     const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel);
 

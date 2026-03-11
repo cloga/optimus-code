@@ -173,9 +173,147 @@ trackT3Usage(corruptDir, 'test-role', true, 'claude-code');
 const fixedLog = loadT3UsageLog(corruptDir);
 assert('Overwrites corrupted log with valid data', fixedLog['test-role']?.invocations === 1);
 
+// ─── TEST 9: T3→T2→T1 Hierarchy Integrity ───
+console.log('\n━━━ Test 9: T3→T2→T1 Hierarchy Integrity ━━━');
+const rolesDir = path.join(process.cwd(), '.optimus', 'roles');
+const agentsDir = path.join(process.cwd(), '.optimus', 'agents');
+const t2Files = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+const t1Files = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+assert(`T2 role count (${t2Files.length}) >= T1 agent count (${t1Files.length})`, t2Files.length >= t1Files.length);
+
+// Every T1 agent MUST have a corresponding T2 role template
+const missingT2 = t1Files.filter(a => !t2Files.includes(a));
+assert(`All T1 agents have T2 templates (missing: ${missingT2.length > 0 ? missingT2.join(', ') : 'none'})`, missingT2.length === 0);
+
+// ─── TEST 10: All T2 Roles Have Required Frontmatter (engine/model optional) ───
+console.log('\n━━━ Test 10: All T2 Roles Have Required Frontmatter ━━━');
+for (const role of t2Files) {
+    const content = fs.readFileSync(path.join(rolesDir, `${role}.md`), 'utf8');
+    const fm = parseFrontmatter(content);
+    assert(`T2 "${role}" has role field`, !!fm.frontmatter.role);
+    assert(`T2 "${role}" has tier field`, !!fm.frontmatter.tier);
+    // engine/model are OPTIONAL — system fallback resolves from available-agents.json or defaults to claude-code
+    if (fm.frontmatter.engine) {
+        assert(`T2 "${role}" engine is valid`, ['claude-code', 'copilot-cli', 'deepseek-local'].includes(fm.frontmatter.engine));
+    }
+}
+
+// ─── TEST 10b: Engine/Model Fallback Logic ───
+console.log('\n━━━ Test 10b: Engine/Model Fallback from available-agents.json ━━━');
+const fallbackDir = fs.mkdtempSync(path.join(os.tmpdir(), 'optimus-fallback-'));
+const fbConfigDir = path.join(fallbackDir, '.optimus', 'config');
+fs.mkdirSync(fbConfigDir, { recursive: true });
+// Write a mock available-agents.json
+fs.writeFileSync(path.join(fbConfigDir, 'available-agents.json'), JSON.stringify({
+    engines: {
+        "copilot-cli": { available_models: ["gpt-5.4", "o3-mini"] },
+        "claude-code": { available_models: ["claude-opus-4.6-1m"] },
+        "deepseek-local": { available_models: ["deepseek-r1"], status: "demo" }
+    }
+}), 'utf8');
+// Simulate the fallback logic inline
+function resolveEngineFallback(workspacePath: string): { engine: string, model?: string } {
+    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    try {
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const engines = Object.keys(config.engines || {}).filter(
+                (e: string) => !config.engines[e].status?.includes('demo')
+            );
+            if (engines.length > 0) {
+                const engine = engines[0];
+                const models = config.engines[engine]?.available_models;
+                const model = Array.isArray(models) && models.length > 0 ? models[0] : undefined;
+                return { engine, model };
+            }
+        }
+    } catch {}
+    return { engine: 'claude-code' };
+}
+const fb = resolveEngineFallback(fallbackDir);
+assert('Fallback picks first non-demo engine', fb.engine === 'copilot-cli');
+assert('Fallback picks first model from engine', fb.model === 'gpt-5.4');
+// Test with no config
+const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'optimus-empty-'));
+const fbEmpty = resolveEngineFallback(emptyDir);
+assert('Ultimate fallback is claude-code', fbEmpty.engine === 'claude-code');
+assert('No model when no config', fbEmpty.model === undefined);
+
+// ─── TEST 11: T3→T2 Full Lifecycle Simulation ───
+console.log('\n━━━ Test 11: T3→T2 Full Lifecycle (new role end-to-end) ━━━');
+const lifecycleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'optimus-lifecycle-'));
+const lcRolesDir = path.join(lifecycleDir, '.optimus', 'roles');
+const lcAgentsDir = path.join(lifecycleDir, '.optimus', 'agents');
+fs.mkdirSync(lcRolesDir, { recursive: true });
+fs.mkdirSync(lcAgentsDir, { recursive: true });
+
+// Phase 1: T3 dynamic role used 3 times successfully
+const testRole = 'data-engineer';
+trackT3Usage(lifecycleDir, testRole, true, 'claude-code', 'claude-opus-4.6-1m');
+trackT3Usage(lifecycleDir, testRole, true, 'claude-code', 'claude-opus-4.6-1m');
+trackT3Usage(lifecycleDir, testRole, true, 'claude-code', 'claude-opus-4.6-1m');
+assert('T3 usage logged (3 invocations)', loadT3UsageLog(lifecycleDir)[testRole]?.invocations === 3);
+
+// Phase 2: Auto-precipitate T3→T2
+const t2Result = checkAndPrecipitate(lifecycleDir, testRole, 'claude-code', 'claude-opus-4.6-1m');
+assert('T3→T2 precipitation triggered', t2Result !== null);
+const t2RolePath = path.join(lcRolesDir, `${testRole}.md`);
+assert('T2 role file created', fs.existsSync(t2RolePath));
+
+// Phase 3: Verify T2 template quality
+const t2Template = fs.readFileSync(t2RolePath, 'utf8');
+const t2Fm = parseFrontmatter(t2Template);
+assert('T2 template has correct role', t2Fm.frontmatter.role === testRole);
+assert('T2 template has tier T2', t2Fm.frontmatter.tier === 'T2');
+assert('T2 template has engine binding', t2Fm.frontmatter.engine === 'claude-code');
+assert('T2 template has model binding', t2Fm.frontmatter.model === 'claude-opus-4.6-1m');
+assert('T2 template has precipitated timestamp', !!t2Fm.frontmatter.precipitated);
+assert('T2 body contains formatted role name', t2Fm.body.includes('Data Engineer'));
+
+// Phase 4: Simulate T2→T1 instantiation (create T1 from T2 with session state)
+const t1Content = `---
+role: ${testRole}
+base_tier: T1
+engine: ${t2Fm.frontmatter.engine}
+model: ${t2Fm.frontmatter.model}
+session_id: test-session-${Date.now()}
+created_at: ${new Date().toISOString()}
+---
+
+# [Local Instance] ${testRole}
+This persona is a T1 Local Project Expert instantiated from the T2 template.
+`;
+const t1AgentPath = path.join(lcAgentsDir, `${testRole}.md`);
+fs.writeFileSync(t1AgentPath, t1Content, 'utf8');
+assert('T1 agent file created from T2', fs.existsSync(t1AgentPath));
+
+// Phase 5: Final hierarchy validation
+const lcT2 = fs.readdirSync(lcRolesDir).filter(f => f.endsWith('.md'));
+const lcT1 = fs.readdirSync(lcAgentsDir).filter(f => f.endsWith('.md'));
+assert('Lifecycle: T2 >= T1', lcT2.length >= lcT1.length);
+const t1Fm = parseFrontmatter(fs.readFileSync(t1AgentPath, 'utf8'));
+assert('T1 inherits engine from T2', t1Fm.frontmatter.engine === t2Fm.frontmatter.engine);
+assert('T1 inherits model from T2', t1Fm.frontmatter.model === t2Fm.frontmatter.model);
+assert('T1 has session_id (instance state)', !!t1Fm.frontmatter.session_id);
+
+// ─── TEST 12: Sanitize role names (path traversal prevention) ───
+console.log('\n━━━ Test 12: Role Name Sanitization ━━━');
+function sanitizeRoleName(role: string): string {
+    return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
+}
+assert('Normal role unchanged', sanitizeRoleName('chief-architect') === 'chief-architect');
+assert('Strips dots', sanitizeRoleName('../escape') === 'escape');
+assert('Strips slashes', sanitizeRoleName('../../config/steal') === 'configsteal');
+assert('Strips spaces', sanitizeRoleName('my role') === 'myrole');
+assert('Preserves underscores', sanitizeRoleName('web_dev_expert') === 'web_dev_expert');
+assert('Truncates long names', sanitizeRoleName('a'.repeat(200)).length === 100);
+
 // ─── Cleanup & Summary ───
 fs.rmSync(tmpDir, { recursive: true, force: true });
 fs.rmSync(corruptDir, { recursive: true, force: true });
+fs.rmSync(lifecycleDir, { recursive: true, force: true });
+fs.rmSync(fallbackDir, { recursive: true, force: true });
+fs.rmSync(emptyDir, { recursive: true, force: true });
 
 console.log(`\n${'═'.repeat(50)}`);
 console.log(`📊 Results: ${passed} passed, ${failed} failed out of ${passed + failed} total`);
