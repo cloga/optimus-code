@@ -11,6 +11,13 @@ const path = require('path');
 const production = process.argv.includes('--production');
 
 async function build() {
+  // Pre-build: fetch official skill-creator guide (non-fatal on failure)
+  try {
+    await require('./scripts/fetch-skill-creator-guide.js')();
+  } catch (e) {
+    console.warn('Skill guide fetch skipped:', e.message);
+  }
+
   const result = await esbuild.build({
     entryPoints: [path.resolve(__dirname, '..', 'src', 'mcp', 'mcp-server.ts')],
     bundle: true,
