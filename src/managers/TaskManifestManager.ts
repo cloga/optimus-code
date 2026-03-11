@@ -4,7 +4,7 @@ import * as path from 'path';
 export interface TaskRecord {
     taskId: string;
     type: 'delegate_task' | 'dispatch_council';
-    status: 'pending' | 'running' | 'completed' | 'partial' | 'verified' | 'failed';
+    status: 'pending' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded';
     role?: string;
     roles?: string[];
     task_description?: string;

@@ -4,11 +4,33 @@ import { TaskManifestManager } from '../managers/TaskManifestManager';
 import { dispatchCouncilConcurrent, delegateTaskSingle } from './worker-spawner';
 import { parseGitRemote, commentOnGitHubIssue, closeGitHubIssue } from '../utils/githubApi';
 
-function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial' {
+function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial' | 'failed' {
     if (!outputPath) return 'partial';
     try {
         const stat = fs.statSync(outputPath);
-        if (stat.isFile() && stat.size > 0) return 'verified';
+        if (stat.isFile()) {
+            if (stat.size === 0) return 'partial';
+
+            // Scan first 5 lines for error patterns
+            const fd = fs.openSync(outputPath, 'r');
+            const buffer = Buffer.alloc(1024);
+            const bytesRead = fs.readSync(fd, buffer, 0, 1024, 0);
+            fs.closeSync(fd);
+
+            const content = buffer.slice(0, bytesRead).toString('utf8');
+            const lines = content.split('\n').slice(0, 5);
+
+            for (const line of lines) {
+                if (line.includes('API Error: 5') ||
+                    line.includes('> [LOG] Error:') ||
+                    line.includes('> [LOG] error:') ||
+                    line.includes('Worker execution failed:') ||
+                    line.startsWith('❌')) {
+                    return 'failed';
+                }
+            }
+            return 'verified';
+        }
         if (stat.isDirectory()) {
             const files = fs.readdirSync(outputPath);
             return files.length > 0 ? 'verified' : 'partial';
@@ -66,20 +88,23 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
             let synthesisContent = `# Council Synthesis Report\n\n`;
             synthesisContent += `**Proposal:** \`${task.proposal_path}\`\n`;
             synthesisContent += `**Council:** ${task.roles!.map(r => `\`${r}\``).join(', ')}\n\n`;
-            
-for (let i = 0; i < task.roles!.length; i++) {
+
+            for (let i = 0; i < task.roles!.length; i++) {
                 const role = task.roles![i];
                 const reviewFile = path.join(reviewsPath, `${role}_review.md`);
-                if (fs.existsSync(reviewFile)) {
+                // Use verifyOutputPath to check for error patterns
+                const status = verifyOutputPath(reviewFile);
+
+                if (status === 'verified') {
                     synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
                     synthesisContent += fs.readFileSync(reviewFile, 'utf8');
                     synthesisContent += `\n\n---\n\n`;
                 } else {
                     synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
-                    synthesisContent += `*Worker failed to produce a review artifact.*\n\n---\n\n`;
+                    synthesisContent += `*Worker failed to produce a valid review artifact (Status: ${status}).*\n\n---\n\n`;
                 }
             }
-            
+
             fs.writeFileSync(synthesisPath, synthesisContent, 'utf8');
             console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
 
@@ -122,11 +147,34 @@ Here is the synthesis report:\n\n${synthesisContent}`;
             }
         }
 
-        // Verify output artifacts exist before marking completed
-        const outputTarget = task.type === 'dispatch_council'
-            ? path.join(task.output_path!, 'COUNCIL_SYNTHESIS.md')
-            : task.output_path;
-        const verificationStatus = verifyOutputPath(outputTarget);
+
+        let verificationStatus: 'verified' | 'partial' | 'failed' | 'degraded' = 'partial';
+        if (task.type === 'dispatch_council') {
+            let successCount = 0;
+            let failureCount = 0;
+            const reviewsPath = task.output_path!;
+            for (const role of task.roles!) {
+                const reviewFile = path.join(reviewsPath, `${role}_review.md`);
+                const status = verifyOutputPath(reviewFile);
+                if (status === 'verified') successCount++;
+                else failureCount++;
+            }
+
+            if (failureCount === 0) verificationStatus = 'verified';
+            else if (successCount === 0) verificationStatus = 'failed';
+            else verificationStatus = 'degraded';
+
+            // Ensure synthesis exists regardless
+            const synthesisPath = path.join(task.output_path!, 'COUNCIL_SYNTHESIS.md');
+            if (verificationStatus !== 'failed' && !fs.existsSync(synthesisPath)) {
+                verificationStatus = 'failed';
+            }
+        } else {
+            const status = verifyOutputPath(task.output_path);
+            if (status === 'partial') verificationStatus = 'partial';
+            else verificationStatus = status; // 'verified' or 'failed'
+        }
+
         TaskManifestManager.updateTask(workspacePath, taskId, { status: verificationStatus });
         console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
 
@@ -155,7 +203,7 @@ async function updateTaskGitHubIssue(
         const remote = parseGitRemote(workspacePath);
         if (!remote) return;
 
-        const statusEmoji = status === 'verified' ? '✅' : status === 'partial' ? '⚠️' : '❌';
+        const statusEmoji = status === 'verified' ? '✅' : status === 'degraded' ? '⚠️' : '❌';
         let comment = `## ${statusEmoji} Task Completion Report\n\n`;
         comment += `**Status:** \`${status}\`\n`;
         comment += `**Task ID:** \`${taskId}\`\n`;
