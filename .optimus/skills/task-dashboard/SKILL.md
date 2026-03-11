@@ -5,17 +5,70 @@ description: Teaches Master Agent how to inspect swarm runtime state, summarize 
 
 # Task Dashboard (Swarm Observability)
 
-This skill teaches you how to inspect background execution state in one pass and present a concise dashboard instead of raw logs.
+<description>
+This skill activates when you need to inspect background execution state and present a concise dashboard instead of raw logs. It provides comprehensive swarm observability for monitoring task health, identifying bottlenecks, and maintaining system reliability. Triggers include pre-delegation checks, post-dispatch monitoring, user status requests, troubleshooting stuck tasks, or auditing recent outcomes.
+</description>
 
-## When to Use
+<workflow>
+### Step 1: State Snapshot Collection
+- **Tool**: File reading capability
+- **Parameters**:
+  - `file_path`: `.optimus/state/task-manifest.json`
+- **Action**: Read the task manifest exactly once for a complete snapshot. This contains all delegate_task and dispatch_council records with status, role/roles, output paths, timing, and issue links. Do not poll repeatedly - single read for analysis.
 
-- Before delegating new work (avoid duplicate dispatches)
-- After async dispatches (progress and health checks)
-- When the user asks for current swarm status
-- During troubleshooting of stuck, partial, or failed tasks
-- To audit recent council/delegation outcomes
+### Step 2: Data Normalization and Processing
+- **Tool**: None (analysis step)
+- **Parameters**: N/A
+- **Action**: For each manifest entry, normalize the data by determining task kind (delegate_task vs dispatch_council), owner display (role for delegate_task, roles.join(', ') for dispatch_council), compute elapsed time from startTime, and preserve status, output_path, and github_issue_number when present. Render 'n/a' for missing fields instead of dropping rows.
 
-## Data Sources
+### Step 3: Health Summary Computation
+- **Tool**: None (analysis step)
+- **Parameters**: N/A
+- **Action**: Compute status counts for running, completed, verified, partial, and failed tasks. Identify recent completions (last 5 by newest startTime with completed or verified status), stale running tasks (running longer than 10 minutes), and failure list (all failed entries with error_message).
+
+### Step 4: Agent Runtime Cross-Check
+- **Tool**: File reading capability for agent states
+- **Parameters**:
+  - `file_path`: `.optimus/agents/*.md` frontmatter status fields
+  - `file_path`: `.optimus/agents/*.lock` lock files
+- **Action**: Read agent frontmatter status and compare with lock files to identify:
+  - status: running + lock exists = healthy running
+  - status: running + no lock = possibly stale/abandoned
+  - status: idle + lock exists = lock leak candidate
+  - Document any inconsistencies for troubleshooting
+
+### Step 5: Concise Dashboard Presentation
+- **Tool**: None (formatting step)
+- **Parameters**: N/A
+- **Action**: Present results in three sections: (1) Overview counts, (2) Running/stale/failed highlights, (3) Recent completions. Use the standardized compact format without dumping raw JSON. Include minimum required signals: running tasks with elapsed time, stale markers for >10m, failed tasks with error messages, last 5 completed/verified entries, and count summary across all statuses.
+
+### Step 6: Targeted Status Refresh (Optional)
+- **Tool**: `check_task_status`
+- **Parameters**:
+  - `taskId`: Specific task ID for live refresh
+- **Action**: Use this tool only for targeted checks when a task appears stale, user asks for specific task update, or dependency requires confirmation before next step. Prefer targeted checks over repeated global polling.
+</workflow>
+
+<error_handling>
+- If task-manifest.json reading fails, THEN check if file exists and create empty dashboard noting the limitation.
+- If agent status files are inaccessible, THEN proceed with manifest-only dashboard but note the agent state limitation.
+- If lock file directory is unreadable, THEN skip lock file cross-check and document the limitation in dashboard notes.
+- If `check_task_status` fails for specific task, THEN note the failure in dashboard and provide manual file check instructions.
+- If JSON parsing fails for manifest, THEN attempt partial parsing and report which entries could not be processed.
+</error_handling>
+
+<anti_patterns>
+- Do not dump the full manifest JSON into chat — always present processed, human-readable summaries.
+- Do not poll in a loop — read once and summarize, avoid repeated rapid refreshes.
+- Do not mutate `.optimus/state/task-manifest.json` — it is an append-only audit record.
+- Do not claim a task is stuck without checking elapsed time and lock/frontmatter signals.
+- Do not block the conversation waiting for all background tasks to finish.
+- Do not use `check_task_status` for bulk monitoring — it is for targeted individual task checks.
+- Do not assume task failure without checking error_message field in manifest.
+- Do not ignore stale detection thresholds — flag tasks running >10 minutes as potentially stale.
+</anti_patterns>
+
+## Data Sources Reference
 
 All swarm state lives in `.optimus/state/` and `.optimus/agents/`:
 
@@ -26,80 +79,7 @@ All swarm state lives in `.optimus/state/` and `.optimus/agents/`:
 | **T3 Usage Log** | `.optimus/state/t3-usage-log.json` | Invocation counts, success rates per dynamic role |
 | **Lock Files** | `.optimus/agents/<name>.lock` | Which agents are currently locked by a running process |
 
-## Dashboard Procedure
-
-### Step 1: Read Once, Do Not Poll
-
-Read `.optimus/state/task-manifest.json` exactly once for the snapshot.
-
-If a single task needs a live refresh, use `check_task_status` for that task only.
-
-### Step 2: Normalize Entries
-
-For each manifest entry:
-
-- Determine task kind: `delegate_task` or `dispatch_council`
-- Determine owner display:
-  - `role` for `delegate_task`
-  - `roles.join(', ')` for `dispatch_council`
-- Compute elapsed time from `startTime`
-- Keep `status`, `output_path`, and `github_issue_number` when present
-
-If a field is missing, render `n/a` instead of dropping the row.
-
-### Step 3: Build Health Summary
-
-Compute counts for:
-
-- `running`
-- `completed`
-- `verified`
-- `partial`
-- `failed`
-
-Also produce:
-
-- **Recent completions**: last 5 by newest `startTime` with status `completed` or `verified`
-- **Stale running tasks**: `running` longer than 10 minutes
-- **Failure list**: all `failed` entries with `error_message`
-
-### Step 4: Cross-Check Agent Runtime State
-
-Read `.optimus/agents/*.md` frontmatter status and compare with lock files:
-
-- `status: running` + lock exists: healthy running
-- `status: running` + no lock: possibly stale/abandoned
-- `status: idle` + lock exists: lock leak candidate
-
-### Step 5: Present Concisely
-
-Use a concise report with three sections:
-
-1. **Overview counts**
-2. **Running / stale / failed highlights**
-3. **Recent completions**
-
-Never paste the raw manifest JSON into chat.
-
-## Manifest Fields
-
-Read `.optimus/state/task-manifest.json`. Each entry has:
-
-```json
-{
-  "task_xxx": {
-    "type": "delegate_task" | "dispatch_council",
-    "status": "running" | "completed" | "verified" | "partial" | "failed",
-    "role": "qa-engineer",          // for delegate_task
-    "roles": ["chief-architect", "security"],  // for dispatch_council
-    "output_path": ".optimus/reports/...",
-    "startTime": 1773197118716,
-    "github_issue_number": 70
-  }
-}
-```
-
-### Status Meanings
+## Status Meanings Reference
 
 | Status | Meaning |
 |--------|---------|
@@ -109,9 +89,7 @@ Read `.optimus/state/task-manifest.json`. Each entry has:
 | `partial` | Process exited but output is missing or empty |
 | `failed` | Task errored out (check `error_message`) |
 
-## How to Present a Dashboard
-
-When asked to show swarm status, use this compact format:
+## Dashboard Format Template
 
 ```markdown
 ## Swarm Task Dashboard
@@ -134,31 +112,3 @@ When asked to show swarm status, use this compact format:
 - task_... | verified | role: pm | #71
 - council_... | completed | roles: architect, qa-engineer | #70
 ```
-
-### Minimum Required Signals
-
-Include at least:
-
-- Running tasks with elapsed time
-- Stale marker for `running > 10m`
-- Failed tasks with `error_message`
-- Last 5 completed/verified entries
-- Count summary across all statuses
-
-## How to Check Specific Tasks
-
-Use `check_task_status` with `taskId` when:
-
-- A task appears stale
-- A user asks for a single task update
-- A dependency requires confirmation before next step
-
-Prefer targeted checks over repeated global polling.
-
-## Anti-Patterns
-
-- Do NOT dump the full manifest JSON into chat
-- Do NOT poll in a loop; read once and summarize
-- Do NOT mutate `.optimus/state/task-manifest.json` (append-only audit record)
-- Do NOT claim a task is stuck without checking elapsed time and lock/frontmatter signals
-- Do NOT block the conversation waiting for all background tasks to finish

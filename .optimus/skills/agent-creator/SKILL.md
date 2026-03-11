@@ -5,9 +5,77 @@ description: Meta-skill that teaches the Master Agent how to select, create, and
 
 # Agent Creator (Meta-Skill)
 
-This skill teaches the Master Agent how to manage the T3→T2→T1 agent lifecycle. It is a bootstrap meta-skill — it enables the system to self-evolve its workforce.
+<description>
+This skill activates when the Master Agent needs to manage the T3→T2→T1 agent lifecycle. It enables the system to self-evolve its workforce by creating, updating, and optimizing specialized agent roles. Triggers include requests to create new agents, delegate tasks to non-existent roles, or optimize the agent team composition.
+</description>
 
-## The T3→T2→T1 Hierarchy
+<workflow>
+### Step 1: Roster Inspection
+- **Tool**: `roster_check`
+- **Parameters**:
+  - `workspace_path`: The current project workspace path
+- **Action**: Mandatory first step to retrieve the current agent roster. Returns T1 agents (local instances with session state), T2 roles (project templates with engine/model bindings), and T3 engine pool (available engines and models from `available-agents.json`). Never skip this step even if you think you know the roster.
+
+### Step 2: Role Analysis and Selection
+- **Tool**: None (analysis step)
+- **Parameters**: N/A
+- **Action**: Based on the user's task request and roster data, determine the appropriate role using this priority order:
+  - **T1 Priority (Local Project Experts)**: If the task requires deep domain knowledge of this specific project and a matching T1 Expert exists, use them first.
+  - **T2 Priority (Project Roles)**: For general architectural, security, or universal pattern tasks where a T2 Role exists.
+  - **T3 Fallback (Dynamic Outsourcing)**: If no suitable specialist exists, invent a highly descriptive, hyphenated role name (e.g., `webgl-shader-guru`, `api-integration-specialist`).
+
+### Step 3: Role Definition and Structuring
+- **Tool**: None (preparation step)
+- **Parameters**: N/A
+- **Action**: Prepare structured role information including:
+  - `role`: Hyphenated, descriptive name using only `[a-zA-Z0-9_-]` characters
+  - `role_description`: Clear sentence describing expertise and responsibilities
+  - `role_engine`: Engine selection from available options (`claude-code` for complex reasoning, `copilot-cli` for quick edits)
+  - `role_model`: Specific model version (omit to let system auto-resolve)
+  - Ensure names are unique per project and descriptive rather than generic
+
+### Step 4: Role Deployment
+- **Tool**: `delegate_task_async` or `delegate_task`
+- **Parameters**:
+  - `role`: The determined role name
+  - `role_description`: Expert capabilities and domain
+  - `role_engine`: Selected engine (optional - system resolves if omitted)
+  - `role_model`: Selected model (optional - system resolves if omitted)
+  - `task_description`: The specific task to execute
+  - `required_skills`: Array of skill names needed
+  - `output_path`: Where results should be saved
+  - `workspace_path`: Current project path
+- **Action**: Dispatch the task with complete role information. The system will automatically create T2 templates for new roles, update existing ones if different info provided, and create T1 instances upon task completion.
+
+### Step 5: Team Evolution and Optimization
+- **Tool**: Periodic roster review using `roster_check`
+- **Parameters**:
+  - `workspace_path`: Current project path
+- **Action**: After several delegations, review roster performance and optimize:
+  - Update role descriptions to reflect evolved understanding
+  - Switch engines/models for better performance
+  - Allow underperforming T3 roles to expire naturally
+  - Document team composition changes
+</workflow>
+
+<error_handling>
+- If `roster_check` fails or returns empty data, THEN verify workspace path and retry. If persistent, proceed with T3 role creation but document the limitation.
+- If role name validation fails (invalid characters), THEN sanitize by converting to lowercase and replacing invalid characters with hyphens.
+- If `delegate_task_async` fails with role creation error, THEN retry with simplified role description or fallback to manual T2 role file creation.
+- If engine/model selection fails, THEN remove `role_engine`/`role_model` parameters and let system auto-resolve from `available-agents.json`.
+</error_handling>
+
+<anti_patterns>
+- Do not create roles with vague names like `helper` or `assistant` — be specific about domain expertise.
+- Do not assign tasks to non-existent roles without providing comprehensive `role_description` — the T2 template will be inadequate.
+- Do not manually edit T1 agent files — they are system-managed and frozen after creation.
+- Do not skip `roster_check` before delegating — you might create duplicate or conflicting roles.
+- Do not hardcode engine/model in task_description — use the dedicated `role_engine`/`role_model` fields.
+- Do not create overly narrow roles that can only handle one specific task — design for reasonable reusability.
+- Do not assume roles exist without verification — always check the roster first.
+</anti_patterns>
+
+## The T3→T2→T1 Hierarchy Reference
 
 | Tier | Location | What It Is | Lifecycle |
 |------|----------|-----------|-----------|
@@ -20,58 +88,6 @@ This skill teaches the Master Agent how to manage the T3→T2→T1 agent lifecyc
 - **T1 is frozen**: Once created, T1 body content is never modified by the system. Only `session_id` is updated on subsequent runs.
 - **T2 is alive**: Master Agent can update T2 descriptions, engine bindings, and model settings to evolve the team.
 
-## How to Create or Update a Role
-
-### Step 1: Check the Roster
-Use `roster_check` with the workspace path. This returns:
-- T1 agents (local instances with session state)
-- T2 roles (project templates with engine/model bindings)
-- T3 engine pool (available engines and models from `available-agents.json`)
-
-### Step 2: Decide the Role
-
-Based on the user's request, determine:
-1. **role name**: A hyphenated, descriptive name (e.g., `security-auditor`, `frontend-dev`, `data-engineer`)
-2. **role_description**: A clear sentence describing what this role does and its expertise
-3. **role_engine**: Which engine from `available-agents.json` (e.g., `claude-code`, `copilot-cli`)
-4. **role_model**: Which model (e.g., `claude-opus-4.6-1m`, `gpt-5.4`)
-
-### Step 3: Delegate with Role Info
-
-Pass all structured info in the `delegate_task` or `delegate_task_async` call:
-
-```json
-{
-  "role": "security-auditor",
-  "role_description": "Security auditing expert who reviews code for vulnerabilities, enforces compliance, and prevents data leakage",
-  "role_engine": "claude-code",
-  "role_model": "claude-opus-4.6-1m",
-  "task_description": "Review the authentication module for OWASP Top 10 vulnerabilities...",
-  "required_skills": ["git-workflow"],
-  "output_path": ".optimus/reports/security-audit.md",
-  "workspace_path": "/path/to/project"
-}
-```
-
-The system will automatically:
-- **Create T2** if `.optimus/roles/security-auditor.md` doesn't exist (using your `role_description` and `role_engine`/`role_model`)
-- **Update T2** if it exists but you provide new `role_description`/`role_engine`/`role_model` (team evolution)
-- **Create T1** after the task completes and a session_id is captured
-
-### Step 4: Evolve the Team
-
-After several delegations, review the roster again. You can:
-- Update a role's description to reflect evolved understanding of its purpose
-- Switch a role's engine/model if a better option becomes available
-- Let underperforming T3 roles die naturally (they never precipitate unless delegated)
-
-## Role Name Conventions
-
-- Use lowercase hyphenated names: `security-auditor`, NOT `SecurityAuditor`
-- Be descriptive: `api-integration-specialist`, NOT `dev2`
-- Keep names unique per project
-- Names can only contain: `[a-zA-Z0-9_-]` (anything else is stripped for safety)
-
 ## Engine Selection Guide
 
 When choosing `role_engine` and `role_model`, consider:
@@ -80,11 +96,3 @@ When choosing `role_engine` and `role_model`, consider:
 - Check `available-agents.json` engines for `status: "demo"` — skip those, they're not implemented
 
 If unsure, **omit `role_engine` and `role_model`** — the system auto-resolves from `available-agents.json` (first non-demo engine + first model), or falls back to `claude-code`.
-
-## Anti-Patterns
-
-- Do NOT create roles with vague names like `helper` or `assistant` — be specific
-- Do NOT assign tasks to non-existent roles without providing `role_description` — the T2 template will be nearly empty
-- Do NOT manually edit T1 agent files — they are managed by the system
-- Do NOT skip `roster_check` before delegating — you might create duplicate roles
-- Do NOT hardcode engine/model in task_description — use the dedicated `role_engine`/`role_model` fields

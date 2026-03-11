@@ -777,5 +777,79 @@
     "heartbeatTime": 1773241946452,
     "pid": 90336,
     "error_message": "Worker execution failed: ⚠️ **Delegation Failed (Engine Error)**: Role `pm` on engine `github-copilot` returned an error.\n\n**Error output**:\n```\n> [LOG] Error: No authentication information found.\n\nCopilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.\n\nTo authenticate, you can use any of the following methods:\n  • Start 'copilot' and run the '/login' command\n  • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN environment variable\n  • Run 'gh auth login' to authenticate with the GitHub CLI\n```\n\n**Suggested actions**:\n- Re-delegate with a different engine (e.g., `claude-code` instead of `github-copilot`)\n- Check if the model name is valid for this engine\n- Verify CLI authentication (e.g., `copilot login`, `claude auth`)"
+  },
+  "task_1773244352578_3b6kb0": {
+    "taskId": "task_1773244352578_3b6kb0",
+    "type": "delegate_task",
+    "role": "pm",
+    "task_description": "Update all project documentation for the v0.2.0 VCS unification release. Specifically:\n\n1. `.optimus/config/system-instructions.md` Part 1 (Universal section only):\n   - \"Issue First Protocol\": change \"GitHub Issue\" to \"VCS Work Item\"\n   - Workflow step 1: change \"Create a GitHub Issue via MCP\" to \"Create a VCS Work Item via MCP (vcs_create_work_item)\"\n   - \"GitHub Auto-Tagging\" section: rename to \"VCS Auto-Tagging\", mention both GitHub and ADO\n   - Keep Part 2 (Optimus Code Repository) unchanged since it IS a GitHub project\n\n2. Copy updated system-instructions.md to `optimus-plugin/scaffold/config/system-instructions.md`\n\n3. Add Troubleshooting section to README.md (before \"Example Prompts\"):\n   - Windows git PATH issue: $env:PATH += \";C:\\Program Files\\Git\\cmd\"\n   - VS Code permanent fix: terminal.integrated.env.windows PATH setting\n\n4. Add ADO setup section to README.md Step 3 area:\n   - Set ADO_PAT in .env\n   - Configure .optimus/config/vcs.json with provider: azure-devops\n\n5. Check .github/copilot-instructions.md and .claude/CLAUDE.md for old github_create_pr / github_create_issue references, update to vcs_* equivalents.\n\nOnly modify Markdown files. Do NOT touch TypeScript. Do NOT run builds. After edits, commit \"docs: update system-instructions and README for VCS v0.2.0\" and push to master.",
+    "output_path": ".optimus/reports/pm_docs_vcs_update_v3.md",
+    "workspacePath": "C:\\Users\\lochen\\optimus-code",
+    "context_files": [
+      ".optimus/config/system-instructions.md",
+      "optimus-plugin/scaffold/config/system-instructions.md",
+      ".github/copilot-instructions.md",
+      ".claude/CLAUDE.md",
+      "README.md",
+      "docs/HYBRID_SDLC.md"
+    ],
+    "role_description": "Product Manager responsible for documentation and release materials.",
+    "role_engine": "claude-code",
+    "role_model": "claude-sonnet-4",
+    "required_skills": [
+      "git-workflow"
+    ],
+    "status": "running",
+    "startTime": 1773244352580,
+    "heartbeatTime": 1773244593076,
+    "pid": 95432
+  },
+  "task_1773244371275_rrdhtl": {
+    "taskId": "task_1773244371275_rrdhtl",
+    "type": "delegate_task",
+    "role": "prompt-engineering-lead",
+    "task_description": "Use the skill-creator skill to recursively improve the skill-creator itself AND upgrade the remaining skills (agent-creator, council-review, delegate-task, task-dashboard) to the new XML standard.\n\n1. Read .optimus/skills/skill-creator/SKILL.md — this is the current standard template.\n2. Improve skill-creator itself: enhance its XML structure, ensure Step 0 (tool introspection) and few-shot examples are detailed and actionable.\n3. Then read and rewrite each of these skills to match the XML standard (with proper workflow, error_handling, anti_patterns tags):\n   - .optimus/skills/agent-creator/SKILL.md\n   - .optimus/skills/council-review/SKILL.md\n   - .optimus/skills/delegate-task/SKILL.md\n   - .optimus/skills/task-dashboard/SKILL.md\n4. Overwrite all files directly. Write a summary report of changes made.",
+    "output_path": ".optimus/reports/skill_self_improvement_report.md",
+    "workspacePath": "C:\\Users\\lochen\\optimus-code",
+    "context_files": [
+      ".optimus/skills/skill-creator/SKILL.md",
+      ".optimus/skills/agent-creator/SKILL.md",
+      ".optimus/skills/council-review/SKILL.md",
+      ".optimus/skills/delegate-task/SKILL.md",
+      ".optimus/skills/task-dashboard/SKILL.md"
+    ],
+    "role_description": "Expert in creating highly optimized XML-structured system prompts and AI instruction manuals.",
+    "role_engine": "claude-code",
+    "role_model": "claude-sonnet-4",
+    "required_skills": [
+      "skill-creator"
+    ],
+    "status": "running",
+    "startTime": 1773244371277,
+    "heartbeatTime": 1773244611756,
+    "pid": 136584
+  },
+  "task_1773244384288_uepake": {
+    "taskId": "task_1773244384288_uepake",
+    "type": "delegate_task",
+    "role": "dev",
+    "task_description": "Implement the meta-skill prerequisites for Issue #113. Read .optimus/tasks/task_issue_113.md for full details. Summary:\n\n1. Add a new MCP tool `mcp_schema_introspection` in src/mcp/mcp-server.ts that returns JSON schemas of all registered MCP tools (allowing skill-creator to validate tools dynamically).\n2. Implement `sanitizeSkillName()` in src/mcp/worker-spawner.ts mirroring the existing `sanitizeRoleName()`.\n3. Checkout branch feature/issue-113-meta-skill-prereqs, commit with \"feat: add schema introspection and skill name sanitization, fixes #113\", push, create PR via vcs_create_pr.",
+    "output_path": ".optimus/reports/dev_issue_113_report.md",
+    "workspacePath": "C:\\Users\\lochen\\optimus-code",
+    "context_files": [
+      ".optimus/tasks/task_issue_113.md",
+      "src/mcp/mcp-server.ts",
+      "src/mcp/worker-spawner.ts"
+    ],
+    "role_description": "Core Developer implementing infrastructure code.",
+    "role_engine": "claude-code",
+    "role_model": "claude-sonnet-4",
+    "required_skills": [
+      "git-workflow"
+    ],
+    "status": "running",
+    "startTime": 1773244384290,
+    "heartbeatTime": 1773244624770,
+    "pid": 127420
   }
 }

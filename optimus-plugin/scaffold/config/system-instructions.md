@@ -7,17 +7,17 @@
 > These rules apply to ALL projects using the Optimus Spartan Swarm. They are shipped via `optimus init` and must NOT be modified per-project.
 
 ## Issue First Protocol
-Before any work begins, a GitHub Issue must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
+Before any work begins, a VCS Work Item must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
 
 ## Artifact Isolation
 ALL generated reports, tasks, and memory artifacts MUST be saved inside `.optimus/` subdirectories. Never write loose files to the repository root.
 
 ## Workflow
-1. **Issue First** — Create a GitHub Issue via MCP
+1. **Issue First** — Create a VCS Work Item via MCP (`vcs_create_work_item`)
 2. **Analyze & Bind** — Create `.optimus/tasks/task_issue_<ID>.md`
-3. **Plan** — Council review, results pushed back to GitHub Issue
+3. **Plan** — Council review, results pushed back to VCS Work Item
 4. **Execute** — Dev works on `feature/issue-<ID>-desc` branch
-5. **Test** — QA verifies, files bug issues for defects
+5. **Test** — QA verifies, files bug work items for defects
 6. **Approve** — PM reviews PR and merges
 
 ## Strict Delegation Protocol (Anti-Simulation)
@@ -87,8 +87,8 @@ When delegating, engine and model are resolved in priority order:
 3. `available-agents.json` (first non-demo engine + first model)
 4. Hardcoded fallback: `claude-code`
 
-## GitHub Auto-Tagging
-All Issues and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability.
+## VCS Auto-Tagging
+All Work Items and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability across both GitHub and Azure DevOps platforms.
 
 ---
 

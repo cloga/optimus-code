@@ -83,7 +83,9 @@ Use these values in your client's MCP server configuration:
 | **args** | `["-y", "github:cloga/optimus-code", "serve"]` |
 | **transport** | `stdio` |
 
-### Step 3: (Optional) Enable GitHub integration
+### Step 3: (Optional) Enable VCS integration
+
+#### GitHub Integration
 
 Create a `.env` file in your project root:
 
@@ -92,6 +94,26 @@ GITHUB_TOKEN=ghp_your_token_here
 ```
 
 This enables automated Issue tracking and PR creation via the built-in PM agent.
+
+#### Azure DevOps Integration
+
+For Azure DevOps, set up the following:
+
+1. Add your ADO Personal Access Token to `.env`:
+
+```bash
+ADO_PAT=your_ado_token_here
+```
+
+2. Configure `.optimus/config/vcs.json` with your ADO settings:
+
+```json
+{
+  "provider": "azure-devops",
+  "organization": "your-org",
+  "project": "your-project"
+}
+```
 
 ---
 
@@ -208,6 +230,28 @@ optimus init        Bootstrap .optimus/ workspace in current directory
 optimus serve       Start MCP server (stdio transport)
 optimus version     Print version
 optimus help        Show help
+```
+
+---
+
+## Troubleshooting
+
+### Windows git PATH issue
+
+If you encounter git command not found errors on Windows, add Git to your PATH:
+
+```powershell
+$env:PATH += ";C:\Program Files\Git\cmd"
+```
+
+For a permanent fix in VS Code, add this to your settings.json:
+
+```json
+{
+  "terminal.integrated.env.windows": {
+    "PATH": "C:\\Program Files\\Git\\cmd;${env:PATH}"
+  }
+}
 ```
 
 ---

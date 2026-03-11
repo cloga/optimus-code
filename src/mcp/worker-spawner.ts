@@ -48,10 +48,58 @@ function sanitizeRoleName(role: string): string {
     return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
 }
 
+// ─── Skill Name Sanitization (prevents path traversal) ───
+
+export function sanitizeSkillName(skill: string): string {
+    return skill.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
+}
+
 // ─── T3 Usage Tracking & Precipitation ───
 
 // File-level mutex to prevent concurrent read-modify-write on t3-usage-log.json
 let t3LogMutex: Promise<void> = Promise.resolve();
+
+// ─── File Operation Mutex (generalized for concurrent write protection) ───
+
+// Mutex system for protecting concurrent file operations to .optimus/skills/ and .optimus/roles/
+const fileMutexes = new Map<string, Promise<void>>();
+
+export async function withFileMutex<T>(filePath: string, operation: () => Promise<T> | T): Promise<T> {
+    // Get or create a mutex for this specific file path
+    const existingMutex = fileMutexes.get(filePath) || Promise.resolve();
+
+    // Create a new promise that will resolve after the operation
+    const newMutex = existingMutex.then(async () => {
+        try {
+            return await operation();
+        } finally {
+            // Clean up the mutex after operation completes
+            if (fileMutexes.get(filePath) === newMutex) {
+                fileMutexes.delete(filePath);
+            }
+        }
+    });
+
+    // Store the new mutex
+    fileMutexes.set(filePath, newMutex.then(() => {}));
+
+    return newMutex;
+}
+
+// Helper function for protecting .optimus/skills/ and .optimus/roles/ operations
+export async function withSafeFileOperation<T>(workspacePath: string, relativePath: string, operation: () => Promise<T> | T): Promise<T> {
+    const fullPath = path.resolve(workspacePath, relativePath);
+
+    // Security check: ensure the path is within .optimus/skills or .optimus/roles
+    const optimusSkills = path.resolve(workspacePath, '.optimus', 'skills');
+    const optimusRoles = path.resolve(workspacePath, '.optimus', 'roles');
+
+    if (!fullPath.startsWith(optimusSkills) && !fullPath.startsWith(optimusRoles)) {
+        throw new Error(`Path traversal detected: ${relativePath} is not within .optimus/skills/ or .optimus/roles/`);
+    }
+
+    return withFileMutex(fullPath, operation);
+}
 
 interface T3UsageEntry {
     role: string;
@@ -426,6 +474,32 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
             `No engine was specified in the caller arguments, local frontmatter, or T2 metadata. ` +
             `Please explicitly specify an engine or create the role with proper configurations first.`
         );
+    }
+
+    // --- Model Pre-Flight Validation ---
+    // If a model was explicitly provided, validate it against available-agents.json whitelist.
+    // Prevents invalid model names from silently passing through to CLI and failing late.
+    if (activeModel) {
+        const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+        try {
+            if (fs.existsSync(configPath)) {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                const engineConfig = config.engines?.[activeEngine];
+                if (engineConfig?.available_models && Array.isArray(engineConfig.available_models)) {
+                    const allowedModels: string[] = engineConfig.available_models;
+                    if (!allowedModels.includes(activeModel)) {
+                        throw new Error(
+                            `⚠️ **Model Pre-Flight Failed**: Model \`${activeModel}\` is not in the allowed list for engine \`${activeEngine}\`.\n\n` +
+                            `**Allowed models**: ${allowedModels.map(m => `\`${m}\``).join(', ')}\n\n` +
+                            `Please re-delegate with a valid \`role_model\` or omit it to use the default.`
+                        );
+                    }
+                }
+            }
+        } catch (e: any) {
+            if (e.message?.includes('Model Pre-Flight Failed')) throw e;
+            // Config read errors are non-fatal; skip validation
+        }
     }
 
     // --- Skill Pre-Flight Check ---

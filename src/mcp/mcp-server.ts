@@ -368,6 +368,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["item_type", "item_id", "comment", "workspace_path"]
         }
+      },
+      {
+        name: "mcp_schema_introspection",
+        description: "Returns JSON schemas of all registered MCP tools to prevent tool hallucination and enable dynamic validation.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false
+        }
       }
     ],
   };
@@ -846,6 +855,218 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
+    }
+  } else if (request.params.name === "mcp_schema_introspection") {
+    try {
+      // Return the tool schemas directly from our tools definition
+      const toolSchemas = [
+        {
+          name: "append_memory",
+          description: "Write experience, architectural decisions, and important project facts into the continuous memory system to evolve the project context.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
+              tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
+              content: { type: "string", description: "The actual memory content to solidify" }
+            },
+            required: ["category", "tags", "content"]
+          }
+        },
+        {
+          name: "github_update_issue",
+          description: "Updates an existing issue in a GitHub repository (e.g. to close it or add comments).",
+          inputSchema: {
+            type: "object",
+            properties: {
+              owner: { type: "string", description: "Repository owner" },
+              repo: { type: "string", description: "Repository name" },
+              issue_number: { type: "number", description: "The number of the issue to update" },
+              state: { type: "string", enum: ["open", "closed"], description: "State of the issue" },
+              title: { type: "string", description: "New title for the issue" },
+              body: { type: "string", description: "New body for the issue (overwrites existing)" },
+              agent_role: { type: "string", description: "The role of the agent making this update" },
+              session_id: { type: "string", description: "The session ID of the agent" }
+            },
+            required: ["owner", "repo", "issue_number"]
+          }
+        },
+        {
+          name: "github_sync_board",
+          description: "Fetches open issues from a GitHub repository and dumps them into the local blackboard.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              owner: { type: "string", description: "Repository owner (e.g. cloga)" },
+              repo: { type: "string", description: "Repository name (e.g. optimus-code)" },
+              workspace_path: { type: "string", description: "Absolute workspace path" }
+            },
+            required: ["owner", "repo", "workspace_path"]
+          }
+        },
+        {
+          name: "dispatch_council",
+          description: "Trigger a map-reduce multi-expert review for an architectural proposal using the Spartan Swarm protocol.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              proposal_path: { type: "string", description: "The file path to the PROPOSAL.md file" },
+              roles: { type: "array", items: { type: "string" }, description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])" }
+            },
+            required: ["proposal_path", "roles"]
+          }
+        },
+        {
+          name: "roster_check",
+          description: "Returns a unified directory of all available roles (T1 Local Personas and T2 Global Agents) to help the Master Agent understand current workforce capabilities before dispatching tools.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace_path: { type: "string", description: "The absolute path to the current project workspace to check for T1 local personas." }
+            },
+            required: ["workspace_path"]
+          }
+        },
+        {
+          name: "delegate_task",
+          description: "Delegate a specific execution task to a designated expert role.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              role: { type: "string", description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')." },
+              role_description: { type: "string", description: "A short description of what this role does and its expertise (e.g., 'Security auditing expert who reviews code for vulnerabilities and enforces compliance'). Used to generate the T2 role template if the role is new." },
+              role_engine: { type: "string", description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). Check roster_check for available engines. If omitted, auto-resolved from available-agents.json." },
+              role_model: { type: "string", description: "Which model this role should use (e.g., 'claude-opus-4.6-1m', 'gpt-5.4'). If omitted, uses the first available model for the engine." },
+              task_description: { type: "string", description: "Detailed description of what the agent needs to do." },
+              output_path: { type: "string", description: "The file path where the agent should write its final result or report. If not already under the workspace's .optimus/ directory, it will be automatically scoped to .optimus/results/<filename> within the workspace." },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+              context_files: { type: "array", items: { type: "string" }, description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task." },
+              required_skills: { type: "array", items: { type: "string" }, description: "Optional array of skill names this role needs (e.g., ['council-review', 'git-workflow']). If any skill does not exist in .optimus/skills/<name>/SKILL.md, the task will be rejected with a list of missing skills so Master can create them first via a skill-creator delegation." }
+            },
+            required: ["role", "task_description", "output_path", "workspace_path"]
+          }
+        },
+        {
+          name: "delegate_task_async",
+          description: "Delegate a specific execution task to a designated expert role asynchronously without blocking the master agent.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              role: { type: "string", description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')." },
+              role_description: { type: "string", description: "A short description of what this role does and its expertise. Used to generate the T2 role template if the role is new." },
+              role_engine: { type: "string", description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). If omitted, auto-resolved." },
+              role_model: { type: "string", description: "Which model this role should use (e.g., 'claude-opus-4.6-1m'). If omitted, uses default." },
+              task_description: { type: "string", description: "Detailed description of what the agent needs to do." },
+              output_path: { type: "string", description: "The file path where the agent should write its final result or report." },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+              context_files: { type: "array", items: { type: "string" }, description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files." },
+              required_skills: { type: "array", items: { type: "string" }, description: "Optional array of skill names this role needs. Missing skills will cause rejection so Master can create them first." }
+            },
+            required: ["role", "task_description", "output_path", "workspace_path"]
+          }
+        },
+        {
+          name: "dispatch_council_async",
+          description: "Trigger an async map-reduce multi-expert review for an architectural proposal.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              proposal_path: { type: "string", description: "The file path to the PROPOSAL.md file" },
+              roles: { type: "array", items: { type: "string" }, description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["proposal_path", "roles", "workspace_path"]
+          }
+        },
+        {
+          name: "check_task_status",
+          description: "Poll the status of async queues or tasks.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              taskId: { type: "string", description: "The ID of the task to check." },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["taskId", "workspace_path"]
+          }
+        },
+        {
+          name: "vcs_create_work_item",
+          description: "Create a work item (GitHub Issue or ADO Work Item) using the unified VCS provider.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "Work item title" },
+              body: { type: "string", description: "Work item description/body" },
+              labels: { type: "array", items: { type: "string" }, description: "Labels/tags to apply" },
+              work_item_type: { type: "string", description: "ADO work item type (Bug, User Story, Task). Ignored for GitHub." },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["title", "body", "workspace_path"]
+          }
+        },
+        {
+          name: "vcs_create_pr",
+          description: "Create a pull request using the unified VCS provider.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "PR title" },
+              body: { type: "string", description: "PR description" },
+              head: { type: "string", description: "Source branch" },
+              base: { type: "string", description: "Target branch" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["title", "body", "head", "base", "workspace_path"]
+          }
+        },
+        {
+          name: "vcs_merge_pr",
+          description: "Merge a pull request using the unified VCS provider.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              pull_request_id: { type: ["string", "number"], description: "PR ID or number" },
+              commit_title: { type: "string", description: "Merge commit title" },
+              merge_method: { type: "string", enum: ["merge", "squash", "rebase"], description: "Merge strategy" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["pull_request_id", "workspace_path"]
+          }
+        },
+        {
+          name: "vcs_add_comment",
+          description: "Add a comment to a work item or pull request using the unified VCS provider.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
+              item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
+              comment: { type: "string", description: "Comment text" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["item_type", "item_id", "comment", "workspace_path"]
+          }
+        },
+        {
+          name: "mcp_schema_introspection",
+          description: "Returns JSON schemas of all registered MCP tools to prevent tool hallucination and enable dynamic validation.",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false
+          }
+        }
+      ];
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(toolSchemas, null, 2)
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to get tool schemas: ${error.message}`);
     }
   }
 

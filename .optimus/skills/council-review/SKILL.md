@@ -5,64 +5,90 @@ description: Orchestrates a parallel Map-Reduce architectural review by spawning
 
 # Council Review (Map-Reduce Expert Review)
 
-This skill builds on top of the `delegate-task` skill. It uses the same roster inspection and role selection pipeline, but dispatches **multiple experts in parallel** to review a proposal from different perspectives.
+<description>
+This skill activates when complex architectural decisions, design proposals, or multi-faceted technical problems require expert review from multiple perspectives. It builds on the delegate-task skill to dispatch multiple experts in parallel, creating a Map-Reduce pattern for comprehensive analysis. Triggers include requests for architectural reviews, design critiques, technical feasibility assessments, or when multiple expert opinions are needed before implementation.
+</description>
 
-> **Prerequisite**: You must understand the `delegate-task` skill first. Council review follows the same Step 1 (Camp Inspection) and Step 2 (Manpower Assessment) from `delegate-task` to select and prepare the expert panel.
+<workflow>
+### Step 1: Proposal Preparation (The Scatter)
+- **Tool**: File writing capability
+- **Parameters**:
+  - `file_path`: `.optimus/proposals/PROPOSAL_<task_topic>.md`
+  - `content`: Initial analysis and preliminary design
+- **Action**: Draft your initial analysis of the user's request and create a preliminary design proposal. Write this to the Blackboard with a unique, descriptive name that reflects the task topic. This proposal will serve as the foundation document for expert review.
 
-## How to execute a Council Review:
+### Step 2: Expert Panel Selection (Camp Inspection)
+- **Tool**: `roster_check`
+- **Parameters**:
+  - `workspace_path`: Current project workspace path
+- **Action**: Follow the delegate-task skill's roster inspection process to see available T1/T2/T3 roles, engines, and skills. Identify existing experts or prepare to create new ones. Every council MUST include at least 3 technically-focused experts for engineering depth, plus domain experts as needed.
 
-### Step 1: Draft the Initial Proposal (The Scatter)
-1. Do your initial analysis of the user's request.
-2. Draft your preliminary design.
-3. Write this design to the Blackboard with a unique name: `.optimus/proposals/PROPOSAL_<task_topic>.md`.
+### Step 3: Role Configuration and Preparation
+- **Tool**: None (preparation step)
+- **Parameters**: N/A
+- **Action**: Select and configure the expert panel using these guidelines:
+  - **Mandatory Technical Experts (minimum 3)**: backend-architect, performance-expert, code-quality-expert, distributed-systems-expert, infrastructure-expert
+  - **Optional Domain Experts**: security-expert, product-expert, ux-researcher, compliance-expert
+  - For new roles, prepare role_description and role_engine/role_model parameters
+  - Ensure diverse perspectives are represented for comprehensive review
 
-### Step 2: Select the Expert Panel
-Follow the `delegate-task` skill's **Step 1 (Camp Inspection)** and **Step 2 (Manpower Assessment)** to:
-1. Call `roster_check` to see available T1/T2/T3 roles, engines, and skills
-2. Select the expert roles for the review panel
-3. For new roles, prepare `role_description` and `role_engine`/`role_model` — the system auto-creates T2 templates on first use
+### Step 4: Council Dispatch
+- **Tool**: `dispatch_council_async`
+- **Parameters**:
+  - `proposal_path`: Path to the proposal file created in Step 1
+  - `roles`: Array of expert role names (strings)
+  - `workspace_path`: Current project workspace path
+- **Action**: Dispatch the expert council using the async tool (preferred). Tell the user the proposal is finalized and experts are being dispatched. The system will instantiate experts on-demand via the T3→T2→T1 lifecycle using descriptive role names.
 
-#### Mandatory: Minimum 3 Technical Experts
-Every council MUST include **at least 3 technically-focused experts** to ensure sufficient engineering depth. The remaining seats can be filled with domain experts (security, product, UX, etc.) as needed.
+### Step 5: Non-Blocking Result Collection (The Gather)
+- **Tool**: `check_task_status`
+- **Parameters**:
+  - `taskId`: The task ID returned from dispatch_council_async
+- **Action**: Treat the council as a fire-and-forget background task. Do NOT block the main flow with waiting or sleep commands. Instead, inform the user the council is running asynchronously. Use check_task_status only when useful while continuing other productive work. Once marked 'completed', read the generated review files from the returned directory path.
 
-Example minimal technical panel (3 tech + domain experts):
-- `backend-architect`: System design, API contracts, data flows
-- `performance-expert`: Big-O complexity, caching, database query optimization
+### Step 6: Arbitration and Decision Making (The Arbiter)
+- **Tool**: File writing capability for outcomes
+- **Parameters**:
+  - `file_path`: `.optimus/TODO.md` or `.optimus/CONFLICTS.md`
+  - `content`: Implementation backlog or conflict resolution document
+- **Action**: Analyze the gathered expert reviews and determine next steps:
+  - **No blockers**: Implement suggestions and create final implementation backlog (`.optimus/TODO.md`)
+  - **Fatal conflicts**: Create conflicts document (`.optimus/CONFLICTS.md`) outlining opposing viewpoints and ask user to arbitrate
+</workflow>
+
+<error_handling>
+- If `roster_check` fails, THEN proceed with T3 role creation using descriptive names, but document the roster limitation.
+- If `dispatch_council_async` fails with role creation error, THEN retry with simplified role descriptions or fallback to individual `delegate_task_async` calls for each expert.
+- If proposal file creation fails, THEN use a temporary file path and inform the user of the alternative location.
+- If `check_task_status` fails or times out, THEN document the limitation and provide manual instructions for checking `.optimus/reviews/<timestamp>/` directories.
+- If expert reviews conflict irreconcilably, THEN create detailed conflict documentation rather than attempting forced consensus.
+</error_handling>
+
+<anti_patterns>
+- Do not use synchronous `dispatch_council` unless user explicitly requests blocking execution — always prefer async.
+- Do not block the conversation waiting for council completion — maintain session responsiveness.
+- Do not skip the mandatory minimum of 3 technical experts — insufficient technical depth leads to poor decisions.
+- Do not create councils with only domain experts — technical feasibility must be validated.
+- Do not enter tight polling loops with `check_task_status` — use sparingly and continue other work.
+- Do not simulate or predict expert outputs yourself — let the actual experts provide their reviews.
+- Do not proceed with implementation if fatal conflicts exist without user arbitration.
+- Do not create vague or generic expert roles — use specific, descriptive role names for better results.
+</anti_patterns>
+
+## Expert Panel Guidelines
+
+### Mandatory Technical Experts (minimum 3)
+- `backend-architect`: System design, API contracts, microservice boundaries, data flows
+- `performance-expert`: Big-O complexity, database query optimization, caching strategies
 - `code-quality-expert`: Code smells, SOLID principles, testability, maintainability
-- *(plus domain experts as needed, e.g., `security-expert`, `ux-researcher`)*
-
-Commonly requested technical roles:
-- `backend-architect`: System design, API contracts, microservice boundaries
-- `performance-expert`: Big-O complexity, database query counts, caching strategies
-- `code-quality-expert`: Code smells, SOLID principles, clean abstractions
 - `distributed-systems-expert`: Concurrency, state management, race conditions
 - `infrastructure-expert`: CI/CD, deployment, scalability, monitoring
 
-Commonly requested domain roles:
+### Common Domain Experts (as needed)
 - `security-expert`: Injection vectors, auth/authz bypass, OWASP compliance
 - `product-expert`: User stories, requirements alignment, scope validation
 - `ux-researcher`: Developer experience, API ergonomics, onboarding friction
+- `compliance-expert`: Regulatory requirements, audit trails, data governance
 
-### Step 3: Dispatch the Council via MCP Tool
-1. Tell the user you have finalized the proposal and are dispatching the expert council.
-2. Use `dispatch_council_async` (preferred) or `dispatch_council`.
-3. Pass the `proposal_path`, the `roles` (array of strings), and the `workspace_path`.
-
-**(Experts are instantiated on-demand via the T3→T2→T1 lifecycle. Just use descriptive role names — the system handles the rest.)**
-
-### Step 4: Non-Blocking Status Check and Result Collection (The Gather)
-1. If using `dispatch_council_async`, the tool will return a `taskId`. Treat this as a fire-and-forget background task.
-2. Do **NOT** block the main flow with manual waiting or sleep commands. Do **NOT** pause just to wait for completion.
-3. Instead, tell the user the council is running asynchronously and that `check_task_status` can be used later to inspect progress or completion.
-4. If you need the results in the same session, poll with `check_task_status` only when useful, while continuing other productive work in the meantime.
-5. The status tool will return a precise folder path matching the isolated execution timestamp (e.g., `.optimus/reviews/<timestamp>/`).
-6. Once the task is marked `completed`, read the generated review files from that directory (e.g., `<role>_review.md`).
-
-### Step 5: Arbitration and Action (The Arbiter)
-Analyze the gathered reviews.
-- **If there are NO blockers**: Implement the suggestions and output the final `.optimus/TODO.md` file (the implementation backlog).
-- **If there are FATAL conflicts**: Create `.optimus/CONFLICTS.md` outlining the opposing viewpoints cleanly, pause, and ask the User to arbitrate.
-
-## Synchronous Execution (Fallback ONLY)
-
-**CRITICAL RULE**: You MUST use the async tool (dispatch_council_async) by default. The synchronous dispatch_council tool is strictly placed at the very end of your priority list and should ONLY be used if the user **explicitly and specifically requests** blocking/synchronous execution. Otherwise, always default to async-first non-blocking delegation.
+## Synchronous Execution Rule
+**CRITICAL**: You MUST use `dispatch_council_async` by default. The synchronous `dispatch_council` tool should ONLY be used if the user explicitly and specifically requests blocking/synchronous execution. Always default to async-first, non-blocking delegation.
