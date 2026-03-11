@@ -19,13 +19,29 @@ This skill builds on top of the `delegate-task` skill. It uses the same roster i
 ### Step 2: Select the Expert Panel
 Follow the `delegate-task` skill's **Step 1 (Camp Inspection)** and **Step 2 (Manpower Assessment)** to:
 1. Call `roster_check` to see available T1/T2/T3 roles, engines, and skills
-2. Select the expert roles for the review panel (typically 2-4 experts with complementary perspectives)
+2. Select the expert roles for the review panel
 3. For new roles, prepare `role_description` and `role_engine`/`role_model` — the system auto-creates T2 templates on first use
 
-Commonly requested council roles:
-- `performance-expert`: Evaluates Big-O complexity, database query counts.
-- `security-expert`: Checks for injection vectors, auth/authz bypass.
-- `refactoring-architect`: Identifies code smells, outlines clean abstractions.
+#### Mandatory: Minimum 3 Technical Experts
+Every council MUST include **at least 3 technically-focused experts** to ensure sufficient engineering depth. The remaining seats can be filled with domain experts (security, product, UX, etc.) as needed.
+
+Example minimal technical panel (3 tech + domain experts):
+- `backend-architect`: System design, API contracts, data flows
+- `performance-expert`: Big-O complexity, caching, database query optimization
+- `code-quality-expert`: Code smells, SOLID principles, testability, maintainability
+- *(plus domain experts as needed, e.g., `security-expert`, `ux-researcher`)*
+
+Commonly requested technical roles:
+- `backend-architect`: System design, API contracts, microservice boundaries
+- `performance-expert`: Big-O complexity, database query counts, caching strategies
+- `code-quality-expert`: Code smells, SOLID principles, clean abstractions
+- `distributed-systems-expert`: Concurrency, state management, race conditions
+- `infrastructure-expert`: CI/CD, deployment, scalability, monitoring
+
+Commonly requested domain roles:
+- `security-expert`: Injection vectors, auth/authz bypass, OWASP compliance
+- `product-expert`: User stories, requirements alignment, scope validation
+- `ux-researcher`: Developer experience, API ergonomics, onboarding friction
 
 ### Step 3: Dispatch the Council via MCP Tool
 1. Tell the user you have finalized the proposal and are dispatching the expert council.
