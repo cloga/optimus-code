@@ -1,5 +1,7 @@
 # Optimus System Instructions
 
+> These rules apply to ALL projects using the Optimus Spartan Swarm.
+
 ## Issue First Protocol
 Before any work begins, a GitHub Issue must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
 

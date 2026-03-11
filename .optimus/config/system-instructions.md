@@ -1,5 +1,11 @@
 # Optimus System Instructions
 
+---
+
+# Part 1: System-Level Constraints (Universal)
+
+> These rules apply to ALL projects using the Optimus Spartan Swarm. They are shipped via `optimus init` and must NOT be modified per-project.
+
 ## Issue First Protocol
 Before any work begins, a GitHub Issue must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
 
@@ -83,3 +89,44 @@ When delegating, engine and model are resolved in priority order:
 
 ## GitHub Auto-Tagging
 All Issues and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability.
+
+---
+
+# Part 2: Project-Specific Constraints (Optimus Code Repository)
+
+> These rules are specific to the `optimus-code` repository itself. They do NOT ship to end-users via `optimus init`.
+
+## Dual-Codebase Architecture
+
+This repository contains **two intertwined codebases**:
+
+| Layer | Path | Purpose |
+|-------|------|---------|
+| **Host project** | Root (`src/`, `docs/`, `.optimus/`) | The Optimus orchestrator's own development workspace |
+| **Plugin package** | `optimus-plugin/` | The npm-publishable MCP server plugin that ships to end-users |
+
+### Impact Rule: When making changes, ALWAYS evaluate whether the change should propagate to the plugin.
+
+| Change Type | Apply to `.optimus/` (host) | Also apply to `optimus-plugin/` (packaging) |
+|---|---|---|
+| System instructions update | ✅ `.optimus/config/system-instructions.md` | ✅ `optimus-plugin/scaffold/config/system-instructions.md` |
+| New/updated skill | ✅ `.optimus/skills/<name>/SKILL.md` | ✅ `optimus-plugin/skills/<name>/SKILL.md` |
+| Config change (`available-agents.json`) | ✅ `.optimus/config/` | ✅ `optimus-plugin/scaffold/config/` |
+| New T2 role (project-specific, e.g., `marketing`) | ✅ `.optimus/roles/` | ❌ NOT packaged — project-specific |
+| T1 agent instance | ✅ `.optimus/agents/` | ❌ NEVER packaged — instance state |
+| MCP server code change | N/A | ✅ `src/mcp/` → `optimus-plugin/dist/` (rebuild required) |
+| init.js / CLI change | N/A | ✅ `optimus-plugin/bin/` |
+
+### Build & Publish Checklist
+After modifying plugin-relevant files:
+1. `cd optimus-plugin && npm run build` — rebuild `dist/mcp-server.js`
+2. Verify `optimus-plugin/scaffold/` contains the latest config and instructions
+3. Verify `optimus-plugin/skills/` contains only universal bootstrap skills (not project-specific ones)
+4. `git push origin master` — end-users pull via `npx -y github:cloga/optimus-code`
+
+### What MUST NOT Ship in the Plugin
+- `.optimus/roles/` — Project-specific T2 role templates (auto-generated at runtime)
+- `.optimus/agents/` — T1 instance snapshots (workspace-local)
+- `.optimus/state/` — Task manifests, T3 usage logs
+- `.optimus/reports/`, `.optimus/reviews/` — Generated artifacts
+- `.env` — Contains secrets
