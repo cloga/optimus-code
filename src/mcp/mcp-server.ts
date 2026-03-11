@@ -18,6 +18,7 @@ import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker } from "./council-runner";
 import { spawn } from "child_process";
 import dotenv from "dotenv";
+import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 
 // Load environment variables: prefer DOTENV_PATH from mcp.json env mount, fallback to cwd
 function reloadEnv() {
@@ -358,6 +359,64 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["taskId", "workspace_path"],
+        }
+      },
+      {
+        name: "vcs_create_work_item",
+        description: "Create a work item (GitHub Issue or ADO Work Item) using the unified VCS provider.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Work item title" },
+            body: { type: "string", description: "Work item description/body" },
+            labels: { type: "array", items: { type: "string" }, description: "Labels/tags to apply" },
+            work_item_type: { type: "string", description: "ADO work item type (Bug, User Story, Task). Ignored for GitHub." },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["title", "body", "workspace_path"]
+        }
+      },
+      {
+        name: "vcs_create_pr",
+        description: "Create a pull request using the unified VCS provider.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "PR title" },
+            body: { type: "string", description: "PR description" },
+            head: { type: "string", description: "Source branch" },
+            base: { type: "string", description: "Target branch" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["title", "body", "head", "base", "workspace_path"]
+        }
+      },
+      {
+        name: "vcs_merge_pr",
+        description: "Merge a pull request using the unified VCS provider.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            pull_request_id: { type: ["string", "number"], description: "PR ID or number" },
+            commit_title: { type: "string", description: "Merge commit title" },
+            merge_method: { type: "string", enum: ["merge", "squash", "rebase"], description: "Merge strategy" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["pull_request_id", "workspace_path"]
+        }
+      },
+      {
+        name: "vcs_add_comment",
+        description: "Add a comment to a work item or pull request using the unified VCS provider.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
+            item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
+            comment: { type: "string", description: "Comment text" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["item_type", "item_id", "comment", "workspace_path"]
         }
       }
     ],
@@ -929,6 +988,84 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: "text", text: result }]
     };
+  } else if (request.params.name === "vcs_create_work_item") {
+    const { title, body, labels, work_item_type, workspace_path } = request.params.arguments as any;
+    if (!title || !body || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
+    }
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const result = await vcsProvider.createWorkItem(title, body, labels, work_item_type);
+
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Work item created successfully on ${vcsProvider.getProviderName()}\n\n**Title:** ${result.title}\n**ID:** ${result.id}${result.number ? `\n**Number:** ${result.number}` : ''}\n**URL:** ${result.url}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_create_pr") {
+    const { title, body, head, base, workspace_path } = request.params.arguments as any;
+    if (!title || !body || !head || !base || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
+    }
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const result = await vcsProvider.createPullRequest(title, body, head, base);
+
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Pull request created successfully on ${vcsProvider.getProviderName()}\n\n**Title:** ${result.title}\n**Number:** ${result.number}\n**ID:** ${result.id}\n**URL:** ${result.url}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to create pull request: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_merge_pr") {
+    const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments as any;
+    if (!pull_request_id || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
+    }
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const success = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
+
+      return {
+        content: [{
+          type: "text",
+          text: success
+            ? `✅ Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}`
+            : `❌ Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_add_comment") {
+    const { item_type, item_id, comment, workspace_path } = request.params.arguments as any;
+    if (!item_type || !item_id || !comment || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
+    }
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const result = await vcsProvider.addComment(item_type, item_id, comment);
+
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Comment added successfully to ${item_type} #${item_id} on ${vcsProvider.getProviderName()}\n\n**Comment ID:** ${result.id}\n**URL:** ${result.url}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
+    }
   }
 
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);

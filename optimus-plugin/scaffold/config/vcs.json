@@ -1,0 +1,11 @@
+{
+  "provider": "auto-detect",
+  "github": {
+    "owner": "",
+    "repo": ""
+  },
+  "ado": {
+    "organization": "",
+    "project": ""
+  }
+}
