@@ -11,11 +11,11 @@ const path = require('path');
 const production = process.argv.includes('--production');
 
 async function build() {
-  // Pre-build: fetch official skill-creator guide (non-fatal on failure)
+  // Pre-build: sync official Anthropic skills from GitHub (non-fatal on failure)
   try {
-    await require('./scripts/fetch-skill-creator-guide.js')();
+    await require('./scripts/fetch-official-skills.js')();
   } catch (e) {
-    console.warn('Skill guide fetch skipped:', e.message);
+    console.warn('Official skills sync skipped:', e.message);
   }
 
   const result = await esbuild.build({

@@ -888,9 +888,9 @@
     "required_skills": [
       "git-workflow"
     ],
-    "status": "running",
+    "status": "verified",
     "startTime": 1773250079401,
-    "heartbeatTime": 1773250259886,
+    "heartbeatTime": 1773250739955,
     "pid": 191392
   }
 }
