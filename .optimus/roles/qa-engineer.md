@@ -2,6 +2,8 @@
 role: qa-engineer
 tier: T2
 description: "Quality Assurance & Test Automation Expert"
+engine: claude-code
+model: claude-opus-4.6-1m
 ---
 
 # 🤖 QA & Test Automation Expert

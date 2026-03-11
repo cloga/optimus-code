@@ -41,6 +41,101 @@ function updateFrontmatter(content: string, updates: Record<string, string>): st
     return yamlStr + bodyStr;
 }
 
+// ─── T3 Usage Tracking & Precipitation ───
+
+interface T3UsageEntry {
+    role: string;
+    invocations: number;
+    successes: number;
+    failures: number;
+    lastUsed: string;
+    engine: string;
+    model?: string;
+}
+
+function getT3UsageLogPath(workspacePath: string): string {
+    return path.join(workspacePath, '.optimus', 'state', 't3-usage-log.json');
+}
+
+function loadT3UsageLog(workspacePath: string): Record<string, T3UsageEntry> {
+    const logPath = getT3UsageLogPath(workspacePath);
+    try {
+        if (fs.existsSync(logPath)) {
+            return JSON.parse(fs.readFileSync(logPath, 'utf8'));
+        }
+    } catch {}
+    return {};
+}
+
+function saveT3UsageLog(workspacePath: string, log: Record<string, T3UsageEntry>): void {
+    const logPath = getT3UsageLogPath(workspacePath);
+    const dir = path.dirname(logPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(logPath, JSON.stringify(log, null, 2), 'utf8');
+}
+
+function trackT3Usage(workspacePath: string, role: string, success: boolean, engine: string, model?: string): void {
+    const log = loadT3UsageLog(workspacePath);
+    if (!log[role]) {
+        log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: '', engine, model };
+    }
+    log[role].invocations++;
+    if (success) log[role].successes++;
+    else log[role].failures++;
+    log[role].lastUsed = new Date().toISOString();
+    log[role].engine = engine;
+    if (model) log[role].model = model;
+    saveT3UsageLog(workspacePath, log);
+}
+
+const PRECIPITATION_THRESHOLD = 3;
+const PRECIPITATION_SUCCESS_RATE = 0.8;
+
+/**
+ * Check if a T3 role should be precipitated to T2 based on usage metrics.
+ * If threshold is met, auto-generate the T2 role template.
+ */
+function checkAndPrecipitate(workspacePath: string, role: string, engine: string, model?: string): string | null {
+    const log = loadT3UsageLog(workspacePath);
+    const entry = log[role];
+    if (!entry || entry.invocations < PRECIPITATION_THRESHOLD) return null;
+    
+    const successRate = entry.successes / entry.invocations;
+    if (successRate < PRECIPITATION_SUCCESS_RATE) return null;
+
+    const t2Dir = path.join(workspacePath, '.optimus', 'roles');
+    const t2Path = path.join(t2Dir, `${role}.md`);
+    if (fs.existsSync(t2Path)) return null; // Already a T2
+
+    if (!fs.existsSync(t2Dir)) fs.mkdirSync(t2Dir, { recursive: true });
+
+    const formattedRole = role
+        .split(/[-_]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+    const template = `---
+role: ${role}
+tier: T2
+description: "Auto-precipitated from T3 after ${entry.invocations} successful invocations"
+engine: ${engine}
+model: ${model || 'claude-opus-4.6-1m'}
+precipitated: ${new Date().toISOString()}
+---
+
+# ${formattedRole}
+
+You are a **${formattedRole}** expert operating within the Optimus Spartan Swarm.
+This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default) based on consistent successful usage (${entry.successes}/${entry.invocations} success rate).
+
+Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
+`;
+
+    fs.writeFileSync(t2Path, template, 'utf8');
+    console.error(`[Precipitation] T3 role '${role}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
+    return t2Path;
+}
+
 export class AgentLockManager {
     private locks = new Map<string, Promise<void>>();
     private resolvers = new Map<string, () => void>();
@@ -310,6 +405,8 @@ ${taskText}${contextContent}
 
 Please provide your complete execution result below.`;
 
+    const isT3 = resolvedTier.startsWith('T3');
+
     const lockManager = getLockManager(workspacePath);
     await lockManager.acquireLock(role);
     try {
@@ -331,8 +428,22 @@ Please provide your complete execution result below.`;
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         fs.writeFileSync(outputPath, response, 'utf8');
+
+        // --- T3 Usage Tracking & Auto-Precipitation ---
+        if (isT3) {
+            trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+            const precipitated = checkAndPrecipitate(workspacePath, role, activeEngine, activeModel);
+            if (precipitated) {
+                return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\n🎉 **Precipitation**: T3 role \`${role}\` has been auto-promoted to T2! Template created at \`${precipitated}\`.\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
+            }
+        }
+
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
     } catch (e: any) {
+        // Track T3 failures too
+        if (isT3) {
+            trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
+        }
         throw new Error(`Worker execution failed: ${e.message}`);
     } finally {
         ConcurrencyGovernor.release();

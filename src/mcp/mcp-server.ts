@@ -779,12 +779,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     roster += "\n### T2: Project Default Roles (.optimus/roles)\n";
     if (fs.existsSync(t2Dir)) {
       const t2Files = fs.readdirSync(t2Dir).filter(f => f.endsWith('.md'));
-      roster += t2Files.length > 0 ? t2Files.map(f => `- ${f.replace('.md', '')}`).join('\n') : "(No project default roles found)\n";
+      if (t2Files.length > 0) {
+        for (const f of t2Files) {
+          const roleName = f.replace('.md', '');
+          try {
+            const content = fs.readFileSync(path.join(t2Dir, f), 'utf8');
+            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            let engineInfo = '';
+            if (fmMatch) {
+              const lines = fmMatch[1].split('\n');
+              const engineLine = lines.find(l => l.startsWith('engine:'));
+              const modelLine = lines.find(l => l.startsWith('model:'));
+              if (engineLine || modelLine) {
+                const engine = engineLine ? engineLine.split(':')[1].trim() : '?';
+                const model = modelLine ? modelLine.split(':')[1].trim() : '?';
+                engineInfo = ` → \`${engine}\` / \`${model}\``;
+              }
+            }
+            roster += `- ${roleName}${engineInfo}\n`;
+          } catch {
+            roster += `- ${roleName}\n`;
+          }
+        }
+      } else {
+        roster += "(No project default roles found)\n";
+      }
     } else {
       roster += "(No project roles directory found)\n";
     }
 
-    roster += "\n*Note: Master Agent may still summon T3 Generic Roles dynamically if needed.*";
+    // Show T3 usage stats if available
+    const t3LogPath = path.join(workspace_path, '.optimus', 'state', 't3-usage-log.json');
+    if (fs.existsSync(t3LogPath)) {
+      try {
+        const t3Log = JSON.parse(fs.readFileSync(t3LogPath, 'utf8'));
+        const entries = Object.values(t3Log) as any[];
+        if (entries.length > 0) {
+          roster += "\n### 📊 T3 Dynamic Role Usage Stats\n";
+          for (const e of entries) {
+            const rate = e.invocations > 0 ? Math.round((e.successes / e.invocations) * 100) : 0;
+            const precipNote = e.invocations >= 3 && rate >= 80 ? ' ⬆️ Ready for precipitation' : '';
+            roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)${precipNote}\n`;
+          }
+        }
+      } catch {}
+    }
+
+    roster += "\n*Note: Master Agent may still summon T3 Generic Roles dynamically if needed. T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).*";
 
     return {
       content: [{ type: "text", text: roster }]

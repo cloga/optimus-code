@@ -1242,6 +1242,71 @@ function updateFrontmatter(content, updates) {
   const bodyStr = parsed.body.startsWith("\n") ? parsed.body : "\n" + parsed.body;
   return yamlStr + bodyStr;
 }
+function getT3UsageLogPath(workspacePath) {
+  return import_path.default.join(workspacePath, ".optimus", "state", "t3-usage-log.json");
+}
+function loadT3UsageLog(workspacePath) {
+  const logPath = getT3UsageLogPath(workspacePath);
+  try {
+    if (import_fs.default.existsSync(logPath)) {
+      return JSON.parse(import_fs.default.readFileSync(logPath, "utf8"));
+    }
+  } catch {
+  }
+  return {};
+}
+function saveT3UsageLog(workspacePath, log) {
+  const logPath = getT3UsageLogPath(workspacePath);
+  const dir = import_path.default.dirname(logPath);
+  if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });
+  import_fs.default.writeFileSync(logPath, JSON.stringify(log, null, 2), "utf8");
+}
+function trackT3Usage(workspacePath, role, success, engine, model) {
+  const log = loadT3UsageLog(workspacePath);
+  if (!log[role]) {
+    log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: "", engine, model };
+  }
+  log[role].invocations++;
+  if (success) log[role].successes++;
+  else log[role].failures++;
+  log[role].lastUsed = (/* @__PURE__ */ new Date()).toISOString();
+  log[role].engine = engine;
+  if (model) log[role].model = model;
+  saveT3UsageLog(workspacePath, log);
+}
+var PRECIPITATION_THRESHOLD = 3;
+var PRECIPITATION_SUCCESS_RATE = 0.8;
+function checkAndPrecipitate(workspacePath, role, engine, model) {
+  const log = loadT3UsageLog(workspacePath);
+  const entry = log[role];
+  if (!entry || entry.invocations < PRECIPITATION_THRESHOLD) return null;
+  const successRate = entry.successes / entry.invocations;
+  if (successRate < PRECIPITATION_SUCCESS_RATE) return null;
+  const t2Dir = import_path.default.join(workspacePath, ".optimus", "roles");
+  const t2Path = import_path.default.join(t2Dir, `${role}.md`);
+  if (import_fs.default.existsSync(t2Path)) return null;
+  if (!import_fs.default.existsSync(t2Dir)) import_fs.default.mkdirSync(t2Dir, { recursive: true });
+  const formattedRole = role.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  const template = `---
+role: ${role}
+tier: T2
+description: "Auto-precipitated from T3 after ${entry.invocations} successful invocations"
+engine: ${engine}
+model: ${model || "claude-opus-4.6-1m"}
+precipitated: ${(/* @__PURE__ */ new Date()).toISOString()}
+---
+
+# ${formattedRole}
+
+You are a **${formattedRole}** expert operating within the Optimus Spartan Swarm.
+This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default) based on consistent successful usage (${entry.successes}/${entry.invocations} success rate).
+
+Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
+`;
+  import_fs.default.writeFileSync(t2Path, template, "utf8");
+  console.error(`[Precipitation] T3 role '${role}' promoted to T2 at ${t2Path} (${entry.successes}/${entry.invocations} success rate)`);
+  return t2Path;
+}
 var AgentLockManager = class {
   locks = /* @__PURE__ */ new Map();
   resolvers = /* @__PURE__ */ new Map();
@@ -1487,6 +1552,7 @@ Task Description:
 ${taskText}${contextContent}
 
 Please provide your complete execution result below.`;
+  const isT3 = resolvedTier.startsWith("T3");
   const lockManager = getLockManager(workspacePath);
   await lockManager.acquireLock(role);
   try {
@@ -1504,6 +1570,23 @@ Please provide your complete execution result below.`;
     const dir = import_path.default.dirname(outputPath);
     if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });
     import_fs.default.writeFileSync(outputPath, response, "utf8");
+    if (isT3) {
+      trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+      const precipitated = checkAndPrecipitate(workspacePath, role, activeEngine, activeModel);
+      if (precipitated) {
+        return `\u2705 **Task Delegation Successful**
+
+**Agent Identity Resolved**: ${resolvedTier}
+**Engine**: ${activeEngine}
+**Session ID**: ${adapter.lastSessionId || "Ephemeral"}
+
+**System Note**: ${personaProof}
+
+\u{1F389} **Precipitation**: T3 role \`${role}\` has been auto-promoted to T2! Template created at \`${precipitated}\`.
+
+Agent has finished execution. Check standard output at \`${outputPath}\`.`;
+      }
+    }
     return `\u2705 **Task Delegation Successful**
 
 **Agent Identity Resolved**: ${resolvedTier}
@@ -1514,6 +1597,9 @@ Please provide your complete execution result below.`;
 
 Agent has finished execution. Check standard output at \`${outputPath}\`.`;
   } catch (e) {
+    if (isT3) {
+      trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
+    }
     throw new Error(`Worker execution failed: ${e.message}`);
   } finally {
     ConcurrencyGovernor.release();
@@ -2631,11 +2717,54 @@ URL: ${data.html_url}` }] };
     roster += "\n### T2: Project Default Roles (.optimus/roles)\n";
     if (import_fs3.default.existsSync(t2Dir)) {
       const t2Files = import_fs3.default.readdirSync(t2Dir).filter((f) => f.endsWith(".md"));
-      roster += t2Files.length > 0 ? t2Files.map((f) => `- ${f.replace(".md", "")}`).join("\n") : "(No project default roles found)\n";
+      if (t2Files.length > 0) {
+        for (const f of t2Files) {
+          const roleName = f.replace(".md", "");
+          try {
+            const content = import_fs3.default.readFileSync(import_path3.default.join(t2Dir, f), "utf8");
+            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            let engineInfo = "";
+            if (fmMatch) {
+              const lines = fmMatch[1].split("\n");
+              const engineLine = lines.find((l) => l.startsWith("engine:"));
+              const modelLine = lines.find((l) => l.startsWith("model:"));
+              if (engineLine || modelLine) {
+                const engine = engineLine ? engineLine.split(":")[1].trim() : "?";
+                const model = modelLine ? modelLine.split(":")[1].trim() : "?";
+                engineInfo = ` \u2192 \`${engine}\` / \`${model}\``;
+              }
+            }
+            roster += `- ${roleName}${engineInfo}
+`;
+          } catch {
+            roster += `- ${roleName}
+`;
+          }
+        }
+      } else {
+        roster += "(No project default roles found)\n";
+      }
     } else {
       roster += "(No project roles directory found)\n";
     }
-    roster += "\n*Note: Master Agent may still summon T3 Generic Roles dynamically if needed.*";
+    const t3LogPath = import_path3.default.join(workspace_path, ".optimus", "state", "t3-usage-log.json");
+    if (import_fs3.default.existsSync(t3LogPath)) {
+      try {
+        const t3Log = JSON.parse(import_fs3.default.readFileSync(t3LogPath, "utf8"));
+        const entries = Object.values(t3Log);
+        if (entries.length > 0) {
+          roster += "\n### \u{1F4CA} T3 Dynamic Role Usage Stats\n";
+          for (const e of entries) {
+            const rate = e.invocations > 0 ? Math.round(e.successes / e.invocations * 100) : 0;
+            const precipNote = e.invocations >= 3 && rate >= 80 ? " \u2B06\uFE0F Ready for precipitation" : "";
+            roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)${precipNote}
+`;
+          }
+        }
+      } catch {
+      }
+    }
+    roster += "\n*Note: Master Agent may still summon T3 Generic Roles dynamically if needed. T3 roles auto-precipitate to T2 after 3+ successful uses (80%+ success rate).*";
     return {
       content: [{ type: "text", text: roster }]
     };
