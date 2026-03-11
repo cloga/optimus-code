@@ -230,7 +230,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             role: {
               type: "string",
-              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev'). The system will auto-resolve this to the best available prompt.",
+              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev').",
+            },
+            role_description: {
+              type: "string",
+              description: "A short description of what this role does and its expertise (e.g., 'Security auditing expert who reviews code for vulnerabilities and enforces compliance'). Used to generate the T2 role template if the role is new.",
+            },
+            role_engine: {
+              type: "string",
+              description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). Check roster_check for available engines. If omitted, auto-resolved from available-agents.json.",
+            },
+            role_model: {
+              type: "string",
+              description: "Which model this role should use (e.g., 'claude-opus-4.6-1m', 'gpt-5.4'). If omitted, uses the first available model for the engine.",
             },
             task_description: {
               type: "string",
@@ -242,12 +254,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             workspace_path: {
               type: "string",
-              description: "Absolute path to the project workspace root. All artifacts (task blackboard, result files) will be isolated under <workspace_path>/.optimus/.",
+              description: "Absolute path to the project workspace root.",
             },
             context_files: {
               type: "array",
               items: { type: "string" },
               description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task.",
+            },
+            required_skills: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of skill names this role needs (e.g., ['council-review', 'git-workflow']). If any skill does not exist in .optimus/skills/<name>/SKILL.md, the task will be rejected with a list of missing skills so Master can create them first via a skill-creator delegation.",
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
@@ -262,6 +279,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             role: {
               type: "string",
               description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev').",
+            },
+            role_description: {
+              type: "string",
+              description: "A short description of what this role does and its expertise. Used to generate the T2 role template if the role is new.",
+            },
+            role_engine: {
+              type: "string",
+              description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). If omitted, auto-resolved.",
+            },
+            role_model: {
+              type: "string",
+              description: "Which model this role should use (e.g., 'claude-opus-4.6-1m'). If omitted, uses default.",
             },
             task_description: {
               type: "string",
@@ -278,7 +307,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             context_files: {
               type: "array",
               items: { type: "string" },
-              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task.",
+              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files.",
+            },
+            required_skills: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of skill names this role needs. Missing skills will cause rejection so Master can create them first.",
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
@@ -822,7 +856,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    const { role, task_description, output_path, context_files } = request.params.arguments as any;
+    const { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;
 
     if (!role || !task_description || !output_path) {
@@ -860,7 +894,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
     
     // 2. Delegate to the single worker pool (use canonicalOutputPath so agent writes inside .optimus/)
-      const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files);
+      const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills });
     return {
       content: [{ type: "text", text: result }]
     };

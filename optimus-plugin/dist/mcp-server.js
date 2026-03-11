@@ -1282,32 +1282,54 @@ function trackT3Usage(workspacePath, role, success, engine, model) {
   }).catch(() => {
   });
 }
-function checkAndPrecipitate(workspacePath, role, engine, model, taskDescription) {
+function checkRequiredSkills(workspacePath, skills) {
+  const found = /* @__PURE__ */ new Map();
+  const missing = [];
+  for (const skill of skills) {
+    const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", skill, "SKILL.md");
+    if (import_fs.default.existsSync(skillPath)) {
+      found.set(skill, import_fs.default.readFileSync(skillPath, "utf8"));
+    } else {
+      missing.push(skill);
+    }
+  }
+  return { found, missing };
+}
+function ensureT2Role(workspacePath, role, engine, model, masterInfo) {
   const safeRole = sanitizeRoleName(role);
   const t2Dir = import_path.default.join(workspacePath, ".optimus", "roles");
   const t2Path = import_path.default.join(t2Dir, `${safeRole}.md`);
-  if (import_fs.default.existsSync(t2Path)) return null;
   if (!import_fs.default.existsSync(t2Dir)) import_fs.default.mkdirSync(t2Dir, { recursive: true });
   const formattedRole = safeRole.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
-  const descLine = taskDescription ? taskDescription.split("\n").filter((l) => l.trim()).slice(0, 2).join(" ").substring(0, 200) : `${formattedRole} expert`;
+  const desc = masterInfo?.description || `${formattedRole} expert`;
+  const eng = masterInfo?.engine || engine;
+  const mod = masterInfo?.model || model || "";
+  if (import_fs.default.existsSync(t2Path)) {
+    if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
+      const existing = import_fs.default.readFileSync(t2Path, "utf8");
+      const updates = {};
+      if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
+      if (masterInfo.engine) updates.engine = masterInfo.engine;
+      if (masterInfo.model) updates.model = masterInfo.model;
+      updates.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+      const updated = updateFrontmatter(existing, updates);
+      import_fs.default.writeFileSync(t2Path, updated, "utf8");
+      console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
+    }
+    return null;
+  }
   const template = `---
 role: ${safeRole}
 tier: T2
-description: "${descLine.replace(/"/g, "'")}"
-engine: ${engine}
-model: ${model || ""}
+description: "${desc.substring(0, 200).replace(/"/g, "'")}"
+engine: ${eng}
+model: ${mod}
 precipitated: ${(/* @__PURE__ */ new Date()).toISOString()}
 ---
 
 # ${formattedRole}
 
-You are a **${formattedRole}** expert operating within the Optimus Spartan Swarm.
-This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default).
-
-## Original Task Context
-${taskDescription ? taskDescription.substring(0, 500) : "No task description provided."}
-
-Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
+${desc}
 `;
   import_fs.default.writeFileSync(t2Path, template, "utf8");
   console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path}`);
@@ -1439,7 +1461,7 @@ function getAdapterForEngine(engine, sessionId, model) {
   }
   return new ClaudeCodeAdapter(sessionId, "\u{1F996} Claude Code", model);
 }
-async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles) {
+async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles, masterInfo) {
   const parsedRole = parseRoleSpec(roleArg);
   const role = sanitizeRoleName(parsedRole.role);
   const legacyT1Dir = import_path.default.join(workspacePath, ".optimus", "personas");
@@ -1456,8 +1478,8 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   }
   const t1Path = import_path.default.join(t1Dir, `${role}.md`);
   const t2Path = import_path.default.join(t2Dir, `${role}.md`);
-  let activeEngine = parsedRole.engine;
-  let activeModel = parsedRole.model;
+  let activeEngine = masterInfo?.engine || parsedRole.engine;
+  let activeModel = masterInfo?.model || parsedRole.model;
   let activeSessionId = void 0;
   let t1Content = "";
   let shouldLocalize = false;
@@ -1501,6 +1523,29 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     }
   }
   if (!activeEngine) activeEngine = "claude-code";
+  let skillContent = "";
+  if (masterInfo?.requiredSkills && masterInfo.requiredSkills.length > 0) {
+    const { found, missing } = checkRequiredSkills(workspacePath, masterInfo.requiredSkills);
+    if (missing.length > 0) {
+      throw new Error(
+        `\u26A0\uFE0F **Skill Pre-Flight Failed**: Missing ${missing.length} required skill(s): ${missing.map((s) => `\`${s}\``).join(", ")}.
+
+Master Agent must create these skills first via \`delegate_task_async\` to a skill-creator role, then retry this delegation.
+
+Expected path(s):
+${missing.map((s) => `- .optimus/skills/${s}/SKILL.md`).join("\n")}`
+      );
+    }
+    for (const [name, content] of found) {
+      skillContent += `
+
+=== SKILL: ${name} ===
+${content}
+=== END SKILL: ${name} ===
+`;
+    }
+    console.error(`[Orchestrator] Loaded ${found.size} skill(s) for ${role}: ${[...found.keys()].join(", ")}`);
+  }
   const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel);
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
@@ -1562,7 +1607,12 @@ Goal: Execute the following task.
 System Note: ${personaProof}
 
 Task Description:
-${taskText}${contextContent}
+${taskText}${contextContent}${skillContent ? `
+
+=== EQUIPPED SKILLS ===
+The following skills have been loaded for you to reference and follow:
+${skillContent}
+=== END SKILLS ===` : ""}
 
 Please provide your complete execution result below.`;
   const isT3 = resolvedTier.startsWith("T3");
@@ -1606,7 +1656,7 @@ role: ${role}
     import_fs.default.writeFileSync(outputPath, response, "utf8");
     if (isT3) {
       trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-      const precipitated = checkAndPrecipitate(workspacePath, role, activeEngine, activeModel, taskText);
+      const precipitated = ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
       if (precipitated) {
         return `\u2705 **Task Delegation Successful**
 
@@ -1620,6 +1670,8 @@ role: ${role}
 
 Agent has finished execution. Check standard output at \`${outputPath}\`.`;
       }
+    } else {
+      ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
     }
     return `\u2705 **Task Delegation Successful**
 
@@ -2184,7 +2236,19 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
           properties: {
             role: {
               type: "string",
-              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev'). The system will auto-resolve this to the best available prompt."
+              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')."
+            },
+            role_description: {
+              type: "string",
+              description: "A short description of what this role does and its expertise (e.g., 'Security auditing expert who reviews code for vulnerabilities and enforces compliance'). Used to generate the T2 role template if the role is new."
+            },
+            role_engine: {
+              type: "string",
+              description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). Check roster_check for available engines. If omitted, auto-resolved from available-agents.json."
+            },
+            role_model: {
+              type: "string",
+              description: "Which model this role should use (e.g., 'claude-opus-4.6-1m', 'gpt-5.4'). If omitted, uses the first available model for the engine."
             },
             task_description: {
               type: "string",
@@ -2196,12 +2260,17 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             },
             workspace_path: {
               type: "string",
-              description: "Absolute path to the project workspace root. All artifacts (task blackboard, result files) will be isolated under <workspace_path>/.optimus/."
+              description: "Absolute path to the project workspace root."
             },
             context_files: {
               type: "array",
               items: { type: "string" },
               description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task."
+            },
+            required_skills: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of skill names this role needs (e.g., ['council-review', 'git-workflow']). If any skill does not exist in .optimus/skills/<name>/SKILL.md, the task will be rejected with a list of missing skills so Master can create them first via a skill-creator delegation."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]
@@ -2216,6 +2285,18 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             role: {
               type: "string",
               description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')."
+            },
+            role_description: {
+              type: "string",
+              description: "A short description of what this role does and its expertise. Used to generate the T2 role template if the role is new."
+            },
+            role_engine: {
+              type: "string",
+              description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). If omitted, auto-resolved."
+            },
+            role_model: {
+              type: "string",
+              description: "Which model this role should use (e.g., 'claude-opus-4.6-1m'). If omitted, uses default."
             },
             task_description: {
               type: "string",
@@ -2232,7 +2313,12 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             context_files: {
               type: "array",
               items: { type: "string" },
-              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task."
+              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files."
+            },
+            required_skills: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of skill names this role needs. Missing skills will cause rejection so Master can create them first."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]
@@ -2790,7 +2876,7 @@ URL: ${data.html_url}` }] };
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    const { role, task_description, output_path, context_files } = request.params.arguments;
+    const { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments;
     let workspace_path = request.params.arguments.workspace_path;
     if (!role || !task_description || !output_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
@@ -2812,7 +2898,7 @@ URL: ${data.html_url}` }] };
     import_fs3.default.writeFileSync(taskArtifactPath, task_description, "utf8");
     import_fs3.default.mkdirSync(import_path3.default.dirname(canonicalOutputPath), { recursive: true });
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
-    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files);
+    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills });
     return {
       content: [{ type: "text", text: result }]
     };

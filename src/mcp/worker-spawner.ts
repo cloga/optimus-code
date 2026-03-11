@@ -102,15 +102,42 @@ function trackT3Usage(workspacePath: string, role: string, success: boolean, eng
 }
 
 /**
- * Precipitate a T3 role to T2 immediately on first use if no T2 exists.
- * This ensures every T3 dynamic role gets a persistent template.
+ * Role info provided by Master Agent at delegation time.
+ * Master has the most context — it decides what the role is, which engine to use, etc.
  */
-function checkAndPrecipitate(workspacePath: string, role: string, engine: string, model?: string, taskDescription?: string): string | null {
-    const safeRole = sanitizeRoleName(role);
+export interface MasterRoleInfo {
+    description?: string;  // What this role does
+    engine?: string;       // Which engine (e.g. 'claude-code', 'copilot-cli')
+    model?: string;        // Which model (e.g. 'claude-opus-4.6-1m')
+    requiredSkills?: string[]; // Skills this role needs before task execution
+}
 
+/**
+ * Pre-flight: Check if all required skills exist. Returns missing skill names.
+ * Skills live at .optimus/skills/<name>/SKILL.md
+ */
+function checkRequiredSkills(workspacePath: string, skills: string[]): { found: Map<string, string>, missing: string[] } {
+    const found = new Map<string, string>();
+    const missing: string[] = [];
+    for (const skill of skills) {
+        const skillPath = path.join(workspacePath, '.optimus', 'skills', skill, 'SKILL.md');
+        if (fs.existsSync(skillPath)) {
+            found.set(skill, fs.readFileSync(skillPath, 'utf8'));
+        } else {
+            missing.push(skill);
+        }
+    }
+    return { found, missing };
+}
+
+/**
+ * Ensure a T2 role template exists. Creates if new, updates if Master provides new info.
+ * T1 instances are NEVER retroactively modified — they are frozen snapshots.
+ */
+function ensureT2Role(workspacePath: string, role: string, engine: string, model?: string, masterInfo?: MasterRoleInfo): string | null {
+    const safeRole = sanitizeRoleName(role);
     const t2Dir = path.join(workspacePath, '.optimus', 'roles');
     const t2Path = path.join(t2Dir, `${safeRole}.md`);
-    if (fs.existsSync(t2Path)) return null; // Already a T2
 
     if (!fs.existsSync(t2Dir)) fs.mkdirSync(t2Dir, { recursive: true });
 
@@ -119,29 +146,39 @@ function checkAndPrecipitate(workspacePath: string, role: string, engine: string
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
 
-    // Extract a short description from the task that created this role
-    const descLine = taskDescription
-        ? taskDescription.split('\n').filter(l => l.trim()).slice(0, 2).join(' ').substring(0, 200)
-        : `${formattedRole} expert`;
+    const desc = masterInfo?.description || `${formattedRole} expert`;
+    const eng = masterInfo?.engine || engine;
+    const mod = masterInfo?.model || model || '';
 
+    if (fs.existsSync(t2Path)) {
+        // T2 exists — update ONLY if Master provided new info (team evolution)
+        if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
+            const existing = fs.readFileSync(t2Path, 'utf8');
+            const updates: Record<string, string> = {};
+            if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
+            if (masterInfo.engine) updates.engine = masterInfo.engine;
+            if (masterInfo.model) updates.model = masterInfo.model;
+            updates.updated_at = new Date().toISOString();
+            const updated = updateFrontmatter(existing, updates);
+            fs.writeFileSync(t2Path, updated, 'utf8');
+            console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
+        }
+        return null; // Not a new creation
+    }
+
+    // T2 does not exist — create from Master info
     const template = `---
 role: ${safeRole}
 tier: T2
-description: "${descLine.replace(/"/g, "'")}"
-engine: ${engine}
-model: ${model || ''}
+description: "${desc.substring(0, 200).replace(/"/g, "'")}"
+engine: ${eng}
+model: ${mod}
 precipitated: ${new Date().toISOString()}
 ---
 
 # ${formattedRole}
 
-You are a **${formattedRole}** expert operating within the Optimus Spartan Swarm.
-This role was automatically promoted from T3 (dynamic outsourcing) to T2 (project default).
-
-## Original Task Context
-${taskDescription ? taskDescription.substring(0, 500) : 'No task description provided.'}
-
-Apply industry best practices, solve complex problems, and deliver professional-grade results within your specialized domain of expertise.
+${desc}
 `;
 
     fs.writeFileSync(t2Path, template, 'utf8');
@@ -296,7 +333,7 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string)
 /**
  * Executes a single task delegation synchronously.
  */
-export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[]): Promise<string> {
+export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo): Promise<string> {
     const parsedRole = parseRoleSpec(roleArg);
     const role = sanitizeRoleName(parsedRole.role);
     
@@ -317,9 +354,9 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     const t1Path = path.join(t1Dir, `${role}.md`);
     const t2Path = path.join(t2Dir, `${role}.md`);
 
-    // Resolve engine/model: role spec override > frontmatter > available-agents.json > hardcoded fallback
-    let activeEngine = parsedRole.engine;
-    let activeModel = parsedRole.model;
+    // Resolve engine/model priority: Master info > role spec > frontmatter > available-agents.json > fallback
+    let activeEngine = masterInfo?.engine || parsedRole.engine;
+    let activeModel = masterInfo?.model || parsedRole.model;
     let activeSessionId: string | undefined = undefined;
 
     let t1Content = '';
@@ -368,6 +405,27 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     }
     // Ultimate fallback
     if (!activeEngine) activeEngine = 'claude-code';
+
+    // --- Skill Pre-Flight Check ---
+    // If Master specified required_skills, verify they all exist before proceeding.
+    // Missing skills → reject with actionable error so Master can create them first.
+    let skillContent = '';
+    if (masterInfo?.requiredSkills && masterInfo.requiredSkills.length > 0) {
+        const { found, missing } = checkRequiredSkills(workspacePath, masterInfo.requiredSkills);
+        if (missing.length > 0) {
+            throw new Error(
+                `⚠️ **Skill Pre-Flight Failed**: Missing ${missing.length} required skill(s): ${missing.map(s => `\`${s}\``).join(', ')}.\n\n` +
+                `Master Agent must create these skills first via \`delegate_task_async\` to a skill-creator role, ` +
+                `then retry this delegation.\n\n` +
+                `Expected path(s):\n${missing.map(s => `- .optimus/skills/${s}/SKILL.md`).join('\n')}`
+            );
+        }
+        // Inject found skills into agent context
+        for (const [name, content] of found) {
+            skillContent += `\n\n=== SKILL: ${name} ===\n${content}\n=== END SKILL: ${name} ===\n`;
+        }
+        console.error(`[Orchestrator] Loaded ${found.size} skill(s) for ${role}: ${[...found.keys()].join(', ')}`);
+    }
 
     const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel);
 
@@ -426,7 +484,7 @@ Goal: Execute the following task.
 System Note: ${personaProof}
 
 Task Description:
-${taskText}${contextContent}
+${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe following skills have been loaded for you to reference and follow:\n${skillContent}\n=== END SKILLS ===` : ''}
 
 Please provide your complete execution result below.`;
 
@@ -475,13 +533,16 @@ Please provide your complete execution result below.`;
 
         fs.writeFileSync(outputPath, response, 'utf8');
 
-        // --- T3 Usage Tracking & Auto-Precipitation ---
+        // --- T3→T2 Precipitation & T2 Evolution ---
         if (isT3) {
             trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-            const precipitated = checkAndPrecipitate(workspacePath, role, activeEngine, activeModel, taskText);
+            const precipitated = ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
             if (precipitated) {
                 return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\n🎉 **Precipitation**: T3 role \`${role}\` has been auto-promoted to T2! Template created at \`${precipitated}\`.\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
             }
+        } else {
+            // Even for existing T2/T1 roles, update T2 if Master provides new info (evolution)
+            ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
         }
 
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
