@@ -14,6 +14,34 @@ Why this order matters: coding without understanding the codebase produces code
 that fights existing patterns. Designing without clarifying requirements produces
 architecture that solves the wrong problem. Reviewing after merge is too late.
 
+## Required Tools
+
+| Tool | Used In | Purpose |
+|------|---------|---------|
+| `delegate_task` | Phase 1, 4 | Sync delegation to PM and dev |
+| `delegate_task_async` | Phase 2-6 handoff | Async delegation to PM for autonomous phases |
+| `dispatch_council` | Phase 2, 3, 5 | Parallel expert exploration / design / review |
+| `check_task_status` | After async dispatch | Monitor PM progress |
+| `vcs_create_work_item` | Phase 1 | Create tracking issue |
+| `vcs_add_comment` | Phase 6 | Update work item with summary |
+| `roster_check` | Before delegation | Verify roles exist |
+
+## Required Roles
+
+| Role | Used In | Purpose |
+|------|---------|---------|
+| `pm` | Phase 1-6 | Orchestrates the entire workflow |
+| `code-explorer` | Phase 2 | Traces codebase execution paths and patterns |
+| `code-architect` | Phase 3 | Designs implementation approaches |
+| `dev` | Phase 4 | Implements the chosen architecture |
+| `code-reviewer` | Phase 5 | Reviews code quality, bugs, conventions |
+
+## Required Skills (for dev in Phase 4)
+
+| Skill | Purpose |
+|-------|---------|
+| `git-workflow` | Branch → build → PR → merge workflow |
+
 ## How it works
 
 Master Agent talks to the user, then hands everything to PM. PM runs the rest

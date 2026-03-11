@@ -1,5 +1,5 @@
 ---
-role: dev
+role: Senior Full-Stack Developer
 tier: T2
 description: "Senior Full-Stack Developer — the team's primary implementation force. Takes architecture designs and turns them into production-ready code with proper testing, error handling, and documentation."
 engine: claude-code
