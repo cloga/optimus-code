@@ -2121,6 +2121,10 @@ Please provide your complete execution result below.`;
   await lockManager.acquireLock(role);
   try {
     await ConcurrencyGovernor.acquire();
+    if (isT3) {
+      trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+    }
+    ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
     const agentsDir = import_path.default.join(workspacePath, ".optimus", "agents");
     if (!import_fs.default.existsSync(agentsDir)) import_fs.default.mkdirSync(agentsDir, { recursive: true });
     const tempId = Math.random().toString(36).slice(2, 10);
@@ -2199,25 +2203,6 @@ ${firstLines.trim()}
     const dir = import_path.default.dirname(outputPath);
     if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });
     import_fs.default.writeFileSync(outputPath, response, "utf8");
-    if (isT3) {
-      trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-      const precipitated = ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
-      if (precipitated) {
-        return `\u2705 **Task Delegation Successful**
-
-**Agent Identity Resolved**: ${resolvedTier}
-**Engine**: ${activeEngine}
-**Session ID**: ${adapter.lastSessionId || "Ephemeral"}
-
-**System Note**: ${personaProof}
-
-\u{1F389} **Precipitation**: T3 role \`${role}\` has been auto-promoted to T2! Template created at \`${precipitated}\`.
-
-Agent has finished execution. Check standard output at \`${outputPath}\`.`;
-      }
-    } else {
-      ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
-    }
     return `\u2705 **Task Delegation Successful**
 
 **Agent Identity Resolved**: ${resolvedTier}

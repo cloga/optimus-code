@@ -542,7 +542,14 @@ Please provide your complete execution result below.`;
     try {
         await ConcurrencyGovernor.acquire();
 
-        // --- Pre-Flight: Create T1 temp placeholder before task execution ---
+        // --- Pre-Flight: Ensure T2 role template exists BEFORE creating T1 ---
+        // Logical order: T2 (role definition) → T1 (instance). Never create T1 without T2.
+        if (isT3) {
+            trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+        }
+        ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
+
+        // --- Pre-Flight: Create T1 instance placeholder from T2 template ---
         // session_id is unknown until after execution, so use a temp name.
         // Post-execution will rename to {role}_{session_id_prefix}.md
         const agentsDir = path.join(workspacePath, '.optimus', 'agents');
@@ -624,18 +631,6 @@ Please provide your complete execution result below.`;
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         fs.writeFileSync(outputPath, response, 'utf8');
-
-        // --- T3→T2 Precipitation & T2 Evolution ---
-        if (isT3) {
-            trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-            const precipitated = ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
-            if (precipitated) {
-                return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\n🎉 **Precipitation**: T3 role \`${role}\` has been auto-promoted to T2! Template created at \`${precipitated}\`.\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
-            }
-        } else {
-            // Even for existing T2/T1 roles, update T2 if Master provides new info (evolution)
-            ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
-        }
 
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
     } catch (e: any) {

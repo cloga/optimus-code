@@ -178,5 +178,13 @@
     "lastUsed": "2026-03-11T16:08:18.538Z",
     "engine": "claude-code",
     "model": "claude-sonnet-4"
+  },
+  "documentation-specialist": {
+    "role": "documentation-specialist",
+    "invocations": 1,
+    "successes": 1,
+    "failures": 0,
+    "lastUsed": "2026-03-11T16:16:31.833Z",
+    "engine": "claude-code"
   }
 }
