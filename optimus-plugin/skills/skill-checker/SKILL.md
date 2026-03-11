@@ -12,14 +12,11 @@ It checks file paths, naming conventions, MCP tool accuracy, and structural comp
 
 <instructions>
 
-## Step 1: Use the Official Skill Creator
+## Step 1: Reference the Official Skill Creator Methodology
 
-Invoke the official Claude Code `skill-creator` plugin to generate a high-quality skill:
-- Use `/skill-creator` in Create mode
-- Describe what the skill should teach (e.g., "Create a skill that teaches agents how to run database migrations")
-- The plugin will guide you through requirements gathering and generate a well-structured skill file
+Read the official guide at `.optimus/skills/skill-checker/official-guide.md` for the latest Claude skill-creator methodology (4 modes: Create, Eval, Improve, Benchmark). The guide is auto-fetched during builds and describes the recommended workflow including the 4 composable agents (Executor, Grader, Comparator, Analyzer).
 
-If the official plugin is not available, write the skill manually following the template in Step 3.
+If the guide file is not available, write the skill manually following the template in Step 3.
 
 ## Step 2: Apply Optimus Registration Rules
 
@@ -36,7 +33,7 @@ Before saving, ensure the generated skill complies with these project-specific r
 
 ## Step 3: Manual Template (Fallback)
 
-If the official `/skill-creator` plugin is unavailable, use this minimal template:
+If the official guide is unavailable, use this minimal template:
 
 <template>
 ---
