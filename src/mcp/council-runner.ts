@@ -61,6 +61,12 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
         console.error(`[Runner] Restored delegation depth: ${parentDepth} from task record`);
     }
 
+    // The child's OWN issue becomes the parent for grandchildren
+    const parentIssueNumber = task.github_issue_number;
+    if (parentIssueNumber !== undefined) {
+        console.error(`[Runner] Setting OPTIMUS_PARENT_ISSUE=${parentIssueNumber} for child agents`);
+    }
+
     TaskManifestManager.updateTask(workspacePath, taskId, { status: 'running', pid: process.pid });
 
     // Set up heartbeat every 1 minute
@@ -83,7 +89,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                     model: task.role_model,
                     requiredSkills: task.required_skills
                 },
-                parentDepth
+                parentDepth,
+                parentIssueNumber
             );
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(
@@ -92,7 +99,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 task.output_path!, // Actually reviews path
                 `async_council_${taskId}`,
                 task.workspacePath,
-                parentDepth
+                parentDepth,
+                parentIssueNumber
             );
 
             // Phase 3: Concatenate into COUNCIL_SYNTHESIS.md

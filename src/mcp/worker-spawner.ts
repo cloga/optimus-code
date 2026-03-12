@@ -364,7 +364,7 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string)
 /**
  * Executes a single task delegation synchronously.
  */
-export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number): Promise<string> {
+export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number): Promise<string> {
     const parsedRole = parseRoleSpec(roleArg);
     const role = sanitizeRoleName(parsedRole.role);
 
@@ -616,9 +616,13 @@ Please provide your complete execution result below.`;
             console.error(`[Orchestrator] T2→T1: Created temp agent placeholder '${role}' at ${path.basename(t1TempPath)}`);
         }
 
-        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, {
+        const extraEnv: Record<string, string> = {
             OPTIMUS_DELEGATION_DEPTH: String(childDepth)
-        });
+        };
+        if (parentIssueNumber !== undefined) {
+            extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
+        }
+        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv);
 
         // --- Fail-Fast: Detect CLI-level errors in output ---
         // Some CLIs (e.g., Copilot) exit code 0 but output error text to stderr,
@@ -695,11 +699,11 @@ Please provide your complete execution result below.`;
 /**
  * Spawns a single expert worker process for council review.
  */
-export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number): Promise<string> {
+export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number): Promise<string> {
     try {
         console.error(`[Spawner] Launching Real Worker ${role} for council review`);
         return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, undefined, parentDepth);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, undefined, parentDepth, parentIssueNumber);
     } catch (err: any) {
         console.error(`[Spawner] Worker ${role} failed to start:`, err);
         return `❌ ${role}: exited with errors (${err.message}).`;
@@ -709,10 +713,10 @@ Provide your expert critique from the perspective of your role (${role}). Identi
 /**
  * Dispatches the council of experts concurrently.
  */
-export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string, parentDepth?: number): Promise<string[]> {
+export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number): Promise<string[]> {
   const promises = roles.map(role => {
     const outputPath = path.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth);
+    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber);
   });
 
   return Promise.all(promises);

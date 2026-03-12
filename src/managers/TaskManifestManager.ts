@@ -14,6 +14,7 @@ export interface TaskRecord {
     pid?: number;
     error_message?: string;
     github_issue_number?: number;
+    parent_issue_number?: number;
     startTime: number;
     heartbeatTime: number;
     workspacePath: string;
