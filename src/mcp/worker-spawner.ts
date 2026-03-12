@@ -111,6 +111,7 @@ export interface MasterRoleInfo {
     engine?: string;       // Which engine (e.g. 'claude-code', 'copilot-cli')
     model?: string;        // Which model (e.g. 'claude-opus-4.6-1m')
     requiredSkills?: string[]; // Skills this role needs before task execution
+    mode?: 'agent' | 'plan'; // Execution mode: 'agent' = full access, 'plan' = read-only + MCP tools only
 }
 
 /**
@@ -390,9 +391,10 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
 
     const t2Path = path.join(t2Dir, `${role}.md`);
 
-    // Resolve engine/model priority: Master info > role spec > available-agents.json > fallback
+    // Resolve engine/model/mode priority: Master info > role spec > available-agents.json > fallback
     let activeEngine = masterInfo?.engine || parsedRole.engine;
     let activeModel = masterInfo?.model || parsedRole.model;
+    let activeMode: 'agent' | 'plan' = masterInfo?.mode || 'agent';
     let activeSessionId: string | undefined = undefined;
 
     let t1Content = '';
@@ -432,6 +434,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         if (fm.frontmatter.engine && !activeEngine) activeEngine = fm.frontmatter.engine;
         if (fm.frontmatter.session_id) activeSessionId = fm.frontmatter.session_id;
         if (fm.frontmatter.model && !activeModel) activeModel = fm.frontmatter.model;
+        // Mode from T2 frontmatter: 'plan' = read-only orchestrator, 'agent' = full access
+        if (fm.frontmatter.mode && !masterInfo?.mode) activeMode = fm.frontmatter.mode as 'agent' | 'plan';
     }
 
     // Fallback: if engine/model still unset, try reading available-agents.json
@@ -612,7 +616,7 @@ Please provide your complete execution result below.`;
             console.error(`[Orchestrator] T2→T1: Created temp agent placeholder '${role}' at ${path.basename(t1TempPath)}`);
         }
 
-        const response = await adapter.invoke(basePrompt, 'agent', activeSessionId, undefined, {
+        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, {
             OPTIMUS_DELEGATION_DEPTH: String(childDepth)
         });
 

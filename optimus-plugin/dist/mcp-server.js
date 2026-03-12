@@ -2013,6 +2013,7 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   const t2Path = import_path.default.join(t2Dir, `${role}.md`);
   let activeEngine = masterInfo?.engine || parsedRole.engine;
   let activeModel = masterInfo?.model || parsedRole.model;
+  let activeMode = masterInfo?.mode || "agent";
   let activeSessionId = void 0;
   let t1Content = "";
   let t1Path = "";
@@ -2044,6 +2045,7 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     if (fm.frontmatter.engine && !activeEngine) activeEngine = fm.frontmatter.engine;
     if (fm.frontmatter.session_id) activeSessionId = fm.frontmatter.session_id;
     if (fm.frontmatter.model && !activeModel) activeModel = fm.frontmatter.model;
+    if (fm.frontmatter.mode && !masterInfo?.mode) activeMode = fm.frontmatter.mode;
   }
   if (!activeEngine) {
     const configPath = import_path.default.join(workspacePath, ".optimus", "config", "available-agents.json");
@@ -2219,7 +2221,7 @@ role: ${role}
       import_fs.default.writeFileSync(t1TempPath, t1Instance, "utf8");
       console.error(`[Orchestrator] T2\u2192T1: Created temp agent placeholder '${role}' at ${import_path.default.basename(t1TempPath)}`);
     }
-    const response = await adapter.invoke(basePrompt, "agent", activeSessionId, void 0, {
+    const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, void 0, {
       OPTIMUS_DELEGATION_DEPTH: String(childDepth)
     });
     const nonLogLines = response.split("\n").filter((l) => !l.startsWith("> [LOG]")).join("\n").trim();
