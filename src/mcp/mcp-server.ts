@@ -12,7 +12,8 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel } from "./worker-spawner";
+import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
+import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker } from "./council-runner";
@@ -413,6 +414,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["name"]
         }
+      },
+      {
+        name: "quarantine_role",
+        description: "Manually quarantine or unquarantine a T2 role. Quarantined roles cannot be dispatched until unquarantined.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            role: { type: "string", description: "The role name to quarantine/unquarantine" },
+            action: { type: "string", enum: ["quarantine", "unquarantine"], description: "Whether to quarantine or unquarantine the role" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["role", "action", "workspace_path"]
+        }
       }
     ],
   };
@@ -734,17 +748,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const content = fs.readFileSync(path.join(t2Dir, f), 'utf8');
             const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
             let engineInfo = '';
+            let quarantineMarker = '';
             if (fmMatch) {
               const lines = fmMatch[1].split('\n');
               const engineLine = lines.find(l => l.startsWith('engine:'));
               const modelLine = lines.find(l => l.startsWith('model:'));
+              const statusLine = lines.find(l => l.startsWith('status:'));
               if (engineLine || modelLine) {
                 const engine = engineLine ? engineLine.split(':')[1].trim() : '?';
                 const model = modelLine ? modelLine.split(':')[1].trim() : '?';
                 engineInfo = ` → \`${engine}\` / \`${model}\``;
               }
+              if (statusLine && statusLine.split(':')[1].trim() === 'quarantined') {
+                quarantineMarker = ' **[QUARANTINED]**';
+              }
             }
-            roster += `- ${roleName}${engineInfo}\n`;
+            roster += `- ${roleName}${engineInfo}${quarantineMarker}\n`;
           } catch {
             roster += `- ${roleName}\n`;
           }
@@ -1034,6 +1053,53 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: name");
     }
     return { content: [{ type: "text", text: `Hello, ${name}! Optimus Swarm is running.` }] };
+  } else if (request.params.name === "quarantine_role") {
+    const { role, action, workspace_path } = request.params.arguments as any;
+    if (!role || !action || !workspace_path) {
+      throw new McpError(ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
+    }
+
+    const t2Dir = path.join(workspace_path, '.optimus', 'roles');
+    const rolePath = path.join(t2Dir, `${role}.md`);
+    if (!fs.existsSync(rolePath)) {
+      return { content: [{ type: "text", text: `Role '${role}' not found at ${rolePath}` }] };
+    }
+
+    const content = fs.readFileSync(rolePath, 'utf8');
+
+    if (action === 'quarantine') {
+      const updated = updateFrontmatter(content, {
+        status: 'quarantined',
+        quarantined_at: new Date().toISOString()
+      });
+      fs.writeFileSync(rolePath, updated, 'utf8');
+
+      // Reset consecutive failures in T3 usage log
+      const log = loadT3UsageLog(workspace_path);
+      if (log[role]) {
+        log[role].consecutive_failures = 0;
+        saveT3UsageLog(workspace_path, log);
+      }
+
+      return { content: [{ type: "text", text: `Role '${role}' has been quarantined. It will be blocked from dispatch until unquarantined.` }] };
+    } else if (action === 'unquarantine') {
+      const updated = updateFrontmatter(content, {
+        status: 'idle',
+        quarantined_at: ''
+      });
+      fs.writeFileSync(rolePath, updated, 'utf8');
+
+      // Reset consecutive failures
+      const log = loadT3UsageLog(workspace_path);
+      if (log[role]) {
+        log[role].consecutive_failures = 0;
+        saveT3UsageLog(workspace_path, log);
+      }
+
+      return { content: [{ type: "text", text: `Role '${role}' has been unquarantined and is available for dispatch again.` }] };
+    } else {
+      throw new McpError(ErrorCode.InvalidParams, `Invalid action '${action}'. Must be 'quarantine' or 'unquarantine'.`);
+    }
   }
 
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
@@ -1058,6 +1124,14 @@ if (process.argv.includes("--run-task")) {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("Optimus Spartan Swarm MCP server running on stdio");
+
+    // Agent GC: clean up stale T1 instances on startup
+    const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    try {
+      cleanStaleAgents(workspaceRoot);
+    } catch (e: any) {
+      console.error(`[Agent GC] Warning: ${e.message}`);
+    }
   }
 
   main().catch((error) => {
