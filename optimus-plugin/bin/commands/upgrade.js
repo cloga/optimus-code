@@ -8,6 +8,55 @@
 const fs = require('fs');
 const path = require('path');
 
+function deepMergePreserveUser(template, user) {
+  const result = { ...template };
+  for (const key of Object.keys(user)) {
+    if (typeof user[key] === 'object' && user[key] !== null && !Array.isArray(user[key])
+        && typeof result[key] === 'object' && result[key] !== null && !Array.isArray(result[key])) {
+      result[key] = deepMergePreserveUser(result[key], user[key]);
+    } else {
+      result[key] = user[key];
+    }
+  }
+  return result;
+}
+
+function mergeConfigFiles(srcDir, destDir) {
+  if (!fs.existsSync(destDir)) {
+    fs.mkdirSync(destDir, { recursive: true });
+  }
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  let count = 0;
+  for (const entry of entries) {
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      count += mergeConfigFiles(srcPath, destPath);
+    } else if (entry.name.endsWith('.json') && fs.existsSync(destPath)) {
+      try {
+        const template = JSON.parse(fs.readFileSync(srcPath, 'utf8'));
+        const user = JSON.parse(fs.readFileSync(destPath, 'utf8'));
+        const merged = deepMergePreserveUser(template, user);
+        fs.writeFileSync(destPath, JSON.stringify(merged, null, 2), 'utf8');
+        if (JSON.stringify(merged) !== JSON.stringify(template)) {
+          console.log(`  ℹ️  ${entry.name}: preserved your existing config (organization, project, etc.)`);
+        } else {
+          console.log(`  🔄 Updated ${path.relative(process.cwd(), destPath)}`);
+        }
+      } catch (e) {
+        fs.copyFileSync(srcPath, destPath);
+        console.log(`  🔄 Updated ${path.relative(process.cwd(), destPath)} (overwritten — parse error)`);
+      }
+      count++;
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+      console.log(`  🔄 Updated ${path.relative(process.cwd(), destPath)}`);
+      count++;
+    }
+  }
+  return count;
+}
+
 function copyDirForceOverwrite(src, dest) {
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
@@ -63,11 +112,11 @@ module.exports = function upgrade() {
     roleCount = copyDirForceOverwrite(rolesSrc, path.join(optimusDir, 'roles'));
   }
 
-  // 3. Config: FORCE OVERWRITE
+  // 3. Config: MERGE (preserve user values in JSON files)
   const configSrc = path.join(scaffoldDir, 'config');
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Upgrading system config...');
-    configCount = copyDirForceOverwrite(configSrc, path.join(optimusDir, 'config'));
+    configCount = mergeConfigFiles(configSrc, path.join(optimusDir, 'config'));
   }
 
   // 4. Agents: NEVER TOUCH
