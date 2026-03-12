@@ -930,22 +930,12 @@ let contextContent = "";
         ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
         : '';
 
-    // Soft guard: warn agent if on protected branch
-    let branchWarning = '';
-    try {
-        const { execSync } = require('child_process');
-        const currentBranch = execSync('git branch --show-current', { cwd: workspacePath, encoding: 'utf8' }).trim();
-        if (currentBranch === 'master' || currentBranch === 'main') {
-            branchWarning = '\n\nWARNING: You are currently on the master/main branch. You MUST create a feature branch before making any commits. Direct commits to master are PROHIBITED.\n';
-        }
-    } catch { /* ignore git errors */ }
-
     const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
 
 ${personaContext ? `--- START PERSONA INSTRUCTIONS ---\n${personaContext}\n--- END PERSONA INSTRUCTIONS ---` : ''}
-${memorySection}${branchWarning}
+${memorySection}
 Goal: Execute the following task.
 System Note: ${personaProof}
 ${trackingIssueHeader}

@@ -24,14 +24,10 @@ Every code change must be traceable via a branch and Pull Request. No direct com
   <rule>Every change MUST have a PR — this is the traceability guarantee.</rule>
   <rule>ALWAYS switch back to `master` after pushing a feature branch.</rule>
   <rule>ALWAYS use `git pull --rebase origin master` instead of `git pull origin master`. This prevents merge commit noise.</rule>
-</rules>
-
-<prohibited>
   <rule>NEVER run `git push origin master` or `git push origin main` directly.</rule>
-  <rule>ALL code MUST enter master through `vcs_create_pr` + `vcs_merge_pr`.</rule>
+  <rule>ALL code MUST enter master/main through `vcs_create_pr` + `vcs_merge_pr`.</rule>
   <rule>Direct push to protected branches is a violation of Issue-First SDLC.</rule>
-  <rule>NEVER use `git merge <branch>` locally to merge into master and then push.</rule>
-</prohibited>
+</rules>
 
 <instructions>
 
