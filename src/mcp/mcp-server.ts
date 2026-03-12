@@ -13,6 +13,7 @@ import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
+import { sanitizeExternalContent, wrapUntrustedContent } from "../utils/sanitizeExternalContent";
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
@@ -106,7 +107,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             properties: {
               category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
               tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
-              content: { type: "string", description: "The actual memory content to solidify" }
+              content: { type: "string", description: "The actual memory content to solidify" },
+              agent_role: { type: "string", description: "The role of the agent writing this memory entry. Used for attribution." }
             },
             required: ["category", "tags", "content"]
           }
@@ -142,6 +144,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["owner", "repo", "workspace_path"]
         }
       },
+      // TODO: When github_sync_board handler is implemented, apply sanitizeExternalContent()
+      // to all issue body text before writing to local task files. Mass injection vector.
 
       {
         name: "dispatch_council",
@@ -640,7 +644,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
         } else if (request.params.name === "append_memory") {
-      let { category, tags, content } = request.params.arguments as any;
+      let { category, tags, content, agent_role: memoryAgentRole } = request.params.arguments as any;
       const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
       const memoryDir = path.resolve(workspacePath, '.optimus', 'memory');
       const memoryFile = path.join(memoryDir, 'continuous-memory.md');
@@ -669,6 +673,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               'category: ' + (category || 'uncategorized'),
               'tags: [' + (tags ? tags.join(', ') : '') + ']',
               'created: ' + timestamp,
+              'source: mcp-append-memory',
+              ...(memoryAgentRole ? ['author_role: ' + memoryAgentRole] : []),
               '---',
               content,
               '\n'

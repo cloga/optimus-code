@@ -5,6 +5,7 @@ import { AgentAdapter } from "../adapters/AgentAdapter";
 import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
 import { MAX_DELEGATION_DEPTH } from "../constants";
+import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -881,7 +882,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
 
     // T2→T1 instantiation happens AFTER task execution (when session_id is captured).
 
-    const taskText = fs.existsSync(taskPath) ? fs.readFileSync(taskPath, 'utf8') : taskPath;
+    const rawTaskText = fs.existsSync(taskPath) ? fs.readFileSync(taskPath, 'utf8') : taskPath;
+    const { sanitized: taskText } = sanitizeExternalContent(rawTaskText);
 
     let personaContext = "";
     if (t1Content) {
@@ -915,8 +917,10 @@ let contextContent = "";
         for (const cf of contextFiles) {
             const absolutePath = path.resolve(workspacePath, cf);
             if (fs.existsSync(absolutePath)) {
+                const rawContent = fs.readFileSync(absolutePath, 'utf8');
+                const { sanitized: fileContent } = sanitizeExternalContent(rawContent);
                 contextContent += `--- START OF ${cf} ---\n`;
-                contextContent += fs.readFileSync(absolutePath, 'utf8');
+                contextContent += fileContent;
                 contextContent += `\n--- END OF ${cf} ---\n\n`;
             } else {
                 contextContent += `--- START OF ${cf} ---\n`;
