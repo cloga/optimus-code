@@ -28,27 +28,13 @@ It transforms a single AI assistant into a coordinated swarm of specialized agen
 npx -y github:cloga/optimus-code init
 ```
 
-This creates a `.optimus/` folder with agent definitions, skills, and config in the current directory.
+This creates a `.optimus/` folder with agent definitions, skills, and config in the current directory. It also auto-generates `.vscode/mcp.json` for VS Code / GitHub Copilot users.
 
-### Step 2: Configure MCP client
+### Step 2: (Optional) Configure MCP for non-VS-Code clients
 
-Add the Optimus MCP server to your AI coding tool. Pick the matching client below.
+> **VS Code / GitHub Copilot users:** Skip this step. `optimus init` already configured your MCP server in `.vscode/mcp.json`.
 
-#### VS Code (GitHub Copilot)
-
-Create or edit `.vscode/mcp.json` in the project root:
-
-```json
-{
-  "servers": {
-    "optimus-swarm": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "github:cloga/optimus-code", "serve"]
-    }
-  }
-}
-```
+For Cursor, Windsurf, Claude Code, or other MCP clients, configure manually:
 
 #### Cursor / Windsurf / Roo Cline
 
