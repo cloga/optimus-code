@@ -238,3 +238,8 @@ PM documents:
 - Suggested follow-ups (tests, docs, related features)
 
 Updates the VCS work item via `vcs_add_comment`.
+
+### Retrospective Memory Capture
+After completing a feature, if you encountered any bugs, surprises, or learned something
+non-obvious, use `append_memory` to record it for future agents. Use category: "bug-postmortem"
+for bug lessons, "architecture-decision" for design choices, "best-practice" for patterns that worked well.
