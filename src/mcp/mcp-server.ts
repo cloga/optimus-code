@@ -17,6 +17,7 @@ import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker } from "./council-runner";
 import { spawn, execSync } from "child_process";
+import { agentSignature } from "../utils/agentSignature";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 
@@ -63,7 +64,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     // Resolve workspace path securely
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     const instructionsPath = path.resolve(workspacePath, '.optimus', 'config', 'system-instructions.md');
-    
+
     // Security check: Ensure it doesn't escape workspace
     if (!instructionsPath.startsWith(path.resolve(workspacePath))) {
        throw new McpError(ErrorCode.InvalidRequest, `Path traversal detected`);
@@ -140,26 +141,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["owner", "repo", "workspace_path"]
         }
       },
-
       {
         name: "dispatch_council",
         description: "Trigger a map-reduce multi-expert review for an architectural proposal using the Spartan Swarm protocol.",
         inputSchema: {
           type: "object",
           properties: {
-            proposal_path: {
-              type: "string",
-              description: "The file path to the PROPOSAL.md file",
-            },
-            roles: {
-              type: "array",
-              items: { type: "string" },
-              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
-            },
-            parent_issue_number: {
-              type: "number",
-              description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
-            },
+            proposal_path: { type: "string", description: "The file path to the PROPOSAL.md file" },
+            roles: { type: "array", items: { type: "string" }, description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])" },
+            parent_issue_number: { type: "number", description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking." },
           },
           required: ["proposal_path", "roles"],
         },
@@ -170,10 +160,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            workspace_path: {
-              type: "string",
-              description: "The absolute path to the current project workspace to check for T1 local personas.",
-            }
+            workspace_path: { type: "string", description: "The absolute path to the current project workspace to check for T1 local personas." }
           },
           required: ["workspace_path"],
         }
@@ -184,48 +171,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            role: {
-              type: "string",
-              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev').",
-            },
-            role_description: {
-              type: "string",
-              description: "A short description of what this role does and its expertise (e.g., 'Security auditing expert who reviews code for vulnerabilities and enforces compliance'). Used to generate the T2 role template if the role is new.",
-            },
-            role_engine: {
-              type: "string",
-              description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). Check roster_check for available engines. If omitted, auto-resolved from available-agents.json.",
-            },
-            role_model: {
-              type: "string",
-              description: "Which model this role should use (e.g., 'claude-opus-4.6-1m', 'gpt-5.4'). If omitted, uses the first available model for the engine.",
-            },
-            task_description: {
-              type: "string",
-              description: "Detailed description of what the agent needs to do.",
-            },
-            output_path: {
-              type: "string",
-              description: "The file path where the agent should write its final result or report. If not already under the workspace's .optimus/ directory, it will be automatically scoped to .optimus/results/<filename> within the workspace.",
-            },
-            workspace_path: {
-              type: "string",
-              description: "Absolute path to the project workspace root.",
-            },
-            context_files: {
-              type: "array",
-              items: { type: "string" },
-              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task.",
-            },
-            required_skills: {
-              type: "array",
-              items: { type: "string" },
-              description: "Optional array of skill names this role needs (e.g., ['council-review', 'git-workflow']). If any skill does not exist in .optimus/skills/<name>/SKILL.md, the task will be rejected with a list of missing skills so Master can create them first via a skill-creator delegation.",
-            },
-            parent_issue_number: {
-              type: "number",
-              description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
-            },
+            role: { type: "string", description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')." },
+            role_description: { type: "string", description: "A short description of what this role does and its expertise (e.g., 'Security auditing expert who reviews code for vulnerabilities and enforces compliance'). Used to generate the T2 role template if the role is new." },
+            role_engine: { type: "string", description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). Check roster_check for available engines. If omitted, auto-resolved from available-agents.json." },
+            role_model: { type: "string", description: "Which model this role should use (e.g., 'claude-opus-4.6-1m', 'gpt-5.4'). If omitted, uses the first available model for the engine." },
+            task_description: { type: "string", description: "Detailed description of what the agent needs to do." },
+            output_path: { type: "string", description: "The file path where the agent should write its final result or report. If not already under the workspace's .optimus/ directory, it will be automatically scoped to .optimus/results/<filename> within the workspace." },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            context_files: { type: "array", items: { type: "string" }, description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files that the agent must strictly read before executing the task." },
+            required_skills: { type: "array", items: { type: "string" }, description: "Optional array of skill names this role needs (e.g., ['council-review', 'git-workflow']). If any skill does not exist in .optimus/skills/<name>/SKILL.md, the task will be rejected with a list of missing skills so Master can create them first via a skill-creator delegation." },
+            parent_issue_number: { type: "number", description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking." },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
         }
@@ -236,48 +191,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            role: {
-              type: "string",
-              description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev').",
-            },
-            role_description: {
-              type: "string",
-              description: "A short description of what this role does and its expertise. Used to generate the T2 role template if the role is new.",
-            },
-            role_engine: {
-              type: "string",
-              description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). If omitted, auto-resolved.",
-            },
-            role_model: {
-              type: "string",
-              description: "Which model this role should use (e.g., 'claude-opus-4.6-1m'). If omitted, uses default.",
-            },
-            task_description: {
-              type: "string",
-              description: "Detailed description of what the agent needs to do.",
-            },
-            output_path: {
-              type: "string",
-              description: "The file path where the agent should write its final result or report.",
-            },
-            workspace_path: {
-              type: "string",
-              description: "Absolute path to the project workspace root.",
-            },
-            context_files: {
-              type: "array",
-              items: { type: "string" },
-              description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files.",
-            },
-            required_skills: {
-              type: "array",
-              items: { type: "string" },
-              description: "Optional array of skill names this role needs. Missing skills will cause rejection so Master can create them first.",
-            },
-            parent_issue_number: {
-              type: "number",
-              description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
-            },
+            role: { type: "string", description: "The name of the expert role (e.g., 'chief-architect', 'frontend-dev')." },
+            role_description: { type: "string", description: "A short description of what this role does and its expertise. Used to generate the T2 role template if the role is new." },
+            role_engine: { type: "string", description: "Which execution engine this role should use (e.g., 'claude-code', 'copilot-cli'). If omitted, auto-resolved." },
+            role_model: { type: "string", description: "Which model this role should use (e.g., 'claude-opus-4.6-1m'). If omitted, uses default." },
+            task_description: { type: "string", description: "Detailed description of what the agent needs to do." },
+            output_path: { type: "string", description: "The file path where the agent should write its final result or report." },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            context_files: { type: "array", items: { type: "string" }, description: "Optional array of workspace-relative paths to design documents, architecture specs, or requirement files." },
+            required_skills: { type: "array", items: { type: "string" }, description: "Optional array of skill names this role needs. Missing skills will cause rejection so Master can create them first." },
+            parent_issue_number: { type: "number", description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking." },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
         }
@@ -288,23 +211,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            proposal_path: {
-              type: "string",
-              description: "The file path to the PROPOSAL.md file",
-            },
-            roles: {
-              type: "array",
-              items: { type: "string" },
-              description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])",
-            },
-            workspace_path: {
-              type: "string",
-              description: "Absolute path to the project workspace root.",
-            },
-            parent_issue_number: {
-              type: "number",
-              description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
-            },
+            proposal_path: { type: "string", description: "The file path to the PROPOSAL.md file" },
+            roles: { type: "array", items: { type: "string" }, description: "An array of expert roles to spawn concurrently (e.g., ['security-expert', 'performance-tyrant'])" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            parent_issue_number: { type: "number", description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking." },
           },
           required: ["proposal_path", "roles", "workspace_path"],
         }
@@ -315,14 +225,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            taskId: {
-              type: "string",
-              description: "The ID of the task to check.",
-            },
-            workspace_path: {
-              type: "string",
-              description: "Absolute path to the project workspace root.",
-            },
+            taskId: { type: "string", description: "The ID of the task to check." },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
           },
           required: ["taskId", "workspace_path"],
         }
@@ -355,7 +259,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             area_path: { type: "string", description: "ADO team/area path (e.g. 'Project\\Team\\Area'). Ignored for GitHub." },
             assigned_to: { type: "string", description: "ADO assigned user (email or alias). Ignored for GitHub." },
             parent_id: { type: "number", description: "ADO parent work item ID for hierarchy linking. Ignored for GitHub." },
-            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." }
+            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." },
+            agent_role: { type: "string", description: "The role of the agent making this update" }
           },
           required: ["title", "body", "workspace_path"]
         }
@@ -370,7 +275,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             body: { type: "string", description: "PR description" },
             head: { type: "string", description: "Source branch" },
             base: { type: "string", description: "Target branch" },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent making this update" }
           },
           required: ["title", "body", "head", "base", "workspace_path"]
         }
@@ -398,7 +304,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
             item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
             comment: { type: "string", description: "Comment text" },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent making this update" }
           },
           required: ["item_type", "item_id", "comment", "workspace_path"]
         }
@@ -424,18 +331,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "check_task_status") {
     let { taskId, workspace_path } = request.params.arguments as any;
     if (!taskId || !workspace_path) throw new Error("Missing taskId or workspace_path");
-    
-    TaskManifestManager.reapStaleTasks(workspace_path); // Trigger reaper
+    TaskManifestManager.reapStaleTasks(workspace_path);
     const manifest = TaskManifestManager.loadManifest(workspace_path);
     const task = manifest[taskId];
     if (!task) {
       return { content: [{ type: "text", text: `Task ${taskId} not found in manifest.` }] };
     }
-
-    // Enhanced multi-tier status with artifact verification
     let effectiveStatus = task.status;
     let details = '';
-
     if (task.status === 'running') {
       const elapsed = Math.round((Date.now() - task.startTime) / 1000);
       details = `Task ${taskId} status: **running** (${elapsed}s elapsed)\n`;
@@ -448,7 +351,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
     } else if (task.status === 'completed') {
-      // Legacy: re-verify output_path on read
       let outputExists = false;
       if (task.output_path) {
         try {
@@ -469,34 +371,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } else {
       details = `Task ${taskId} status: **${task.status}**`;
     }
-    
     return { content: [{ type: "text", text: details }] };
   }
-  
+
   if (request.params.name === "delegate_task_async") {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments as any;
     if (!role || !task_description || !output_path || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
-
-    // Validate engine/model before persisting to TaskManifest
     if (role_engine || role_model) {
         const { engines: ve, models: vm } = loadValidEnginesAndModels(workspace_path);
         if (role_engine && !isValidEngine(role_engine, ve)) {
             console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve.join(', ')}`);
             role_engine = undefined;
-            role_model = undefined; // engine invalid → discard model
+            role_model = undefined;
         } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
             console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(', ')}`);
             role_model = undefined;
         }
     }
-
-    // Resolve parent issue: explicit param > env var > undefined (with NaN guard)
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentAsync) ? undefined : rawParentAsync);
-
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     TaskManifestManager.createTask(workspace_path, {
         taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [],
@@ -512,37 +408,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const truncDesc = task_description.length > 300 ? task_description.substring(0, 300) + '...' : task_description;
         const shortTitle = task_description.split('\n')[0].substring(0, 80).trim();
         const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}\n\n` : '';
+        const issueBody = `${parentRef}## Auto-generated Swarm Task Tracker\n\n**Task ID:** \`${taskId}\`\n**Role:** \`${role}\`\n**Output Path:** \`${output_path}\`\n\n### Task Description\n${truncDesc}`;
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Task] ${role}: ${shortTitle}...`,
-            `${parentRef}## Auto-generated Swarm Task Tracker\n\n**Task ID:** \`${taskId}\`\n**Role:** \`${role}\`\n**Output Path:** \`${output_path}\`\n\n### Task Description\n${truncDesc}`,
-            ['swarm-task']
+            issueBody + agentSignature(role, taskId),
+            ['swarm-task', 'optimus-bot']
         );
         if (issue) {
             TaskManifestManager.updateTask(workspace_path, taskId, { github_issue_number: issue.number });
             issueInfo = `\n**GitHub Issue**: ${issue.html_url}`;
         }
     }
-    
-    // Spawn background process
     const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
         detached: true, stdio: "ignore", windowsHide: true
     });
     child.unref();
-    
     return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status tool periodically with this task ID to check its completion.` }] };
   }
-  
+
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path } = request.params.arguments as any;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
-
-    // Resolve parent issue: explicit param > env var > undefined (with NaN guard)
     const rawParentAsync2 = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentAsync2) ? undefined : rawParentAsync2);
-
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     const reviewsPath = path.join(workspace_path, ".optimus", "reviews", taskId);
     TaskManifestManager.createTask(workspace_path, {
@@ -557,62 +448,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (remote) {
         const proposalName = require('path').basename(proposal_path, '.md').replace(/^PROPOSAL_/i, '').replace(/[_-]/g, ' ');
         const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}\n\n` : '';
+        const councilBody = `${parentRef}## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roles.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\``;
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Council] ${proposalName} (Review)`,
-            `${parentRef}## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roles.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\``,
-            ['swarm-council']
+            councilBody + agentSignature('council-orchestrator', taskId),
+            ['swarm-council', 'optimus-bot']
         );
         if (issue) {
             TaskManifestManager.updateTask(workspace_path, taskId, { github_issue_number: issue.number });
             issueInfo = `\n**GitHub Issue**: ${issue.html_url}`;
         }
     }
-    
-    // Spawn background process
     const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
         detached: true, stdio: "ignore", windowsHide: true
     });
     child.unref();
-    
     return { content: [{ type: "text", text: `✅ Council spawned successfully in background.\n\n**Council ID**: ${taskId}\n**Roles**: ${roles.join(", ")}${issueInfo}\n\nUse check_task_status tool periodically with this Council ID to check completion.` }] };
   }
 
   if (request.params.name === "dispatch_council") {
-
     let { proposal_path, roles, workspace_path } = request.params.arguments as any;
-
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
-
-    // Resolve parent issue: explicit param > env var > undefined
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentSync) ? undefined : rawParentSync);
-    
-    // Resolve workspace root from the proposal_path instead of process.cwd().
-    // Global MCP servers boot in the user home directory, so we must calculate the project root dynamically.
-    // Assuming proposal_path is something like <ProjectRoot>/.optimus/PROPOSAL_xxx.md
     let workspacePath: string;
     const optimusIndex = proposal_path.indexOf('.optimus');
     if (optimusIndex !== -1) {
       workspacePath = proposal_path.substring(0, optimusIndex);
     } else {
-      // Fallback: proposal file is not under .optimus/, treat its parent directory as the workspace root.
-      // This preserves backward compatibility but callers should pass a path inside .optimus/.
       workspacePath = path.resolve(path.dirname(proposal_path));
     }
-
     const timestampId = Date.now();
     const reviewsPath = path.join(workspacePath, ".optimus", "reviews", timestampId.toString());
-    
     fs.mkdirSync(reviewsPath, { recursive: true });
-
-    // In Phase 2 implementation, this is where we invoke worker-spawner.js for Promise.all
-    // Launching autonomous CLI instances concurrently
     console.error(`[MCP] Dispatching council with roles: ${roles.join(', ')}`);
     const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, undefined, parentIssueNumber);
-
     return {
       content: [
         {
@@ -626,25 +499,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
       const memoryDir = path.resolve(workspacePath, '.optimus', 'memory');
       const memoryFile = path.join(memoryDir, 'continuous-memory.md');
-
       if (!fs.existsSync(memoryDir)) {
         fs.mkdirSync(memoryDir, { recursive: true });
       }
-
-      // Memory Lock for concurrency within the MCP server process
       if (!(global as any).memoryLock) {
         (global as any).memoryLock = Promise.resolve();
       }
-
       try {
-        await (global as any).memoryLock; // Wait for any pending write
-
-        // Create new write promise
+        await (global as any).memoryLock;
         const writePromise = new Promise<void>((resolve, reject) => {
           try {
             const timestamp = new Date().toISOString();
             const memoryId = 'mem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-            
             const freshEntry = [
               '---',
               'id: ' + memoryId,
@@ -655,17 +521,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               content,
               '\n'
             ].join('\n');
-
             fs.appendFileSync(memoryFile, freshEntry, 'utf8');
             resolve();
           } catch (err) {
             reject(err);
           }
         });
-        
         (global as any).memoryLock = writePromise;
         await writePromise;
-        
         return {
           content: [
             {
@@ -681,24 +544,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
   } else if (request.params.name === "roster_check") {
-
     const { workspace_path } = request.params.arguments as any;
     if (!workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires workspace_path");
     }
-
     const t1Dir = path.join(workspace_path, ".optimus", "agents");
-    
-    // Check and create T2 project-level profile directory natively
     const t2Dir = path.join(workspace_path, '.optimus', 'roles');
     if (!fs.existsSync(t2Dir)) {
         fs.mkdirSync(t2Dir, { recursive: true });
     }
-    // T2 roles are created ONLY via T3 precipitation or manual user creation.
-    // No lazy-sync from plugin built-in roles.
-
     let roster = "📋 **Spartan Swarm Active Roster**\n\n";
-
     roster += "### T1: Local Project Experts\n";
     if (fs.existsSync(t1Dir)) {
       const t1Files = fs.readdirSync(t1Dir).filter(f => f.endsWith('.md'));
@@ -706,8 +561,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } else {
       roster += "(No local personas directory found)\n";
     }
-
-    // --- Dynamic T3 Config Loading ---
     const configPath = path.join(workspace_path, ".optimus", "config", "available-agents.json");
     if (fs.existsSync(configPath)) {
       try {
@@ -721,7 +574,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           roster += "*Note: Append these engine and model combinations to role names to spawn customized variants. Examples: `chief-architect_claude-code_claude-3-opus`, `security-auditor_copilot-cli_o1-preview`.*\n\n";
         } catch (e) {}
     }
-
     roster += "\n### T2: Project Default Roles (.optimus/roles)\n";
     if (fs.existsSync(t2Dir)) {
       const t2Files = fs.readdirSync(t2Dir).filter(f => f.endsWith('.md'));
@@ -753,8 +605,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } else {
       roster += "(No project roles directory found)\n";
     }
-
-    // Show T3 usage stats if available
     const t3LogPath = path.join(workspace_path, '.optimus', 'state', 't3-usage-log.json');
     if (fs.existsSync(t3LogPath)) {
       try {
@@ -769,13 +619,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       } catch {}
     }
-
     roster += "\n### ⚙️ Fallback Behavior\n";
     roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
     roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
     roster += "- T3 roles auto-precipitate to T2 immediately on first use.\n";
-
-    // Show available skills
     const skillsDir = path.join(workspace_path, '.optimus', 'skills');
     if (fs.existsSync(skillsDir)) {
       const skillDirs = fs.readdirSync(skillsDir).filter(d => {
@@ -801,88 +648,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
     }
-
     return {
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
     let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;
-
-    // Resolve parent issue: explicit param > env var > undefined
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentSync) ? undefined : rawParentSync);
-
     if (!role || !task_description || !output_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
     }
-
     if (!workspace_path) {
-       // fallback to project root based on output_path or cwd
        workspace_path = process.cwd();
        if (output_path.includes("optimus-code")) {
          workspace_path = output_path.split("optimus-code")[0] + "optimus-code";
        }
     }
-
-    // Validate engine/model before passing to delegateTaskSingle
     if (role_engine || role_model) {
         const { engines: ve, models: vm } = loadValidEnginesAndModels(workspace_path);
         if (role_engine && !isValidEngine(role_engine, ve)) {
             console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve.join(', ')}`);
             role_engine = undefined;
-            role_model = undefined; // engine invalid → discard model
+            role_model = undefined;
         } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
             console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(', ')}`);
             role_model = undefined;
         }
     }
-
     const sessionId = crypto.randomUUID();
     const workspacePath = workspace_path;
-
-    // Canonicalize output_path: if it does not already live under this workspace's .optimus/,
-    // scope it to .optimus/results/<basename> so no files escape to the workspace root.
     const optimusDir = path.join(workspacePath, ".optimus");
     const resolvedOutputPath = path.resolve(workspacePath, output_path);
     const canonicalOutputPath = resolvedOutputPath.startsWith(optimusDir)
       ? resolvedOutputPath
       : path.join(optimusDir, "results", path.basename(output_path));
-
-    // 1. Write the task description into a Blackboard Artifact so the stateless worker can read it
     const tasksDir = path.join(workspacePath, ".optimus", "tasks");
     fs.mkdirSync(tasksDir, { recursive: true });
     const taskArtifactPath = path.join(tasksDir, `task_${sessionId}.md`);
     fs.writeFileSync(taskArtifactPath, task_description, 'utf8');
-
-    // Ensure the output directory exists (handles .optimus/results/ when auto-scoped)
     fs.mkdirSync(path.dirname(canonicalOutputPath), { recursive: true });
-
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
-    
-    // 2. Delegate to the single worker pool (use canonicalOutputPath so agent writes inside .optimus/)
       const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, undefined, parentIssueNumber);
     return {
       content: [{ type: "text", text: result }]
     };
   } else if (request.params.name === "vcs_create_work_item") {
     const { title, body, labels, work_item_type, workspace_path,
-            iteration_path, area_path, assigned_to, parent_id, priority } = request.params.arguments as any;
+            iteration_path, area_path, assigned_to, parent_id, priority, agent_role } = request.params.arguments as any;
     if (!title || !body || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
     }
-
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createWorkItem(title, body, labels, work_item_type, {
-        iteration_path,
-        area_path,
-        assigned_to,
-        parent_id,
-        priority
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createWorkItem(title, finalBody, labels, work_item_type, {
+        iteration_path, area_path, assigned_to, parent_id, priority
       });
-
       return {
         content: [{
           type: "text",
@@ -893,15 +716,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
     }
   } else if (request.params.name === "vcs_create_pr") {
-    const { title, body, head, base, workspace_path } = request.params.arguments as any;
+    const { title, body, head, base, workspace_path, agent_role } = request.params.arguments as any;
     if (!title || !body || !head || !base || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
     }
-
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createPullRequest(title, body, head, base);
-
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createPullRequest(title, finalBody, head, base);
       return {
         content: [{
           type: "text",
@@ -916,27 +738,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!pull_request_id || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
     }
-
     const PROTECTED_BRANCHES = ['master', 'main', 'develop', 'release'];
-
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const result = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
-
       if (!result.merged) {
         return {
-          content: [{
-            type: "text",
-            text: `❌ Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}`
-          }]
+          content: [{ type: "text", text: `❌ Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}` }]
         };
       }
-
-      // Local branch cleanup (best-effort)
       let branchCleanupMsg = '';
       if (result.headBranch && !PROTECTED_BRANCHES.includes(result.headBranch)) {
         try {
-          // Check if we're currently on the head branch
           const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: workspace_path, encoding: 'utf8' }).trim();
           if (currentBranch === result.headBranch) {
             const checkoutTarget = result.baseBranch || 'master';
@@ -950,26 +763,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           console.error(`[Branch Cleanup] Warning: ${cleanupErr.message}`);
         }
       }
-
       return {
-        content: [{
-          type: "text",
-          text: `✅ Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}.${branchCleanupMsg}`
-        }]
+        content: [{ type: "text", text: `✅ Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}.${branchCleanupMsg}` }]
       };
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
     }
   } else if (request.params.name === "vcs_add_comment") {
-    const { item_type, item_id, comment, workspace_path } = request.params.arguments as any;
+    const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments as any;
     if (!item_type || !item_id || !comment || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
     }
-
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.addComment(item_type, item_id, comment);
-
+      const finalComment = agent_role ? comment + agentSignature(agent_role) : comment;
+      const result = await vcsProvider.addComment(item_type, item_id, finalComment);
       return {
         content: [{
           type: "text",
@@ -984,19 +792,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!artifact_path || content === undefined || content === null || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
     }
-
-    // Resolve target path: workspace/.optimus/<artifact_path>
     const optimusRoot = path.resolve(workspace_path, '.optimus');
     const resolvedTarget = path.resolve(optimusRoot, artifact_path);
-
-    // SECURITY: Validate path is strictly within .optimus/ directory
-    // Must use trailing separator to prevent sibling directory bypass (.optimus-evil/)
     if (!resolvedTarget.startsWith(optimusRoot + path.sep) && resolvedTarget !== optimusRoot) {
         throw new McpError(ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
     }
-
-    // SECURITY: Resolve symlinks on the existing portion of the path
-    // path.resolve() is purely lexical and does NOT follow symlinks
     let existingPath = resolvedTarget;
     let suffix = '';
     while (!fs.existsSync(existingPath)) {
@@ -1009,11 +809,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!realTarget.startsWith(realOptimus + path.sep) && realTarget !== realOptimus) {
         throw new McpError(ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
     }
-
     try {
-        // Auto-create intermediate directories
         fs.mkdirSync(path.dirname(resolvedTarget), { recursive: true });
-        // Write content as UTF-8
         fs.writeFileSync(resolvedTarget, content, 'utf8');
         return { content: [{ type: "text", text: `Artifact written to: ${resolvedTarget}` }] };
     } catch (error: any) {
@@ -1044,13 +841,11 @@ if (process.argv.includes("--run-task")) {
     process.exit(1);
   });
 } else {
-  // Standard MCP stdio transport
   async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("Optimus Spartan Swarm MCP server running on stdio");
   }
-
   main().catch((error) => {
     console.error("Server error:", error);
     process.exit(1);
