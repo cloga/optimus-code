@@ -3678,6 +3678,18 @@ Memory appended to: ${memoryFile}`
     if (!resolvedTarget.startsWith(optimusRoot + import_path3.default.sep) && resolvedTarget !== optimusRoot) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
     }
+    let existingPath = resolvedTarget;
+    let suffix = "";
+    while (!import_fs3.default.existsSync(existingPath)) {
+      suffix = import_path3.default.join(import_path3.default.basename(existingPath), suffix);
+      existingPath = import_path3.default.dirname(existingPath);
+    }
+    const realExisting = import_fs3.default.realpathSync(existingPath);
+    const realTarget = import_path3.default.join(realExisting, suffix);
+    const realOptimus = import_fs3.default.existsSync(optimusRoot) ? import_fs3.default.realpathSync(optimusRoot) : optimusRoot;
+    if (!realTarget.startsWith(realOptimus + import_path3.default.sep) && realTarget !== realOptimus) {
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
+    }
     try {
       import_fs3.default.mkdirSync(import_path3.default.dirname(resolvedTarget), { recursive: true });
       import_fs3.default.writeFileSync(resolvedTarget, content, "utf8");

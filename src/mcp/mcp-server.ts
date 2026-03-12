@@ -889,6 +889,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new McpError(ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
     }
 
+    // SECURITY: Resolve symlinks on the existing portion of the path
+    // path.resolve() is purely lexical and does NOT follow symlinks
+    let existingPath = resolvedTarget;
+    let suffix = '';
+    while (!fs.existsSync(existingPath)) {
+        suffix = path.join(path.basename(existingPath), suffix);
+        existingPath = path.dirname(existingPath);
+    }
+    const realExisting = fs.realpathSync(existingPath);
+    const realTarget = path.join(realExisting, suffix);
+    const realOptimus = fs.existsSync(optimusRoot) ? fs.realpathSync(optimusRoot) : optimusRoot;
+    if (!realTarget.startsWith(realOptimus + path.sep) && realTarget !== realOptimus) {
+        throw new McpError(ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
+    }
+
     try {
         // Auto-create intermediate directories
         fs.mkdirSync(path.dirname(resolvedTarget), { recursive: true });
