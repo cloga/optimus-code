@@ -25,6 +25,13 @@ Every code change must be traceable via a branch and Pull Request. No direct com
   <rule>ALWAYS switch back to `master` after pushing a feature branch.</rule>
 </rules>
 
+<prohibited>
+  <rule>NEVER run `git push origin master` or `git push origin main` directly.</rule>
+  <rule>ALL code MUST enter master through `vcs_create_pr` + `vcs_merge_pr`.</rule>
+  <rule>Direct push to protected branches is a violation of Issue-First SDLC.</rule>
+  <rule>NEVER use `git merge <branch>` locally to merge into master and then push.</rule>
+</prohibited>
+
 <instructions>
 
 <step number="1" name="Identify or Create Tracking Issue">
