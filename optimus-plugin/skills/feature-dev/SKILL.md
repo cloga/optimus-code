@@ -68,6 +68,19 @@ How to implement this:
 This ensures agents accumulate project understanding across phases rather than
 starting fresh each time.
 
+### Issue Lineage Rule (MANDATORY)
+
+After you create your Epic's GitHub Issue (e.g., #N via `vcs_create_work_item`), ALL subsequent `delegate_task`, `delegate_task_async`, and `dispatch_council` calls in this workflow MUST include `parent_issue_number: N`. This creates a visible parent→child tree in GitHub so the user can trace the full delegation chain.
+
+Example:
+- PM creates Issue #150 for this feature
+- PM delegates to dev: `delegate_task({ ..., parent_issue_number: 150 })`
+- Dev's auto-created sub-issue will reference "Parent Epic: #150"
+- PM dispatches council: `dispatch_council({ ..., parent_issue_number: 150 })`
+- Each reviewer's auto-created sub-issue will also reference "#150"
+
+Failure to pass `parent_issue_number` breaks traceability and is considered a protocol violation.
+
 ```
 User ↔ Master Agent
            │
@@ -112,6 +125,7 @@ PM calls:
 dispatch_council(
   proposal_path: ".optimus/tasks/requirements_<feature>.md",
   roles: ["code-explorer", "code-explorer", "code-explorer"],
+  parent_issue_number: <issue_number>,
   workspace_path: "<project root>"
 )
 ```
@@ -135,6 +149,7 @@ PM calls:
 dispatch_council(
   proposal_path: ".optimus/tasks/requirements_<feature>.md",  // enriched with project context
   roles: ["code-architect", "code-architect", "code-architect"],
+  parent_issue_number: <issue_number>,
   workspace_path: "<project root>"
 )
 ```
@@ -159,6 +174,7 @@ delegate_task(
   role: "senior-full-stack-builder",
   task_description: "<chosen architecture + requirements + key files>",
   required_skills: ["git-workflow"],
+  parent_issue_number: <issue_number>,
   output_path: ".optimus/reports/implementation_<feature>.md",
   workspace_path: "<project root>",
   context_files: ["<requirements doc>", "<architecture review files>"]
@@ -179,6 +195,7 @@ PM calls:
 dispatch_council(
   proposal_path: ".optimus/reports/implementation_<feature>.md",
   roles: ["code-reviewer", "code-reviewer", "code-reviewer"],
+  parent_issue_number: <issue_number>,
   workspace_path: "<project root>"
 )
 ```
