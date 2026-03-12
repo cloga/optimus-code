@@ -24,6 +24,14 @@ export interface CommentResult {
     url: string;
 }
 
+export interface AdoWorkItemOptions {
+    iteration_path?: string;
+    area_path?: string;
+    assigned_to?: string;
+    parent_id?: number;
+    priority?: number;
+}
+
 /**
  * Unified VCS Provider Interface
  *
@@ -38,13 +46,15 @@ export interface IVcsProvider {
      * @param body - Work item description/body
      * @param labels - Labels/tags to apply
      * @param workItemType - ADO-specific work item type (Bug, User Story, Task). Ignored by GitHub.
+     * @param adoOptions - ADO-specific options (iteration, area, assigned_to, parent, priority). Ignored by GitHub.
      * @returns Promise with created work item details
      */
     createWorkItem(
         title: string,
         body: string,
         labels?: string[],
-        workItemType?: string
+        workItemType?: string,
+        adoOptions?: AdoWorkItemOptions
     ): Promise<WorkItemResult>;
 
     /**

@@ -6,12 +6,21 @@ import { execSync } from 'child_process';
 export interface VcsConfig {
     provider?: 'auto-detect' | 'github' | 'azure-devops';
     github?: {
+        auth?: string;
         owner: string;
         repo: string;
     };
     ado?: {
+        auth?: string;
         organization: string;
         project: string;
+        defaults?: {
+            work_item_type?: string;
+            area_path?: string;
+            iteration_path?: string;
+            assigned_to?: string;
+            auto_tags?: string[];
+        };
     };
 }
 
@@ -59,7 +68,8 @@ export class VcsProviderFactory {
         } else if (providerType === 'azure-devops') {
             const { organization, project } = this.getAdoInfo(config, resolvedWorkspacePath);
             const { AdoProvider } = await import('./AdoProvider');
-            provider = new AdoProvider(organization, project);
+            const adoDefaults = config.ado?.defaults;
+            provider = new AdoProvider(organization, project, adoDefaults);
         } else {
             throw new Error(`Unsupported or undetectable VCS provider: ${providerType}`);
         }

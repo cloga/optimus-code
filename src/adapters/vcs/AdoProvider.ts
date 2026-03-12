@@ -1,4 +1,5 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, AdoWorkItemOptions } from './IVcsProvider';
+import { marked } from 'marked';
 
 /**
  * Azure DevOps VCS Provider Implementation
@@ -9,17 +10,32 @@ import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult } from '
 export class AdoProvider implements IVcsProvider {
     private organization: string;
     private project: string;
+    private defaults?: {
+        work_item_type?: string;
+        area_path?: string;
+        iteration_path?: string;
+        assigned_to?: string;
+        auto_tags?: string[];
+    };
 
-    constructor(organization: string, project: string) {
+    constructor(organization: string, project: string, defaults?: {
+        work_item_type?: string;
+        area_path?: string;
+        iteration_path?: string;
+        assigned_to?: string;
+        auto_tags?: string[];
+    }) {
         this.organization = organization;
         this.project = project;
+        this.defaults = defaults;
     }
 
     async createWorkItem(
         title: string,
         body: string,
         labels?: string[],
-        workItemType: string = 'User Story'
+        workItemType?: string,
+        adoOptions?: AdoWorkItemOptions
     ): Promise<WorkItemResult> {
         const token = this.getToken();
         if (!token) {
@@ -27,31 +43,59 @@ export class AdoProvider implements IVcsProvider {
         }
 
         try {
-            // ADO Work Items API uses PATCH with JSON Patch format
-            const patchDocument = [
-                {
-                    op: 'add',
-                    path: '/fields/System.Title',
-                    value: title
-                },
-                {
-                    op: 'add',
-                    path: '/fields/System.Description',
-                    value: body
-                }
+            // Resolve values: call param > vcs.json default > fallback
+            const resolvedType = workItemType || this.defaults?.work_item_type || 'User Story';
+            const resolvedAreaPath = adoOptions?.area_path || this.defaults?.area_path;
+            const resolvedIterationPath = adoOptions?.iteration_path || this.defaults?.iteration_path;
+            const resolvedAssignedTo = adoOptions?.assigned_to || this.defaults?.assigned_to;
+            const resolvedPriority = adoOptions?.priority;
+            const resolvedParentId = adoOptions?.parent_id;
+
+            // Convert Markdown body to HTML for ADO rich-text rendering
+            const htmlBody = await marked.parse(body);
+
+            // Merge tags: user labels + auto_tags from config (deduplicated)
+            const autoTags = this.defaults?.auto_tags || [];
+            const userTags = labels || [];
+            const uniqueTags = [...new Set([...userTags, ...autoTags])];
+
+            // Build JSON Patch document
+            const patchDocument: Array<{op: string, path: string, value: any}> = [
+                { op: 'add', path: '/fields/System.Title', value: title },
+                { op: 'add', path: '/fields/System.Description', value: htmlBody }
             ];
 
-            // Add tags if provided (ADO uses semicolon-separated tags)
-            if (labels && labels.length > 0) {
+            if (resolvedAreaPath) {
+                patchDocument.push({ op: 'add', path: '/fields/System.AreaPath', value: resolvedAreaPath });
+            }
+            if (resolvedIterationPath) {
+                patchDocument.push({ op: 'add', path: '/fields/System.IterationPath', value: resolvedIterationPath });
+            }
+            if (resolvedAssignedTo) {
+                patchDocument.push({ op: 'add', path: '/fields/System.AssignedTo', value: resolvedAssignedTo });
+            }
+            if (resolvedPriority !== undefined) {
+                patchDocument.push({ op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: resolvedPriority });
+            }
+            if (uniqueTags.length > 0) {
+                patchDocument.push({ op: 'add', path: '/fields/System.Tags', value: uniqueTags.join('; ') });
+            }
+
+            // Parent hierarchy link
+            if (resolvedParentId) {
                 patchDocument.push({
                     op: 'add',
-                    path: '/fields/System.Tags',
-                    value: labels.join(';')
+                    path: '/relations/-',
+                    value: {
+                        rel: 'System.LinkTypes.Hierarchy-Reverse',
+                        url: `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${resolvedParentId}`,
+                        attributes: { comment: 'Auto-linked by Optimus Swarm' }
+                    }
                 });
             }
 
             const response = await fetch(
-                `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitems/$${workItemType}?api-version=7.0`,
+                `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitems/$${resolvedType}?api-version=7.0`,
                 {
                     method: 'POST',
                     headers: {
@@ -72,7 +116,7 @@ export class AdoProvider implements IVcsProvider {
 
             return {
                 id: data.id.toString(),
-                number: data.id, // ADO uses ID as the work item number
+                number: data.id,
                 url: data._links.html.href,
                 title: data.fields['System.Title']
             };
