@@ -20,6 +20,14 @@ ALL generated reports, tasks, and memory artifacts MUST be saved inside `.optimu
 5. **Test** — QA verifies, files bug issues for defects
 6. **Approve** — PM reviews PR and merges
 
+### Protected Branch Rule
+Direct `git push` to master/main is PROHIBITED. All changes must go through PR merge via `vcs_merge_pr`. This ensures:
+- GitHub `fixes #N` auto-close works (only triggered by PR merge)
+- Code review happens before merge
+- Issue-First SDLC traceability is maintained
+
+**Exception**: Release process (`git push origin master --tags`) is the only allowed direct push.
+
 ## Strict Delegation Protocol (Anti-Simulation)
 Roles are strictly bounded within the Spartan Swarm to prevent hallucinations:
 - **Orchestrator (Master)**: MUST physically invoke the `delegate_task` or `dispatch_council` MCP tool when delegating. **NEVER** simulate a worker's response in plain text, and **NEVER** write ad-hoc scripts to play the role of a subordinate.
