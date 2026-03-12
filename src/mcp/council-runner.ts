@@ -93,7 +93,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                     requiredSkills: task.required_skills
                 },
                 parentDepth,
-                parentIssueNumber
+                parentIssueNumber,
+                task.github_issue_number  // auto-created tracking issue
             );
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(

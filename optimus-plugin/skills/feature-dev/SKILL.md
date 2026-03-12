@@ -114,6 +114,15 @@ that's complete enough for all downstream work.
 
 After this phase, Master hands off to PM via `delegate_task_async` for Phase 2-6.
 
+### Pre-Existing Tracking Issue
+
+If your prompt header contains a "## Tracking Issue" section with an existing Issue number (e.g., #N), that Issue was auto-created by the system to track this task. In that case:
+- **DO NOT** create a new Issue via `vcs_create_work_item`
+- Use #N as your Epic Issue for all sub-delegations (`parent_issue_number: N`)
+- You can also check the `OPTIMUS_TRACKING_ISSUE` environment variable as a fallback
+
+This prevents duplicate Issues from being created for the same task.
+
 ---
 
 ## Phase 2: Codebase Exploration

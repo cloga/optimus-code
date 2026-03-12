@@ -28,7 +28,11 @@ Every code change must be traceable via a branch and Pull Request. No direct com
 <instructions>
 
 <step number="1" name="Identify or Create Tracking Issue">
-Ensure there is a corresponding VCS work item. If none exists, create one via `vcs_create_work_item`.
+First, check if a Tracking Issue already exists:
+- Look for a "## Tracking Issue" section in your prompt header — it contains the pre-created Issue number
+- Check the `OPTIMUS_TRACKING_ISSUE` environment variable
+If a Tracking Issue exists, use it. Do NOT create a duplicate.
+If none exists, create one via `vcs_create_work_item`.
 Capture the Issue ID (e.g., `#113`). Do not proceed without one.
 </step>
 
