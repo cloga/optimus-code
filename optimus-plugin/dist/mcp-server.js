@@ -2318,7 +2318,7 @@ ${outputBlock}
     const record = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record, result);
     const lines = this.countMeaningfulLines(content);
-    const path7 = this.getStructuredResultPath(record);
+    const path8 = this.getStructuredResultPath(record);
     const lineRange = this.getStructuredResultLineRange(record);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -2352,30 +2352,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path7, "matches=0"]);
+        return this.buildStructuredSummary([path8, "matches=0"]);
       }
-      return this.buildStructuredSummary([path7, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path7, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path8, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path7, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path7, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path8, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path7, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path7, "items=0"]);
+        return this.buildStructuredSummary([path8, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path7, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path8, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path7, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -2980,22 +2980,22 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   getSpawnCommand(mode) {
     const args = [];
     const cwd = PersistentAgentAdapter.getWorkspacePath();
-    const fs7 = require("fs");
-    const path7 = require("path");
+    const fs8 = require("fs");
+    const path8 = require("path");
     args.push("--add-dir", cwd);
-    const localMcpPath = path7.join(cwd, ".vscode", "mcp.json");
-    if (fs7.existsSync(localMcpPath)) {
+    const localMcpPath = path8.join(cwd, ".vscode", "mcp.json");
+    if (fs8.existsSync(localMcpPath)) {
       try {
-        let mcpContent = fs7.readFileSync(localMcpPath, "utf8");
+        let mcpContent = fs8.readFileSync(localMcpPath, "utf8");
         mcpContent = mcpContent.replace(/\$\{workspaceFolder\}/g, cwd.replace(/\\/g, "/"));
         mcpContent = mcpContent.replace(/\$\{env:(\w+)\}/g, (_2, varName) => {
           return (process.env[varName] || "").replace(/\\/g, "/");
         });
         const localMcp = JSON.parse(mcpContent);
         const claudeMcp = { mcpServers: localMcp.servers || localMcp.mcpServers || {} };
-        const proxyMcpPath = path7.join(cwd, ".optimus", ".claude-mcp.json");
-        fs7.mkdirSync(path7.dirname(proxyMcpPath), { recursive: true });
-        fs7.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
+        const proxyMcpPath = path8.join(cwd, ".optimus", ".claude-mcp.json");
+        fs8.mkdirSync(path8.dirname(proxyMcpPath), { recursive: true });
+        fs8.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
         args.push("--mcp-config", proxyMcpPath);
       } catch (e) {
       }
@@ -3147,11 +3147,19 @@ function trackT3Usage(workspacePath, role, success, engine, model) {
   t3LogMutex = t3LogMutex.then(() => {
     const log = loadT3UsageLog(workspacePath);
     if (!log[role]) {
-      log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: "", engine, model };
+      log[role] = { role, invocations: 0, successes: 0, failures: 0, consecutive_failures: 0, lastUsed: "", engine, model };
+    }
+    if (log[role].consecutive_failures === void 0) {
+      log[role].consecutive_failures = 0;
     }
     log[role].invocations++;
-    if (success) log[role].successes++;
-    else log[role].failures++;
+    if (success) {
+      log[role].successes++;
+      log[role].consecutive_failures = 0;
+    } else {
+      log[role].failures++;
+      log[role].consecutive_failures++;
+    }
     log[role].lastUsed = (/* @__PURE__ */ new Date()).toISOString();
     log[role].engine = engine;
     if (model) log[role].model = model;
@@ -3653,6 +3661,22 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     if (fm.frontmatter.model && !activeModel) activeModel = fm.frontmatter.model;
     if (fm.frontmatter.mode && !masterInfo?.mode) activeMode = fm.frontmatter.mode;
   }
+  if (t1Content) {
+    const qfm = parseFrontmatter(t1Content);
+    if (qfm.frontmatter.status === "quarantined") {
+      throw new Error(
+        `\u26A0\uFE0F **Role Quarantined**: Role '${role}' is quarantined due to repeated failures (quarantined at: ${qfm.frontmatter.quarantined_at || "unknown"}). Fix the role template at '.optimus/roles/${role}.md' or delete it to allow T3 re-creation.`
+      );
+    }
+  }
+  if (import_fs.default.existsSync(t2Path)) {
+    const t2Fm = parseFrontmatter(import_fs.default.readFileSync(t2Path, "utf8"));
+    if (t2Fm.frontmatter.status === "quarantined") {
+      throw new Error(
+        `\u26A0\uFE0F **Role Quarantined**: Role '${role}' is quarantined due to repeated failures (quarantined at: ${t2Fm.frontmatter.quarantined_at || "unknown"}). Fix the role template at '.optimus/roles/${role}.md' or delete it to allow T3 re-creation.`
+      );
+    }
+  }
   if (!activeEngine) {
     const configPath = import_path.default.join(workspacePath, ".optimus", "config", "available-agents.json");
     try {
@@ -3775,6 +3799,12 @@ ${systemInstructions.trim()}
       }
     }
   }
+  const trackingIssueHeader = autoIssueNumber ? `
+## Tracking Issue
+A GitHub Issue #${autoIssueNumber} has already been created to track this task.
+DO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.
+Pass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.
+` : "";
   const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
@@ -3785,7 +3815,7 @@ ${personaContext}
 
 Goal: Execute the following task.
 System Note: ${personaProof}
-
+${trackingIssueHeader}
 Task Description:
 ${taskText}${contextContent}${skillContent ? `
 
@@ -3800,9 +3830,6 @@ Please provide your complete execution result below.`;
   await lockManager.acquireLock(role);
   try {
     await ConcurrencyGovernor.acquire();
-    if (isT3) {
-      trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-    }
     await ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo, currentDepth);
     const agentsDir = import_path.default.join(workspacePath, ".optimus", "agents");
     if (!import_fs.default.existsSync(agentsDir)) import_fs.default.mkdirSync(agentsDir, { recursive: true });
@@ -3834,6 +3861,9 @@ role: ${role}
       extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
     } else {
       extraEnv.OPTIMUS_PARENT_ISSUE = "";
+    }
+    if (autoIssueNumber !== void 0) {
+      extraEnv.OPTIMUS_TRACKING_ISSUE = String(autoIssueNumber);
     }
     const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, void 0, extraEnv);
     const nonLogLines = response.split("\n").filter((l) => !l.startsWith("> [LOG]")).join("\n").trim();
@@ -3871,7 +3901,10 @@ ${firstLines.trim()}
     const currentT1 = import_fs.default.existsSync(t1TempPath) ? t1TempPath : t1Path;
     if (currentT1 && import_fs.default.existsSync(currentT1)) {
       const currentStr = import_fs.default.readFileSync(currentT1, "utf8");
-      const updates = { status: "idle" };
+      const updates = {
+        status: "idle",
+        last_invoked: (/* @__PURE__ */ new Date()).toISOString()
+      };
       const newSessionId = adapter.lastSessionId;
       if (newSessionId) {
         updates.session_id = newSessionId;
@@ -3892,6 +3925,9 @@ ${firstLines.trim()}
     if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });
     import_fs.default.writeFileSync(outputPath, response, "utf8");
     if (isT3) {
+      trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+    }
+    if (isT3) {
       try {
         enhanceT2RoleAsync(workspacePath, role, taskText, childDepth);
       } catch (enhanceError) {
@@ -3910,6 +3946,20 @@ Agent has finished execution. Check standard output at \`${outputPath}\`.`;
   } catch (e) {
     if (isT3) {
       trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
+    }
+    const log = loadT3UsageLog(workspacePath);
+    const entry = log[role];
+    if (entry && entry.consecutive_failures >= 3 && entry.successes === 0) {
+      const t2RolePath = import_path.default.join(workspacePath, ".optimus", "roles", `${sanitizeRoleName(role)}.md`);
+      if (import_fs.default.existsSync(t2RolePath)) {
+        const t2Content = import_fs.default.readFileSync(t2RolePath, "utf8");
+        const quarantined = updateFrontmatter(t2Content, {
+          status: "quarantined",
+          quarantined_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        import_fs.default.writeFileSync(t2RolePath, quarantined, "utf8");
+        console.error(`[Meta-Immune] Role '${role}' quarantined after ${entry.consecutive_failures} consecutive failures with 0 successes`);
+      }
     }
     throw new Error(`Worker execution failed: ${e.message}`);
   } finally {
@@ -3952,6 +4002,41 @@ ${failed.map((f) => `- ${f}`).join("\n")}
     import_fs.default.writeFileSync(import_path.default.join(reviewsPath, "FAILURES.md"), failSummary, "utf8");
   }
   return succeeded;
+}
+
+// ../src/mcp/agent-gc.ts
+var fs4 = __toESM(require("fs"));
+var path4 = __toESM(require("path"));
+function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
+  const agentsDir = path4.join(workspacePath, ".optimus", "agents");
+  if (!fs4.existsSync(agentsDir)) return;
+  const files = fs4.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+  const now = Date.now();
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1e3;
+  for (const file of files) {
+    if (file.endsWith(".lock")) continue;
+    const filePath = path4.join(agentsDir, file);
+    const content = fs4.readFileSync(filePath, "utf8");
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) continue;
+    const lines = fmMatch[1].split("\n");
+    const getValue = (key) => {
+      const line = lines.find((l) => l.startsWith(`${key}:`));
+      return line ? line.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, "") : void 0;
+    };
+    if (getValue("persistent") === "true") continue;
+    const lastInvoked = getValue("last_invoked") || getValue("created_at");
+    if (!lastInvoked) {
+      fs4.unlinkSync(filePath);
+      console.error(`[Agent GC] Removed stale T1 instance '${file}' (no timestamp found)`);
+      continue;
+    }
+    const age = now - new Date(lastInvoked).getTime();
+    if (age > maxAgeMs) {
+      fs4.unlinkSync(filePath);
+      console.error(`[Agent GC] Removed stale T1 instance '${file}' (last invoked: ${lastInvoked})`);
+    }
+  }
 }
 
 // ../src/mcp/mcp-server.ts
@@ -4099,9 +4184,7 @@ async function runAsyncWorker(taskId, workspacePath) {
           requiredSkills: task.required_skills
         },
         parentDepth,
-        parentIssueNumber,
-        task.github_issue_number
-        // auto-created tracking issue
+        parentIssueNumber
       );
     } else if (task.type === "dispatch_council") {
       await dispatchCouncilConcurrent(
@@ -4287,8 +4370,8 @@ var import_child_process3 = require("child_process");
 var import_dotenv = __toESM(require("dotenv"));
 
 // ../src/adapters/vcs/VcsProviderFactory.ts
-var path5 = __toESM(require("path"));
-var fs5 = __toESM(require("fs"));
+var path6 = __toESM(require("path"));
+var fs6 = __toESM(require("fs"));
 var import_child_process2 = require("child_process");
 var VcsProviderFactory = class {
   static cachedProvider = null;
@@ -4335,13 +4418,13 @@ var VcsProviderFactory = class {
     this.cachedConfigPath = null;
   }
   static getConfigPath(workspacePath) {
-    return path5.join(workspacePath, ".optimus", "config", "vcs.json");
+    return path6.join(workspacePath, ".optimus", "config", "vcs.json");
   }
   static loadConfig(workspacePath) {
     const configPath = this.getConfigPath(workspacePath);
-    if (fs5.existsSync(configPath)) {
+    if (fs6.existsSync(configPath)) {
       try {
-        const configContent = fs5.readFileSync(configPath, "utf8");
+        const configContent = fs6.readFileSync(configPath, "utf8");
         return JSON.parse(configContent);
       } catch (error) {
         console.error(`Warning: Failed to parse VCS config at ${configPath}:`, error);
@@ -4431,11 +4514,11 @@ var VcsProviderFactory = class {
    */
   static createConfig(workspacePath, config) {
     const configPath = this.getConfigPath(workspacePath);
-    const configDir = path5.dirname(configPath);
-    if (!fs5.existsSync(configDir)) {
-      fs5.mkdirSync(configDir, { recursive: true });
+    const configDir = path6.dirname(configPath);
+    if (!fs6.existsSync(configDir)) {
+      fs6.mkdirSync(configDir, { recursive: true });
     }
-    fs5.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+    fs6.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
   }
 };
 
@@ -4761,7 +4844,8 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             area_path: { type: "string", description: "ADO team/area path (e.g. 'Project\\Team\\Area'). Ignored for GitHub." },
             assigned_to: { type: "string", description: "ADO assigned user (email or alias). Ignored for GitHub." },
             parent_id: { type: "number", description: "ADO parent work item ID for hierarchy linking. Ignored for GitHub." },
-            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." }
+            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." },
+            agent_role: { type: "string", description: "The role of the agent creating this work item. Used for attribution signature." }
           },
           required: ["title", "body", "workspace_path"]
         }
@@ -4776,7 +4860,8 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             body: { type: "string", description: "PR description" },
             head: { type: "string", description: "Source branch" },
             base: { type: "string", description: "Target branch" },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent creating this PR. Used for attribution signature." }
           },
           required: ["title", "body", "head", "base", "workspace_path"]
         }
@@ -4804,7 +4889,8 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
             item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
             comment: { type: "string", description: "Comment text" },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent posting this comment. Used for attribution signature." }
           },
           required: ["item_type", "item_id", "comment", "workspace_path"]
         }
@@ -4818,6 +4904,19 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             name: { type: "string", description: "The name to greet" }
           },
           required: ["name"]
+        }
+      },
+      {
+        name: "quarantine_role",
+        description: "Manually quarantine or unquarantine a T2 role. Quarantined roles cannot be dispatched until unquarantined.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            role: { type: "string", description: "The role name to quarantine/unquarantine" },
+            action: { type: "string", enum: ["quarantine", "unquarantine"], description: "Whether to quarantine or unquarantine the role" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["role", "action", "workspace_path"]
         }
       }
     ]
@@ -4935,7 +5034,7 @@ Error: ${task.error_message}`;
 **Output Path:** \`${output_path}\`
 
 ### Task Description
-${truncDesc}`,
+${truncDesc}` + agentSignature(role, taskId),
         ["swarm-task", "optimus-bot"]
       );
       if (issue) {
@@ -4992,7 +5091,7 @@ Use check_task_status tool periodically with this task ID to check its completio
 **Council ID:** \`${taskId}\`
 **Roles:** ${roles.map((r) => `\`${r}\``).join(", ")}
 **Proposal:** \`${proposal_path}\`
-**Reviews Path:** \`${reviewsPath}\``,
+**Reviews Path:** \`${reviewsPath}\`` + agentSignature("council-orchestrator", taskId),
         ["swarm-council", "optimus-bot"]
       );
       if (issue) {
@@ -5145,17 +5244,22 @@ Memory appended to: ${memoryFile}`
             const content = import_fs3.default.readFileSync(import_path3.default.join(t2Dir, f), "utf8");
             const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
             let engineInfo = "";
+            let quarantineMarker = "";
             if (fmMatch) {
               const lines = fmMatch[1].split("\n");
               const engineLine = lines.find((l) => l.startsWith("engine:"));
               const modelLine = lines.find((l) => l.startsWith("model:"));
+              const statusLine = lines.find((l) => l.startsWith("status:"));
               if (engineLine || modelLine) {
                 const engine = engineLine ? engineLine.split(":")[1].trim() : "?";
                 const model = modelLine ? modelLine.split(":")[1].trim() : "?";
                 engineInfo = ` \u2192 \`${engine}\` / \`${model}\``;
               }
+              if (statusLine && statusLine.split(":")[1].trim() === "quarantined") {
+                quarantineMarker = " **[QUARANTINED]**";
+              }
             }
-            roster += `- ${roleName}${engineInfo}
+            roster += `- ${roleName}${engineInfo}${quarantineMarker}
 `;
           } catch {
             roster += `- ${roleName}
@@ -5279,14 +5383,16 @@ Memory appended to: ${memoryFile}`
       area_path,
       assigned_to,
       parent_id,
-      priority
+      priority,
+      agent_role
     } = request.params.arguments;
     if (!title || !body || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createWorkItem(title, body, labels, work_item_type, {
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createWorkItem(title, finalBody, labels, work_item_type, {
         iteration_path,
         area_path,
         assigned_to,
@@ -5308,13 +5414,14 @@ Memory appended to: ${memoryFile}`
       throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
     }
   } else if (request.params.name === "vcs_create_pr") {
-    const { title, body, head, base, workspace_path } = request.params.arguments;
+    const { title, body, head, base, workspace_path, agent_role } = request.params.arguments;
     if (!title || !body || !head || !base || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createPullRequest(title, body, head, base);
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createPullRequest(title, finalBody, head, base);
       return {
         content: [{
           type: "text",
@@ -5372,13 +5479,14 @@ Memory appended to: ${memoryFile}`
       throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
     }
   } else if (request.params.name === "vcs_add_comment") {
-    const { item_type, item_id, comment, workspace_path } = request.params.arguments;
+    const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments;
     if (!item_type || !item_id || !comment || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.addComment(item_type, item_id, comment);
+      const finalComment = agent_role ? comment + agentSignature(agent_role) : comment;
+      const result = await vcsProvider.addComment(item_type, item_id, finalComment);
       return {
         content: [{
           type: "text",
@@ -5426,6 +5534,44 @@ Memory appended to: ${memoryFile}`
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameter: name");
     }
     return { content: [{ type: "text", text: `Hello, ${name}! Optimus Swarm is running.` }] };
+  } else if (request.params.name === "quarantine_role") {
+    const { role, action, workspace_path } = request.params.arguments;
+    if (!role || !action || !workspace_path) {
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
+    }
+    const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
+    const rolePath = import_path3.default.join(t2Dir, `${role}.md`);
+    if (!import_fs3.default.existsSync(rolePath)) {
+      return { content: [{ type: "text", text: `Role '${role}' not found at ${rolePath}` }] };
+    }
+    const content = import_fs3.default.readFileSync(rolePath, "utf8");
+    if (action === "quarantine") {
+      const updated = updateFrontmatter(content, {
+        status: "quarantined",
+        quarantined_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      import_fs3.default.writeFileSync(rolePath, updated, "utf8");
+      const log = loadT3UsageLog(workspace_path);
+      if (log[role]) {
+        log[role].consecutive_failures = 0;
+        saveT3UsageLog(workspace_path, log);
+      }
+      return { content: [{ type: "text", text: `Role '${role}' has been quarantined. It will be blocked from dispatch until unquarantined.` }] };
+    } else if (action === "unquarantine") {
+      const updated = updateFrontmatter(content, {
+        status: "idle",
+        quarantined_at: ""
+      });
+      import_fs3.default.writeFileSync(rolePath, updated, "utf8");
+      const log = loadT3UsageLog(workspace_path);
+      if (log[role]) {
+        log[role].consecutive_failures = 0;
+        saveT3UsageLog(workspace_path, log);
+      }
+      return { content: [{ type: "text", text: `Role '${role}' has been unquarantined and is available for dispatch again.` }] };
+    } else {
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, `Invalid action '${action}'. Must be 'quarantine' or 'unquarantine'.`);
+    }
   }
   throw new import_types.McpError(import_types.ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
@@ -5446,6 +5592,12 @@ if (process.argv.includes("--run-task")) {
     const transport = new import_stdio.StdioServerTransport();
     await server.connect(transport);
     console.error("Optimus Spartan Swarm MCP server running on stdio");
+    const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    try {
+      cleanStaleAgents(workspaceRoot);
+    } catch (e) {
+      console.error(`[Agent GC] Warning: ${e.message}`);
+    }
   }
   main().catch((error) => {
     console.error("Server error:", error);

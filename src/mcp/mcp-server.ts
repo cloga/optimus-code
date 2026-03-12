@@ -20,6 +20,7 @@ import { runAsyncWorker } from "./council-runner";
 import { spawn, execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
+import { agentSignature } from "../utils/agentSignature";
 
 // Load environment variables: prefer DOTENV_PATH from mcp.json env mount, fallback to cwd
 function reloadEnv() {
@@ -356,7 +357,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             area_path: { type: "string", description: "ADO team/area path (e.g. 'Project\\Team\\Area'). Ignored for GitHub." },
             assigned_to: { type: "string", description: "ADO assigned user (email or alias). Ignored for GitHub." },
             parent_id: { type: "number", description: "ADO parent work item ID for hierarchy linking. Ignored for GitHub." },
-            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." }
+            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." },
+            agent_role: { type: "string", description: "The role of the agent creating this work item. Used for attribution signature." }
           },
           required: ["title", "body", "workspace_path"]
         }
@@ -371,7 +373,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             body: { type: "string", description: "PR description" },
             head: { type: "string", description: "Source branch" },
             base: { type: "string", description: "Target branch" },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent creating this PR. Used for attribution signature." }
           },
           required: ["title", "body", "head", "base", "workspace_path"]
         }
@@ -399,7 +402,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
             item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
             comment: { type: "string", description: "Comment text" },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent posting this comment. Used for attribution signature." }
           },
           required: ["item_type", "item_id", "comment", "workspace_path"]
         }
@@ -528,7 +532,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}\n\n` : '';
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Task] ${role}: ${shortTitle}...`,
-            `${parentRef}## Auto-generated Swarm Task Tracker\n\n**Task ID:** \`${taskId}\`\n**Role:** \`${role}\`\n**Output Path:** \`${output_path}\`\n\n### Task Description\n${truncDesc}`,
+            `${parentRef}## Auto-generated Swarm Task Tracker\n\n**Task ID:** \`${taskId}\`\n**Role:** \`${role}\`\n**Output Path:** \`${output_path}\`\n\n### Task Description\n${truncDesc}` + agentSignature(role, taskId),
             ['swarm-task', 'optimus-bot']
         );
         if (issue) {
@@ -573,7 +577,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}\n\n` : '';
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Council] ${proposalName} (Review)`,
-            `${parentRef}## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roles.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\``,
+            `${parentRef}## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roles.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\`` + agentSignature('council-orchestrator', taskId),
             ['swarm-council', 'optimus-bot']
         );
         if (issue) {
@@ -896,14 +900,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   } else if (request.params.name === "vcs_create_work_item") {
     const { title, body, labels, work_item_type, workspace_path,
-            iteration_path, area_path, assigned_to, parent_id, priority } = request.params.arguments as any;
+            iteration_path, area_path, assigned_to, parent_id, priority, agent_role } = request.params.arguments as any;
     if (!title || !body || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
     }
 
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createWorkItem(title, body, labels, work_item_type, {
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createWorkItem(title, finalBody, labels, work_item_type, {
         iteration_path,
         area_path,
         assigned_to,
@@ -921,14 +926,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
     }
   } else if (request.params.name === "vcs_create_pr") {
-    const { title, body, head, base, workspace_path } = request.params.arguments as any;
+    const { title, body, head, base, workspace_path, agent_role } = request.params.arguments as any;
     if (!title || !body || !head || !base || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
     }
 
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createPullRequest(title, body, head, base);
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createPullRequest(title, finalBody, head, base);
 
       return {
         content: [{
@@ -989,14 +995,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
     }
   } else if (request.params.name === "vcs_add_comment") {
-    const { item_type, item_id, comment, workspace_path } = request.params.arguments as any;
+    const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments as any;
     if (!item_type || !item_id || !comment || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
     }
 
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.addComment(item_type, item_id, comment);
+      const finalComment = agent_role ? comment + agentSignature(agent_role) : comment;
+      const result = await vcsProvider.addComment(item_type, item_id, finalComment);
 
       return {
         content: [{
