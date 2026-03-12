@@ -29,7 +29,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
     return { frontmatter, body };
 }
 
-function updateFrontmatter(content: string, updates: Record<string, string>): string {
+export function updateFrontmatter(content: string, updates: Record<string, string>): string {
     const parsed = parseFrontmatter(content);
     const newFm = { ...parsed.frontmatter, ...updates };
     
@@ -59,6 +59,7 @@ interface T3UsageEntry {
     invocations: number;
     successes: number;
     failures: number;
+    consecutive_failures: number;
     lastUsed: string;
     engine: string;
     model?: string;
@@ -68,7 +69,7 @@ function getT3UsageLogPath(workspacePath: string): string {
     return path.join(workspacePath, '.optimus', 'state', 't3-usage-log.json');
 }
 
-function loadT3UsageLog(workspacePath: string): Record<string, T3UsageEntry> {
+export function loadT3UsageLog(workspacePath: string): Record<string, T3UsageEntry> {
     const logPath = getT3UsageLogPath(workspacePath);
     try {
         if (fs.existsSync(logPath)) {
@@ -78,7 +79,7 @@ function loadT3UsageLog(workspacePath: string): Record<string, T3UsageEntry> {
     return {};
 }
 
-function saveT3UsageLog(workspacePath: string, log: Record<string, T3UsageEntry>): void {
+export function saveT3UsageLog(workspacePath: string, log: Record<string, T3UsageEntry>): void {
     const logPath = getT3UsageLogPath(workspacePath);
     const dir = path.dirname(logPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -90,11 +91,19 @@ function trackT3Usage(workspacePath: string, role: string, success: boolean, eng
     t3LogMutex = t3LogMutex.then(() => {
         const log = loadT3UsageLog(workspacePath);
         if (!log[role]) {
-            log[role] = { role, invocations: 0, successes: 0, failures: 0, lastUsed: '', engine, model };
+            log[role] = { role, invocations: 0, successes: 0, failures: 0, consecutive_failures: 0, lastUsed: '', engine, model };
+        }
+        if (log[role].consecutive_failures === undefined) {
+            log[role].consecutive_failures = 0;
         }
         log[role].invocations++;
-        if (success) log[role].successes++;
-        else log[role].failures++;
+        if (success) {
+            log[role].successes++;
+            log[role].consecutive_failures = 0;
+        } else {
+            log[role].failures++;
+            log[role].consecutive_failures++;
+        }
         log[role].lastUsed = new Date().toISOString();
         log[role].engine = engine;
         if (model) log[role].model = model;
@@ -729,6 +738,29 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         if (fm.frontmatter.mode && !masterInfo?.mode) activeMode = fm.frontmatter.mode as 'agent' | 'plan';
     }
 
+    // --- Pre-Flight: Quarantine check ---
+    if (t1Content) {
+        const qfm = parseFrontmatter(t1Content);
+        if (qfm.frontmatter.status === 'quarantined') {
+            throw new Error(
+                `⚠️ **Role Quarantined**: Role '${role}' is quarantined due to repeated failures ` +
+                `(quarantined at: ${qfm.frontmatter.quarantined_at || 'unknown'}). ` +
+                `Fix the role template at '.optimus/roles/${role}.md' or delete it to allow T3 re-creation.`
+            );
+        }
+    }
+    // Also check the T2 directly (T1 might have been created before quarantine)
+    if (fs.existsSync(t2Path)) {
+        const t2Fm = parseFrontmatter(fs.readFileSync(t2Path, 'utf8'));
+        if (t2Fm.frontmatter.status === 'quarantined') {
+            throw new Error(
+                `⚠️ **Role Quarantined**: Role '${role}' is quarantined due to repeated failures ` +
+                `(quarantined at: ${t2Fm.frontmatter.quarantined_at || 'unknown'}). ` +
+                `Fix the role template at '.optimus/roles/${role}.md' or delete it to allow T3 re-creation.`
+            );
+        }
+    }
+
     // Fallback: if engine/model still unset, try reading available-agents.json
     if (!activeEngine) {
         const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
@@ -865,7 +897,7 @@ ${personaContext ? `--- START PERSONA INSTRUCTIONS ---\n${personaContext}\n--- E
 
 Goal: Execute the following task.
 System Note: ${personaProof}
-
+${trackingIssueHeader}
 Task Description:
 ${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe following skills have been loaded for you to reference and follow:\n${skillContent}\n=== END SKILLS ===` : ''}
 
@@ -880,9 +912,6 @@ Please provide your complete execution result below.`;
 
         // --- Pre-Flight: Ensure T2 role template exists BEFORE creating T1 ---
         // Logical order: T2 (role definition) → T1 (instance). Never create T1 without T2.
-        if (isT3) {
-            trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-        }
         await ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo, currentDepth);
 
         // --- Pre-Flight: Create T1 instance placeholder from T2 template ---
@@ -919,6 +948,9 @@ Please provide your complete execution result below.`;
         } else {
             // Explicitly clear inherited env var to prevent stale grandparent references
             extraEnv.OPTIMUS_PARENT_ISSUE = '';
+        }
+        if (autoIssueNumber !== undefined) {
+            extraEnv.OPTIMUS_TRACKING_ISSUE = String(autoIssueNumber);
         }
         const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv);
 
@@ -958,7 +990,10 @@ Please provide your complete execution result below.`;
         const currentT1 = fs.existsSync(t1TempPath) ? t1TempPath : t1Path;
         if (currentT1 && fs.existsSync(currentT1)) {
             const currentStr = fs.readFileSync(currentT1, 'utf8');
-            const updates: Record<string, string> = { status: 'idle' };
+            const updates: Record<string, string> = {
+                status: 'idle',
+                last_invoked: new Date().toISOString()
+            };
             const newSessionId = adapter.lastSessionId;
             if (newSessionId) {
                 updates.session_id = newSessionId;
@@ -981,6 +1016,11 @@ Please provide your complete execution result below.`;
 
         fs.writeFileSync(outputPath, response, 'utf8');
 
+        // Track T3 success AFTER we know execution succeeded
+        if (isT3) {
+            trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+        }
+
         // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
         if (isT3) {
             try {
@@ -996,6 +1036,21 @@ Please provide your complete execution result below.`;
         // Track T3 failures too
         if (isT3) {
             trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
+        }
+        // Check quarantine threshold: 3+ consecutive failures with 0 successes
+        const log = loadT3UsageLog(workspacePath);
+        const entry = log[role];
+        if (entry && entry.consecutive_failures >= 3 && entry.successes === 0) {
+            const t2RolePath = path.join(workspacePath, '.optimus', 'roles', `${sanitizeRoleName(role)}.md`);
+            if (fs.existsSync(t2RolePath)) {
+                const t2Content = fs.readFileSync(t2RolePath, 'utf8');
+                const quarantined = updateFrontmatter(t2Content, {
+                    status: 'quarantined',
+                    quarantined_at: new Date().toISOString()
+                });
+                fs.writeFileSync(t2RolePath, quarantined, 'utf8');
+                console.error(`[Meta-Immune] Role '${role}' quarantined after ${entry.consecutive_failures} consecutive failures with 0 successes`);
+            }
         }
         throw new Error(`Worker execution failed: ${e.message}`);
     } finally {
