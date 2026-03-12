@@ -50,16 +50,36 @@ autonomously — exploring the codebase, designing architecture, delegating
 implementation, and reviewing quality. The user doesn't need to be involved after
 Phase 1.
 
+### Session Continuity Rule
+
+When the same role appears in multiple phases, **reuse the same agent instance**
+by passing its `session_id`. This preserves project context across phases:
+
+- Phase 1 returns a PM `session_id` → use it for Phase 2-6 handoff
+- If a `code-explorer` from Phase 2 is also useful in Phase 5 review, pass its `session_id`
+- Phase 4 dev's `session_id` should be reused if re-delegating for fixes after review
+
+How to implement this:
+1. After each `delegate_task` or `dispatch_council` completes, capture the `session_id` from the result
+2. Store it in the requirements doc or as a local variable
+3. Pass it via `session_id` parameter in subsequent `delegate_task` calls to the same role
+4. For `dispatch_council`, the system auto-manages sessions per role
+
+This ensures agents accumulate project understanding across phases rather than
+starting fresh each time.
+
 ```
 User ↔ Master Agent
            │
            ├─ Phase 1 (sync): Master ↔ product-manager — align on requirements
+           │   → capture PM session_id
            │
-           └─ Phase 2-6 (async): product-manager runs autonomously
+           └─ Phase 2-6 (async): product-manager runs autonomously (same session_id)
                 ├─ 2. Explore (council sync → code-explorer ×2-3)
                 ├─ 3. Design (council sync → code-architect ×2-3)
-                ├─ 4. Implement (delegate sync → senior-full-stack-builder)
+                ├─ 4. Implement (delegate sync → senior-full-stack-builder) → capture dev session_id
                 ├─ 5. Review + Merge (council sync → code-reviewer ×3)
+                │   → if fixes needed, reuse dev session_id from Phase 4
                 └─ 6. Summarize and close
 ```
 
