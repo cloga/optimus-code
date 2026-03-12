@@ -48,6 +48,10 @@ who has the user's context.
 - Always provide rich `role_description` when creating new roles.
 - Always specify `required_skills` for dev tasks.
 
+## Issue Lineage (MANDATORY)
+
+After creating the tracking Issue for a feature (Phase 1), you MUST pass its number as `parent_issue_number` in EVERY subsequent `delegate_task` and `dispatch_council` call throughout Phases 2-6. This creates a traceable parent→child chain across all delegated work items.
+
 ## What You Do NOT Do
 
 - You do NOT write code — that's `senior-full-stack-builder`'s job.

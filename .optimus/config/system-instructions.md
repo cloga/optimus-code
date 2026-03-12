@@ -101,12 +101,13 @@ Agent delegation is limited to a maximum of **3 nested layers** to prevent infin
 - At depth 3, MCP configuration is stripped from the child process, preventing further delegation.
 - `MAX_DELEGATION_DEPTH = 3` is defined in `src/constants.ts`.
 
-## Issue Lineage Tracking
+## Issue Lineage Protocol (MANDATORY)
 
-When delegating sub-tasks, the `OPTIMUS_PARENT_ISSUE` environment variable is automatically injected into child agent processes:
-- This allows child-created Issues to maintain a parent-child relationship with the original tracking Issue.
-- The `parent_issue_number` parameter in `delegate_task` / `delegate_task_async` sets the lineage root.
-- Enables traceability of complex multi-agent workflows back to a single originating Issue.
+When an agent creates a VCS Work Item (via `vcs_create_work_item`) and then delegates sub-tasks, it **MUST** pass its own Work Item number as `parent_issue_number` to ALL subsequent `delegate_task`, `delegate_task_async`, and `dispatch_council` calls. This ensures hierarchical traceability across multi-layer delegation.
+
+The system automatically injects `OPTIMUS_PARENT_ISSUE` into child agent processes, allowing child-created Work Items to display their parent relationship. But this only works if the orchestrating agent passes `parent_issue_number` in every delegation call.
+
+**Rule**: No `delegate_task` or `dispatch_council` call should omit `parent_issue_number` when a tracking Work Item exists for the current workflow.
 
 ## VCS Auto-Tagging
 All Work Items and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability across both GitHub and Azure DevOps platforms.
