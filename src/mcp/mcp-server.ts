@@ -312,6 +312,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "write_blackboard_artifact",
+        description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this to create proposals, requirements docs, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            artifact_path: { type: "string", description: "Relative path within .optimus/ directory (e.g. 'proposals/PROPOSAL_xxx.md', 'tasks/requirements_xxx.md'). Do NOT include the '.optimus/' prefix." },
+            content: { type: "string", description: "The content to write to the file.", maxLength: 1048576 },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["artifact_path", "content", "workspace_path"]
+        }
+      },
+      {
         name: "vcs_create_work_item",
         description: "Create a work item (GitHub Issue or ADO Work Item) using the unified VCS provider.",
         inputSchema: {
@@ -367,6 +380,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
           },
           required: ["item_type", "item_id", "comment", "workspace_path"]
+        }
+      },
+      {
+        name: "hello",
+        description: "A simple greeting tool to verify the MCP server is running.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "The name to greet" }
+          },
+          required: ["name"]
         }
       }
     ],
@@ -849,6 +873,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
     }
+  } else if (request.params.name === "write_blackboard_artifact") {
+    const { artifact_path, content, workspace_path } = request.params.arguments as any;
+    if (!artifact_path || content === undefined || content === null || !workspace_path) {
+        throw new McpError(ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
+    }
+
+    // Resolve target path: workspace/.optimus/<artifact_path>
+    const optimusRoot = path.resolve(workspace_path, '.optimus');
+    const resolvedTarget = path.resolve(optimusRoot, artifact_path);
+
+    // SECURITY: Validate path is strictly within .optimus/ directory
+    // Must use trailing separator to prevent sibling directory bypass (.optimus-evil/)
+    if (!resolvedTarget.startsWith(optimusRoot + path.sep) && resolvedTarget !== optimusRoot) {
+        throw new McpError(ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
+    }
+
+    try {
+        // Auto-create intermediate directories
+        fs.mkdirSync(path.dirname(resolvedTarget), { recursive: true });
+        // Write content as UTF-8
+        fs.writeFileSync(resolvedTarget, content, 'utf8');
+        return { content: [{ type: "text", text: `Artifact written to: ${resolvedTarget}` }] };
+    } catch (error: any) {
+        throw new McpError(ErrorCode.InternalError, `Failed to write artifact: ${error.message}`);
+    }
+  } else if (request.params.name === "hello") {
+    const { name } = request.params.arguments as any;
+    if (!name) {
+      throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: name");
+    }
+    return { content: [{ type: "text", text: `Hello, ${name}! Optimus Swarm is running.` }] };
   }
 
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
