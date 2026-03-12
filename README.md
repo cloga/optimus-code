@@ -83,6 +83,16 @@ Use these values in your client's MCP server configuration:
 | **args** | `["-y", "github:cloga/optimus-code", "serve"]` |
 | **transport** | `stdio` |
 
+### Upgrading an existing workspace
+
+If you've previously initialized and want to update to the latest skills, roles, and config:
+
+```bash
+npx -y github:cloga/optimus-code upgrade
+```
+
+This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory.
+
 ### Step 3: (Optional) Enable GitHub integration
 
 Create a `.env` file in your project root:
@@ -92,6 +102,30 @@ GITHUB_TOKEN=ghp_your_token_here
 ```
 
 This enables automated Issue tracking and PR creation via the built-in PM agent.
+
+### Step 3b: (Optional) Enable Azure DevOps integration
+
+Create `.optimus/config/vcs.json`:
+
+```json
+{
+  "provider": "azure-devops",
+  "ado": {
+    "organization": "your-org",
+    "project": "your-project",
+    "auth": "env:ADO_PAT",
+    "defaults": {
+      "work_item_type": "User Story",
+      "area_path": "Project\\Team\\Area",
+      "iteration_path": "Project\\Sprint 1",
+      "assigned_to": "user@example.com",
+      "auto_tags": ["created-by:optimus-code"]
+    }
+  }
+}
+```
+
+The `defaults` section is optional. Any field not provided will use ADO project defaults. All defaults can be overridden per-call via MCP tool parameters.
 
 ---
 
@@ -130,6 +164,20 @@ Once the server is running, your AI assistant gains these tools:
 | `required_skills` | | Skills the agent needs (pre-flight checked) |
 
 ---
+
+## Features
+
+### v0.3.0 Highlights
+
+- **Plan Mode** — Orchestrator roles (PM, Architect) run with `mode: plan`, cannot write source code, and must delegate implementation to dev roles.
+- **Delegation Depth Control** — Maximum 3 layers of nested agent delegation, tracked via `OPTIMUS_DELEGATION_DEPTH` to prevent infinite recursion.
+- **Issue Lineage Tracking** — `OPTIMUS_PARENT_ISSUE` is automatically injected into child agent processes, maintaining parent-child relationships across GitHub Issues.
+- **`write_blackboard_artifact` Tool** — Allows plan-mode agents to write proposals, requirements, and reports to `.optimus/` without source code write access.
+- **`optimus upgrade` Command** — Safe incremental upgrade that refreshes skills, roles, and config while preserving user agents and runtime data.
+- **Enhanced ADO Work Items** — `vcs_create_work_item` supports `area_path`, `iteration_path`, `assigned_to`, `parent_id`, `priority` with `vcs.json` defaults, Markdown→HTML conversion, and auto-tagging.
+- **Engine/Model Validation** — Engine and model names are validated against `available-agents.json` before being persisted to role templates.
+- **Auto-Skill Genesis** — Skills are auto-generated after successful T3 role execution.
+- **Rich T3→T2 Precipitation** — New roles get professional-grade role definitions via `agent-creator` instead of thin fallback templates.
 
 ## How It Works
 
@@ -206,6 +254,7 @@ optimus serve
 ```
 optimus init        Bootstrap .optimus/ workspace in current directory
 optimus serve       Start MCP server (stdio transport)
+optimus upgrade     Update skills, roles, and config to latest version (preserves agents and runtime data)
 optimus version     Print version
 optimus help        Show help
 ```

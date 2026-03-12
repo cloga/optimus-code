@@ -87,6 +87,27 @@ When delegating, engine and model are resolved in priority order:
 3. `available-agents.json` (first non-demo engine + first model)
 4. Hardcoded fallback: `claude-code`
 
+## Plan Mode
+
+Orchestrator roles (e.g., product-manager, chief-architect) run with `mode: plan`. In plan mode:
+- The agent **cannot** write to source code files — only to `.optimus/` artifacts via `write_blackboard_artifact`.
+- The agent **must** delegate implementation work to dev roles (e.g., `senior-full-stack-builder`).
+- This enforces separation of concerns: orchestrators plan, developers code.
+
+## Delegation Depth Control
+
+Agent delegation is limited to a maximum of **3 nested layers** to prevent infinite recursion:
+- Tracked via `OPTIMUS_DELEGATION_DEPTH` environment variable, automatically injected and incremented.
+- At depth 3, MCP configuration is stripped from the child process, preventing further delegation.
+- `MAX_DELEGATION_DEPTH = 3` is defined in `src/constants.ts`.
+
+## Issue Lineage Tracking
+
+When delegating sub-tasks, the `OPTIMUS_PARENT_ISSUE` environment variable is automatically injected into child agent processes:
+- This allows child-created Issues to maintain a parent-child relationship with the original tracking Issue.
+- The `parent_issue_number` parameter in `delegate_task` / `delegate_task_async` sets the lineage root.
+- Enables traceability of complex multi-agent workflows back to a single originating Issue.
+
 ## GitHub Auto-Tagging
 All Issues and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability.
 
