@@ -28,124 +28,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// ../src/managers/TaskManifestManager.ts
-var TaskManifestManager_exports = {};
-__export(TaskManifestManager_exports, {
-  TaskManifestManager: () => TaskManifestManager
-});
-function withManifestLock(fn) {
-  let release;
-  const next = new Promise((resolve) => {
-    release = resolve;
-  });
-  const prev = manifestMutex;
-  manifestMutex = next;
-  return prev.then(() => {
-    try {
-      const result = fn();
-      return result;
-    } finally {
-      release();
-    }
-  });
-}
-var fs2, path2, manifestMutex, TaskManifestManager;
-var init_TaskManifestManager = __esm({
-  "../src/managers/TaskManifestManager.ts"() {
-    "use strict";
-    fs2 = __toESM(require("fs"));
-    path2 = __toESM(require("path"));
-    manifestMutex = Promise.resolve();
-    TaskManifestManager = class {
-      static getManifestPath(workspacePath) {
-        return path2.join(workspacePath, ".optimus", "state", "task-manifest.json");
-      }
-      static loadManifest(workspacePath) {
-        const manifestPath = this.getManifestPath(workspacePath);
-        if (!fs2.existsSync(manifestPath)) {
-          return {};
-        }
-        try {
-          return JSON.parse(fs2.readFileSync(manifestPath, "utf8"));
-        } catch {
-          return {};
-        }
-      }
-      static saveManifest(workspacePath, manifest) {
-        const manifestPath = this.getManifestPath(workspacePath);
-        const tempPath = `${manifestPath}.tmp`;
-        const dir = path2.dirname(manifestPath);
-        if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
-        fs2.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
-        fs2.renameSync(tempPath, manifestPath);
-      }
-      static createTask(workspacePath, record) {
-        const fullRecord = {
-          ...record,
-          status: "pending",
-          startTime: Date.now(),
-          heartbeatTime: Date.now()
-        };
-        withManifestLock(() => {
-          const manifest = this.loadManifest(workspacePath);
-          manifest[record.taskId] = fullRecord;
-          this.saveManifest(workspacePath, manifest);
-        });
-        return fullRecord;
-      }
-      static updateTask(workspacePath, taskId, updates) {
-        withManifestLock(() => {
-          const manifest = this.loadManifest(workspacePath);
-          if (manifest[taskId]) {
-            manifest[taskId] = { ...manifest[taskId], ...updates };
-            this.saveManifest(workspacePath, manifest);
-          }
-        });
-      }
-      static heartbeat(workspacePath, taskId) {
-        withManifestLock(() => {
-          const manifest = this.loadManifest(workspacePath);
-          if (manifest[taskId]) {
-            manifest[taskId].heartbeatTime = Date.now();
-            this.saveManifest(workspacePath, manifest);
-          }
-        });
-      }
-      static reapStaleTasks(workspacePath) {
-        withManifestLock(() => {
-          const manifest = this.loadManifest(workspacePath);
-          const now = Date.now();
-          const TIMEOUT_MS = 1e3 * 60 * 3;
-          let changed = false;
-          for (const taskId in manifest) {
-            const task = manifest[taskId];
-            if (task.status === "running") {
-              if (now - task.heartbeatTime > TIMEOUT_MS) {
-                task.status = "failed";
-                task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
-                changed = true;
-                try {
-                  if (task.output_path) {
-                    const dir = path2.dirname(task.output_path);
-                    if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
-                    fs2.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
-                  }
-                } catch (e) {
-                }
-              }
-            }
-          }
-          if (changed) {
-            this.saveManifest(workspacePath, manifest);
-          }
-        });
-      }
-    };
-  }
-});
 
 // ../src/adapters/vcs/GitHubProvider.ts
 var GitHubProvider_exports = {};
@@ -3275,32 +3157,39 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
   const eng = masterInfo?.engine || engine;
   const mod = masterInfo?.model || model || "";
   if (import_fs.default.existsSync(t2Path)) {
-    if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
-      const existing = import_fs.default.readFileSync(t2Path, "utf8");
-      const updates = {};
-      if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
-      const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
-      if (masterInfo.engine) {
-        if (isValidEngine(masterInfo.engine, validEngines)) {
-          updates.engine = masterInfo.engine;
-        } else {
-          console.error(`[T2 Guard] Rejected invalid engine '${masterInfo.engine}' for role '${safeRole}'. Valid: ${validEngines.join(", ")}`);
+    const existing = import_fs.default.readFileSync(t2Path, "utf8");
+    const existingFm = parseFrontmatter(existing);
+    const contentLines = existingFm.body.split("\n").filter((l) => l.trim().length > 0);
+    const isThin = contentLines.length < 25 && existingFm.frontmatter.source !== "plugin";
+    if (isThin) {
+      console.error(`[Precipitation] Thin T2 template detected for '${safeRole}' (${contentLines.length} lines). Attempting regeneration...`);
+    } else {
+      if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
+        const updates = {};
+        if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
+        const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
+        if (masterInfo.engine) {
+          if (isValidEngine(masterInfo.engine, validEngines)) {
+            updates.engine = masterInfo.engine;
+          } else {
+            console.error(`[T2 Guard] Rejected invalid engine '${masterInfo.engine}' for role '${safeRole}'. Valid: ${validEngines.join(", ")}`);
+          }
         }
-      }
-      if (masterInfo.model) {
-        const resolvedEng = updates.engine || parseFrontmatter(existing).frontmatter.engine || engine;
-        if (isValidModel(masterInfo.model, resolvedEng, validModels)) {
-          updates.model = masterInfo.model;
-        } else {
-          console.error(`[T2 Guard] Rejected invalid model '${masterInfo.model}' for engine '${resolvedEng}' on role '${safeRole}'. Valid: ${(validModels[resolvedEng] || []).join(", ")}`);
+        if (masterInfo.model) {
+          const resolvedEng = updates.engine || existingFm.frontmatter.engine || engine;
+          if (isValidModel(masterInfo.model, resolvedEng, validModels)) {
+            updates.model = masterInfo.model;
+          } else {
+            console.error(`[T2 Guard] Rejected invalid model '${masterInfo.model}' for engine '${resolvedEng}' on role '${safeRole}'. Valid: ${(validModels[resolvedEng] || []).join(", ")}`);
+          }
         }
+        updates.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+        const updated = updateFrontmatter(existing, updates);
+        import_fs.default.writeFileSync(t2Path, updated, "utf8");
+        console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
       }
-      updates.updated_at = (/* @__PURE__ */ new Date()).toISOString();
-      const updated = updateFrontmatter(existing, updates);
-      import_fs.default.writeFileSync(t2Path, updated, "utf8");
-      console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
+      return null;
     }
-    return null;
   }
   const pluginRolePaths = [
     import_path.default.join(__dirname, "..", "..", "roles", `${safeRole}.md`),
@@ -3369,6 +3258,7 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
     const template = `---
 role: ${safeRole}
 tier: T2
+thin: true
 description: "${desc.substring(0, 200).replace(/"/g, "'")}"
 engine: ${validatedEng}
 model: ${validatedMod}
@@ -3388,98 +3278,9 @@ ${desc}
     console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via agent-creator) at ${t2Path}`);
     return t2Path;
   } catch (err) {
-    console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Falling back to thin template.`);
-    const template = `---
-role: ${safeRole}
-tier: T2
-description: "${desc.substring(0, 200).replace(/"/g, "'")}"
-engine: ${validatedEng}
-model: ${validatedMod}
-precipitated: ${(/* @__PURE__ */ new Date()).toISOString()}
----
-
-# ${formattedRole}
-
-${desc}
-`;
-    import_fs.default.writeFileSync(t2Path, template, "utf8");
-    return t2Path;
+    console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
+    return null;
   }
-}
-function enhanceT2RoleAsync(workspacePath, role, taskDescription, childDepth) {
-  const META_ROLE_EXCLUSIONS = ["agent-creator", "skill-creator"];
-  const safeRole = sanitizeRoleName(role);
-  if (META_ROLE_EXCLUSIONS.includes(safeRole)) {
-    console.error(`[T2 Enhancement] Skipping meta-role '${safeRole}' (excluded)`);
-    return;
-  }
-  if (childDepth >= MAX_DELEGATION_DEPTH - 1) {
-    console.error(`[T2 Enhancement] Skipping \u2014 delegation depth ${childDepth} too deep (max ${MAX_DELEGATION_DEPTH})`);
-    return;
-  }
-  const t2Path = import_path.default.join(workspacePath, ".optimus", "roles", `${safeRole}.md`);
-  if (!import_fs.default.existsSync(t2Path)) {
-    console.error(`[T2 Enhancement] Skipping \u2014 no T2 file at ${t2Path}`);
-    return;
-  }
-  const t2Content = import_fs.default.readFileSync(t2Path, "utf8");
-  if (t2Content.includes("enhanced: true")) {
-    console.error(`[T2 Enhancement] Skipping '${safeRole}' \u2014 already enhanced`);
-    return;
-  }
-  console.error(`[T2 Enhancement] Queuing async enhancement for '${safeRole}'`);
-  const { TaskManifestManager: TaskManifestManager2 } = (init_TaskManifestManager(), __toCommonJS(TaskManifestManager_exports));
-  const taskId = `enhance_${safeRole}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  TaskManifestManager2.createTask(workspacePath, {
-    taskId,
-    type: "delegate_task",
-    role: "agent-creator",
-    task_description: `Enhance the thin T2 role template for '${safeRole}' at .optimus/roles/${safeRole}.md.
-
-Current template is auto-precipitated from T3 execution and only contains a basic description. Your job:
-
-1. Read the existing T2 file at .optimus/roles/${safeRole}.md
-2. Read the agent-creator skill at .optimus/skills/agent-creator/SKILL.md for the template structure
-3. Rewrite the role file to be a professional-grade role definition with:
-   - Clear behavioral instructions (what the role does, how it thinks)
-   - Tool usage patterns (which MCP tools it typically uses)
-   - Workflow steps (numbered phases or procedures)
-   - Constraints and prohibitions (what it must NOT do)
-   - Output format expectations
-4. Preserve the existing frontmatter fields (role, tier, engine, model, precipitated)
-5. ADD these frontmatter fields:
-   - enhanced: true
-   - auto_enhanced: true
-   - enhanced_at: <current ISO timestamp>
-6. Keep the role name and description consistent with the original
-
-The original task this role was used for: "${taskDescription.substring(0, 500).replace(/"/g, "'")}"
-
-IMPORTANT: Write the enhanced role file directly to .optimus/roles/${safeRole}.md (overwrite the thin template).
-Do NOT create a new file \u2014 update the existing one in place.`,
-    output_path: `.optimus/reports/t2_enhancement_${safeRole}.md`,
-    workspacePath,
-    role_description: "Expert in designing AI agent role definitions with behavioral specificity, tool patterns, and workflow structure",
-    required_skills: ["agent-creator"],
-    delegation_depth: childDepth + 1
-  });
-  const { spawn: spawnProcess } = require("child_process");
-  const child = spawnProcess(process.execPath, [
-    __filename,
-    "--run-task",
-    taskId,
-    workspacePath
-  ], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    env: {
-      ...process.env,
-      OPTIMUS_DELEGATION_DEPTH: String(childDepth + 1)
-    }
-  });
-  child.unref();
-  console.error(`[T2 Enhancement] Spawned background enhancement for '${safeRole}' (taskId: ${taskId})`);
 }
 async function generateRichT2Role(workspacePath, role, engine, model, description, t2Path, delegationDepth) {
   const safeRole = sanitizeRoleName(role);
@@ -4026,13 +3827,6 @@ ${firstLines.trim()}
     if (isT3) {
       trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
     }
-    if (isT3) {
-      try {
-        enhanceT2RoleAsync(workspacePath, role, taskText, childDepth);
-      } catch (enhanceError) {
-        console.error(`[T2 Enhancement] Warning: failed to queue enhancement for '${role}': ${enhanceError.message}`);
-      }
-    }
     return `\u2705 **Task Delegation Successful**
 
 **Agent Identity Resolved**: ${resolvedTier}
@@ -4104,18 +3898,18 @@ ${failed.map((f) => `- ${f}`).join("\n")}
 }
 
 // ../src/mcp/agent-gc.ts
-var fs4 = __toESM(require("fs"));
-var path4 = __toESM(require("path"));
+var fs3 = __toESM(require("fs"));
+var path3 = __toESM(require("path"));
 function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
-  const agentsDir = path4.join(workspacePath, ".optimus", "agents");
-  if (!fs4.existsSync(agentsDir)) return;
-  const files = fs4.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+  const agentsDir = path3.join(workspacePath, ".optimus", "agents");
+  if (!fs3.existsSync(agentsDir)) return;
+  const files = fs3.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
   const now = Date.now();
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1e3;
   for (const file of files) {
     if (file.endsWith(".lock")) continue;
-    const filePath = path4.join(agentsDir, file);
-    const content = fs4.readFileSync(filePath, "utf8");
+    const filePath = path3.join(agentsDir, file);
+    const content = fs3.readFileSync(filePath, "utf8");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) continue;
     const lines = fmMatch[1].split("\n");
@@ -4126,20 +3920,124 @@ function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
     if (getValue("persistent") === "true") continue;
     const lastInvoked = getValue("last_invoked") || getValue("created_at");
     if (!lastInvoked) {
-      fs4.unlinkSync(filePath);
+      fs3.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file}' (no timestamp found)`);
       continue;
     }
     const age = now - new Date(lastInvoked).getTime();
     if (age > maxAgeMs) {
-      fs4.unlinkSync(filePath);
+      fs3.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file}' (last invoked: ${lastInvoked})`);
     }
   }
 }
 
-// ../src/mcp/mcp-server.ts
-init_TaskManifestManager();
+// ../src/managers/TaskManifestManager.ts
+var fs4 = __toESM(require("fs"));
+var path4 = __toESM(require("path"));
+var manifestMutex = Promise.resolve();
+function withManifestLock(fn) {
+  let release;
+  const next = new Promise((resolve) => {
+    release = resolve;
+  });
+  const prev = manifestMutex;
+  manifestMutex = next;
+  return prev.then(() => {
+    try {
+      const result = fn();
+      return result;
+    } finally {
+      release();
+    }
+  });
+}
+var TaskManifestManager = class {
+  static getManifestPath(workspacePath) {
+    return path4.join(workspacePath, ".optimus", "state", "task-manifest.json");
+  }
+  static loadManifest(workspacePath) {
+    const manifestPath = this.getManifestPath(workspacePath);
+    if (!fs4.existsSync(manifestPath)) {
+      return {};
+    }
+    try {
+      return JSON.parse(fs4.readFileSync(manifestPath, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+  static saveManifest(workspacePath, manifest) {
+    const manifestPath = this.getManifestPath(workspacePath);
+    const tempPath = `${manifestPath}.tmp`;
+    const dir = path4.dirname(manifestPath);
+    if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
+    fs4.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
+    fs4.renameSync(tempPath, manifestPath);
+  }
+  static createTask(workspacePath, record) {
+    const fullRecord = {
+      ...record,
+      status: "pending",
+      startTime: Date.now(),
+      heartbeatTime: Date.now()
+    };
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      manifest[record.taskId] = fullRecord;
+      this.saveManifest(workspacePath, manifest);
+    });
+    return fullRecord;
+  }
+  static updateTask(workspacePath, taskId, updates) {
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      if (manifest[taskId]) {
+        manifest[taskId] = { ...manifest[taskId], ...updates };
+        this.saveManifest(workspacePath, manifest);
+      }
+    });
+  }
+  static heartbeat(workspacePath, taskId) {
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      if (manifest[taskId]) {
+        manifest[taskId].heartbeatTime = Date.now();
+        this.saveManifest(workspacePath, manifest);
+      }
+    });
+  }
+  static reapStaleTasks(workspacePath) {
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      const now = Date.now();
+      const TIMEOUT_MS = 1e3 * 60 * 3;
+      let changed = false;
+      for (const taskId in manifest) {
+        const task = manifest[taskId];
+        if (task.status === "running") {
+          if (now - task.heartbeatTime > TIMEOUT_MS) {
+            task.status = "failed";
+            task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
+            changed = true;
+            try {
+              if (task.output_path) {
+                const dir = path4.dirname(task.output_path);
+                if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
+                fs4.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
+`, "utf8");
+              }
+            } catch (e) {
+            }
+          }
+        }
+      }
+      if (changed) {
+        this.saveManifest(workspacePath, manifest);
+      }
+    });
+  }
+};
 
 // ../src/utils/githubApi.ts
 var import_child_process = require("child_process");
@@ -4202,7 +4100,6 @@ async function commentOnGitHubIssue(owner, repo, issueNumber, body) {
 // ../src/mcp/council-runner.ts
 var import_fs2 = __toESM(require("fs"));
 var import_path2 = __toESM(require("path"));
-init_TaskManifestManager();
 
 // ../src/utils/agentSignature.ts
 function agentSignature(role, taskId) {
@@ -5722,6 +5619,24 @@ if (process.argv.includes("--run-task")) {
       cleanStaleAgents(workspaceRoot);
     } catch (e) {
       console.error(`[Agent GC] Warning: ${e.message}`);
+    }
+    try {
+      const rolesDir = import_path3.default.join(workspaceRoot, ".optimus", "roles");
+      if (import_fs3.default.existsSync(rolesDir)) {
+        const roleFiles = import_fs3.default.readdirSync(rolesDir).filter((f) => f.endsWith(".md"));
+        for (const file of roleFiles) {
+          const filePath = import_path3.default.join(rolesDir, file);
+          const content = import_fs3.default.readFileSync(filePath, "utf8");
+          const bodyMatch = content.replace(/\r\n/g, "\n").match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+          const body = bodyMatch ? bodyMatch[1] : content;
+          const contentLineCount = body.split("\n").filter((l) => l.trim().length > 0).length;
+          if (contentLineCount < 25) {
+            console.error(`[Warning] Thin T2 template: ${file} (${contentLineCount} lines). Will regenerate on next use.`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[Thin Scanner] Warning: ${e.message}`);
     }
   }
   main().catch((error) => {

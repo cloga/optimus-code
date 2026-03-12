@@ -1153,6 +1153,27 @@ if (process.argv.includes("--run-task")) {
     } catch (e: any) {
       console.error(`[Agent GC] Warning: ${e.message}`);
     }
+
+    // Thin T2 template scanner: warn about templates that will be regenerated
+    try {
+      const rolesDir = path.join(workspaceRoot, '.optimus', 'roles');
+      if (fs.existsSync(rolesDir)) {
+        const roleFiles = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md'));
+        for (const file of roleFiles) {
+          const filePath = path.join(rolesDir, file);
+          const content = fs.readFileSync(filePath, 'utf8');
+          // Strip YAML frontmatter to count body lines only
+          const bodyMatch = content.replace(/\r\n/g, '\n').match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+          const body = bodyMatch ? bodyMatch[1] : content;
+          const contentLineCount = body.split('\n').filter((l: string) => l.trim().length > 0).length;
+          if (contentLineCount < 25) {
+            console.error(`[Warning] Thin T2 template: ${file} (${contentLineCount} lines). Will regenerate on next use.`);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[Thin Scanner] Warning: ${e.message}`);
+    }
   }
 
   main().catch((error) => {
