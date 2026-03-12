@@ -134,7 +134,7 @@ export class GitHubProvider implements IVcsProvider {
     async mergePullRequest(
         pullRequestId: string | number,
         commitTitle?: string,
-        mergeMethod: 'merge' | 'squash' | 'rebase' = 'merge'
+        mergeMethod: 'merge' | 'squash' | 'rebase' = 'squash'
     ): Promise<MergeResult> {
         const token = this.getToken();
         if (!token) {
