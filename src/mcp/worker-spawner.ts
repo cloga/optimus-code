@@ -193,33 +193,44 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const mod = masterInfo?.model || model || '';
 
     if (fs.existsSync(t2Path)) {
-        // T2 exists — update ONLY if Master provided new info (team evolution)
-        if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
-            const existing = fs.readFileSync(t2Path, 'utf8');
-            const updates: Record<string, string> = {};
-            if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
-            const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
-            if (masterInfo.engine) {
-                if (isValidEngine(masterInfo.engine, validEngines)) {
-                    updates.engine = masterInfo.engine;
-                } else {
-                    console.error(`[T2 Guard] Rejected invalid engine '${masterInfo.engine}' for role '${safeRole}'. Valid: ${validEngines.join(', ')}`);
+        const existing = fs.readFileSync(t2Path, 'utf8');
+        const existingFm = parseFrontmatter(existing);
+
+        // Quality gate: check if existing T2 is thin (< 25 content lines)
+        const contentLines = existingFm.body.split('\n').filter(l => l.trim().length > 0);
+        const isThin = contentLines.length < 25 && existingFm.frontmatter.source !== 'plugin';
+
+        if (isThin) {
+            console.error(`[Precipitation] Thin T2 template detected for '${safeRole}' (${contentLines.length} lines). Attempting regeneration...`);
+            // Fall through — do NOT early-return. Will attempt rich regeneration below.
+        } else {
+            // Rich template — update metadata if Master provided new info, then return
+            if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
+                const updates: Record<string, string> = {};
+                if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
+                const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
+                if (masterInfo.engine) {
+                    if (isValidEngine(masterInfo.engine, validEngines)) {
+                        updates.engine = masterInfo.engine;
+                    } else {
+                        console.error(`[T2 Guard] Rejected invalid engine '${masterInfo.engine}' for role '${safeRole}'. Valid: ${validEngines.join(', ')}`);
+                    }
                 }
-            }
-            if (masterInfo.model) {
-                const resolvedEng = updates.engine || parseFrontmatter(existing).frontmatter.engine || engine;
-                if (isValidModel(masterInfo.model, resolvedEng, validModels)) {
-                    updates.model = masterInfo.model;
-                } else {
-                    console.error(`[T2 Guard] Rejected invalid model '${masterInfo.model}' for engine '${resolvedEng}' on role '${safeRole}'. Valid: ${(validModels[resolvedEng] || []).join(', ')}`);
+                if (masterInfo.model) {
+                    const resolvedEng = updates.engine || existingFm.frontmatter.engine || engine;
+                    if (isValidModel(masterInfo.model, resolvedEng, validModels)) {
+                        updates.model = masterInfo.model;
+                    } else {
+                        console.error(`[T2 Guard] Rejected invalid model '${masterInfo.model}' for engine '${resolvedEng}' on role '${safeRole}'. Valid: ${(validModels[resolvedEng] || []).join(', ')}`);
+                    }
                 }
+                updates.updated_at = new Date().toISOString();
+                const updated = updateFrontmatter(existing, updates);
+                fs.writeFileSync(t2Path, updated, 'utf8');
+                console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
             }
-            updates.updated_at = new Date().toISOString();
-            const updated = updateFrontmatter(existing, updates);
-            fs.writeFileSync(t2Path, updated, 'utf8');
-            console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
+            return null; // Rich template — not a new creation
         }
-        return null; // Not a new creation
     }
 
     // T2 does not exist — check for pre-installed plugin role template first
@@ -305,6 +316,7 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
         const template = `---
 role: ${safeRole}
 tier: T2
+thin: true
 description: "${desc.substring(0, 200).replace(/"/g, "'")}"
 engine: ${validatedEng}
 model: ${validatedMod}
@@ -326,121 +338,10 @@ ${desc}
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via agent-creator) at ${t2Path}`);
         return t2Path;
     } catch (err: any) {
-        // Graceful degradation: if agent-creator fails, fall back to thin template
-        console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Falling back to thin template.`);
-        const template = `---
-role: ${safeRole}
-tier: T2
-description: "${desc.substring(0, 200).replace(/"/g, "'")}"
-engine: ${validatedEng}
-model: ${validatedMod}
-precipitated: ${new Date().toISOString()}
----
-
-# ${formattedRole}
-
-${desc}
-`;
-        fs.writeFileSync(t2Path, template, 'utf8');
-        return t2Path;
+        // Do NOT write a thin fallback — let the role remain T3 and retry next invocation
+        console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
+        return null;
     }
-}
-
-/**
- * Asynchronously enhance a thin T2 role template using the agent-creator skill.
- * Spawns a background child process that delegates to agent-creator.
- * Non-blocking — fires and forgets.
- */
-function enhanceT2RoleAsync(
-    workspacePath: string,
-    role: string,
-    taskDescription: string,
-    childDepth: number
-): void {
-    // --- Anti-recursion guards ---
-
-    // 1. Meta-role exclusion list — these roles must NEVER be auto-enhanced
-    const META_ROLE_EXCLUSIONS = ['agent-creator', 'skill-creator'];
-    const safeRole = sanitizeRoleName(role);
-    if (META_ROLE_EXCLUSIONS.includes(safeRole)) {
-        console.error(`[T2 Enhancement] Skipping meta-role '${safeRole}' (excluded)`);
-        return;
-    }
-
-    // 2. Depth budget check — leave room for the enhancement agent to operate
-    if (childDepth >= MAX_DELEGATION_DEPTH - 1) {
-        console.error(`[T2 Enhancement] Skipping — delegation depth ${childDepth} too deep (max ${MAX_DELEGATION_DEPTH})`);
-        return;
-    }
-
-    // 3. Check if already enhanced
-    const t2Path = path.join(workspacePath, '.optimus', 'roles', `${safeRole}.md`);
-    if (!fs.existsSync(t2Path)) {
-        console.error(`[T2 Enhancement] Skipping — no T2 file at ${t2Path}`);
-        return;
-    }
-    const t2Content = fs.readFileSync(t2Path, 'utf8');
-    if (t2Content.includes('enhanced: true')) {
-        console.error(`[T2 Enhancement] Skipping '${safeRole}' — already enhanced`);
-        return;
-    }
-
-    // --- Spawn async enhancement ---
-    console.error(`[T2 Enhancement] Queuing async enhancement for '${safeRole}'`);
-
-    const { TaskManifestManager } = require('../managers/TaskManifestManager');
-    const taskId = `enhance_${safeRole}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    TaskManifestManager.createTask(workspacePath, {
-        taskId,
-        type: 'delegate_task' as const,
-        role: 'agent-creator',
-        task_description: `Enhance the thin T2 role template for '${safeRole}' at .optimus/roles/${safeRole}.md.
-
-Current template is auto-precipitated from T3 execution and only contains a basic description. Your job:
-
-1. Read the existing T2 file at .optimus/roles/${safeRole}.md
-2. Read the agent-creator skill at .optimus/skills/agent-creator/SKILL.md for the template structure
-3. Rewrite the role file to be a professional-grade role definition with:
-   - Clear behavioral instructions (what the role does, how it thinks)
-   - Tool usage patterns (which MCP tools it typically uses)
-   - Workflow steps (numbered phases or procedures)
-   - Constraints and prohibitions (what it must NOT do)
-   - Output format expectations
-4. Preserve the existing frontmatter fields (role, tier, engine, model, precipitated)
-5. ADD these frontmatter fields:
-   - enhanced: true
-   - auto_enhanced: true
-   - enhanced_at: <current ISO timestamp>
-6. Keep the role name and description consistent with the original
-
-The original task this role was used for: "${taskDescription.substring(0, 500).replace(/"/g, "'")}"
-
-IMPORTANT: Write the enhanced role file directly to .optimus/roles/${safeRole}.md (overwrite the thin template).
-Do NOT create a new file — update the existing one in place.`,
-        output_path: `.optimus/reports/t2_enhancement_${safeRole}.md`,
-        workspacePath: workspacePath,
-        role_description: 'Expert in designing AI agent role definitions with behavioral specificity, tool patterns, and workflow structure',
-        required_skills: ['agent-creator'],
-        delegation_depth: childDepth + 1,
-    });
-
-    // Spawn detached background process (same pattern as mcp-server.ts delegate_task_async)
-    const { spawn: spawnProcess } = require('child_process');
-    const child = spawnProcess(process.execPath, [
-        __filename, '--run-task', taskId, workspacePath
-    ], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-        env: {
-            ...process.env,
-            OPTIMUS_DELEGATION_DEPTH: String(childDepth + 1)
-        }
-    });
-    child.unref();
-
-    console.error(`[T2 Enhancement] Spawned background enhancement for '${safeRole}' (taskId: ${taskId})`);
 }
 
 /**
@@ -1079,16 +980,6 @@ Please provide your complete execution result below.`;
         // Track T3 success AFTER we know execution succeeded
         if (isT3) {
             trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-        }
-
-        // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
-        if (isT3) {
-            try {
-                enhanceT2RoleAsync(workspacePath, role, taskText, childDepth);
-            } catch (enhanceError: any) {
-                console.error(`[T2 Enhancement] Warning: failed to queue enhancement for '${role}': ${enhanceError.message}`);
-                // Non-fatal — don't fail the delegation over role enhancement
-            }
         }
 
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
