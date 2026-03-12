@@ -3116,6 +3116,37 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   }
 };
 
+// ../src/utils/sanitizeExternalContent.ts
+var PATTERNS = [
+  {
+    name: "html-comment-override",
+    regex: /<!--[\s\S]*?(ignore previous|override|system:|you are now)[\s\S]*?-->/gi
+  },
+  {
+    name: "prompt-override",
+    regex: /^\s*(IGNORE ALL PREVIOUS|IGNORE ALL INSTRUCTIONS|YOU ARE NOW|SYSTEM:|IMPORTANT:\s*override|IMPORTANT:\s*ignore)/gim
+  },
+  {
+    name: "dangerous-shell",
+    regex: /curl\s+.*\|\s*sh|wget\s+.*\|\s*sh|rm\s+-rf\s+\/|>\s*\/dev\/null.*&&/gi
+  }
+];
+function sanitizeExternalContent(content, source) {
+  const detections = [];
+  let sanitized = content;
+  for (const pattern of PATTERNS) {
+    const matches = sanitized.match(pattern.regex);
+    if (matches) {
+      for (const match of matches) {
+        detections.push(`${pattern.name}: ${match.substring(0, 80)}`);
+        console.error(`[Security] Prompt injection pattern detected in ${source}: ${pattern.name}`);
+      }
+      sanitized = sanitized.replace(pattern.regex, "[REDACTED: potential prompt injection detected]");
+    }
+  }
+  return { sanitized, detections };
+}
+
 // ../src/mcp/worker-spawner.ts
 function parseFrontmatter(content) {
   const normalized = content.replace(/\r\n/g, "\n");
@@ -3803,7 +3834,8 @@ ${content}
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
   console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
-  const taskText = import_fs.default.existsSync(taskPath) ? import_fs.default.readFileSync(taskPath, "utf8") : taskPath;
+  const rawTaskText = import_fs.default.existsSync(taskPath) ? import_fs.default.readFileSync(taskPath, "utf8") : taskPath;
+  const { sanitized: taskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
   let personaContext = "";
   if (t1Content) {
     personaContext = parseFrontmatter(t1Content).body.trim();
@@ -3839,9 +3871,11 @@ ${memoryContent}
     for (const cf of contextFiles) {
       const absolutePath = import_path.default.resolve(workspacePath, cf);
       if (import_fs.default.existsSync(absolutePath)) {
+        const rawContent = import_fs.default.readFileSync(absolutePath, "utf8");
+        const { sanitized: fileContent } = sanitizeExternalContent(rawContent);
         contextContent += `--- START OF ${cf} ---
 `;
-        contextContent += import_fs.default.readFileSync(absolutePath, "utf8");
+        contextContent += fileContent;
         contextContent += `
 --- END OF ${cf} ---
 
@@ -4278,7 +4312,9 @@ async function runAsyncWorker(taskId, workspacePath) {
           synthesisContent += `## ${i + 1}. Review from ${role}
 
 `;
-          synthesisContent += import_fs2.default.readFileSync(reviewFile, "utf8");
+          const rawReview = import_fs2.default.readFileSync(reviewFile, "utf8");
+          const { sanitized: reviewContent } = sanitizeExternalContent(rawReview);
+          synthesisContent += reviewContent;
           synthesisContent += `
 
 ---

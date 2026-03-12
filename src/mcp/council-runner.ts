@@ -4,6 +4,7 @@ import { TaskManifestManager } from '../managers/TaskManifestManager';
 import { dispatchCouncilConcurrent, delegateTaskSingle } from './worker-spawner';
 import { parseGitRemote, commentOnGitHubIssue, closeGitHubIssue } from '../utils/githubApi';
 import { agentSignature } from '../utils/agentSignature';
+import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
 
 function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial' | 'failed' {
     if (!outputPath) return 'partial';
@@ -126,7 +127,9 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 if (status === 'verified') {
                     synthesisVerifiedCount++;
                     synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
-                    synthesisContent += fs.readFileSync(reviewFile, 'utf8');
+                    const rawReview = fs.readFileSync(reviewFile, 'utf8');
+                    const { sanitized: reviewContent } = sanitizeExternalContent(rawReview);
+                    synthesisContent += reviewContent;
                     synthesisContent += `\n\n---\n\n`;
                 } else {
                     synthesisFailedRoles.push(role);
