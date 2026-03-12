@@ -24,6 +24,12 @@ export interface CommentResult {
     url: string;
 }
 
+export interface MergeResult {
+    merged: boolean;
+    headBranch?: string;  // source branch name (for local cleanup)
+    baseBranch?: string;  // target branch name
+}
+
 export interface AdoWorkItemOptions {
     iteration_path?: string;
     area_path?: string;
@@ -85,7 +91,7 @@ export interface IVcsProvider {
         pullRequestId: string | number,
         commitTitle?: string,
         mergeMethod?: 'merge' | 'squash' | 'rebase'
-    ): Promise<boolean>;
+    ): Promise<MergeResult>;
 
     /**
      * Add a comment to a work item or pull request
