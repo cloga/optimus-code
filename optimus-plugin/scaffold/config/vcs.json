@@ -9,6 +9,10 @@
   "ado": {
     "auth": "env:ADO_PAT",
     "organization": "",
-    "project": ""
+    "project": "",
+    "defaults": {
+      "work_item_type": "Task",
+      "auto_tags": ["created-by:optimus-code"]
+    }
   }
 }
