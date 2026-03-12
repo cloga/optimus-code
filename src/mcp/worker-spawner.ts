@@ -132,6 +132,34 @@ function checkRequiredSkills(workspacePath: string, skills: string[]): { found: 
     return { found, missing };
 }
 
+// ─── Engine/Model Validation (prevents corrupted T2 templates) ───
+
+export function loadValidEnginesAndModels(workspacePath: string): { engines: string[]; models: Record<string, string[]> } {
+    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    try {
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const engines = Object.keys(config.engines || {});
+            const models: Record<string, string[]> = {};
+            for (const eng of engines) {
+                models[eng] = config.engines[eng]?.available_models || [];
+            }
+            return { engines, models };
+        }
+    } catch {}
+    return { engines: [], models: {} };
+}
+
+export function isValidEngine(engine: string, validEngines: string[]): boolean {
+    return validEngines.length === 0 || validEngines.includes(engine);
+}
+
+export function isValidModel(model: string, engine: string, validModels: Record<string, string[]>): boolean {
+    const allowed = validModels[engine];
+    if (!allowed || allowed.length === 0) return true; // no config = permissive
+    return allowed.includes(model);
+}
+
 /**
  * Ensure a T2 role template exists. Creates if new, updates if Master provides new info.
  * T1 instances are NEVER retroactively modified — they are frozen snapshots.
@@ -160,8 +188,22 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
             const existing = fs.readFileSync(t2Path, 'utf8');
             const updates: Record<string, string> = {};
             if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
-            if (masterInfo.engine) updates.engine = masterInfo.engine;
-            if (masterInfo.model) updates.model = masterInfo.model;
+            const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
+            if (masterInfo.engine) {
+                if (isValidEngine(masterInfo.engine, validEngines)) {
+                    updates.engine = masterInfo.engine;
+                } else {
+                    console.error(`[T2 Guard] Rejected invalid engine '${masterInfo.engine}' for role '${safeRole}'. Valid: ${validEngines.join(', ')}`);
+                }
+            }
+            if (masterInfo.model) {
+                const resolvedEng = updates.engine || parseFrontmatter(existing).frontmatter.engine || engine;
+                if (isValidModel(masterInfo.model, resolvedEng, validModels)) {
+                    updates.model = masterInfo.model;
+                } else {
+                    console.error(`[T2 Guard] Rejected invalid model '${masterInfo.model}' for engine '${resolvedEng}' on role '${safeRole}'. Valid: ${(validModels[resolvedEng] || []).join(', ')}`);
+                }
+            }
             updates.updated_at = new Date().toISOString();
             const updated = updateFrontmatter(existing, updates);
             fs.writeFileSync(t2Path, updated, 'utf8');
@@ -184,8 +226,25 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
                 // Update engine/model from Master info before writing
                 let finalContent = pluginContent;
                 const updates: Record<string, string> = {};
-                if (eng) updates.engine = eng;
-                if (mod) updates.model = mod;
+                const { engines: validEnginesPlugin, models: validModelsPlugin } = loadValidEnginesAndModels(workspacePath);
+                if (eng) {
+                    if (isValidEngine(eng, validEnginesPlugin)) {
+                        updates.engine = eng;
+                    } else {
+                        console.error(`[T2 Guard] Rejected invalid engine '${eng}' for role '${safeRole}'. Valid: ${validEnginesPlugin.join(', ')}`);
+                    }
+                }
+                if (mod) {
+                    const resolvedEngPlugin = updates.engine || eng;
+                    if (updates.engine && isValidModel(mod, resolvedEngPlugin, validModelsPlugin)) {
+                        updates.model = mod;
+                    } else if (!updates.engine) {
+                        // Engine was rejected — discard model too
+                        console.error(`[T2 Guard] Discarding model '${mod}' — engine was invalid for role '${safeRole}'`);
+                    } else {
+                        console.error(`[T2 Guard] Rejected invalid model '${mod}' for engine '${resolvedEngPlugin}' on role '${safeRole}'. Valid: ${(validModelsPlugin[resolvedEngPlugin] || []).join(', ')}`);
+                    }
+                }
                 updates.precipitated = new Date().toISOString();
                 if (Object.keys(updates).length > 0) {
                     finalContent = updateFrontmatter(pluginContent, updates);
@@ -202,6 +261,19 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const safeRoleCheck = sanitizeRoleName(role);
     const currentDepthLocal = delegationDepth ?? 0;
 
+    // Validate eng/mod before embedding in any template literal
+    const { engines: validEnginesFallback, models: validModelsFallback } = loadValidEnginesAndModels(workspacePath);
+    let validatedEng = eng;
+    let validatedMod = mod;
+    if (eng && !isValidEngine(eng, validEnginesFallback)) {
+        console.error(`[T2 Guard] Rejected invalid engine '${eng}' for role '${safeRole}'. Valid: ${validEnginesFallback.join(', ')}`);
+        validatedEng = validEnginesFallback[0] || '';
+        validatedMod = ''; // engine invalid → discard model
+    } else if (mod && !isValidModel(mod, eng, validModelsFallback)) {
+        console.error(`[T2 Guard] Rejected invalid model '${mod}' for engine '${eng}' on role '${safeRole}'. Valid: ${(validModelsFallback[eng] || []).join(', ')}`);
+        validatedMod = '';
+    }
+
     if (META_ROLES.includes(safeRoleCheck) || currentDepthLocal >= MAX_DELEGATION_DEPTH - 1) {
         // Bootstrap paradox or depth budget exhausted — fall back to thin template
         console.error(`[Precipitation] Falling back to thin template for '${safeRole}' (meta-role: ${META_ROLES.includes(safeRoleCheck)}, depth: ${currentDepthLocal}/${MAX_DELEGATION_DEPTH})`);
@@ -209,8 +281,8 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
 role: ${safeRole}
 tier: T2
 description: "${desc.substring(0, 200).replace(/"/g, "'")}"
-engine: ${eng}
-model: ${mod}
+engine: ${validatedEng}
+model: ${validatedMod}
 precipitated: ${new Date().toISOString()}
 ---
 
@@ -225,7 +297,7 @@ ${desc}
 
     // Normal path: use agent-creator for rich role generation
     try {
-        await generateRichT2Role(workspacePath, role, eng, mod || undefined, desc, t2Path, currentDepthLocal);
+        await generateRichT2Role(workspacePath, role, validatedEng, validatedMod || undefined, desc, t2Path, currentDepthLocal);
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via agent-creator) at ${t2Path}`);
         return t2Path;
     } catch (err: any) {
@@ -235,8 +307,8 @@ ${desc}
 role: ${safeRole}
 tier: T2
 description: "${desc.substring(0, 200).replace(/"/g, "'")}"
-engine: ${eng}
-model: ${mod}
+engine: ${validatedEng}
+model: ${validatedMod}
 precipitated: ${new Date().toISOString()}
 ---
 
@@ -469,7 +541,7 @@ ${agentCreatorSkillContent ? `=== SKILL REFERENCE ===\n${agentCreatorSkillConten
     const extraEnv: Record<string, string> = {
         OPTIMUS_DELEGATION_DEPTH: String(childDepth)
     };
-    const response = await adapter.invoke(prompt, 'one-shot', undefined, undefined, extraEnv);
+    const response = await adapter.invoke(prompt, 'agent', undefined, undefined, extraEnv);
 
     // 4. Parse the response — look for frontmatter start
     const fmStart = response.indexOf('---');

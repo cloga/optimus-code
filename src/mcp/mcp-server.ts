@@ -12,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { dispatchCouncilConcurrent, delegateTaskSingle } from "./worker-spawner";
+import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel } from "./worker-spawner";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker } from "./council-runner";
@@ -479,6 +479,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
 
+    // Validate engine/model before persisting to TaskManifest
+    if (role_engine || role_model) {
+        const { engines: ve, models: vm } = loadValidEnginesAndModels(workspace_path);
+        if (role_engine && !isValidEngine(role_engine, ve)) {
+            console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve.join(', ')}`);
+            role_engine = undefined;
+            role_model = undefined; // engine invalid → discard model
+        } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
+            console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(', ')}`);
+            role_model = undefined;
+        }
+    }
+
     // Resolve parent issue: explicit param > env var > undefined (with NaN guard)
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
@@ -793,7 +806,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    const { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;
 
     // Resolve parent issue: explicit param > env var > undefined
@@ -812,7 +825,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
          workspace_path = output_path.split("optimus-code")[0] + "optimus-code";
        }
     }
-    
+
+    // Validate engine/model before passing to delegateTaskSingle
+    if (role_engine || role_model) {
+        const { engines: ve, models: vm } = loadValidEnginesAndModels(workspace_path);
+        if (role_engine && !isValidEngine(role_engine, ve)) {
+            console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve.join(', ')}`);
+            role_engine = undefined;
+            role_model = undefined; // engine invalid → discard model
+        } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
+            console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(', ')}`);
+            role_model = undefined;
+        }
+    }
+
     const sessionId = crypto.randomUUID();
     const workspacePath = workspace_path;
 
