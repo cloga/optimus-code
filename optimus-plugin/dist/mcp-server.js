@@ -3116,6 +3116,44 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   }
 };
 
+// ../src/utils/sanitizeExternalContent.ts
+function sanitizeExternalContent(content) {
+  const warnings = [];
+  let sanitized = content;
+  sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, "");
+  const overridePatterns = [
+    /ignore\s+(all\s+)?previous\s+instructions/i,
+    /ignore\s+all\s+instructions/i,
+    /you\s+are\s+now/i,
+    /^system:/im,
+    /IMPORTANT:\s*override/i
+  ];
+  for (const pattern of overridePatterns) {
+    if (pattern.test(sanitized)) {
+      warnings.push(`Prompt override pattern detected: ${pattern.source}`);
+      sanitized = sanitized.replace(pattern, "[REDACTED: potential prompt injection detected]");
+    }
+  }
+  const shellPatterns = [
+    /rm\s+-rf\s+[\/~]/i,
+    /curl\s+.*\|\s*sh/i,
+    /wget\s+.*\|\s*sh/i,
+    /--force/i,
+    /--no-verify/i,
+    />\s*\/dev\/null/i
+  ];
+  for (const pattern of shellPatterns) {
+    if (pattern.test(sanitized)) {
+      warnings.push(`Dangerous shell pattern detected: ${pattern.source}`);
+    }
+  }
+  const flagged = warnings.length > 0;
+  if (flagged) {
+    console.warn(`[Security] Prompt injection pattern detected in external content: ${warnings.join("; ")}`);
+  }
+  return { sanitized, flagged, warnings };
+}
+
 // ../src/mcp/worker-spawner.ts
 function parseFrontmatter(content) {
   const normalized = content.replace(/\r\n/g, "\n");
@@ -3803,7 +3841,8 @@ ${content}
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
   console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
-  const taskText = import_fs.default.existsSync(taskPath) ? import_fs.default.readFileSync(taskPath, "utf8") : taskPath;
+  const rawTaskText = import_fs.default.existsSync(taskPath) ? import_fs.default.readFileSync(taskPath, "utf8") : taskPath;
+  const { sanitized: taskText } = sanitizeExternalContent(rawTaskText);
   let personaContext = "";
   if (t1Content) {
     personaContext = parseFrontmatter(t1Content).body.trim();
@@ -3839,9 +3878,11 @@ ${memoryContent}
     for (const cf of contextFiles) {
       const absolutePath = import_path.default.resolve(workspacePath, cf);
       if (import_fs.default.existsSync(absolutePath)) {
+        const rawContent = import_fs.default.readFileSync(absolutePath, "utf8");
+        const { sanitized: fileContent } = sanitizeExternalContent(rawContent);
         contextContent += `--- START OF ${cf} ---
 `;
-        contextContent += import_fs.default.readFileSync(absolutePath, "utf8");
+        contextContent += fileContent;
         contextContent += `
 --- END OF ${cf} ---
 
@@ -4278,7 +4319,9 @@ async function runAsyncWorker(taskId, workspacePath) {
           synthesisContent += `## ${i + 1}. Review from ${role}
 
 `;
-          synthesisContent += import_fs2.default.readFileSync(reviewFile, "utf8");
+          const rawReview = import_fs2.default.readFileSync(reviewFile, "utf8");
+          const { sanitized: reviewContent } = sanitizeExternalContent(rawReview);
+          synthesisContent += reviewContent;
           synthesisContent += `
 
 ---
@@ -4664,7 +4707,8 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
           properties: {
             category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
             tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
-            content: { type: "string", description: "The actual memory content to solidify" }
+            content: { type: "string", description: "The actual memory content to solidify" },
+            agent_role: { type: "string", description: "The role of the agent writing this memory entry. Used for attribution." }
           },
           required: ["category", "tags", "content"]
         }
@@ -4700,6 +4744,8 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
           required: ["owner", "repo", "workspace_path"]
         }
       },
+      // TODO: When github_sync_board handler is implemented, apply sanitizeExternalContent()
+      // to all issue body text before writing to local task files. Mass injection vector.
       {
         name: "dispatch_council",
         description: "Trigger a map-reduce multi-expert review for an architectural proposal using the Spartan Swarm protocol.",
@@ -5219,7 +5265,7 @@ Please read these review files to continue.`
       ]
     };
   } else if (request.params.name === "append_memory") {
-    let { category, tags, content } = request.params.arguments;
+    let { category, tags, content, agent_role: memoryAgentRole } = request.params.arguments;
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     const memoryDir = import_path3.default.resolve(workspacePath, ".optimus", "memory");
     const memoryFile = import_path3.default.join(memoryDir, "continuous-memory.md");
@@ -5241,6 +5287,8 @@ Please read these review files to continue.`
             "category: " + (category || "uncategorized"),
             "tags: [" + (tags ? tags.join(", ") : "") + "]",
             "created: " + timestamp,
+            "source: mcp-append-memory",
+            ...memoryAgentRole ? ["author_role: " + memoryAgentRole] : [],
             "---",
             content,
             "\n"
