@@ -23,6 +23,7 @@ Every code change must be traceable via a branch and Pull Request. No direct com
   <rule>NEVER commit directly to `master` or `main`.</rule>
   <rule>Every change MUST have a PR — this is the traceability guarantee.</rule>
   <rule>ALWAYS switch back to `master` after pushing a feature branch.</rule>
+  <rule>ALWAYS use `git pull --rebase origin master` instead of `git pull origin master`. This prevents merge commit noise.</rule>
 </rules>
 
 <prohibited>
@@ -67,7 +68,7 @@ Invoke `vcs_merge_pr` to merge the PR into master. Use `merge_method: "squash"` 
 </step>
 
 <step number="6" name="Workspace Reversion">
-Run `git checkout master && git pull` to sync the merged changes locally.
+Run `git checkout master && git pull --rebase` to sync the merged changes locally.
 </step>
 
 </instructions>

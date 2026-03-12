@@ -993,7 +993,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (currentBranchAfterCleanup !== syncBranch) {
           execSync(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: 'utf8' });
         }
-        execSync(`git pull origin ${syncBranch}`, { cwd: workspace_path, encoding: 'utf8' });
+        execSync(`git pull --rebase origin ${syncBranch}`, { cwd: workspace_path, encoding: 'utf8' });
         syncMsg = ` Local '${syncBranch}' synced.`;
       } catch (syncErr: any) {
         console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);

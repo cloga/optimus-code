@@ -47,7 +47,7 @@ Before starting, verify ALL of the following:
 ### Step 6: Clean Up
 - Ensure no stale feature branches remain: `git branch --merged master`
 - Delete any merged local branches
-- Ensure master is up to date: `git pull origin master`
+- Ensure master is up to date: `git pull --rebase origin master`
 
 ### Step 7: Commit Release
 - Stage: `git add package.json optimus-plugin/package.json CHANGELOG.md optimus-plugin/dist/`

@@ -5526,7 +5526,7 @@ Memory appended to: ${memoryFile}`
         if (currentBranchAfterCleanup !== syncBranch) {
           (0, import_child_process3.execSync)(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
         }
-        (0, import_child_process3.execSync)(`git pull origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+        (0, import_child_process3.execSync)(`git pull --rebase origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
         syncMsg = ` Local '${syncBranch}' synced.`;
       } catch (syncErr) {
         console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);
