@@ -322,60 +322,6 @@ ${desc}
 }
 
 /**
- * Auto-generate a minimal SKILL.md after successful T3 execution.
- * Uses fs.writeFileSync directly — NO agent spawning (anti-recursion safety).
- * Never overwrites existing skills.
- */
-function autoGenerateSkill(workspacePath: string, role: string, taskDescription: string, roleDescription?: string): boolean {
-    const safeRole = sanitizeRoleName(role);
-    const skillDir = path.join(workspacePath, '.optimus', 'skills', safeRole);
-    const skillPath = path.join(skillDir, 'SKILL.md');
-
-    // Never overwrite existing skills
-    if (fs.existsSync(skillPath)) {
-        return false;
-    }
-
-    fs.mkdirSync(skillDir, { recursive: true });
-
-    const titleCase = safeRole.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const firstLine = (taskDescription || '').split('\n')[0].substring(0, 200).replace(/'/g, "\\'");
-    const purpose = roleDescription
-        ? roleDescription.split('\n')[0].substring(0, 300)
-        : `Operational skill for ${titleCase} tasks`;
-    const domain = safeRole.replace(/-/g, ' ');
-
-    const skillContent = `---
-name: ${safeRole}
-description: 'Auto-generated operational skill for ${safeRole}'
-version: 0.1.0
-auto_generated: true
-source_task: '${firstLine}'
----
-
-# ${titleCase} Skill
-
-## Purpose
-${purpose}
-
-## Workflow
-1. Analyze the task requirements
-2. Apply domain expertise for ${domain}
-3. Execute and deliver results
-4. Report completion
-
-## Constraints
-- Follow all system rules and Meta-Rules
-- Write outputs to designated paths only
-- Report errors clearly if blocked
-`;
-
-    fs.writeFileSync(skillPath, skillContent, 'utf8');
-    console.error(`[Auto-Skill Genesis] Generated skill for '${safeRole}' at .optimus/skills/${safeRole}/SKILL.md`);
-    return true;
-}
-
-/**
  * Asynchronously enhance a thin T2 role template using the agent-creator skill.
  * Spawns a background child process that delegates to agent-creator.
  * Non-blocking — fires and forgets.
@@ -709,7 +655,7 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string)
 /**
  * Executes a single task delegation synchronously.
  */
-export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number): Promise<string> {
+export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number): Promise<string> {
     const parsedRole = parseRoleSpec(roleArg);
     const role = sanitizeRoleName(parsedRole.role);
 
@@ -907,6 +853,10 @@ let contextContent = "";
         }
     }
 
+    const trackingIssueHeader = autoIssueNumber
+        ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
+        : '';
+
     const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
@@ -1031,26 +981,8 @@ Please provide your complete execution result below.`;
 
         fs.writeFileSync(outputPath, response, 'utf8');
 
-        // Auto-Skill Genesis: generate skill after successful T3 execution
+        // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
         if (isT3) {
-            try {
-                const safeRoleForSkill = sanitizeRoleName(role);
-                const t2PathForSkill = path.join(workspacePath, '.optimus', 'roles', `${safeRoleForSkill}.md`);
-                let roleDescription: string | undefined;
-                if (fs.existsSync(t2PathForSkill)) {
-                    const t2Content = fs.readFileSync(t2PathForSkill, 'utf8');
-                    const descMatch = t2Content.match(/description:\s*["']?(.+?)["']?\s*$/m);
-                    if (descMatch) {
-                        roleDescription = descMatch[1];
-                    }
-                }
-                autoGenerateSkill(workspacePath, role, taskText, roleDescription);
-            } catch (skillGenError: any) {
-                console.error(`[Auto-Skill Genesis] Warning: failed to generate skill for '${role}': ${skillGenError.message}`);
-                // Non-fatal — don't fail the delegation over skill generation
-            }
-
-            // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
             try {
                 enhanceT2RoleAsync(workspacePath, role, taskText, childDepth);
             } catch (enhanceError: any) {
