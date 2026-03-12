@@ -120,6 +120,27 @@ The system automatically injects `OPTIMUS_PARENT_ISSUE` into child agent process
 ## VCS Auto-Tagging
 All Work Items and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability across both GitHub and Azure DevOps platforms.
 
+## Engineering Safety Rules
+
+### Cache Invalidation
+Any code that caches configuration read from disk (e.g., VCS provider, agent config) MUST have a cache invalidation mechanism. Either:
+- TTL-based expiry
+- File content hash comparison on access
+- Manual invalidation on config write
+
+### No Silent Error Swallowing
+Never catch an exception and return a default/empty value without logging. At minimum:
+- `console.error()` the original error message
+- Include context about what operation failed and what the user should check
+- Prefer actionable error messages: "Auto-detect failed: git not found in PATH. Set organization and project in .optimus/config/vcs.json"
+
+### Merge-First for Config Overwrites
+Any operation that writes to user-editable config files (vcs.json, available-agents.json, etc.) MUST:
+1. Read existing file first
+2. Deep-merge new values with existing (user values take priority)
+3. Only ADD new fields, never DELETE or OVERWRITE existing user values
+4. Log what was preserved vs what was added
+
 ---
 
 # Part 2: Project-Specific Constraints (Optimus Code Repository)
