@@ -57,7 +57,7 @@ export class AdoProvider implements IVcsProvider {
             // Merge tags: user labels + auto_tags from config (deduplicated)
             const autoTags = this.defaults?.auto_tags || [];
             const userTags = labels || [];
-            const uniqueTags = [...new Set([...userTags, ...autoTags])];
+            const uniqueTags = [...new Set([...userTags, ...autoTags, 'optimus-bot'])];
 
             // Build JSON Patch document
             const patchDocument: Array<{op: string, path: string, value: any}> = [

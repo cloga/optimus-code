@@ -1564,7 +1564,7 @@ var init_AdoProvider = __esm({
           const htmlBody = await g.parse(body);
           const autoTags = this.defaults?.auto_tags || [];
           const userTags = labels || [];
-          const uniqueTags = [.../* @__PURE__ */ new Set([...userTags, ...autoTags])];
+          const uniqueTags = [.../* @__PURE__ */ new Set([...userTags, ...autoTags, "optimus-bot"])];
           const patchDocument = [
             { op: "add", path: "/fields/System.Title", value: title },
             { op: "add", path: "/fields/System.Description", value: htmlBody }
@@ -4979,7 +4979,7 @@ Error: ${task.error_message}`;
 
 ### Task Description
 ${truncDesc}`,
-        ["swarm-task"]
+        ["swarm-task", "optimus-bot"]
       );
       if (issue) {
         TaskManifestManager.updateTask(workspace_path, taskId, { github_issue_number: issue.number });
@@ -5036,7 +5036,7 @@ Use check_task_status tool periodically with this task ID to check its completio
 **Roles:** ${roles.map((r) => `\`${r}\``).join(", ")}
 **Proposal:** \`${proposal_path}\`
 **Reviews Path:** \`${reviewsPath}\``,
-        ["swarm-council"]
+        ["swarm-council", "optimus-bot"]
       );
       if (issue) {
         TaskManifestManager.updateTask(workspace_path, taskId, { github_issue_number: issue.number });
