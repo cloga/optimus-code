@@ -5,6 +5,7 @@
  * 
  * Commands:
  *   optimus init       - Bootstrap a .optimus/ workspace in current directory
+ *   optimus upgrade    - Upgrade skills, roles, and config from plugin source
  *   optimus serve      - Start the MCP server (stdio transport)
  *   optimus version    - Print version
  */
@@ -19,17 +20,48 @@ switch (command) {
     require('./commands/init')();
     break;
 
+  case 'upgrade':
+    require('./commands/upgrade')();
+    break;
+
   case 'serve':
     // Launch the MCP server directly
     require(path.join(__dirname, '..', 'dist', 'mcp-server.js'));
     break;
 
-  case 'version':
+  case 'version': {
+    const pkgV = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    console.log(`optimus-swarm v${pkgV.version}`);
+
+    // Build date from compile-time metadata
+    const buildMetaPath = path.join(__dirname, '..', 'dist', 'build-meta.json');
+    try {
+      const meta = JSON.parse(fs.readFileSync(buildMetaPath, 'utf8'));
+      console.log(`Build date:   ${meta.buildDate}`);
+    } catch {
+      console.log(`Build date:   unknown`);
+    }
+
+    // Skills from installed package
+    const skillsDir = path.join(__dirname, '..', 'skills');
+    try {
+      const skills = fs.readdirSync(skillsDir, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name)
+        .sort();
+      console.log(`Skills (${skills.length}):   ${skills.join(', ')}`);
+    } catch {
+      console.log(`Skills:       none found`);
+    }
+    break;
+  }
+
   case '--version':
-  case '-v':
+  case '-v': {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
     console.log(`optimus-swarm v${pkg.version}`);
     break;
+  }
 
   case 'help':
   case '--help':
@@ -40,6 +72,7 @@ Optimus Swarm CLI — Universal Multi-Agent Orchestrator (MCP)
 
 Usage:
   optimus init        Bootstrap .optimus/ workspace in current directory
+  optimus upgrade     Upgrade skills, roles, and config from plugin source
   optimus serve       Start MCP server (stdio transport)
   optimus version     Print version
 
