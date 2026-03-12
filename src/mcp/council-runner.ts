@@ -61,10 +61,11 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
         console.error(`[Runner] Restored delegation depth: ${parentDepth} from task record`);
     }
 
-    // The child's OWN issue becomes the parent for grandchildren
-    const parentIssueNumber = task.github_issue_number;
+    // The child's OWN issue becomes the parent for grandchildren.
+    // Fall back to task.parent_issue_number (grandparent) when GitHub issue creation failed.
+    const parentIssueNumber = task.github_issue_number ?? task.parent_issue_number;
     if (parentIssueNumber !== undefined) {
-        console.error(`[Runner] Setting OPTIMUS_PARENT_ISSUE=${parentIssueNumber} for child agents`);
+        console.error(`[Runner] Setting OPTIMUS_PARENT_ISSUE=${parentIssueNumber} for child agents (source: ${task.github_issue_number !== undefined ? 'own issue' : 'inherited parent'})`);
     }
 
     TaskManifestManager.updateTask(workspacePath, taskId, { status: 'running', pid: process.pid });

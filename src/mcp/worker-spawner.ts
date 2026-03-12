@@ -621,6 +621,9 @@ Please provide your complete execution result below.`;
         };
         if (parentIssueNumber !== undefined) {
             extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
+        } else {
+            // Explicitly clear inherited env var to prevent stale grandparent references
+            extraEnv.OPTIMUS_PARENT_ISSUE = '';
         }
         const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv);
 

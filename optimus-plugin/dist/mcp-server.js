@@ -2226,6 +2226,8 @@ role: ${role}
     };
     if (parentIssueNumber !== void 0) {
       extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
+    } else {
+      extraEnv.OPTIMUS_PARENT_ISSUE = "";
     }
     const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, void 0, extraEnv);
     const nonLogLines = response.split("\n").filter((l) => !l.startsWith("> [LOG]")).join("\n").trim();
@@ -2503,9 +2505,9 @@ async function runAsyncWorker(taskId, workspacePath) {
   if (parentDepth !== void 0) {
     console.error(`[Runner] Restored delegation depth: ${parentDepth} from task record`);
   }
-  const parentIssueNumber = task.github_issue_number;
+  const parentIssueNumber = task.github_issue_number ?? task.parent_issue_number;
   if (parentIssueNumber !== void 0) {
-    console.error(`[Runner] Setting OPTIMUS_PARENT_ISSUE=${parentIssueNumber} for child agents`);
+    console.error(`[Runner] Setting OPTIMUS_PARENT_ISSUE=${parentIssueNumber} for child agents (source: ${task.github_issue_number !== void 0 ? "own issue" : "inherited parent"})`);
   }
   TaskManifestManager.updateTask(workspacePath, taskId, { status: "running", pid: process.pid });
   const heartbeatInterval = setInterval(() => {
@@ -3278,7 +3280,8 @@ Error: ${task.error_message}`;
     if (!role || !task_description || !output_path || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
-    const parentIssueNumber = request.params.arguments.parent_issue_number ?? (process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0);
+    const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
+    const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync) ? void 0 : rawParentAsync);
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     TaskManifestManager.createTask(workspace_path, {
       taskId,
@@ -3341,7 +3344,8 @@ Use check_task_status tool periodically with this task ID to check its completio
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
-    const parentIssueNumber = request.params.arguments.parent_issue_number ?? (process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0);
+    const rawParentAsync2 = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
+    const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync2) ? void 0 : rawParentAsync2);
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const reviewsPath = import_path3.default.join(workspace_path, ".optimus", "reviews", taskId);
     TaskManifestManager.createTask(workspace_path, {
@@ -3397,6 +3401,8 @@ Use check_task_status tool periodically with this Council ID to check completion
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
+    const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
+    const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
     let workspacePath;
     const optimusIndex = proposal_path.indexOf(".optimus");
     if (optimusIndex !== -1) {
@@ -3408,7 +3414,7 @@ Use check_task_status tool periodically with this Council ID to check completion
     const reviewsPath = import_path3.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
     import_fs3.default.mkdirSync(reviewsPath, { recursive: true });
     console.error(`[MCP] Dispatching council with roles: ${roles.join(", ")}`);
-    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath);
+    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, void 0, parentIssueNumber);
     return {
       content: [
         {
@@ -3599,6 +3605,8 @@ Memory appended to: ${memoryFile}`
   } else if (request.params.name === "delegate_task") {
     const { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments;
     let workspace_path = request.params.arguments.workspace_path;
+    const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
+    const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
     if (!role || !task_description || !output_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
     }
@@ -3619,7 +3627,7 @@ Memory appended to: ${memoryFile}`
     import_fs3.default.writeFileSync(taskArtifactPath, task_description, "utf8");
     import_fs3.default.mkdirSync(import_path3.default.dirname(canonicalOutputPath), { recursive: true });
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
-    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills });
+    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, void 0, parentIssueNumber);
     return {
       content: [{ type: "text", text: result }]
     };
