@@ -271,6 +271,103 @@ ${purpose}
     return true;
 }
 
+/**
+ * Asynchronously enhance a thin T2 role template using the agent-creator skill.
+ * Spawns a background child process that delegates to agent-creator.
+ * Non-blocking — fires and forgets.
+ */
+function enhanceT2RoleAsync(
+    workspacePath: string,
+    role: string,
+    taskDescription: string,
+    childDepth: number
+): void {
+    // --- Anti-recursion guards ---
+
+    // 1. Meta-role exclusion list — these roles must NEVER be auto-enhanced
+    const META_ROLE_EXCLUSIONS = ['agent-creator', 'skill-creator'];
+    const safeRole = sanitizeRoleName(role);
+    if (META_ROLE_EXCLUSIONS.includes(safeRole)) {
+        console.error(`[T2 Enhancement] Skipping meta-role '${safeRole}' (excluded)`);
+        return;
+    }
+
+    // 2. Depth budget check — leave room for the enhancement agent to operate
+    if (childDepth >= MAX_DELEGATION_DEPTH - 1) {
+        console.error(`[T2 Enhancement] Skipping — delegation depth ${childDepth} too deep (max ${MAX_DELEGATION_DEPTH})`);
+        return;
+    }
+
+    // 3. Check if already enhanced
+    const t2Path = path.join(workspacePath, '.optimus', 'roles', `${safeRole}.md`);
+    if (!fs.existsSync(t2Path)) {
+        console.error(`[T2 Enhancement] Skipping — no T2 file at ${t2Path}`);
+        return;
+    }
+    const t2Content = fs.readFileSync(t2Path, 'utf8');
+    if (t2Content.includes('enhanced: true')) {
+        console.error(`[T2 Enhancement] Skipping '${safeRole}' — already enhanced`);
+        return;
+    }
+
+    // --- Spawn async enhancement ---
+    console.error(`[T2 Enhancement] Queuing async enhancement for '${safeRole}'`);
+
+    const { TaskManifestManager } = require('../managers/TaskManifestManager');
+    const taskId = `enhance_${safeRole}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    TaskManifestManager.createTask(workspacePath, {
+        taskId,
+        type: 'delegate_task' as const,
+        role: 'agent-creator',
+        task_description: `Enhance the thin T2 role template for '${safeRole}' at .optimus/roles/${safeRole}.md.
+
+Current template is auto-precipitated from T3 execution and only contains a basic description. Your job:
+
+1. Read the existing T2 file at .optimus/roles/${safeRole}.md
+2. Read the agent-creator skill at .optimus/skills/agent-creator/SKILL.md for the template structure
+3. Rewrite the role file to be a professional-grade role definition with:
+   - Clear behavioral instructions (what the role does, how it thinks)
+   - Tool usage patterns (which MCP tools it typically uses)
+   - Workflow steps (numbered phases or procedures)
+   - Constraints and prohibitions (what it must NOT do)
+   - Output format expectations
+4. Preserve the existing frontmatter fields (role, tier, engine, model, precipitated)
+5. ADD these frontmatter fields:
+   - enhanced: true
+   - auto_enhanced: true
+   - enhanced_at: <current ISO timestamp>
+6. Keep the role name and description consistent with the original
+
+The original task this role was used for: "${taskDescription.substring(0, 500).replace(/"/g, "'")}"
+
+IMPORTANT: Write the enhanced role file directly to .optimus/roles/${safeRole}.md (overwrite the thin template).
+Do NOT create a new file — update the existing one in place.`,
+        output_path: `.optimus/reports/t2_enhancement_${safeRole}.md`,
+        workspacePath: workspacePath,
+        role_description: 'Expert in designing AI agent role definitions with behavioral specificity, tool patterns, and workflow structure',
+        required_skills: ['agent-creator'],
+        delegation_depth: childDepth + 1,
+    });
+
+    // Spawn detached background process (same pattern as mcp-server.ts delegate_task_async)
+    const { spawn: spawnProcess } = require('child_process');
+    const child = spawnProcess(process.execPath, [
+        __filename, '--run-task', taskId, workspacePath
+    ], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: {
+            ...process.env,
+            OPTIMUS_DELEGATION_DEPTH: String(childDepth + 1)
+        }
+    });
+    child.unref();
+
+    console.error(`[T2 Enhancement] Spawned background enhancement for '${safeRole}' (taskId: ${taskId})`);
+}
+
 export class AgentLockManager {
     private locks = new Map<string, Promise<void>>();
     private resolvers = new Map<string, () => void>();
@@ -757,6 +854,14 @@ Please provide your complete execution result below.`;
             } catch (skillGenError: any) {
                 console.error(`[Auto-Skill Genesis] Warning: failed to generate skill for '${role}': ${skillGenError.message}`);
                 // Non-fatal — don't fail the delegation over skill generation
+            }
+
+            // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
+            try {
+                enhanceT2RoleAsync(workspacePath, role, taskText, childDepth);
+            } catch (enhanceError: any) {
+                console.error(`[T2 Enhancement] Warning: failed to queue enhancement for '${role}': ${enhanceError.message}`);
+                // Non-fatal — don't fail the delegation over role enhancement
             }
         }
 
