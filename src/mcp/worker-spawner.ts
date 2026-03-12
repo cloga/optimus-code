@@ -136,7 +136,7 @@ function checkRequiredSkills(workspacePath: string, skills: string[]): { found: 
  * Ensure a T2 role template exists. Creates if new, updates if Master provides new info.
  * T1 instances are NEVER retroactively modified — they are frozen snapshots.
  */
-function ensureT2Role(workspacePath: string, role: string, engine: string, model?: string, masterInfo?: MasterRoleInfo): string | null {
+async function ensureT2Role(workspacePath: string, role: string, engine: string, model?: string, masterInfo?: MasterRoleInfo, delegationDepth?: number): Promise<string | null> {
     const safeRole = sanitizeRoleName(role);
     const t2Dir = path.join(workspacePath, '.optimus', 'roles');
     const t2Path = path.join(t2Dir, `${safeRole}.md`);
@@ -197,8 +197,15 @@ function ensureT2Role(workspacePath: string, role: string, engine: string, model
         } catch {}
     }
 
-    // No plugin template found — create minimal T2 from Master-provided description
-    const template = `---
+    // No plugin template found — use agent-creator for rich T2 generation
+    const META_ROLES = ['agent-creator', 'skill-creator'];
+    const safeRoleCheck = sanitizeRoleName(role);
+    const currentDepthLocal = delegationDepth ?? 0;
+
+    if (META_ROLES.includes(safeRoleCheck) || currentDepthLocal >= MAX_DELEGATION_DEPTH - 1) {
+        // Bootstrap paradox or depth budget exhausted — fall back to thin template
+        console.error(`[Precipitation] Falling back to thin template for '${safeRole}' (meta-role: ${META_ROLES.includes(safeRoleCheck)}, depth: ${currentDepthLocal}/${MAX_DELEGATION_DEPTH})`);
+        const template = `---
 role: ${safeRole}
 tier: T2
 description: "${desc.substring(0, 200).replace(/"/g, "'")}"
@@ -211,10 +218,35 @@ precipitated: ${new Date().toISOString()}
 
 ${desc}
 `;
+        fs.writeFileSync(t2Path, template, 'utf8');
+        console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (thin) at ${t2Path}`);
+        return t2Path;
+    }
 
-    fs.writeFileSync(t2Path, template, 'utf8');
-    console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 at ${t2Path}`);
-    return t2Path;
+    // Normal path: use agent-creator for rich role generation
+    try {
+        await generateRichT2Role(workspacePath, role, eng, mod || undefined, desc, t2Path, currentDepthLocal);
+        console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via agent-creator) at ${t2Path}`);
+        return t2Path;
+    } catch (err: any) {
+        // Graceful degradation: if agent-creator fails, fall back to thin template
+        console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Falling back to thin template.`);
+        const template = `---
+role: ${safeRole}
+tier: T2
+description: "${desc.substring(0, 200).replace(/"/g, "'")}"
+engine: ${eng}
+model: ${mod}
+precipitated: ${new Date().toISOString()}
+---
+
+# ${formattedRole}
+
+${desc}
+`;
+        fs.writeFileSync(t2Path, template, 'utf8');
+        return t2Path;
+    }
 }
 
 /**
@@ -366,6 +398,96 @@ Do NOT create a new file — update the existing one in place.`,
     child.unref();
 
     console.error(`[T2 Enhancement] Spawned background enhancement for '${safeRole}' (taskId: ${taskId})`);
+}
+
+/**
+ * Synchronously invoke agent-creator to produce a rich T2 role definition.
+ * Used by ensureT2Role() when no plugin template exists and anti-recursion guards pass.
+ */
+async function generateRichT2Role(
+    workspacePath: string,
+    role: string,
+    engine: string,
+    model: string | undefined,
+    description: string,
+    t2Path: string,
+    delegationDepth: number
+): Promise<void> {
+    const safeRole = sanitizeRoleName(role);
+
+    // 1. Read the agent-creator skill (optional — degrade gracefully if missing)
+    const skillPath = path.join(workspacePath, '.optimus', 'skills', 'agent-creator', 'SKILL.md');
+    let agentCreatorSkillContent = '';
+    if (fs.existsSync(skillPath)) {
+        agentCreatorSkillContent = fs.readFileSync(skillPath, 'utf8');
+    }
+
+    const formattedRole = safeRole
+        .split(/[-_]+/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+    // 2. Construct the prompt
+    const prompt = `You are a role-creation specialist. Your task is to create a professional-grade T2 role template.
+
+Role name: ${safeRole}
+Role display name: ${formattedRole}
+Role description: ${description}
+Engine: ${engine}
+Model: ${model || 'default'}
+
+Using the agent-creator skill guidance below, produce a COMPLETE role definition file.
+
+The output MUST be a valid markdown file with YAML frontmatter. Output ONLY the file content — no explanations, no code fences around it.
+
+Required frontmatter fields:
+---
+role: ${safeRole}
+tier: T2
+description: "<rich 1-2 sentence description>"
+engine: ${engine}
+model: ${model || ''}
+precipitated: ${new Date().toISOString()}
+auto_created: true
+---
+
+Required body sections:
+# ${formattedRole}
+<2-3 sentence purpose statement>
+## Core Responsibilities
+- <3-5 specific actionable responsibilities>
+## Quality Standards
+- <2-3 measurable quality criteria>
+## Constraints
+- <2-3 behavioral boundaries>
+
+${agentCreatorSkillContent ? `=== SKILL REFERENCE ===\n${agentCreatorSkillContent}\n=== END SKILL REFERENCE ===` : ''}`;
+
+    // 3. Get adapter and invoke
+    const adapter = getAdapterForEngine(engine, undefined, model);
+    const childDepth = delegationDepth + 1;
+    const extraEnv: Record<string, string> = {
+        OPTIMUS_DELEGATION_DEPTH: String(childDepth)
+    };
+    const response = await adapter.invoke(prompt, 'one-shot', undefined, undefined, extraEnv);
+
+    // 4. Parse the response — look for frontmatter start
+    const fmStart = response.indexOf('---');
+    if (fmStart === -1) {
+        throw new Error('agent-creator response did not contain valid frontmatter (no --- found)');
+    }
+    const content = response.slice(fmStart).trim();
+
+    // Validate that we have a closing frontmatter delimiter
+    const secondDash = content.indexOf('---', 3);
+    if (secondDash === -1) {
+        throw new Error('agent-creator response had opening --- but no closing frontmatter delimiter');
+    }
+
+    // 5. Write the rich role to t2Path
+    const dir = path.dirname(t2Path);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(t2Path, content, 'utf8');
 }
 
 export class AgentLockManager {
@@ -739,7 +861,7 @@ Please provide your complete execution result below.`;
         if (isT3) {
             trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
         }
-        ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo);
+        await ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo, currentDepth);
 
         // --- Pre-Flight: Create T1 instance placeholder from T2 template ---
         // session_id is unknown until after execution, so use a temp name.
