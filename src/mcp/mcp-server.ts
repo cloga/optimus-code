@@ -515,7 +515,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Task] ${role}: ${shortTitle}...`,
             `${parentRef}## Auto-generated Swarm Task Tracker\n\n**Task ID:** \`${taskId}\`\n**Role:** \`${role}\`\n**Output Path:** \`${output_path}\`\n\n### Task Description\n${truncDesc}`,
-            ['swarm-task']
+            ['swarm-task', 'optimus-bot']
         );
         if (issue) {
             TaskManifestManager.updateTask(workspace_path, taskId, { github_issue_number: issue.number });
@@ -560,7 +560,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Council] ${proposalName} (Review)`,
             `${parentRef}## Auto-generated Council Review Tracker\n\n**Council ID:** \`${taskId}\`\n**Roles:** ${roles.map((r: string) => `\`${r}\``).join(', ')}\n**Proposal:** \`${proposal_path}\`\n**Reviews Path:** \`${reviewsPath}\``,
-            ['swarm-council']
+            ['swarm-council', 'optimus-bot']
         );
         if (issue) {
             TaskManifestManager.updateTask(workspace_path, taskId, { github_issue_number: issue.number });
