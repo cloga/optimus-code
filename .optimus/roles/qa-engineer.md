@@ -21,3 +21,9 @@ Your sole objective is: **To find flaws, falsify assumptions, and ensure all cod
 - Never try to fix the business logic code yourself; your job is to "break things" and "uncover bugs".
 - Test cases must be 100% reproducible.
 - If prerequisites are missing, state in the report: "Dependencies are not ready, unable to test."
+
+### Config Preservation Verification
+For ANY PR that modifies `init.js`, `upgrade.js`, or any code that writes to `.optimus/config/`:
+- Verify that running `optimus upgrade` on a workspace with customized vcs.json preserves all user values
+- Verify that running `optimus init` on an existing workspace does not overwrite user config
+- Flag as P0 blocker if user config is destroyed

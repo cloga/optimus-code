@@ -218,6 +218,13 @@ PM reads all reviews and ranks issues by severity:
 - **Critical issues found** → PM delegates back to dev for fixes, then re-reviews
 - **Clean** → PM merges the PR via `vcs_merge_pr`
 
+### Destructive Edge Case Testing (MANDATORY for file operations)
+Any feature that involves file overwrite, delete, migrate, or upgrade MUST include edge case tests with:
+- A target directory containing user-customized config files (not empty defaults)
+- Verification that user values survive the operation
+- Test both "first install" (empty target) AND "upgrade" (existing data) scenarios
+Example: `optimus upgrade` must be tested against a `.optimus/config/vcs.json` with real org/project values.
+
 ---
 
 ## Phase 6: Summary
