@@ -222,7 +222,7 @@ var init_GitHubProvider = __esm({
           throw new Error(`Failed to create GitHub pull request: ${error.message}`);
         }
       }
-      async mergePullRequest(pullRequestId, commitTitle, mergeMethod = "merge") {
+      async mergePullRequest(pullRequestId, commitTitle, mergeMethod = "squash") {
         const token = this.getToken();
         if (!token) {
           throw new Error("GitHub token not found in environment variables");
@@ -1680,7 +1680,7 @@ var init_AdoProvider = __esm({
           throw new Error(`Failed to create ADO pull request: ${error.message}`);
         }
       }
-      async mergePullRequest(pullRequestId, commitTitle, mergeMethod = "merge") {
+      async mergePullRequest(pullRequestId, commitTitle, mergeMethod = "squash") {
         const token = this.getToken();
         if (!token) {
           throw new Error("ADO PAT token not found in environment variables");
@@ -3603,6 +3603,26 @@ function getAdapterForEngine(engine, sessionId, model) {
   }
   return new ClaudeCodeAdapter(void 0, "\u{1F996} Claude Code", model || "");
 }
+function loadProjectMemory(workspacePath, maxChars = 4e3) {
+  const memoryFile = import_path.default.join(workspacePath, ".optimus", "memory", "continuous-memory.md");
+  if (!import_fs.default.existsSync(memoryFile)) return "";
+  try {
+    const raw = import_fs.default.readFileSync(memoryFile, "utf8");
+    if (!raw.trim()) return "";
+    const entries = raw.split(/(?=^---\nid:)/m).filter((e) => e.trim());
+    entries.reverse();
+    let content = "";
+    for (const entry of entries) {
+      const body = entry.replace(/^---[\s\S]*?---\n?/m, "").trim();
+      if (!body) continue;
+      if (content.length + body.length + 4 > maxChars) break;
+      content = body + "\n\n" + content;
+    }
+    return content.trim();
+  } catch (e) {
+    return "";
+  }
+}
 async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles, masterInfo, parentDepth, parentIssueNumber, autoIssueNumber) {
   const parsedRole = parseRoleSpec(roleArg);
   const role = sanitizeRoleName(parsedRole.role);
@@ -3775,6 +3795,15 @@ ${systemInstructions.trim()}
       }
     }
   }
+  const memoryContent = loadProjectMemory(workspacePath);
+  const memorySection = memoryContent ? `
+
+--- START PROJECT MEMORY ---
+The following are verified lessons and decisions from this project's history.
+Apply them to avoid repeating past mistakes.
+
+${memoryContent}
+--- END PROJECT MEMORY ---` : "";
   let contextContent = "";
   if (contextFiles && contextFiles.length > 0) {
     contextContent = "\n\n=== CONTEXT FILES ===\n\nThe following files are provided as required context for, and must be strictly adhered to during this task:\n\n";
@@ -3812,7 +3841,7 @@ Identity: ${resolvedTier}
 ${personaContext ? `--- START PERSONA INSTRUCTIONS ---
 ${personaContext}
 --- END PERSONA INSTRUCTIONS ---` : ""}
-
+${memorySection}
 Goal: Execute the following task.
 System Note: ${personaProof}
 ${trackingIssueHeader}
@@ -4184,7 +4213,9 @@ async function runAsyncWorker(taskId, workspacePath) {
           requiredSkills: task.required_skills
         },
         parentDepth,
-        parentIssueNumber
+        parentIssueNumber,
+        task.github_issue_number
+        // auto-created tracking issue
       );
     } else if (task.type === "dispatch_council") {
       await dispatchCouncilConcurrent(
@@ -4372,10 +4403,12 @@ var import_dotenv = __toESM(require("dotenv"));
 // ../src/adapters/vcs/VcsProviderFactory.ts
 var path6 = __toESM(require("path"));
 var fs6 = __toESM(require("fs"));
+var crypto = __toESM(require("crypto"));
 var import_child_process2 = require("child_process");
 var VcsProviderFactory = class {
   static cachedProvider = null;
   static cachedConfigPath = null;
+  static cachedConfigHash = null;
   /**
    * Get the appropriate VCS provider for the workspace
    *
@@ -4385,7 +4418,9 @@ var VcsProviderFactory = class {
   static async getProvider(workspacePath) {
     const resolvedWorkspacePath = workspacePath || process.cwd();
     const configPath = this.getConfigPath(resolvedWorkspacePath);
-    if (this.cachedProvider && this.cachedConfigPath === configPath) {
+    const configContent = fs6.existsSync(configPath) ? fs6.readFileSync(configPath, "utf8") : "";
+    const configHash = crypto.createHash("md5").update(configContent).digest("hex");
+    if (this.cachedProvider && this.cachedConfigPath === configPath && this.cachedConfigHash === configHash) {
       return this.cachedProvider;
     }
     const config = this.loadConfig(resolvedWorkspacePath);
@@ -4408,6 +4443,7 @@ var VcsProviderFactory = class {
     }
     this.cachedProvider = provider;
     this.cachedConfigPath = configPath;
+    this.cachedConfigHash = configHash;
     return provider;
   }
   /**
@@ -4416,6 +4452,7 @@ var VcsProviderFactory = class {
   static clearCache() {
     this.cachedProvider = null;
     this.cachedConfigPath = null;
+    this.cachedConfigHash = null;
   }
   static getConfigPath(workspacePath) {
     return path6.join(workspacePath, ".optimus", "config", "vcs.json");
@@ -4472,7 +4509,9 @@ var VcsProviderFactory = class {
       }
       throw new Error("Unable to parse GitHub repository info from remote URL");
     } catch (error) {
-      throw new Error(`Failed to determine GitHub repository info: ${error.message}`);
+      throw new Error(
+        'Failed to auto-detect GitHub info: git not found in PATH or not a git repository. Set "owner" and "repo" explicitly in .optimus/config/vcs.json'
+      );
     }
   }
   static getAdoInfo(config, workspacePath) {
@@ -4503,7 +4542,9 @@ var VcsProviderFactory = class {
       }
       throw new Error("Unable to parse Azure DevOps repository info from remote URL");
     } catch (error) {
-      throw new Error(`Failed to determine Azure DevOps repository info: ${error.message}`);
+      throw new Error(
+        'Failed to auto-detect Azure DevOps info: git not found in PATH or not a git repository. Set "organization" and "project" explicitly in .optimus/config/vcs.json'
+      );
     }
   }
   /**
@@ -5469,10 +5510,22 @@ Memory appended to: ${memoryFile}`
           console.error(`[Branch Cleanup] Warning: ${cleanupErr.message}`);
         }
       }
+      let syncMsg = "";
+      try {
+        const syncBranch = result.baseBranch || "master";
+        const currentBranchAfterCleanup = (0, import_child_process3.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
+        if (currentBranchAfterCleanup !== syncBranch) {
+          (0, import_child_process3.execSync)(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+        }
+        (0, import_child_process3.execSync)(`git pull origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+        syncMsg = ` Local '${syncBranch}' synced.`;
+      } catch (syncErr) {
+        console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);
+      }
       return {
         content: [{
           type: "text",
-          text: `\u2705 Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}.${branchCleanupMsg}`
+          text: `\u2705 Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}.${branchCleanupMsg}${syncMsg}`
         }]
       };
     } catch (error) {
