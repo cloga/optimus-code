@@ -1095,5 +1095,21 @@ export async function dispatchCouncilConcurrent(roles: string[], proposalPath: s
     return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber);
   });
 
-  return Promise.all(promises);
+  const results = await Promise.allSettled(promises);
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+  for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled') {
+          succeeded.push((results[i] as PromiseFulfilledResult<string>).value);
+      } else {
+          const reason = (results[i] as PromiseRejectedResult).reason;
+          failed.push(`${roles[i]}: ${reason?.message || 'Unknown error'}`);
+          console.error(`[Council] Worker '${roles[i]}' failed: ${reason?.message}`);
+      }
+  }
+  if (failed.length > 0) {
+      const failSummary = `# Council Partial Failure Report\n\n${failed.map(f => `- ${f}`).join('\n')}\n`;
+      fs.writeFileSync(path.join(reviewsPath, 'FAILURES.md'), failSummary, 'utf8');
+  }
+  return succeeded;
 }

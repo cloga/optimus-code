@@ -80,7 +80,7 @@ export class TaskManifestManager {
     static reapStaleTasks(workspacePath: string) {
         const manifest = this.loadManifest(workspacePath);
         const now = Date.now();
-        const TIMEOUT_MS = 1000 * 60 * 10; // 10 minutes timeout
+        const TIMEOUT_MS = 1000 * 60 * 3; // 3 minutes timeout
         let changed = false;
 
         for (const taskId in manifest) {

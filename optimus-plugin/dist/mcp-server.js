@@ -89,7 +89,7 @@ var init_TaskManifestManager = __esm({
       static reapStaleTasks(workspacePath) {
         const manifest = this.loadManifest(workspacePath);
         const now = Date.now();
-        const TIMEOUT_MS = 1e3 * 60 * 10;
+        const TIMEOUT_MS = 1e3 * 60 * 3;
         let changed = false;
         for (const taskId in manifest) {
           const task = manifest[taskId];
@@ -3935,7 +3935,26 @@ async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, times
     const outputPath = import_path.default.join(reviewsPath, `${role}_review.md`);
     return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber);
   });
-  return Promise.all(promises);
+  const results = await Promise.allSettled(promises);
+  const succeeded = [];
+  const failed = [];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === "fulfilled") {
+      succeeded.push(results[i].value);
+    } else {
+      const reason = results[i].reason;
+      failed.push(`${roles[i]}: ${reason?.message || "Unknown error"}`);
+      console.error(`[Council] Worker '${roles[i]}' failed: ${reason?.message}`);
+    }
+  }
+  if (failed.length > 0) {
+    const failSummary = `# Council Partial Failure Report
+
+${failed.map((f) => `- ${f}`).join("\n")}
+`;
+    import_fs.default.writeFileSync(import_path.default.join(reviewsPath, "FAILURES.md"), failSummary, "utf8");
+  }
+  return succeeded;
 }
 
 // ../src/mcp/mcp-server.ts
@@ -4052,9 +4071,10 @@ async function runAsyncWorker(taskId, workspacePath) {
     console.error(`[Runner] Setting OPTIMUS_PARENT_ISSUE=${parentIssueNumber} for child agents (source: ${task.github_issue_number !== void 0 ? "own issue" : "inherited parent"})`);
   }
   TaskManifestManager.updateTask(workspacePath, taskId, { status: "running", pid: process.pid });
+  TaskManifestManager.heartbeat(workspacePath, taskId);
   const heartbeatInterval = setInterval(() => {
     TaskManifestManager.heartbeat(workspacePath, taskId);
-  }, 6e4);
+  }, 15e3);
   try {
     if (task.type === "delegate_task") {
       await delegateTaskSingle(
@@ -4094,11 +4114,14 @@ async function runAsyncWorker(taskId, workspacePath) {
       synthesisContent += `**Council:** ${task.roles.map((r) => `\`${r}\``).join(", ")}
 
 `;
+      let synthesisVerifiedCount = 0;
+      let synthesisFailedRoles = [];
       for (let i = 0; i < task.roles.length; i++) {
         const role = task.roles[i];
         const reviewFile = import_path2.default.join(reviewsPath, `${role}_review.md`);
         const status = verifyOutputPath(reviewFile);
         if (status === "verified") {
+          synthesisVerifiedCount++;
           synthesisContent += `## ${i + 1}. Review from ${role}
 
 `;
@@ -4109,6 +4132,7 @@ async function runAsyncWorker(taskId, workspacePath) {
 
 `;
         } else {
+          synthesisFailedRoles.push(role);
           synthesisContent += `## ${i + 1}. Review from ${role}
 
 `;
@@ -4118,6 +4142,19 @@ async function runAsyncWorker(taskId, workspacePath) {
 
 `;
         }
+      }
+      if (synthesisFailedRoles.length > 0) {
+        const header = `> **Partial Results Warning:** ${synthesisFailedRoles.length} of ${task.roles.length} workers failed: ${synthesisFailedRoles.map((r) => `\`${r}\``).join(", ")}. Synthesis is based on ${synthesisVerifiedCount} successful review(s).
+
+`;
+        synthesisContent = synthesisContent.replace(
+          `**Council:** ${task.roles.map((r) => `\`${r}\``).join(", ")}
+
+`,
+          `**Council:** ${task.roles.map((r) => `\`${r}\``).join(", ")}
+
+${header}`
+        );
       }
       import_fs2.default.writeFileSync(synthesisPath, synthesisContent, "utf8");
       console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
@@ -4163,29 +4200,42 @@ ${synthesisContent}`;
       }
     }
     let verificationStatus = "partial";
+    let errorMessage;
     if (task.type === "dispatch_council") {
       let successCount = 0;
       let failureCount = 0;
+      const failedWorkers = [];
       const reviewsPath = task.output_path;
       for (const role of task.roles) {
         const reviewFile = import_path2.default.join(reviewsPath, `${role}_review.md`);
         const status = verifyOutputPath(reviewFile);
         if (status === "verified") successCount++;
-        else failureCount++;
+        else {
+          failureCount++;
+          failedWorkers.push(role);
+        }
       }
       if (failureCount === 0) verificationStatus = "verified";
-      else if (successCount === 0) verificationStatus = "failed";
-      else verificationStatus = "degraded";
+      else if (successCount === 0) {
+        verificationStatus = "failed";
+        errorMessage = `All ${failureCount} council workers failed: ${failedWorkers.join(", ")}`;
+      } else {
+        verificationStatus = "partial";
+        errorMessage = `${failureCount} of ${task.roles.length} workers failed: ${failedWorkers.join(", ")}. ${successCount} succeeded.`;
+      }
       const synthesisPath = import_path2.default.join(task.output_path, "COUNCIL_SYNTHESIS.md");
       if (verificationStatus !== "failed" && !import_fs2.default.existsSync(synthesisPath)) {
         verificationStatus = "failed";
+        errorMessage = "COUNCIL_SYNTHESIS.md was not generated";
       }
     } else {
       const status = verifyOutputPath(task.output_path);
       if (status === "partial") verificationStatus = "partial";
       else verificationStatus = status;
     }
-    TaskManifestManager.updateTask(workspacePath, taskId, { status: verificationStatus });
+    const statusUpdate = { status: verificationStatus };
+    if (errorMessage) statusUpdate.error_message = errorMessage;
+    TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
     console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
     await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
   } catch (err) {
@@ -4204,7 +4254,7 @@ async function updateTaskGitHubIssue(workspacePath, taskId, status, outputPath, 
     if (!task?.github_issue_number) return;
     const remote = parseGitRemote(workspacePath);
     if (!remote) return;
-    const statusEmoji = status === "verified" ? "\u2705" : status === "degraded" ? "\u26A0\uFE0F" : "\u274C";
+    const statusEmoji = status === "verified" ? "\u2705" : status === "partial" || status === "degraded" ? "\u26A0\uFE0F" : "\u274C";
     let comment = `## ${statusEmoji} Task Completion Report
 
 `;
