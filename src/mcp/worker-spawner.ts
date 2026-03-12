@@ -217,6 +217,60 @@ ${desc}
     return t2Path;
 }
 
+/**
+ * Auto-generate a minimal SKILL.md after successful T3 execution.
+ * Uses fs.writeFileSync directly — NO agent spawning (anti-recursion safety).
+ * Never overwrites existing skills.
+ */
+function autoGenerateSkill(workspacePath: string, role: string, taskDescription: string, roleDescription?: string): boolean {
+    const safeRole = sanitizeRoleName(role);
+    const skillDir = path.join(workspacePath, '.optimus', 'skills', safeRole);
+    const skillPath = path.join(skillDir, 'SKILL.md');
+
+    // Never overwrite existing skills
+    if (fs.existsSync(skillPath)) {
+        return false;
+    }
+
+    fs.mkdirSync(skillDir, { recursive: true });
+
+    const titleCase = safeRole.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const firstLine = (taskDescription || '').split('\n')[0].substring(0, 200).replace(/'/g, "\\'");
+    const purpose = roleDescription
+        ? roleDescription.split('\n')[0].substring(0, 300)
+        : `Operational skill for ${titleCase} tasks`;
+    const domain = safeRole.replace(/-/g, ' ');
+
+    const skillContent = `---
+name: ${safeRole}
+description: 'Auto-generated operational skill for ${safeRole}'
+version: 0.1.0
+auto_generated: true
+source_task: '${firstLine}'
+---
+
+# ${titleCase} Skill
+
+## Purpose
+${purpose}
+
+## Workflow
+1. Analyze the task requirements
+2. Apply domain expertise for ${domain}
+3. Execute and deliver results
+4. Report completion
+
+## Constraints
+- Follow all system rules and Meta-Rules
+- Write outputs to designated paths only
+- Report errors clearly if blocked
+`;
+
+    fs.writeFileSync(skillPath, skillContent, 'utf8');
+    console.error(`[Auto-Skill Genesis] Generated skill for '${safeRole}' at .optimus/skills/${safeRole}/SKILL.md`);
+    return true;
+}
+
 export class AgentLockManager {
     private locks = new Map<string, Promise<void>>();
     private resolvers = new Map<string, () => void>();
@@ -685,6 +739,26 @@ Please provide your complete execution result below.`;
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         fs.writeFileSync(outputPath, response, 'utf8');
+
+        // Auto-Skill Genesis: generate skill after successful T3 execution
+        if (isT3) {
+            try {
+                const safeRoleForSkill = sanitizeRoleName(role);
+                const t2PathForSkill = path.join(workspacePath, '.optimus', 'roles', `${safeRoleForSkill}.md`);
+                let roleDescription: string | undefined;
+                if (fs.existsSync(t2PathForSkill)) {
+                    const t2Content = fs.readFileSync(t2PathForSkill, 'utf8');
+                    const descMatch = t2Content.match(/description:\s*["']?(.+?)["']?\s*$/m);
+                    if (descMatch) {
+                        roleDescription = descMatch[1];
+                    }
+                }
+                autoGenerateSkill(workspacePath, role, taskText, roleDescription);
+            } catch (skillGenError: any) {
+                console.error(`[Auto-Skill Genesis] Warning: failed to generate skill for '${role}': ${skillGenError.message}`);
+                // Non-fatal — don't fail the delegation over skill generation
+            }
+        }
 
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
     } catch (e: any) {
