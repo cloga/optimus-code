@@ -883,7 +883,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     // T2→T1 instantiation happens AFTER task execution (when session_id is captured).
 
     const rawTaskText = fs.existsSync(taskPath) ? fs.readFileSync(taskPath, 'utf8') : taskPath;
-    const { sanitized: taskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
+    const { sanitized: taskText } = sanitizeExternalContent(rawTaskText);
 
     let personaContext = "";
     if (t1Content) {
@@ -918,7 +918,7 @@ let contextContent = "";
             const absolutePath = path.resolve(workspacePath, cf);
             if (fs.existsSync(absolutePath)) {
                 const rawContent = fs.readFileSync(absolutePath, 'utf8');
-                const { sanitized: fileContent } = sanitizeExternalContent(rawContent, `context:${cf}`);
+                const { sanitized: fileContent } = sanitizeExternalContent(rawContent);
                 contextContent += `--- START OF ${cf} ---\n`;
                 contextContent += fileContent;
                 contextContent += `\n--- END OF ${cf} ---\n\n`;
