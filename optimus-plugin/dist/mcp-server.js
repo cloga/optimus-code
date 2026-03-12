@@ -3872,7 +3872,7 @@ ${memoryContent}
       const absolutePath = import_path.default.resolve(workspacePath, cf);
       if (import_fs.default.existsSync(absolutePath)) {
         const rawContent = import_fs.default.readFileSync(absolutePath, "utf8");
-        const { sanitized: fileContent } = sanitizeExternalContent(rawContent);
+        const { sanitized: fileContent } = sanitizeExternalContent(rawContent, `context:${cf}`);
         contextContent += `--- START OF ${cf} ---
 `;
         contextContent += fileContent;
@@ -4313,7 +4313,7 @@ async function runAsyncWorker(taskId, workspacePath) {
 
 `;
           const rawReview = import_fs2.default.readFileSync(reviewFile, "utf8");
-          const { sanitized: reviewContent } = sanitizeExternalContent(rawReview);
+          const { sanitized: reviewContent } = sanitizeExternalContent(rawReview, `review:${role}`);
           synthesisContent += reviewContent;
           synthesisContent += `
 

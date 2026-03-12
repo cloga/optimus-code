@@ -128,7 +128,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                     synthesisVerifiedCount++;
                     synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
                     const rawReview = fs.readFileSync(reviewFile, 'utf8');
-                    const { sanitized: reviewContent } = sanitizeExternalContent(rawReview);
+                    const { sanitized: reviewContent } = sanitizeExternalContent(rawReview, `review:${role}`);
                     synthesisContent += reviewContent;
                     synthesisContent += `\n\n---\n\n`;
                 } else {

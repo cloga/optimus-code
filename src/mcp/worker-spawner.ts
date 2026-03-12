@@ -918,7 +918,7 @@ let contextContent = "";
             const absolutePath = path.resolve(workspacePath, cf);
             if (fs.existsSync(absolutePath)) {
                 const rawContent = fs.readFileSync(absolutePath, 'utf8');
-                const { sanitized: fileContent } = sanitizeExternalContent(rawContent);
+                const { sanitized: fileContent } = sanitizeExternalContent(rawContent, `context:${cf}`);
                 contextContent += `--- START OF ${cf} ---\n`;
                 contextContent += fileContent;
                 contextContent += `\n--- END OF ${cf} ---\n\n`;
