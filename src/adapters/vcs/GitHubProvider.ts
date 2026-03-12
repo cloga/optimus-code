@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, AdoWorkItemOptions } from './IVcsProvider';
 
 /**
  * GitHub VCS Provider Implementation
@@ -19,7 +19,8 @@ export class GitHubProvider implements IVcsProvider {
         title: string,
         body: string,
         labels?: string[],
-        workItemType?: string // Ignored for GitHub
+        workItemType?: string, // Ignored for GitHub
+        _adoOptions?: AdoWorkItemOptions // Accepted but ignored
     ): Promise<WorkItemResult> {
         const token = this.getToken();
         if (!token) {

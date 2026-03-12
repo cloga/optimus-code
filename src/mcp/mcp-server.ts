@@ -347,10 +347,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: "object",
           properties: {
             title: { type: "string", description: "Work item title" },
-            body: { type: "string", description: "Work item description/body" },
+            body: { type: "string", description: "Work item description/body (Markdown — auto-converted to HTML for ADO)" },
             labels: { type: "array", items: { type: "string" }, description: "Labels/tags to apply" },
             work_item_type: { type: "string", description: "ADO work item type (Bug, User Story, Task). Ignored for GitHub." },
-            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            iteration_path: { type: "string", description: "ADO Sprint/iteration path (e.g. 'Project\\Sprint 1'). Ignored for GitHub." },
+            area_path: { type: "string", description: "ADO team/area path (e.g. 'Project\\Team\\Area'). Ignored for GitHub." },
+            assigned_to: { type: "string", description: "ADO assigned user (email or alias). Ignored for GitHub." },
+            parent_id: { type: "number", description: "ADO parent work item ID for hierarchy linking. Ignored for GitHub." },
+            priority: { type: "number", description: "ADO priority (1-4, where 1=Critical). Ignored for GitHub." }
           },
           required: ["title", "body", "workspace_path"]
         }
@@ -836,14 +841,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: result }]
     };
   } else if (request.params.name === "vcs_create_work_item") {
-    const { title, body, labels, work_item_type, workspace_path } = request.params.arguments as any;
+    const { title, body, labels, work_item_type, workspace_path,
+            iteration_path, area_path, assigned_to, parent_id, priority } = request.params.arguments as any;
     if (!title || !body || !workspace_path) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
     }
 
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.createWorkItem(title, body, labels, work_item_type);
+      const result = await vcsProvider.createWorkItem(title, body, labels, work_item_type, {
+        iteration_path,
+        area_path,
+        assigned_to,
+        parent_id,
+        priority
+      });
 
       return {
         content: [{
