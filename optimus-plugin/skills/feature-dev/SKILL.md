@@ -218,9 +218,8 @@ PM reads all reviews and ranks issues by severity:
 - **Critical issues found** → PM delegates back to dev for fixes, then re-reviews
 - **Clean** → PM merges the PR via `vcs_merge_pr`
 
-**CRITICAL**: The ONLY way to merge code to master is via `vcs_merge_pr`.
+**IMPORTANT**: The ONLY way to merge code to master is via `vcs_merge_pr`.
 Never use `git merge` locally and push. The PR merge triggers GitHub auto-close for `fixes #N`.
-Direct `git push origin master` is strictly PROHIBITED.
 
 ### Destructive Edge Case Testing (MANDATORY for file operations)
 Any feature that involves file overwrite, delete, migrate, or upgrade MUST include edge case tests with:
