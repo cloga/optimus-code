@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, AdoWorkItemOptions } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions } from './IVcsProvider';
 import { marked } from 'marked';
 
 /**
@@ -204,7 +204,7 @@ export class AdoProvider implements IVcsProvider {
         pullRequestId: string | number,
         commitTitle?: string,
         mergeMethod: 'merge' | 'squash' | 'rebase' = 'merge'
-    ): Promise<boolean> {
+    ): Promise<MergeResult> {
         const token = this.getToken();
         if (!token) {
             throw new Error('ADO PAT token not found in environment variables');
@@ -224,28 +224,51 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!repoResponse.ok) {
-                return false;
+                return { merged: false };
             }
 
             const repos = await repoResponse.json() as any;
             if (!repos.value || repos.value.length === 0) {
-                return false;
+                return { merged: false };
             }
 
             const repositoryId = repos.value[0].id;
             const prId = typeof pullRequestId === 'string' ? parseInt(pullRequestId) : pullRequestId;
 
+            // Fetch PR data to get source/target branch names
+            let headBranch: string | undefined;
+            let baseBranch: string | undefined;
+            try {
+                const prResponse = await fetch(
+                    `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
+                    {
+                        headers: {
+                            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
+                            'Accept': 'application/json',
+                            'User-Agent': 'Optimus-Agent'
+                        }
+                    }
+                );
+                if (prResponse.ok) {
+                    const prData = await prResponse.json() as any;
+                    headBranch = prData.sourceRefName?.replace('refs/heads/', '');
+                    baseBranch = prData.targetRefName?.replace('refs/heads/', '');
+                }
+            } catch {
+                // Best-effort: continue with merge even if branch name fetch fails
+            }
+
             // ADO merge requires updating the PR status to 'completed'
-            const mergeData = {
+            const mergeData: any = {
                 status: 'completed',
                 completionOptions: {
                     mergeStrategy: mergeMethod === 'squash' ? 'squashMerge' : 'noFastForward',
-                    deleteSourceBranch: false
+                    deleteSourceBranch: true
                 }
             };
 
             if (commitTitle) {
-                mergeData.completionOptions['mergeCommitMessage'] = commitTitle;
+                mergeData.completionOptions.mergeCommitMessage = commitTitle;
             }
 
             const response = await fetch(
@@ -262,9 +285,9 @@ export class AdoProvider implements IVcsProvider {
                 }
             );
 
-            return response.ok;
+            return { merged: response.ok, headBranch, baseBranch };
         } catch {
-            return false;
+            return { merged: false };
         }
     }
 

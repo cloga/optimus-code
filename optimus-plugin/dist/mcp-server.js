@@ -228,7 +228,22 @@ var init_GitHubProvider = __esm({
           throw new Error("GitHub token not found in environment variables");
         }
         const prNumber = typeof pullRequestId === "string" ? parseInt(pullRequestId) : pullRequestId;
+        const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
         try {
+          const prResponse = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/pulls/${prNumber}`, {
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Optimus-Agent"
+            }
+          });
+          let headBranch;
+          let baseBranch;
+          if (prResponse.ok) {
+            const prData = await prResponse.json();
+            headBranch = prData.head?.ref;
+            baseBranch = prData.base?.ref;
+          }
           const payload = { merge_method: mergeMethod };
           if (commitTitle) {
             payload.commit_title = commitTitle;
@@ -243,9 +258,26 @@ var init_GitHubProvider = __esm({
             },
             body: JSON.stringify(payload)
           });
-          return response.ok;
+          if (!response.ok) {
+            return { merged: false, headBranch, baseBranch };
+          }
+          if (headBranch && !PROTECTED_BRANCHES.includes(headBranch)) {
+            try {
+              await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${headBranch}`, {
+                method: "DELETE",
+                headers: {
+                  "Authorization": `Bearer ${token}`,
+                  "Accept": "application/vnd.github.v3+json",
+                  "User-Agent": "Optimus-Agent"
+                }
+              });
+            } catch {
+              console.error(`[Branch Cleanup] Warning: failed to delete remote branch '${headBranch}'`);
+            }
+          }
+          return { merged: true, headBranch, baseBranch };
         } catch {
-          return false;
+          return { merged: false };
         }
       }
       async addComment(itemType, itemId, comment) {
@@ -1665,23 +1697,43 @@ var init_AdoProvider = __esm({
             }
           );
           if (!repoResponse.ok) {
-            return false;
+            return { merged: false };
           }
           const repos = await repoResponse.json();
           if (!repos.value || repos.value.length === 0) {
-            return false;
+            return { merged: false };
           }
           const repositoryId = repos.value[0].id;
           const prId = typeof pullRequestId === "string" ? parseInt(pullRequestId) : pullRequestId;
+          let headBranch;
+          let baseBranch;
+          try {
+            const prResponse = await fetch(
+              `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
+              {
+                headers: {
+                  "Authorization": `Basic ${Buffer.from(`:${token}`).toString("base64")}`,
+                  "Accept": "application/json",
+                  "User-Agent": "Optimus-Agent"
+                }
+              }
+            );
+            if (prResponse.ok) {
+              const prData = await prResponse.json();
+              headBranch = prData.sourceRefName?.replace("refs/heads/", "");
+              baseBranch = prData.targetRefName?.replace("refs/heads/", "");
+            }
+          } catch {
+          }
           const mergeData = {
             status: "completed",
             completionOptions: {
               mergeStrategy: mergeMethod === "squash" ? "squashMerge" : "noFastForward",
-              deleteSourceBranch: false
+              deleteSourceBranch: true
             }
           };
           if (commitTitle) {
-            mergeData.completionOptions["mergeCommitMessage"] = commitTitle;
+            mergeData.completionOptions.mergeCommitMessage = commitTitle;
           }
           const response = await fetch(
             `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
@@ -1696,9 +1748,9 @@ var init_AdoProvider = __esm({
               body: JSON.stringify(mergeData)
             }
           );
-          return response.ok;
+          return { merged: response.ok, headBranch, baseBranch };
         } catch {
-          return false;
+          return { merged: false };
         }
       }
       async addComment(itemType, itemId, comment) {
@@ -5317,13 +5369,38 @@ Memory appended to: ${memoryFile}`
     if (!pull_request_id || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
     }
+    const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const success = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
+      const result = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
+      if (!result.merged) {
+        return {
+          content: [{
+            type: "text",
+            text: `\u274C Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}`
+          }]
+        };
+      }
+      let branchCleanupMsg = "";
+      if (result.headBranch && !PROTECTED_BRANCHES.includes(result.headBranch)) {
+        try {
+          const currentBranch = (0, import_child_process3.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
+          if (currentBranch === result.headBranch) {
+            const checkoutTarget = result.baseBranch || "master";
+            (0, import_child_process3.execSync)(`git checkout ${checkoutTarget}`, { cwd: workspace_path, encoding: "utf8" });
+          }
+          (0, import_child_process3.execSync)(`git branch -d ${result.headBranch}`, { cwd: workspace_path, encoding: "utf8" });
+          branchCleanupMsg = ` Branch '${result.headBranch}' cleaned up.`;
+          console.error(`[Branch Cleanup] Deleted branch '${result.headBranch}' after merging PR #${pull_request_id}`);
+        } catch (cleanupErr) {
+          branchCleanupMsg = ` \u26A0\uFE0F Branch cleanup warning: ${cleanupErr.message}`;
+          console.error(`[Branch Cleanup] Warning: ${cleanupErr.message}`);
+        }
+      }
       return {
         content: [{
           type: "text",
-          text: success ? `\u2705 Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}` : `\u274C Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}`
+          text: `\u2705 Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}.${branchCleanupMsg}`
         }]
       };
     } catch (error) {

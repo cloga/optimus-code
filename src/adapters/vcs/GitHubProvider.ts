@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, AdoWorkItemOptions } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions } from './IVcsProvider';
 
 /**
  * GitHub VCS Provider Implementation
@@ -135,15 +135,34 @@ export class GitHubProvider implements IVcsProvider {
         pullRequestId: string | number,
         commitTitle?: string,
         mergeMethod: 'merge' | 'squash' | 'rebase' = 'merge'
-    ): Promise<boolean> {
+    ): Promise<MergeResult> {
         const token = this.getToken();
         if (!token) {
             throw new Error('GitHub token not found in environment variables');
         }
 
         const prNumber = typeof pullRequestId === 'string' ? parseInt(pullRequestId) : pullRequestId;
+        const PROTECTED_BRANCHES = ['master', 'main', 'develop', 'release'];
 
         try {
+            // Fetch PR data to get head/base branch names
+            const prResponse = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/pulls/${prNumber}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Optimus-Agent'
+                }
+            });
+
+            let headBranch: string | undefined;
+            let baseBranch: string | undefined;
+            if (prResponse.ok) {
+                const prData = await prResponse.json() as any;
+                headBranch = prData.head?.ref;
+                baseBranch = prData.base?.ref;
+            }
+
+            // Perform the merge
             const payload: any = { merge_method: mergeMethod };
             if (commitTitle) {
                 payload.commit_title = commitTitle;
@@ -160,9 +179,29 @@ export class GitHubProvider implements IVcsProvider {
                 body: JSON.stringify(payload)
             });
 
-            return response.ok;
+            if (!response.ok) {
+                return { merged: false, headBranch, baseBranch };
+            }
+
+            // Delete remote branch (best-effort, skip protected branches)
+            if (headBranch && !PROTECTED_BRANCHES.includes(headBranch)) {
+                try {
+                    await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${headBranch}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'User-Agent': 'Optimus-Agent'
+                        }
+                    });
+                } catch {
+                    console.error(`[Branch Cleanup] Warning: failed to delete remote branch '${headBranch}'`);
+                }
+            }
+
+            return { merged: true, headBranch, baseBranch };
         } catch {
-            return false;
+            return { merged: false };
         }
     }
 

@@ -16,7 +16,7 @@ import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModel
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker } from "./council-runner";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 
@@ -917,16 +917,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
     }
 
+    const PROTECTED_BRANCHES = ['master', 'main', 'develop', 'release'];
+
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const success = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
+      const result = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
+
+      if (!result.merged) {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}`
+          }]
+        };
+      }
+
+      // Local branch cleanup (best-effort)
+      let branchCleanupMsg = '';
+      if (result.headBranch && !PROTECTED_BRANCHES.includes(result.headBranch)) {
+        try {
+          // Check if we're currently on the head branch
+          const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: workspace_path, encoding: 'utf8' }).trim();
+          if (currentBranch === result.headBranch) {
+            const checkoutTarget = result.baseBranch || 'master';
+            execSync(`git checkout ${checkoutTarget}`, { cwd: workspace_path, encoding: 'utf8' });
+          }
+          execSync(`git branch -d ${result.headBranch}`, { cwd: workspace_path, encoding: 'utf8' });
+          branchCleanupMsg = ` Branch '${result.headBranch}' cleaned up.`;
+          console.error(`[Branch Cleanup] Deleted branch '${result.headBranch}' after merging PR #${pull_request_id}`);
+        } catch (cleanupErr: any) {
+          branchCleanupMsg = ` ⚠️ Branch cleanup warning: ${cleanupErr.message}`;
+          console.error(`[Branch Cleanup] Warning: ${cleanupErr.message}`);
+        }
+      }
 
       return {
         content: [{
           type: "text",
-          text: success
-            ? `✅ Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}`
-            : `❌ Failed to merge pull request #${pull_request_id} on ${vcsProvider.getProviderName()}`
+          text: `✅ Pull request #${pull_request_id} merged successfully on ${vcsProvider.getProviderName()}.${branchCleanupMsg}`
         }]
       };
     } catch (error: any) {
