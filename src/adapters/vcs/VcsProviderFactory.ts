@@ -1,6 +1,7 @@
 import { IVcsProvider } from './IVcsProvider';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import { execSync } from 'child_process';
 
 export interface VcsConfig {
@@ -33,6 +34,7 @@ export interface VcsConfig {
 export class VcsProviderFactory {
     private static cachedProvider: IVcsProvider | null = null;
     private static cachedConfigPath: string | null = null;
+    private static cachedConfigHash: string | null = null;
 
     /**
      * Get the appropriate VCS provider for the workspace
@@ -43,9 +45,11 @@ export class VcsProviderFactory {
     public static async getProvider(workspacePath?: string): Promise<IVcsProvider> {
         const resolvedWorkspacePath = workspacePath || process.cwd();
 
-        // Return cached provider if available and workspace hasn't changed
+        // Return cached provider if available and config hasn't changed
         const configPath = this.getConfigPath(resolvedWorkspacePath);
-        if (this.cachedProvider && this.cachedConfigPath === configPath) {
+        const configContent = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
+        const configHash = crypto.createHash('md5').update(configContent).digest('hex');
+        if (this.cachedProvider && this.cachedConfigPath === configPath && this.cachedConfigHash === configHash) {
             return this.cachedProvider;
         }
 
@@ -74,9 +78,10 @@ export class VcsProviderFactory {
             throw new Error(`Unsupported or undetectable VCS provider: ${providerType}`);
         }
 
-        // Cache the provider and config path
+        // Cache the provider, config path, and hash
         this.cachedProvider = provider;
         this.cachedConfigPath = configPath;
+        this.cachedConfigHash = configHash;
 
         return provider;
     }
@@ -87,6 +92,7 @@ export class VcsProviderFactory {
     public static clearCache(): void {
         this.cachedProvider = null;
         this.cachedConfigPath = null;
+        this.cachedConfigHash = null;
     }
 
     private static getConfigPath(workspacePath: string): string {
@@ -161,7 +167,10 @@ export class VcsProviderFactory {
 
             throw new Error('Unable to parse GitHub repository info from remote URL');
         } catch (error: any) {
-            throw new Error(`Failed to determine GitHub repository info: ${error.message}`);
+            throw new Error(
+                'Failed to auto-detect GitHub info: git not found in PATH or not a git repository. ' +
+                'Set "owner" and "repo" explicitly in .optimus/config/vcs.json'
+            );
         }
     }
 
@@ -202,7 +211,10 @@ export class VcsProviderFactory {
 
             throw new Error('Unable to parse Azure DevOps repository info from remote URL');
         } catch (error: any) {
-            throw new Error(`Failed to determine Azure DevOps repository info: ${error.message}`);
+            throw new Error(
+                'Failed to auto-detect Azure DevOps info: git not found in PATH or not a git repository. ' +
+                'Set "organization" and "project" explicitly in .optimus/config/vcs.json'
+            );
         }
     }
 
