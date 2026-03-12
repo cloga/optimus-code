@@ -322,60 +322,6 @@ ${desc}
 }
 
 /**
- * Auto-generate a minimal SKILL.md after successful T3 execution.
- * Uses fs.writeFileSync directly — NO agent spawning (anti-recursion safety).
- * Never overwrites existing skills.
- */
-function autoGenerateSkill(workspacePath: string, role: string, taskDescription: string, roleDescription?: string): boolean {
-    const safeRole = sanitizeRoleName(role);
-    const skillDir = path.join(workspacePath, '.optimus', 'skills', safeRole);
-    const skillPath = path.join(skillDir, 'SKILL.md');
-
-    // Never overwrite existing skills
-    if (fs.existsSync(skillPath)) {
-        return false;
-    }
-
-    fs.mkdirSync(skillDir, { recursive: true });
-
-    const titleCase = safeRole.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const firstLine = (taskDescription || '').split('\n')[0].substring(0, 200).replace(/'/g, "\\'");
-    const purpose = roleDescription
-        ? roleDescription.split('\n')[0].substring(0, 300)
-        : `Operational skill for ${titleCase} tasks`;
-    const domain = safeRole.replace(/-/g, ' ');
-
-    const skillContent = `---
-name: ${safeRole}
-description: 'Auto-generated operational skill for ${safeRole}'
-version: 0.1.0
-auto_generated: true
-source_task: '${firstLine}'
----
-
-# ${titleCase} Skill
-
-## Purpose
-${purpose}
-
-## Workflow
-1. Analyze the task requirements
-2. Apply domain expertise for ${domain}
-3. Execute and deliver results
-4. Report completion
-
-## Constraints
-- Follow all system rules and Meta-Rules
-- Write outputs to designated paths only
-- Report errors clearly if blocked
-`;
-
-    fs.writeFileSync(skillPath, skillContent, 'utf8');
-    console.error(`[Auto-Skill Genesis] Generated skill for '${safeRole}' at .optimus/skills/${safeRole}/SKILL.md`);
-    return true;
-}
-
-/**
  * Asynchronously enhance a thin T2 role template using the agent-creator skill.
  * Spawns a background child process that delegates to agent-creator.
  * Non-blocking — fires and forgets.
@@ -930,130 +876,15 @@ Please provide your complete execution result below.`;
 
         // --- Pre-Flight: Ensure T2 role template exists BEFORE creating T1 ---
         // Logical order: T2 (role definition) → T1 (instance). Never create T1 without T2.
+        // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
         if (isT3) {
-            trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
-        }
-        await ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo, currentDepth);
-
-        // --- Pre-Flight: Create T1 instance placeholder from T2 template ---
-        // session_id is unknown until after execution, so use a temp name.
-        // Post-execution will rename to {role}_{session_id_prefix}.md
-        const agentsDir = path.join(workspacePath, '.optimus', 'agents');
-        if (!fs.existsSync(agentsDir)) fs.mkdirSync(agentsDir, { recursive: true });
-
-        const tempId = Math.random().toString(36).slice(2, 10);
-        const t1TempPath = t1Path || path.join(agentsDir, `${role}_pending_${tempId}.md`);
-        if (!t1Path) {
-            // No existing T1 instance found — create a new placeholder
-            const t1Template = fs.existsSync(t2Path)
-                ? fs.readFileSync(t2Path, 'utf8')
-                : `---\nrole: ${role}\n---\n\n# ${role}\n`;
-            const t1Instance = updateFrontmatter(t1Template, {
-                role: role,
-                base_tier: 'T1',
-                engine: activeEngine,
-                ...(activeModel ? { model: activeModel } : {}),
-                session_id: '',
-                status: 'running',
-                created_at: new Date().toISOString()
-            });
-            fs.writeFileSync(t1TempPath, t1Instance, 'utf8');
-            console.error(`[Orchestrator] T2→T1: Created temp agent placeholder '${role}' at ${path.basename(t1TempPath)}`);
-        }
-
-        const extraEnv: Record<string, string> = {
-            OPTIMUS_DELEGATION_DEPTH: String(childDepth)
-        };
-        if (parentIssueNumber !== undefined) {
-            extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
-        } else {
-            // Explicitly clear inherited env var to prevent stale grandparent references
-            extraEnv.OPTIMUS_PARENT_ISSUE = '';
-        }
-        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv);
-
-        // --- Fail-Fast: Detect CLI-level errors in output ---
-        // Some CLIs (e.g., Copilot) exit code 0 but output error text to stderr,
-        // which gets mixed into the response as "> [LOG] ..." lines.
-        // Only treat as fatal if the ACTUAL content (non-LOG lines) is very short,
-        // indicating the CLI failed to produce real output.
-        const nonLogLines = response.split('\n').filter(l => !l.startsWith('> [LOG]')).join('\n').trim();
-        const firstLines = response.slice(0, 500);
-        const errorPatterns = [
-            /^> \[LOG\] [Ee]rror:/m,
-            /^API Error: [45]\d\d/m,
-            /^error: option .* is invalid/m,
-            /^Error: No authentication/m,
-            /^Worker execution failed:/m,
-        ];
-        const matchedError = errorPatterns.find(p => p.test(firstLines));
-        // Only fail if error pattern matched AND there's no meaningful non-log output
-        if (matchedError && nonLogLines.length < 100) {
-            // Clean up temp T1 — don't leave zombies
-            const tempFile = t1Path || path.join(workspacePath, '.optimus', 'agents', `${role}_pending_${tempId}.md`);
-            if (fs.existsSync(tempFile) && tempFile.includes('pending_')) {
-                try { fs.unlinkSync(tempFile); } catch {}
-            }
-            throw new Error(
-                `⚠️ **Delegation Failed (Engine Error)**: Role \`${role}\` on engine \`${activeEngine}\` returned an error.\n\n` +
-                `**Error output**:\n\`\`\`\n${firstLines.trim()}\n\`\`\`\n\n` +
-                `**Suggested actions**:\n` +
-                `- Re-delegate with a different engine (e.g., \`claude-code\` instead of \`github-copilot\`)\n` +
-                `- Check if the model name is valid for this engine\n` +
-                `- Verify CLI authentication (e.g., \`copilot login\`, \`claude auth\`)`
-            );
-        }
-
-        // --- Post-Execution: Backfill session_id and rename T1 to final name ---
-        const currentT1 = fs.existsSync(t1TempPath) ? t1TempPath : t1Path;
-        if (currentT1 && fs.existsSync(currentT1)) {
-            const currentStr = fs.readFileSync(currentT1, 'utf8');
-            const updates: Record<string, string> = { status: 'idle' };
-            const newSessionId = adapter.lastSessionId;
-            if (newSessionId) {
-                updates.session_id = newSessionId;
-            }
-            const updated = updateFrontmatter(currentStr, updates);
-
-            // Rename to final name: {role}_{session_id_prefix}.md
-            const sessionPrefix = (newSessionId || tempId).slice(0, 8);
-            const finalT1Path = path.join(agentsDir, `${role}_${sessionPrefix}.md`);
-            fs.writeFileSync(finalT1Path, updated, 'utf8');
-            // Clean up temp/old file if path changed
-            if (currentT1 !== finalT1Path && fs.existsSync(currentT1)) {
-                try { fs.unlinkSync(currentT1); } catch {}
-            }
-            console.error(`[Orchestrator] T1 finalized: '${role}' → ${path.basename(finalT1Path)}, session=${newSessionId || 'none'}, status=idle`);
-        }
-
-        const dir = path.dirname(outputPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-        fs.writeFileSync(outputPath, response, 'utf8');
-
-        // Auto-Skill Genesis: generate skill after successful T3 execution
-        if (isT3) {
-            try {
-                const safeRoleForSkill = sanitizeRoleName(role);
-                const t2PathForSkill = path.join(workspacePath, '.optimus', 'roles', `${safeRoleForSkill}.md`);
-                let roleDescription: string | undefined;
-                if (fs.existsSync(t2PathForSkill)) {
-                    const t2Content = fs.readFileSync(t2PathForSkill, 'utf8');
-                    const descMatch = t2Content.match(/description:\s*["']?(.+?)["']?\s*$/m);
-                    if (descMatch) {
-                        roleDescription = descMatch[1];
-                    }
-                }
-                autoGenerateSkill(workspacePath, role, taskText, roleDescription);
-            } catch (skillGenError: any) {
-                console.error(`[Auto-Skill Genesis] Warning: failed to generate skill for '${role}': ${skillGenError.message}`);
-                // Non-fatal — don't fail the delegation over skill generation
-            }
-
-            // T2 Role Enhancement: asynchronously upgrade thin T2 template using agent-creator
             try {
                 enhanceT2RoleAsync(workspacePath, role, taskText, childDepth);
             } catch (enhanceError: any) {
+                console.error(`[T2 Enhancement] Warning: failed to queue enhancement for '${role}': ${enhanceError.message}`);
+                // Non-fatal — don't fail the delegation over role enhancement
+            }
+        } catch (enhanceError: any) {
                 console.error(`[T2 Enhancement] Warning: failed to queue enhancement for '${role}': ${enhanceError.message}`);
                 // Non-fatal — don't fail the delegation over role enhancement
             }

@@ -79,6 +79,14 @@ Two meta-skills are pre-installed to enable self-evolution:
 3. The agent reads `skill-creator` SKILL.md, learns the format, and writes the new skill
 4. Retry the original delegation — skill pre-flight now passes
 
+## Role vs Skill Architecture
+
+- **Role** = WHO does the work (identity, constraints, permissions) — stored in `.optimus/roles/`
+- **Skill** = HOW to do the work (operational SOP, workflow, tools) — stored in `.optimus/skills/`
+- Roles and Skills have a **many-to-many** relationship, bound at runtime via `required_skills`
+- **Naming convention**: Roles use identity names (e.g., `product-manager`), Skills use capability names (e.g., `feature-dev`, `git-workflow`)
+- Never name a Skill after a Role — skills describe capabilities, not identities
+
 ## Engine/Model Resolution
 
 When delegating, engine and model are resolved in priority order:
