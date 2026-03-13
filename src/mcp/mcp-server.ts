@@ -23,6 +23,7 @@ import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 import { agentSignature } from "../utils/agentSignature";
 import { validateRoleNotModelName, validateEngineAndModel, looksLikeModelName } from "../utils/validateMcpInput";
 import { resolveRoleName, resolveRoleNames, getRegisteredRoles } from "../utils/resolveRoleName";
+import { MetaCronEngine, loadCrontab, saveCrontab } from "./meta-cron-engine";
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
 function requireParams(toolName: string, params: Record<string, any>, required: string[]): void {
