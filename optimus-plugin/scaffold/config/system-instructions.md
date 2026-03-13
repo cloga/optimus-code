@@ -215,6 +215,9 @@ When making any code modifications to the Optimus project itself (e.g., `src/`, 
 1. **Agent MUST Build**: The agent must automatically run the build command (`cd optimus-plugin && npm run build`) after modifications.
 2. **Prompt User to Reload**: After a successful build, the agent **MUST explicitly and clearly prompt the user** to execute the "Developer: Reload Window" command in VS Code, as this is strictly required for the new MCP server binary to be loaded.
 
+## MCP Tool Development Standard
+When adding or modifying MCP tools in `src/mcp/mcp-server.ts`, agents MUST use the `mcp-builder` skill (`required_skills: ["mcp-builder"]`). This ensures they follow the "Extending an Existing MCP Server" guide — matching existing schema patterns, handler structure, `requireParams` validation, and actionable error messages.
+
 ### Impact Rule: When making changes, ALWAYS evaluate whether the change should propagate to the plugin.
 
 | Change Type | Apply to `.optimus/` (host) | Also apply to `optimus-plugin/` (packaging) |
