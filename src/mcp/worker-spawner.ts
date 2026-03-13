@@ -129,10 +129,13 @@ export interface MasterRoleInfo {
  * Skills live at .optimus/skills/<name>/SKILL.md
  */
 function checkRequiredSkills(workspacePath: string, skills: string[]): { found: Map<string, string>, missing: string[] } {
+    // Backward compat: agent-creator was renamed to role-creator in Issue #213
+    const SKILL_ALIASES: Record<string, string> = { 'agent-creator': 'role-creator' };
     const found = new Map<string, string>();
     const missing: string[] = [];
     for (const skill of skills) {
-        const skillPath = path.join(workspacePath, '.optimus', 'skills', skill, 'SKILL.md');
+        const resolvedSkill = SKILL_ALIASES[skill] || skill;
+        const skillPath = path.join(workspacePath, '.optimus', 'skills', resolvedSkill, 'SKILL.md');
         if (fs.existsSync(skillPath)) {
             found.set(skill, fs.readFileSync(skillPath, 'utf8'));
         } else {
