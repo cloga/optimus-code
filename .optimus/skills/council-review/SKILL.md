@@ -43,6 +43,12 @@ Commonly requested domain roles:
 - `product-expert`: User stories, requirements alignment, scope validation
 - `ux-researcher`: Developer experience, API ergonomics, onboarding friction
 
+### First Principles Directive
+
+At least one expert in every council SHOULD approach the problem from first principles: decompose the requirements to their fundamental constraints and design upward, rather than pattern-matching against familiar solutions. This counterbalances the tendency of LLMs to reproduce training data patterns instead of reasoning from the specific problem's unique constraints.
+
+When writing the proposal for the council, include a prompt for one expert: "Ignore convention for a moment. If you were solving this problem for the first time with no existing patterns, what would you build?"
+
 ### Step 3: Dispatch the Council via MCP Tool
 1. Tell the user you have finalized the proposal and are dispatching the expert council.
 2. Use `dispatch_council_async` (preferred) or `dispatch_council`.
@@ -62,6 +68,12 @@ Commonly requested domain roles:
 Analyze the gathered reviews.
 - **If there are NO blockers**: Implement the suggestions and output the final `.optimus/TODO.md` file (the implementation backlog).
 - **If there are FATAL conflicts**: Create `.optimus/CONFLICTS.md` outlining the opposing viewpoints cleanly, pause, and ask the User to arbitrate.
+
+**Important**: Before dispatching, check the roster (`roster_check`) for each expert role.
+For any role that does NOT have a T2 template, you MUST either:
+1. Provide `role_descriptions` in the `dispatch_council` call to auto-create proper T2 templates, OR
+2. Pre-create the role via `role-creator` before dispatching the council.
+Failing to do either means the role will run as a T3 zero-shot worker with no persona context.
 
 ## Synchronous Execution (Fallback ONLY)
 

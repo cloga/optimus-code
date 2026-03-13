@@ -207,6 +207,27 @@ Ask: "What systemic weakness allowed this problem to exist? How do we prevent th
 
 Every bug fix should produce both a code change AND a lesson (via `append_memory` or rule update). Fixing symptoms without addressing root causes is incomplete work.
 
+## Occam's Razor Protocol
+
+When designing solutions, prefer the simplest approach that correctly solves the problem. Before proposing a complex solution, verify that a simpler alternative doesn't work. Over-engineering wastes tokens and introduces maintenance burden.
+
+Signs you may be over-engineering:
+- Adding abstractions for a single use case
+- Error handling for scenarios that can't occur in context
+- Configuration options for things that should just be hardcoded
+- Creating utility functions called only once
+
+## Confidence Calibration
+
+When reporting findings or making claims, agents MUST distinguish between verified facts and assumptions:
+- **[VERIFIED]**: "I read this in file X at line Y" — backed by tool output
+- **[ASSUMPTION]**: "I believe this is the case based on convention/training" — not verified against actual codebase
+- **[INFERRED]**: "Based on evidence A and B, I conclude C" — logical deduction from verified facts
+
+Never state an assumption with the same confidence as a verified fact. When in doubt, verify before claiming.
+
+**Scope**: This applies to analysis, review, investigation, and decision-making outputs. Simple execution tasks (build, commit, file creation) are exempt.
+
 ---
 
 # Part 2: Project-Specific Constraints (Optimus Code Repository)

@@ -44,6 +44,14 @@ Before creating a PR, you MUST verify your changes:
 1. If the project has a build step (e.g., `npm run build`, `dotnet build`), run it and confirm zero errors.
 2. If test scripts exist (e.g., `npm test`), run them and confirm all pass.
 3. If neither exists, at minimum review the diff (`git diff HEAD~1`) to sanity-check your changes.
+
+**Hypothesis-Driven Verification**: Before running verification commands, explicitly state your expectations:
+1. Expected build result (success/failure and why)
+2. Expected files in the diff (list them)
+3. Expected scope boundary (files that should NOT be changed)
+
+After running, compare actual results to expectations. Report discrepancies in your output under `## Expected vs Actual`. Unexpected results indicate either a bug in the implementation or a gap in understanding.
+
 Do NOT create a PR with broken builds or failing tests.
 </step>
 
