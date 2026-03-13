@@ -9,6 +9,14 @@ version: 1.0.0
 ## When to Use
 When the user or PM requests a new version release.
 
+## Pre-Release Decision (PM responsibility)
+Before starting the release process, PM must evaluate:
+1. Is there a release readiness report in `.optimus/reports/`? Read it first.
+2. P0 bug fix unreleased? → Immediate patch release
+3. Multiple features accumulated? → Batch into minor release
+4. Major architecture changes? → Requires: updated docs, migration guide, full CHANGELOG, council review
+5. Only docs/chore? → Do NOT release just for this
+
 ## Pre-Release Checklist
 Before starting, verify ALL of the following:
 1. All target PRs are merged to master
