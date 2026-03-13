@@ -14,7 +14,7 @@
   --border:#2a2a2e;
   --text:#e4e4e7;
   --text-secondary:#a1a1aa;
-  --text-tertiary:#71717a;
+  --text-tertiary:#7e7e86;
   --accent:#3b82f6;
   --accent-hover:#60a5fa;
   --accent-secondary:#10b981;
@@ -32,6 +32,7 @@ body{
 }
 a{color:var(--accent-hover);text-decoration:none;transition:color .2s}
 a:hover{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .container{max-width:1100px;margin:0 auto;padding:0 24px}
 
@@ -370,6 +371,40 @@ footer{
 .footer-links a:hover{color:var(--accent)}
 .footer-tagline{color:var(--text-tertiary);font-size:.875rem;font-style:italic}
 
+/* ========== WORKFLOW PIPELINE ========== */
+.workflow-pipeline{
+  display:flex;align-items:flex-start;justify-content:center;gap:0;
+}
+.workflow-step{
+  flex:1;max-width:200px;text-align:center;position:relative;
+  padding:0 8px;
+}
+.workflow-step-num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:.85rem;font-weight:700;
+  margin-bottom:10px;
+}
+.workflow-step-icon{font-size:1.5rem;display:block;margin-bottom:8px}
+.workflow-step h4{font-size:.9rem;font-weight:600;margin-bottom:4px;line-height:1.3}
+.workflow-step p{font-size:.78rem;color:var(--text-secondary);line-height:1.5}
+.workflow-step:not(:last-child)::after{
+  content:'\2192';position:absolute;top:12px;right:-12px;
+  font-size:1.1rem;color:var(--text-tertiary);z-index:2;
+}
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(24px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.animate-on-scroll{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
+.stagger-1{transition-delay:.1s}
+.stagger-2{transition-delay:.2s}
+.stagger-3{transition-delay:.3s}
+.stagger-4{transition-delay:.4s}
+.stagger-5{transition-delay:.5s}
+.stagger-6{transition-delay:.6s}
+
 /* ========== ANIMATIONS ========== */
 @keyframes fadeIn{
   from{opacity:0}to{opacity:1}
@@ -388,6 +423,12 @@ footer{
 .stagger-6{transition-delay:.6s}
 
 /* ========== RESPONSIVE ========== */
+@media(min-width:768px) and (max-width:1023px){
+  .workflow-pipeline{flex-wrap:wrap;gap:24px 0;justify-content:center}
+  .workflow-step{flex:0 0 33.33%;max-width:33.33%}
+  .workflow-step:nth-child(3)::after{display:none}
+  .workflow-step:nth-child(4){margin-left:16.66%}
+}
 @media(max-width:1023px){
   .arch-split{grid-template-columns:1fr;text-align:center}
   .arch-stats{justify-content:center}
@@ -402,6 +443,22 @@ footer{
   .btn-primary,.btn-secondary{width:100%;max-width:280px;justify-content:center}
   .tier-flow{flex-direction:column;gap:0}
   .tier-arrow{transform:rotate(90deg);padding:8px 0}
+  /* Workflow vertical timeline */
+  .workflow-pipeline{
+    flex-direction:column;align-items:flex-start;gap:0;
+    padding-left:24px;position:relative;
+  }
+  .workflow-pipeline::before{
+    content:'';position:absolute;left:41px;top:18px;bottom:18px;
+    width:2px;background:var(--border);
+  }
+  .workflow-step{
+    display:flex;align-items:flex-start;gap:16px;
+    text-align:left;padding:12px 0;max-width:100%;
+  }
+  .workflow-step-num{flex-shrink:0}
+  .workflow-step:not(:last-child)::after{display:none}
+  .workflow-step-icon{display:inline;font-size:1.2rem;margin-bottom:0}
 }
 @media(max-width:374px){
   .container{padding:0 12px}
@@ -547,6 +604,59 @@ footer{
   </div>
 </section>
 
+<!-- ==================== SECTION 2.5: WORKFLOW PIPELINE ==================== -->
+<section id="workflow">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="workflow_title">Watch the Swarm Work</h2>
+      <p data-i18n="workflow_subtitle">From request to merge &mdash; a fully automated pipeline</p>
+    </div>
+
+    <div class="workflow-pipeline">
+      <div class="workflow-step animate-on-scroll">
+        <div class="workflow-step-num">1</div>
+        <div class="workflow-step-content">
+          <span class="workflow-step-icon" aria-hidden="true">&#128172;</span>
+          <h4 data-i18n="workflow_s1_title">User Request</h4>
+          <p data-i18n="workflow_s1_desc">You describe what you need in natural language</p>
+        </div>
+      </div>
+      <div class="workflow-step animate-on-scroll stagger-1">
+        <div class="workflow-step-num">2</div>
+        <div class="workflow-step-content">
+          <span class="workflow-step-icon" aria-hidden="true">&#128203;</span>
+          <h4 data-i18n="workflow_s2_title">PM Creates Issue</h4>
+          <p data-i18n="workflow_s2_desc">Product Manager structures requirements and creates a tracking issue</p>
+        </div>
+      </div>
+      <div class="workflow-step animate-on-scroll stagger-2">
+        <div class="workflow-step-num">3</div>
+        <div class="workflow-step-content">
+          <span class="workflow-step-icon" aria-hidden="true">&#128187;</span>
+          <h4 data-i18n="workflow_s3_title">Dev Writes Code</h4>
+          <p data-i18n="workflow_s3_desc">Developer implements with full architectural context</p>
+        </div>
+      </div>
+      <div class="workflow-step animate-on-scroll stagger-3">
+        <div class="workflow-step-num">4</div>
+        <div class="workflow-step-content">
+          <span class="workflow-step-icon" aria-hidden="true">&#9989;</span>
+          <h4 data-i18n="workflow_s4_title">QA Verifies</h4>
+          <p data-i18n="workflow_s4_desc">QA Engineer runs tests and reviews quality</p>
+        </div>
+      </div>
+      <div class="workflow-step animate-on-scroll stagger-4">
+        <div class="workflow-step-num">5</div>
+        <div class="workflow-step-content">
+          <span class="workflow-step-icon" aria-hidden="true">&#128256;</span>
+          <h4 data-i18n="workflow_s5_title">PR Merged</h4>
+          <p data-i18n="workflow_s5_desc">Pull request merged, issue closed, work shipped</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ==================== SECTION 3: SEE IT IN ACTION ==================== -->
 <section id="see-it-in-action">
   <div class="container">
@@ -609,7 +719,7 @@ footer{
           <span class="arch-stat" data-i18n="arch_stat_roles">Unlimited Roles</span>
           <span class="arch-stat" data-i18n="arch_stat_config">Zero Config</span>
         </div>
-        <a href="architecture.html" class="btn-primary" data-i18n-html="arch_cta">Read Architecture Whitepaper &rarr;</a>
+        <a href="ARCHITECTURE.md" class="btn-primary" data-i18n-html="arch_cta">Read Architecture Whitepaper &rarr;</a>
       </div>
       <div class="arch-graphic animate-on-scroll" aria-label="Architecture layers diagram">
         <div class="arch-layer" style="border-color:var(--accent)">
@@ -738,7 +848,7 @@ footer{
     <div class="footer-links">
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener" data-i18n="footer_docs">Documentation</a>
-      <a href="architecture.html" data-i18n="footer_arch">Architecture</a>
+      <a href="ARCHITECTURE.md" data-i18n="footer_arch">Architecture</a>
       <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
     <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
@@ -764,6 +874,18 @@ var i18n={
     tier_ephemeral:"Ephemeral",
     tier_template:"Template",
     tier_instance:"Instance",
+    workflow_title:"Watch the Swarm Work",
+    workflow_subtitle:"From request to merge \u2014 a fully automated pipeline",
+    workflow_s1_title:"User Request",
+    workflow_s1_desc:"You describe what you need in natural language",
+    workflow_s2_title:"PM Creates Issue",
+    workflow_s2_desc:"Product Manager structures requirements and creates a tracking issue",
+    workflow_s3_title:"Dev Writes Code",
+    workflow_s3_desc:"Developer implements with full architectural context",
+    workflow_s4_title:"QA Verifies",
+    workflow_s4_desc:"QA Engineer runs tests and reviews quality",
+    workflow_s5_title:"PR Merged",
+    workflow_s5_desc:"Pull request merged, issue closed, work shipped",
     action_title:"See It In Action",
     action_subtitle:"Real workflows, not demos",
     action_bugfix_title:"Bug Fix",
@@ -842,6 +964,18 @@ var i18n={
     tier_ephemeral:"\u4E34\u65F6\u4F53",
     tier_template:"\u6A21\u677F",
     tier_instance:"\u5B9E\u4F8B",
+    workflow_title:"\u89C2\u770B\u96C6\u7FA4\u5DE5\u4F5C",
+    workflow_subtitle:"\u4ECE\u8BF7\u6C42\u5230\u5408\u5E76 \u2014 \u5168\u81EA\u52A8\u6D41\u6C34\u7EBF",
+    workflow_s1_title:"\u7528\u6237\u8BF7\u6C42",
+    workflow_s1_desc:"\u7528\u81EA\u7136\u8BED\u8A00\u63CF\u8FF0\u4F60\u7684\u9700\u6C42",
+    workflow_s2_title:"\u4EA7\u54C1\u7ECF\u7406\u521B\u5EFA Issue",
+    workflow_s2_desc:"\u4EA7\u54C1\u7ECF\u7406\u6574\u7406\u9700\u6C42\u5E76\u521B\u5EFA\u8DDF\u8E2A Issue",
+    workflow_s3_title:"\u5F00\u53D1\u8005\u7F16\u5199\u4EE3\u7801",
+    workflow_s3_desc:"\u5F00\u53D1\u8005\u5728\u5B8C\u6574\u67B6\u6784\u4E0A\u4E0B\u6587\u4E0B\u5B9E\u73B0",
+    workflow_s4_title:"QA \u9A8C\u8BC1",
+    workflow_s4_desc:"QA \u5DE5\u7A0B\u5E08\u8FD0\u884C\u6D4B\u8BD5\u5E76\u5BA1\u67E5\u8D28\u91CF",
+    workflow_s5_title:"PR \u5408\u5E76",
+    workflow_s5_desc:"Pull Request \u5408\u5E76\uFF0CIssue \u5173\u95ED\uFF0C\u5DE5\u4F5C\u4EA4\u4ED8",
     action_title:"\u5B9E\u6218\u6F14\u793A",
     action_subtitle:"\u771F\u5B9E\u5DE5\u4F5C\u6D41\uFF0C\u800C\u975E\u6F14\u793A",
     action_bugfix_title:"\u4FEE\u590D Bug",
@@ -963,6 +1097,7 @@ function setLang(lang){
     entries.forEach(function(e){
       if(e.isIntersecting){
         e.target.classList.add('visible');
+        io.unobserve(e.target);
       }
     });
   },{threshold:0.15});
@@ -979,16 +1114,17 @@ function setLang(lang){
   function doCopy(){
     var cmd='npx -y github:cloga/optimus-code init';
     if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(cmd).then(showTip);
+      navigator.clipboard.writeText(cmd).then(function(){showTip('Copied!');}).catch(function(){showTip('Failed');});
     }else{
       var ta=document.createElement('textarea');
       ta.value=cmd;ta.style.position='fixed';ta.style.opacity='0';
       document.body.appendChild(ta);ta.select();
-      try{document.execCommand('copy');showTip();}catch(e){}
+      try{var ok=document.execCommand('copy');showTip(ok?'Copied!':'Failed');}catch(e){showTip('Failed');}
       document.body.removeChild(ta);
     }
   }
-  function showTip(){
+  function showTip(msg){
+    tip.textContent=msg;
     tip.classList.add('show');
     setTimeout(function(){tip.classList.remove('show');},1500);
   }
