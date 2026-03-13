@@ -139,7 +139,7 @@ var init_GitHubProvider = __esm({
           throw new Error("GitHub token not found in environment variables");
         }
         const prNumber = typeof pullRequestId === "string" ? parseInt(pullRequestId) : pullRequestId;
-        const PROTECTED_BRANCHES2 = ["master", "main", "develop", "release"];
+        const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
         try {
           const prResponse = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/pulls/${prNumber}`, {
             headers: {
@@ -172,7 +172,7 @@ var init_GitHubProvider = __esm({
           if (!response.ok) {
             return { merged: false, headBranch, baseBranch };
           }
-          if (headBranch && !PROTECTED_BRANCHES2.includes(headBranch)) {
+          if (headBranch && !PROTECTED_BRANCHES.includes(headBranch)) {
             try {
               await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/git/refs/heads/${headBranch}`, {
                 method: "DELETE",
@@ -1756,8 +1756,8 @@ var init_AdoProvider = __esm({
 var import_server = require("@modelcontextprotocol/sdk/server/index.js");
 var import_stdio = require("@modelcontextprotocol/sdk/server/stdio.js");
 var import_types = require("@modelcontextprotocol/sdk/types.js");
-var import_fs4 = __toESM(require("fs"));
-var import_path4 = __toESM(require("path"));
+var import_fs3 = __toESM(require("fs"));
+var import_path3 = __toESM(require("path"));
 var import_crypto = __toESM(require("crypto"));
 
 // ../src/mcp/worker-spawner.ts
@@ -2229,7 +2229,7 @@ ${outputBlock}
     const record = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record, result);
     const lines = this.countMeaningfulLines(content);
-    const path9 = this.getStructuredResultPath(record);
+    const path8 = this.getStructuredResultPath(record);
     const lineRange = this.getStructuredResultLineRange(record);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -2263,30 +2263,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path9, "matches=0"]);
+        return this.buildStructuredSummary([path8, "matches=0"]);
       }
-      return this.buildStructuredSummary([path9, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path9, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path8, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path9, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path9, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path8, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path9, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path9, "items=0"]);
+        return this.buildStructuredSummary([path8, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path9, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path8, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path9, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path8, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -2891,22 +2891,22 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   getSpawnCommand(mode) {
     const args = [];
     const cwd = PersistentAgentAdapter.getWorkspacePath();
-    const fs9 = require("fs");
-    const path9 = require("path");
+    const fs8 = require("fs");
+    const path8 = require("path");
     args.push("--add-dir", cwd);
-    const localMcpPath = path9.join(cwd, ".vscode", "mcp.json");
-    if (fs9.existsSync(localMcpPath)) {
+    const localMcpPath = path8.join(cwd, ".vscode", "mcp.json");
+    if (fs8.existsSync(localMcpPath)) {
       try {
-        let mcpContent = fs9.readFileSync(localMcpPath, "utf8");
+        let mcpContent = fs8.readFileSync(localMcpPath, "utf8");
         mcpContent = mcpContent.replace(/\$\{workspaceFolder\}/g, cwd.replace(/\\/g, "/"));
         mcpContent = mcpContent.replace(/\$\{env:(\w+)\}/g, (_2, varName) => {
           return (process.env[varName] || "").replace(/\\/g, "/");
         });
         const localMcp = JSON.parse(mcpContent);
         const claudeMcp = { mcpServers: localMcp.servers || localMcp.mcpServers || {} };
-        const proxyMcpPath = path9.join(cwd, ".optimus", ".claude-mcp.json");
-        fs9.mkdirSync(path9.dirname(proxyMcpPath), { recursive: true });
-        fs9.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
+        const proxyMcpPath = path8.join(cwd, ".optimus", ".claude-mcp.json");
+        fs8.mkdirSync(path8.dirname(proxyMcpPath), { recursive: true });
+        fs8.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
         args.push("--mcp-config", proxyMcpPath);
       } catch (e) {
       }
@@ -3110,10 +3110,12 @@ function trackT3Usage(workspacePath, role, success, engine, model) {
   });
 }
 function checkRequiredSkills(workspacePath, skills) {
+  const SKILL_ALIASES = { "agent-creator": "role-creator" };
   const found = /* @__PURE__ */ new Map();
   const missing = [];
   for (const skill of skills) {
-    const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", skill, "SKILL.md");
+    const resolvedSkill = SKILL_ALIASES[skill] || skill;
+    const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", resolvedSkill, "SKILL.md");
     if (import_fs.default.existsSync(skillPath)) {
       found.set(skill, import_fs.default.readFileSync(skillPath, "utf8"));
     } else {
@@ -3339,7 +3341,7 @@ ${roleCreatorSkillContent}
   const content = response.slice(fmStart).trim();
   const secondDash = content.indexOf("---", 3);
   if (secondDash === -1) {
-    throw new Error("agent-creator response had opening --- but no closing frontmatter delimiter");
+    throw new Error("role-creator response had opening --- but no closing frontmatter delimiter");
   }
   const dir = import_path.default.dirname(t2Path);
   if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });
@@ -3933,11 +3935,6 @@ function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
   }
 }
 
-// ../src/mcp/meta-cron-engine.ts
-var import_fs2 = __toESM(require("fs"));
-var import_path2 = __toESM(require("path"));
-var import_child_process = require("child_process");
-
 // ../src/managers/TaskManifestManager.ts
 var fs4 = __toESM(require("fs"));
 var path4 = __toESM(require("path"));
@@ -4045,241 +4042,14 @@ var TaskManifestManager = class {
   }
 };
 
-// ../src/mcp/meta-cron-engine.ts
-function matchesCronField(field, value, min, max) {
-  if (field === "*") return true;
-  if (field.includes("/")) {
-    const [rangeStr, stepStr] = field.split("/");
-    const step = parseInt(stepStr, 10);
-    if (isNaN(step) || step <= 0) return false;
-    let rangeStart = min;
-    let rangeEnd = max;
-    if (rangeStr !== "*") {
-      if (rangeStr.includes("-")) {
-        const [s, e] = rangeStr.split("-").map(Number);
-        rangeStart = s;
-        rangeEnd = e;
-      } else {
-        rangeStart = parseInt(rangeStr, 10);
-        rangeEnd = max;
-      }
-    }
-    if (value < rangeStart || value > rangeEnd) return false;
-    return (value - rangeStart) % step === 0;
-  }
-  if (field.includes(",")) {
-    return field.split(",").some((v2) => matchesCronField(v2.trim(), value, min, max));
-  }
-  if (field.includes("-")) {
-    const [start, end] = field.split("-").map(Number);
-    return value >= start && value <= end;
-  }
-  return parseInt(field, 10) === value;
-}
-function matchesCronExpression(expression, now) {
-  const fields = expression.trim().split(/\s+/);
-  if (fields.length !== 5) return false;
-  const [minuteField, hourField, dayOfMonthField, monthField, dayOfWeekField] = fields;
-  const minute = now.getMinutes();
-  const hour = now.getHours();
-  const dayOfMonth = now.getDate();
-  const month = now.getMonth() + 1;
-  const dayOfWeek = now.getDay();
-  return matchesCronField(minuteField, minute, 0, 59) && matchesCronField(hourField, hour, 0, 23) && matchesCronField(dayOfMonthField, dayOfMonth, 1, 31) && matchesCronField(monthField, month, 1, 12) && matchesCronField(dayOfWeekField, dayOfWeek, 0, 6);
-}
-function getLockDir(workspacePath) {
-  return import_path2.default.join(workspacePath, ".optimus", "system", "cron-locks");
-}
-function getLockPath(workspacePath, id) {
-  return import_path2.default.join(getLockDir(workspacePath), `${id}.lock`);
-}
-function isLocked(workspacePath, id) {
-  const lockPath = getLockPath(workspacePath, id);
-  try {
-    if (!import_fs2.default.existsSync(lockPath)) return false;
-    const stat = import_fs2.default.statSync(lockPath);
-    const ageMs = Date.now() - stat.mtimeMs;
-    return ageMs < 60 * 60 * 1e3;
-  } catch {
-    return false;
-  }
-}
-function createLock(workspacePath, id) {
-  try {
-    const lockDir = getLockDir(workspacePath);
-    if (!import_fs2.default.existsSync(lockDir)) import_fs2.default.mkdirSync(lockDir, { recursive: true });
-    import_fs2.default.writeFileSync(getLockPath(workspacePath, id), JSON.stringify({
-      pid: process.pid,
-      locked_at: (/* @__PURE__ */ new Date()).toISOString()
-    }), "utf8");
-    return true;
-  } catch {
-    return false;
-  }
-}
-function deleteLock(workspacePath, id) {
-  try {
-    const lockPath = getLockPath(workspacePath, id);
-    if (import_fs2.default.existsSync(lockPath)) import_fs2.default.unlinkSync(lockPath);
-  } catch {
-  }
-}
-function getCrontabPath(workspacePath) {
-  return import_path2.default.join(workspacePath, ".optimus", "system", "meta-crontab.json");
-}
-function loadCrontab(workspacePath) {
-  const crontabPath = getCrontabPath(workspacePath);
-  try {
-    if (!import_fs2.default.existsSync(crontabPath)) return null;
-    return JSON.parse(import_fs2.default.readFileSync(crontabPath, "utf8"));
-  } catch (e) {
-    console.error(`[Meta-Cron] Failed to parse crontab: ${e.message}`);
-    return null;
-  }
-}
-function saveCrontab(workspacePath, data) {
-  const crontabPath = getCrontabPath(workspacePath);
-  const dir = import_path2.default.dirname(crontabPath);
-  if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
-  import_fs2.default.writeFileSync(crontabPath, JSON.stringify(data, null, 2), "utf8");
-}
-var MetaCronEngine = class _MetaCronEngine {
-  static interval = null;
-  static workspacePath = "";
-  static runningCount = 0;
-  static init(workspacePath) {
-    this.workspacePath = workspacePath;
-    const crontab = loadCrontab(workspacePath);
-    if (!crontab) {
-      console.error("[Meta-Cron] No crontab found \u2014 engine idle");
-    } else {
-      console.error(`[Meta-Cron] Loaded ${crontab.crons.length} cron entries`);
-    }
-    this.interval = setInterval(() => {
-      this.tick();
-    }, 6e4);
-    if (this.interval && typeof this.interval.unref === "function") {
-      this.interval.unref();
-    }
-  }
-  static shutdown() {
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-      console.error("[Meta-Cron] Engine shut down");
-    }
-  }
-  static tick() {
-    try {
-      const crontab = loadCrontab(this.workspacePath);
-      if (!crontab) return;
-      const now = /* @__PURE__ */ new Date();
-      let mutated = false;
-      for (const entry of crontab.crons) {
-        if (!entry.enabled) continue;
-        if (!matchesCronExpression(entry.cron_expression, now)) continue;
-        if (this.runningCount >= crontab.max_concurrent) {
-          console.error(`[Meta-Cron] Skipping '${entry.id}' \u2014 max concurrent reached`);
-          continue;
-        }
-        if (entry.concurrency_policy === "Forbid" && isLocked(this.workspacePath, entry.id)) {
-          console.error(`[Meta-Cron] Skipping '${entry.id}' \u2014 still locked (Forbid)`);
-          continue;
-        }
-        if (entry.dry_run_remaining > 0) {
-          console.error(
-            `[Meta-Cron] DRY RUN (${entry.dry_run_remaining} remaining): Would fire '${entry.id}' -> role '${entry.role}'`
-          );
-          entry.dry_run_remaining--;
-          mutated = true;
-          continue;
-        }
-        this.fire(entry, crontab);
-        mutated = true;
-      }
-      if (mutated) saveCrontab(this.workspacePath, crontab);
-    } catch (e) {
-      console.error(`[Meta-Cron] Tick error: ${e.message}`);
-    }
-  }
-  static fire(entry, _crontab) {
-    if (!createLock(this.workspacePath, entry.id)) {
-      console.error(`[Meta-Cron] Failed to create lock for '${entry.id}'`);
-      return;
-    }
-    entry.last_run = (/* @__PURE__ */ new Date()).toISOString();
-    entry.last_status = "running";
-    entry.run_count++;
-    this.runningCount++;
-    const taskDescription = `You have been awakened by Meta-Cron (cron ID: ${entry.id}). Use your equipped skills to assess the system and take appropriate action.
-
-**Capability tier:** ${entry.capability_tier}
-**Max actions:** ${entry.max_actions}
-**Run number:** ${entry.run_count}`;
-    const taskId = `cron_${entry.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    TaskManifestManager.createTask(this.workspacePath, {
-      taskId,
-      type: "delegate_task",
-      role: entry.role,
-      task_description: taskDescription,
-      output_path: `.optimus/reports/cron-${entry.id}-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.md`,
-      workspacePath: this.workspacePath,
-      required_skills: entry.required_skills,
-      delegation_depth: 0
-    });
-    const child = (0, import_child_process.spawn)(process.execPath, [
-      import_path2.default.join(__dirname, "..", "..", "dist", "mcp-server.js"),
-      "--run-task",
-      taskId,
-      this.workspacePath
-    ], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      env: { ...process.env, OPTIMUS_DELEGATION_DEPTH: "0", OPTIMUS_CRON_TRIGGERED: "true" }
-    });
-    child.unref();
-    const entryId = entry.id;
-    const ws = this.workspacePath;
-    const checkInterval = setInterval(() => {
-      try {
-        const manifest = TaskManifestManager.loadManifest(ws);
-        const task = manifest[taskId];
-        if (task && (task.status === "completed" || task.status === "failed" || task.status === "verified" || task.status === "partial")) {
-          clearInterval(checkInterval);
-          deleteLock(ws, entryId);
-          _MetaCronEngine.runningCount = Math.max(0, _MetaCronEngine.runningCount - 1);
-          const freshCrontab = loadCrontab(ws);
-          if (freshCrontab) {
-            const freshEntry = freshCrontab.crons.find((c) => c.id === entryId);
-            if (freshEntry) {
-              freshEntry.last_status = task.status;
-              if (task.status === "failed") freshEntry.fail_count++;
-              saveCrontab(ws, freshCrontab);
-            }
-          }
-        }
-      } catch {
-      }
-    }, 3e4);
-    if (typeof checkInterval.unref === "function") checkInterval.unref();
-    const safetyTimer = setTimeout(() => {
-      clearInterval(checkInterval);
-      deleteLock(ws, entryId);
-      _MetaCronEngine.runningCount = Math.max(0, _MetaCronEngine.runningCount - 1);
-    }, 2 * 60 * 60 * 1e3);
-    if (typeof safetyTimer.unref === "function") safetyTimer.unref();
-  }
-};
-
 // ../src/utils/githubApi.ts
-var import_child_process2 = require("child_process");
+var import_child_process = require("child_process");
 function getToken() {
   return process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 }
 function parseGitRemote(workspacePath) {
   try {
-    const url = (0, import_child_process2.execSync)("git remote get-url origin", { cwd: workspacePath, encoding: "utf8" }).trim();
+    const url = (0, import_child_process.execSync)("git remote get-url origin", { cwd: workspacePath, encoding: "utf8" }).trim();
     const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
     if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
     const sshMatch = url.match(/github\.com:([^/]+)\/([^/.]+)/);
@@ -4331,8 +4101,8 @@ async function commentOnGitHubIssue(owner, repo, issueNumber, body) {
 }
 
 // ../src/mcp/council-runner.ts
-var import_fs3 = __toESM(require("fs"));
-var import_path3 = __toESM(require("path"));
+var import_fs2 = __toESM(require("fs"));
+var import_path2 = __toESM(require("path"));
 
 // ../src/utils/agentSignature.ts
 function agentSignature(role, taskId) {
@@ -4347,13 +4117,13 @@ _\u{1F916} Created by \`${role}\`${taskRef} via Optimus Spartan Swarm_`;
 function verifyOutputPath(outputPath) {
   if (!outputPath) return "partial";
   try {
-    const stat = import_fs3.default.statSync(outputPath);
+    const stat = import_fs2.default.statSync(outputPath);
     if (stat.isFile()) {
       if (stat.size === 0) return "partial";
-      const fd = import_fs3.default.openSync(outputPath, "r");
+      const fd = import_fs2.default.openSync(outputPath, "r");
       const buffer = Buffer.alloc(1024);
-      const bytesRead = import_fs3.default.readSync(fd, buffer, 0, 1024, 0);
-      import_fs3.default.closeSync(fd);
+      const bytesRead = import_fs2.default.readSync(fd, buffer, 0, 1024, 0);
+      import_fs2.default.closeSync(fd);
       const content = buffer.slice(0, bytesRead).toString("utf8");
       const lines = content.split("\n").slice(0, 5);
       for (const line of lines) {
@@ -4364,7 +4134,7 @@ function verifyOutputPath(outputPath) {
       return "verified";
     }
     if (stat.isDirectory()) {
-      const files = import_fs3.default.readdirSync(outputPath);
+      const files = import_fs2.default.readdirSync(outputPath);
       return files.length > 0 ? "verified" : "partial";
     }
     return "partial";
@@ -4430,7 +4200,7 @@ async function runAsyncWorker(taskId, workspacePath) {
         task.role_descriptions
       );
       const reviewsPath = task.output_path;
-      const synthesisPath = import_path3.default.join(reviewsPath, "COUNCIL_SYNTHESIS.md");
+      const synthesisPath = import_path2.default.join(reviewsPath, "COUNCIL_SYNTHESIS.md");
       let synthesisContent = `# Council Synthesis Report
 
 `;
@@ -4443,14 +4213,14 @@ async function runAsyncWorker(taskId, workspacePath) {
       let synthesisFailedRoles = [];
       for (let i = 0; i < task.roles.length; i++) {
         const role = task.roles[i];
-        const reviewFile = import_path3.default.join(reviewsPath, `${role}_review.md`);
+        const reviewFile = import_path2.default.join(reviewsPath, `${role}_review.md`);
         const status = verifyOutputPath(reviewFile);
         if (status === "verified") {
           synthesisVerifiedCount++;
           synthesisContent += `## ${i + 1}. Review from ${role}
 
 `;
-          const rawReview = import_fs3.default.readFileSync(reviewFile, "utf8");
+          const rawReview = import_fs2.default.readFileSync(reviewFile, "utf8");
           const { sanitized: reviewContent } = sanitizeExternalContent(rawReview, `review:${role}`);
           synthesisContent += reviewContent;
           synthesisContent += `
@@ -4483,7 +4253,7 @@ async function runAsyncWorker(taskId, workspacePath) {
 ${header}`
         );
       }
-      import_fs3.default.writeFileSync(synthesisPath, synthesisContent, "utf8");
+      import_fs2.default.writeFileSync(synthesisPath, synthesisContent, "utf8");
       console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
       try {
         const pmSynthesisPrompt = `You are the PM arbiter for this council review.
@@ -4510,7 +4280,7 @@ Your output MUST follow this exact format:
 Here is the synthesis report:
 
 ${synthesisContent}`;
-        const verdictPath = import_path3.default.join(reviewsPath, "VERDICT.md");
+        const verdictPath = import_path2.default.join(reviewsPath, "VERDICT.md");
         await delegateTaskSingle(
           "pm",
           pmSynthesisPrompt,
@@ -4534,7 +4304,7 @@ ${synthesisContent}`;
       const failedWorkers = [];
       const reviewsPath = task.output_path;
       for (const role of task.roles) {
-        const reviewFile = import_path3.default.join(reviewsPath, `${role}_review.md`);
+        const reviewFile = import_path2.default.join(reviewsPath, `${role}_review.md`);
         const status = verifyOutputPath(reviewFile);
         if (status === "verified") successCount++;
         else {
@@ -4550,8 +4320,8 @@ ${synthesisContent}`;
         verificationStatus = "partial";
         errorMessage = `${failureCount} of ${task.roles.length} workers failed: ${failedWorkers.join(", ")}. ${successCount} succeeded.`;
       }
-      const synthesisPath = import_path3.default.join(task.output_path, "COUNCIL_SYNTHESIS.md");
-      if (verificationStatus !== "failed" && !import_fs3.default.existsSync(synthesisPath)) {
+      const synthesisPath = import_path2.default.join(task.output_path, "COUNCIL_SYNTHESIS.md");
+      if (verificationStatus !== "failed" && !import_fs2.default.existsSync(synthesisPath)) {
         verificationStatus = "failed";
         errorMessage = "COUNCIL_SYNTHESIS.md was not generated";
       }
@@ -4600,14 +4370,14 @@ async function updateTaskGitHubIssue(workspacePath, taskId, status, outputPath, 
 }
 
 // ../src/mcp/mcp-server.ts
-var import_child_process4 = require("child_process");
+var import_child_process3 = require("child_process");
 var import_dotenv = __toESM(require("dotenv"));
 
 // ../src/adapters/vcs/VcsProviderFactory.ts
-var path7 = __toESM(require("path"));
-var fs7 = __toESM(require("fs"));
+var path6 = __toESM(require("path"));
+var fs6 = __toESM(require("fs"));
 var crypto = __toESM(require("crypto"));
-var import_child_process3 = require("child_process");
+var import_child_process2 = require("child_process");
 var VcsProviderFactory = class {
   static cachedProvider = null;
   static cachedConfigPath = null;
@@ -4621,7 +4391,7 @@ var VcsProviderFactory = class {
   static async getProvider(workspacePath) {
     const resolvedWorkspacePath = workspacePath || process.cwd();
     const configPath = this.getConfigPath(resolvedWorkspacePath);
-    const configContent = fs7.existsSync(configPath) ? fs7.readFileSync(configPath, "utf8") : "";
+    const configContent = fs6.existsSync(configPath) ? fs6.readFileSync(configPath, "utf8") : "";
     const configHash = crypto.createHash("md5").update(configContent).digest("hex");
     if (this.cachedProvider && this.cachedConfigPath === configPath && this.cachedConfigHash === configHash) {
       return this.cachedProvider;
@@ -4658,13 +4428,13 @@ var VcsProviderFactory = class {
     this.cachedConfigHash = null;
   }
   static getConfigPath(workspacePath) {
-    return path7.join(workspacePath, ".optimus", "config", "vcs.json");
+    return path6.join(workspacePath, ".optimus", "config", "vcs.json");
   }
   static loadConfig(workspacePath) {
     const configPath = this.getConfigPath(workspacePath);
-    if (fs7.existsSync(configPath)) {
+    if (fs6.existsSync(configPath)) {
       try {
-        const configContent = fs7.readFileSync(configPath, "utf8");
+        const configContent = fs6.readFileSync(configPath, "utf8");
         return JSON.parse(configContent);
       } catch (error) {
         console.error(`Warning: Failed to parse VCS config at ${configPath}:`, error);
@@ -4674,7 +4444,7 @@ var VcsProviderFactory = class {
   }
   static detectProviderFromGitRemote(workspacePath) {
     try {
-      const remoteUrl = (0, import_child_process3.execSync)("git remote get-url origin", {
+      const remoteUrl = (0, import_child_process2.execSync)("git remote get-url origin", {
         cwd: workspacePath,
         encoding: "utf8"
       }).trim();
@@ -4699,7 +4469,7 @@ var VcsProviderFactory = class {
       };
     }
     try {
-      const remoteUrl = (0, import_child_process3.execSync)("git remote get-url origin", {
+      const remoteUrl = (0, import_child_process2.execSync)("git remote get-url origin", {
         cwd: workspacePath,
         encoding: "utf8"
       }).trim();
@@ -4725,7 +4495,7 @@ var VcsProviderFactory = class {
       };
     }
     try {
-      const remoteUrl = (0, import_child_process3.execSync)("git remote get-url origin", {
+      const remoteUrl = (0, import_child_process2.execSync)("git remote get-url origin", {
         cwd: workspacePath,
         encoding: "utf8"
       }).trim();
@@ -4758,18 +4528,18 @@ var VcsProviderFactory = class {
    */
   static createConfig(workspacePath, config) {
     const configPath = this.getConfigPath(workspacePath);
-    const configDir = path7.dirname(configPath);
-    if (!fs7.existsSync(configDir)) {
-      fs7.mkdirSync(configDir, { recursive: true });
+    const configDir = path6.dirname(configPath);
+    if (!fs6.existsSync(configDir)) {
+      fs6.mkdirSync(configDir, { recursive: true });
     }
-    fs7.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+    fs6.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
   }
 };
 
 // ../src/mcp/mcp-server.ts
 function reloadEnv() {
   if (process.env.DOTENV_PATH) {
-    import_dotenv.default.config({ path: import_path4.default.resolve(process.env.DOTENV_PATH), override: true });
+    import_dotenv.default.config({ path: import_path3.default.resolve(process.env.DOTENV_PATH), override: true });
   } else {
     import_dotenv.default.config({ override: true });
   }
@@ -4802,13 +4572,13 @@ server.setRequestHandler(import_types.ListResourcesRequestSchema, async () => {
 server.setRequestHandler(import_types.ReadResourceRequestSchema, async (request) => {
   if (request.params.uri === "optimus://system/instructions") {
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    const instructionsPath = import_path4.default.resolve(workspacePath, ".optimus", "config", "system-instructions.md");
-    if (!instructionsPath.startsWith(import_path4.default.resolve(workspacePath))) {
+    const instructionsPath = import_path3.default.resolve(workspacePath, ".optimus", "config", "system-instructions.md");
+    if (!instructionsPath.startsWith(import_path3.default.resolve(workspacePath))) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidRequest, `Path traversal detected`);
     }
     try {
-      if (import_fs4.default.existsSync(instructionsPath)) {
-        const content = import_fs4.default.readFileSync(instructionsPath, "utf8");
+      if (import_fs3.default.existsSync(instructionsPath)) {
+        const content = import_fs3.default.readFileSync(instructionsPath, "utf8");
         return {
           contents: [
             {
@@ -5172,35 +4942,6 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
           },
           required: ["role", "action", "workspace_path"]
         }
-      },
-      {
-        name: "register_meta_cron",
-        description: "Register a new scheduled cron entry in the Meta-Cron engine. Self-registration by cron-triggered agents is forbidden.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "Unique cron entry ID" },
-            cron_expression: { type: "string", description: "Standard 5-field cron expression" },
-            role: { type: "string", description: "The agent role to invoke" },
-            required_skills: { type: "array", items: { type: "string" }, description: "Skills the agent needs" },
-            capability_tier: { type: "string", enum: ["maintain", "develop", "review"], description: "Capability tier" },
-            concurrency_policy: { type: "string", enum: ["Forbid", "Allow"], description: "Concurrent run policy (default: Forbid)" },
-            max_actions: { type: "number", description: "Max actions per trigger (default: 5)" },
-            dry_run_remaining: { type: "number", description: "Dry-run ticks before live (default: 3)" },
-            workspace_path: { type: "string", description: "Absolute path to workspace root." }
-          },
-          required: ["id", "cron_expression", "role", "required_skills", "capability_tier", "workspace_path"]
-        }
-      },
-      {
-        name: "list_meta_crons",
-        description: "List all registered Meta-Cron entries with their status.",
-        inputSchema: { type: "object", properties: { workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["workspace_path"] }
-      },
-      {
-        name: "remove_meta_cron",
-        description: "Remove a Meta-Cron entry by ID.",
-        inputSchema: { type: "object", properties: { id: { type: "string", description: "The cron entry ID to remove" }, workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["id", "workspace_path"] }
       }
     ]
   };
@@ -5226,8 +4967,8 @@ server.setRequestHandler(import_types.CallToolRequestSchema, async (request) => 
 
 Output verified at ${task.output_path || "the review path"}.`;
       if (task.type === "dispatch_council") {
-        const verdictPath = import_path4.default.join(task.output_path, "VERDICT.md");
-        if (import_fs4.default.existsSync(verdictPath)) {
+        const verdictPath = import_path3.default.join(task.output_path, "VERDICT.md");
+        if (import_fs3.default.existsSync(verdictPath)) {
           details += `
 PM Verdict available at: ${verdictPath}`;
         }
@@ -5236,10 +4977,9 @@ PM Verdict available at: ${verdictPath}`;
       let outputExists = false;
       if (task.output_path) {
         try {
-          const stat = import_fs4.default.statSync(task.output_path);
-          outputExists = stat.isFile() ? stat.size > 0 : import_fs4.default.readdirSync(task.output_path).length > 0;
-        } catch (e) {
-          console.error("[Status] output check failed: " + String(e));
+          const stat = import_fs3.default.statSync(task.output_path);
+          outputExists = stat.isFile() ? stat.size > 0 : import_fs3.default.readdirSync(task.output_path).length > 0;
+        } catch {
         }
       }
       effectiveStatus = outputExists ? "verified" : "partial";
@@ -5268,7 +5008,7 @@ Error: ${task.error_message}`;
   if (request.params.name === "delegate_task_async") {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
     if (!role || !task_description || !output_path || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments for delegate_task_async: requires role, task_description, output_path, workspace_path");
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
     if (role_engine || role_model) {
       const { engines: ve2, models: vm } = loadValidEnginesAndModels(workspace_path);
@@ -5328,7 +5068,7 @@ ${truncDesc}` + agentSignature(role, taskId),
 **GitHub Issue**: ${issue.html_url}`;
       }
     }
-    const child = (0, import_child_process4.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
+    const child = (0, import_child_process3.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
       detached: true,
       stdio: "ignore",
       windowsHide: true
@@ -5344,12 +5084,12 @@ Use check_task_status tool periodically with this task ID to check its completio
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments for dispatch_council_async: requires proposal_path (string), roles (array), workspace_path");
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
     const rawParentAsync2 = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync2) ? void 0 : rawParentAsync2);
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const reviewsPath = import_path4.default.join(workspace_path, ".optimus", "reviews", taskId);
+    const reviewsPath = import_path3.default.join(workspace_path, ".optimus", "reviews", taskId);
     TaskManifestManager.createTask(workspace_path, {
       taskId,
       type: "dispatch_council",
@@ -5385,7 +5125,7 @@ Use check_task_status tool periodically with this task ID to check its completio
 **GitHub Issue**: ${issue.html_url}`;
       }
     }
-    const child = (0, import_child_process4.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
+    const child = (0, import_child_process3.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
       detached: true,
       stdio: "ignore",
       windowsHide: true
@@ -5410,11 +5150,11 @@ Use check_task_status tool periodically with this Council ID to check completion
     if (optimusIndex !== -1) {
       workspacePath = proposal_path.substring(0, optimusIndex);
     } else {
-      workspacePath = import_path4.default.resolve(import_path4.default.dirname(proposal_path));
+      workspacePath = import_path3.default.resolve(import_path3.default.dirname(proposal_path));
     }
     const timestampId = Date.now();
-    const reviewsPath = import_path4.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
-    import_fs4.default.mkdirSync(reviewsPath, { recursive: true });
+    const reviewsPath = import_path3.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
+    import_fs3.default.mkdirSync(reviewsPath, { recursive: true });
     console.error(`[MCP] Dispatching council with roles: ${roles.join(", ")}`);
     const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, void 0, parentIssueNumber, role_descriptions2);
     return {
@@ -5436,10 +5176,10 @@ Please read these review files to continue.`
   } else if (request.params.name === "append_memory") {
     let { category, tags, content } = request.params.arguments;
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    const memoryDir = import_path4.default.resolve(workspacePath, ".optimus", "memory");
-    const memoryFile = import_path4.default.join(memoryDir, "continuous-memory.md");
-    if (!import_fs4.default.existsSync(memoryDir)) {
-      import_fs4.default.mkdirSync(memoryDir, { recursive: true });
+    const memoryDir = import_path3.default.resolve(workspacePath, ".optimus", "memory");
+    const memoryFile = import_path3.default.join(memoryDir, "continuous-memory.md");
+    if (!import_fs3.default.existsSync(memoryDir)) {
+      import_fs3.default.mkdirSync(memoryDir, { recursive: true });
     }
     if (!global.memoryLock) {
       global.memoryLock = Promise.resolve();
@@ -5460,7 +5200,7 @@ Please read these review files to continue.`
             content,
             "\n"
           ].join("\n");
-          import_fs4.default.appendFileSync(memoryFile, freshEntry, "utf8");
+          import_fs3.default.appendFileSync(memoryFile, freshEntry, "utf8");
           resolve();
         } catch (err) {
           reject(err);
@@ -5489,23 +5229,23 @@ Memory appended to: ${memoryFile}`
     if (!workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires workspace_path");
     }
-    const t1Dir = import_path4.default.join(workspace_path, ".optimus", "agents");
-    const t2Dir = import_path4.default.join(workspace_path, ".optimus", "roles");
-    if (!import_fs4.default.existsSync(t2Dir)) {
-      import_fs4.default.mkdirSync(t2Dir, { recursive: true });
+    const t1Dir = import_path3.default.join(workspace_path, ".optimus", "agents");
+    const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
+    if (!import_fs3.default.existsSync(t2Dir)) {
+      import_fs3.default.mkdirSync(t2Dir, { recursive: true });
     }
     let roster = "\u{1F4CB} **Spartan Swarm Active Roster**\n\n";
     roster += "### T1: Local Project Experts\n";
-    if (import_fs4.default.existsSync(t1Dir)) {
-      const t1Files = import_fs4.default.readdirSync(t1Dir).filter((f) => f.endsWith(".md"));
+    if (import_fs3.default.existsSync(t1Dir)) {
+      const t1Files = import_fs3.default.readdirSync(t1Dir).filter((f) => f.endsWith(".md"));
       roster += t1Files.length > 0 ? t1Files.map((f) => `- ${f.replace(".md", "")}`).join("\n") : "(No local overrides found)\n";
     } else {
       roster += "(No local personas directory found)\n";
     }
-    const configPath = import_path4.default.join(workspace_path, ".optimus", "config", "available-agents.json");
-    if (import_fs4.default.existsSync(configPath)) {
+    const configPath = import_path3.default.join(workspace_path, ".optimus", "config", "available-agents.json");
+    if (import_fs3.default.existsSync(configPath)) {
       try {
-        const config = JSON.parse(import_fs4.default.readFileSync(configPath, "utf8"));
+        const config = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
         roster += "\n### \u2699\uFE0F Engine & Model Spec (T3 configuration)\n";
         roster += "**Available Execution Engines (Toolchains & Supported Models)**:\n";
         Object.keys(config.engines).forEach((engine) => {
@@ -5519,14 +5259,14 @@ Memory appended to: ${memoryFile}`
     }
     roster += "\n## \u{1F465} Roles \u2014 WHO does the work\n";
     const t2RoleNames = [];
-    if (import_fs4.default.existsSync(t2Dir)) {
-      const t2Files = import_fs4.default.readdirSync(t2Dir).filter((f) => f.endsWith(".md"));
+    if (import_fs3.default.existsSync(t2Dir)) {
+      const t2Files = import_fs3.default.readdirSync(t2Dir).filter((f) => f.endsWith(".md"));
       if (t2Files.length > 0) {
         for (const f of t2Files) {
           const roleName = f.replace(".md", "");
           t2RoleNames.push(roleName);
           try {
-            const content = import_fs4.default.readFileSync(import_path4.default.join(t2Dir, f), "utf8");
+            const content = import_fs3.default.readFileSync(import_path3.default.join(t2Dir, f), "utf8");
             const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
             let engineInfo = "";
             let quarantineMarker = "";
@@ -5546,8 +5286,7 @@ Memory appended to: ${memoryFile}`
             }
             roster += `- ${roleName}${engineInfo}${quarantineMarker}
 `;
-          } catch (e) {
-            console.error("[Roster] T2 read error: " + String(e));
+          } catch {
             roster += `- ${roleName}
 `;
           }
@@ -5558,10 +5297,10 @@ Memory appended to: ${memoryFile}`
     } else {
       roster += "(No project roles directory found)\n";
     }
-    const t3LogPath = import_path4.default.join(workspace_path, ".optimus", "state", "t3-usage-log.json");
-    if (import_fs4.default.existsSync(t3LogPath)) {
+    const t3LogPath = import_path3.default.join(workspace_path, ".optimus", "state", "t3-usage-log.json");
+    if (import_fs3.default.existsSync(t3LogPath)) {
       try {
-        const t3Log = JSON.parse(import_fs4.default.readFileSync(t3LogPath, "utf8"));
+        const t3Log = JSON.parse(import_fs3.default.readFileSync(t3LogPath, "utf8"));
         const entries = Object.values(t3Log);
         if (entries.length > 0) {
           roster += "\n### \u{1F4CA} T3 Dynamic Role Usage Stats\n";
@@ -5571,21 +5310,19 @@ Memory appended to: ${memoryFile}`
 `;
           }
         }
-      } catch (e) {
-        console.error("[Roster] T3 log error: " + String(e));
+      } catch {
       }
     }
     roster += "\n### \u2699\uFE0F Fallback Behavior\n";
     roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
     roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
     roster += "- T3 roles auto-precipitate to T2 immediately on first use.\n";
-    const skillsDir = import_path4.default.join(workspace_path, ".optimus", "skills");
-    if (import_fs4.default.existsSync(skillsDir)) {
-      const skillDirs = import_fs4.default.readdirSync(skillsDir).filter((d) => {
+    const skillsDir = import_path3.default.join(workspace_path, ".optimus", "skills");
+    if (import_fs3.default.existsSync(skillsDir)) {
+      const skillDirs = import_fs3.default.readdirSync(skillsDir).filter((d) => {
         try {
-          return import_fs4.default.statSync(import_path4.default.join(skillsDir, d)).isDirectory() && import_fs4.default.existsSync(import_path4.default.join(skillsDir, d, "SKILL.md"));
-        } catch (e) {
-          console.error("[Roster] stat error: " + String(e));
+          return import_fs3.default.statSync(import_path3.default.join(skillsDir, d)).isDirectory() && import_fs3.default.existsSync(import_path3.default.join(skillsDir, d, "SKILL.md"));
+        } catch {
           return false;
         }
       });
@@ -5594,7 +5331,7 @@ Memory appended to: ${memoryFile}`
         roster += "Use `required_skills` in `delegate_task` to equip agents with these skills:\n";
         for (const skill of skillDirs) {
           try {
-            const content = import_fs4.default.readFileSync(import_path4.default.join(skillsDir, skill, "SKILL.md"), "utf8");
+            const content = import_fs3.default.readFileSync(import_path3.default.join(skillsDir, skill, "SKILL.md"), "utf8");
             const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
             let desc = "";
             let isAutoGenerated = false;
@@ -5609,8 +5346,7 @@ Memory appended to: ${memoryFile}`
             const autoTag = isAutoGenerated ? " (auto-generated)" : "";
             roster += `- ${isMeta ? "\u{1F9EC} " : ""}\`${skill}\`${desc}${autoTag}${nameCollision}
 `;
-          } catch (e) {
-            console.error("[Roster] skill read error: " + String(e));
+          } catch {
             roster += `- \`${skill}\`
 `;
           }
@@ -5648,14 +5384,14 @@ Memory appended to: ${memoryFile}`
     }
     const sessionId = import_crypto.default.randomUUID();
     const workspacePath = workspace_path;
-    const optimusDir = import_path4.default.join(workspacePath, ".optimus");
-    const resolvedOutputPath = import_path4.default.resolve(workspacePath, output_path);
-    const canonicalOutputPath = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path4.default.join(optimusDir, "results", import_path4.default.basename(output_path));
-    const tasksDir = import_path4.default.join(workspacePath, ".optimus", "tasks");
-    import_fs4.default.mkdirSync(tasksDir, { recursive: true });
-    const taskArtifactPath = import_path4.default.join(tasksDir, `task_${sessionId}.md`);
-    import_fs4.default.writeFileSync(taskArtifactPath, task_description, "utf8");
-    import_fs4.default.mkdirSync(import_path4.default.dirname(canonicalOutputPath), { recursive: true });
+    const optimusDir = import_path3.default.join(workspacePath, ".optimus");
+    const resolvedOutputPath = import_path3.default.resolve(workspacePath, output_path);
+    const canonicalOutputPath = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path3.default.join(optimusDir, "results", import_path3.default.basename(output_path));
+    const tasksDir = import_path3.default.join(workspacePath, ".optimus", "tasks");
+    import_fs3.default.mkdirSync(tasksDir, { recursive: true });
+    const taskArtifactPath = import_path3.default.join(tasksDir, `task_${sessionId}.md`);
+    import_fs3.default.writeFileSync(taskArtifactPath, task_description, "utf8");
+    import_fs3.default.mkdirSync(import_path3.default.dirname(canonicalOutputPath), { recursive: true });
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
     const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, void 0, parentIssueNumber);
     return {
@@ -5680,24 +5416,77 @@ Memory appended to: ${memoryFile}`
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const vcsConfigPath = import_path4.default.join(workspace_path, ".optimus", "config", "vcs.json");
-      if (import_fs4.default.existsSync(vcsConfigPath)) {
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createWorkItem(title, finalBody, labels, work_item_type, {
+        iteration_path,
+        area_path,
+        assigned_to,
+        parent_id,
+        priority
+      });
+      return {
+        content: [{
+          type: "text",
+          text: `\u2705 Work item created successfully on ${vcsProvider.getProviderName()}
+
+**Title:** ${result.title}
+**ID:** ${result.id}${result.number ? `
+**Number:** ${result.number}` : ""}
+**URL:** ${result.url}`
+        }]
+      };
+    } catch (error) {
+      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_create_pr") {
+    const { title, body, head, base, workspace_path, agent_role } = request.params.arguments;
+    if (!title || !body || !head || !base || !workspace_path) {
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
+    }
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const finalBody = agent_role ? body + agentSignature(agent_role) : body;
+      const result = await vcsProvider.createPullRequest(title, finalBody, head, base);
+      return {
+        content: [{
+          type: "text",
+          text: `\u2705 Pull request created successfully on ${vcsProvider.getProviderName()}
+
+**Title:** ${result.title}
+**Number:** ${result.number}
+**ID:** ${result.id}
+**URL:** ${result.url}`
+        }]
+      };
+    } catch (error) {
+      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to create pull request: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_merge_pr") {
+    const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments;
+    if (!pull_request_id || !workspace_path) {
+      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
+    }
+    const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const vcsConfigPath = import_path3.default.join(workspace_path, ".optimus", "config", "vcs.json");
+      if (import_fs3.default.existsSync(vcsConfigPath)) {
         try {
-          const vcsConfig = JSON.parse(import_fs4.default.readFileSync(vcsConfigPath, "utf8"));
+          const vcsConfig = JSON.parse(import_fs3.default.readFileSync(vcsConfigPath, "utf8"));
           const buildGate = vcsConfig.pre_merge_build;
           if (buildGate?.enabled) {
             const buildCmd = buildGate.command || "npm run build";
-            const buildCwd = buildGate.cwd ? import_path4.default.resolve(workspace_path, buildGate.cwd) : workspace_path;
-            const normalizedCwd = import_path4.default.normalize(buildCwd);
-            const normalizedWorkspace = import_path4.default.normalize(workspace_path);
-            if (!normalizedCwd.startsWith(normalizedWorkspace + import_path4.default.sep) && normalizedCwd !== normalizedWorkspace) {
+            const buildCwd = buildGate.cwd ? import_path3.default.resolve(workspace_path, buildGate.cwd) : workspace_path;
+            const normalizedCwd = import_path3.default.normalize(buildCwd);
+            const normalizedWorkspace = import_path3.default.normalize(workspace_path);
+            if (!normalizedCwd.startsWith(normalizedWorkspace + import_path3.default.sep) && normalizedCwd !== normalizedWorkspace) {
               throw new import_types.McpError(
                 import_types.ErrorCode.InvalidParams,
                 `Pre-Merge Build Gate: configured cwd '${buildGate.cwd}' resolves outside workspace boundary. Aborting.`
               );
             }
             console.error(`[Pre-Merge Gate] Running build verification: ${buildCmd} in ${buildCwd}`);
-            (0, import_child_process4.execSync)(buildCmd, {
+            (0, import_child_process3.execSync)(buildCmd, {
               cwd: buildCwd,
               encoding: "utf8",
               timeout: 12e4
@@ -5730,12 +5519,12 @@ Fix the build errors and try again.`
       let branchCleanupMsg = "";
       if (result.headBranch && !PROTECTED_BRANCHES.includes(result.headBranch)) {
         try {
-          const currentBranch = (0, import_child_process4.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
+          const currentBranch = (0, import_child_process3.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
           if (currentBranch === result.headBranch) {
             const checkoutTarget = result.baseBranch || "master";
-            (0, import_child_process4.execSync)(`git checkout ${checkoutTarget}`, { cwd: workspace_path, encoding: "utf8" });
+            (0, import_child_process3.execSync)(`git checkout ${checkoutTarget}`, { cwd: workspace_path, encoding: "utf8" });
           }
-          (0, import_child_process4.execSync)(`git branch -d ${result.headBranch}`, { cwd: workspace_path, encoding: "utf8" });
+          (0, import_child_process3.execSync)(`git branch -d ${result.headBranch}`, { cwd: workspace_path, encoding: "utf8" });
           branchCleanupMsg = ` Branch '${result.headBranch}' cleaned up.`;
           console.error(`[Branch Cleanup] Deleted branch '${result.headBranch}' after merging PR #${pull_request_id}`);
         } catch (cleanupErr) {
@@ -5746,11 +5535,11 @@ Fix the build errors and try again.`
       let syncMsg = "";
       try {
         const syncBranch = result.baseBranch || "master";
-        const currentBranchAfterCleanup = (0, import_child_process4.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
+        const currentBranchAfterCleanup = (0, import_child_process3.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
         if (currentBranchAfterCleanup !== syncBranch) {
-          (0, import_child_process4.execSync)(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+          (0, import_child_process3.execSync)(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
         }
-        (0, import_child_process4.execSync)(`git pull --rebase origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+        (0, import_child_process3.execSync)(`git pull --rebase origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
         syncMsg = ` Local '${syncBranch}' synced.`;
       } catch (syncErr) {
         console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);
@@ -5790,26 +5579,26 @@ Fix the build errors and try again.`
     if (!artifact_path || content === void 0 || content === null || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
     }
-    const optimusRoot = import_path4.default.resolve(workspace_path, ".optimus");
-    const resolvedTarget = import_path4.default.resolve(optimusRoot, artifact_path);
-    if (!resolvedTarget.startsWith(optimusRoot + import_path4.default.sep) && resolvedTarget !== optimusRoot) {
+    const optimusRoot = import_path3.default.resolve(workspace_path, ".optimus");
+    const resolvedTarget = import_path3.default.resolve(optimusRoot, artifact_path);
+    if (!resolvedTarget.startsWith(optimusRoot + import_path3.default.sep) && resolvedTarget !== optimusRoot) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
     }
     let existingPath = resolvedTarget;
     let suffix = "";
-    while (!import_fs4.default.existsSync(existingPath)) {
-      suffix = import_path4.default.join(import_path4.default.basename(existingPath), suffix);
-      existingPath = import_path4.default.dirname(existingPath);
+    while (!import_fs3.default.existsSync(existingPath)) {
+      suffix = import_path3.default.join(import_path3.default.basename(existingPath), suffix);
+      existingPath = import_path3.default.dirname(existingPath);
     }
-    const realExisting = import_fs4.default.realpathSync(existingPath);
-    const realTarget = import_path4.default.join(realExisting, suffix);
-    const realOptimus = import_fs4.default.existsSync(optimusRoot) ? import_fs4.default.realpathSync(optimusRoot) : optimusRoot;
-    if (!realTarget.startsWith(realOptimus + import_path4.default.sep) && realTarget !== realOptimus) {
+    const realExisting = import_fs3.default.realpathSync(existingPath);
+    const realTarget = import_path3.default.join(realExisting, suffix);
+    const realOptimus = import_fs3.default.existsSync(optimusRoot) ? import_fs3.default.realpathSync(optimusRoot) : optimusRoot;
+    if (!realTarget.startsWith(realOptimus + import_path3.default.sep) && realTarget !== realOptimus) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
     }
     try {
-      import_fs4.default.mkdirSync(import_path4.default.dirname(resolvedTarget), { recursive: true });
-      import_fs4.default.writeFileSync(resolvedTarget, content, "utf8");
+      import_fs3.default.mkdirSync(import_path3.default.dirname(resolvedTarget), { recursive: true });
+      import_fs3.default.writeFileSync(resolvedTarget, content, "utf8");
       return { content: [{ type: "text", text: `Artifact written to: ${resolvedTarget}` }] };
     } catch (error) {
       throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to write artifact: ${error.message}`);
@@ -5825,18 +5614,18 @@ Fix the build errors and try again.`
     if (!role || !action || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
     }
-    const t2Dir = import_path4.default.join(workspace_path, ".optimus", "roles");
-    const rolePath = import_path4.default.join(t2Dir, `${role}.md`);
-    if (!import_fs4.default.existsSync(rolePath)) {
+    const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
+    const rolePath = import_path3.default.join(t2Dir, `${role}.md`);
+    if (!import_fs3.default.existsSync(rolePath)) {
       return { content: [{ type: "text", text: `Role '${role}' not found at ${rolePath}` }] };
     }
-    const content = import_fs4.default.readFileSync(rolePath, "utf8");
+    const content = import_fs3.default.readFileSync(rolePath, "utf8");
     if (action === "quarantine") {
       const updated = updateFrontmatter(content, {
         status: "quarantined",
         quarantined_at: (/* @__PURE__ */ new Date()).toISOString()
       });
-      import_fs4.default.writeFileSync(rolePath, updated, "utf8");
+      import_fs3.default.writeFileSync(rolePath, updated, "utf8");
       const log = loadT3UsageLog(workspace_path);
       if (log[role]) {
         log[role].consecutive_failures = 0;
@@ -5848,7 +5637,7 @@ Fix the build errors and try again.`
         status: "idle",
         quarantined_at: ""
       });
-      import_fs4.default.writeFileSync(rolePath, updated, "utf8");
+      import_fs3.default.writeFileSync(rolePath, updated, "utf8");
       const log = loadT3UsageLog(workspace_path);
       if (log[role]) {
         log[role].consecutive_failures = 0;
@@ -5858,69 +5647,6 @@ Fix the build errors and try again.`
     } else {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, `Invalid action '${action}'. Must be 'quarantine' or 'unquarantine'.`);
     }
-  }
-  if (request.params.name === "register_meta_cron") {
-    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments;
-    if (!id || !cron_expression || !role || !workspace_path) throw new Error("Missing required fields: id, cron_expression, role, workspace_path");
-    if (process.env.OPTIMUS_CRON_TRIGGERED === "true") {
-      return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
-    }
-    const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
-    if (crontab.crons.find((cr) => cr.id === id)) {
-      return { content: [{ type: "text", text: `Cron entry '${id}' already exists. Remove it first.` }] };
-    }
-    crontab.crons.push({
-      id,
-      cron_expression,
-      role,
-      required_skills: required_skills || [],
-      capability_tier: capability_tier || "maintain",
-      concurrency_policy: concurrency_policy || "Forbid",
-      max_actions: max_actions || 5,
-      dry_run_remaining: dry_run_remaining ?? 3,
-      enabled: true,
-      last_run: null,
-      last_status: null,
-      run_count: 0,
-      fail_count: 0,
-      created_at: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    saveCrontab(workspace_path, crontab);
-    return { content: [{ type: "text", text: `Registered Meta-Cron '${id}' (cron: ${cron_expression}) -> role '${role}'. Dry-run for ${dry_run_remaining ?? 3} ticks.` }] };
-  }
-  if (request.params.name === "list_meta_crons") {
-    const { workspace_path } = request.params.arguments;
-    if (!workspace_path) throw new Error("Missing workspace_path");
-    const crontab = loadCrontab(workspace_path);
-    if (!crontab || crontab.crons.length === 0) {
-      return { content: [{ type: "text", text: "No Meta-Cron entries registered." }] };
-    }
-    const lines = crontab.crons.map(
-      (e) => `| ${e.id} | ${e.cron_expression} | ${e.role} | ${e.enabled ? "yes" : "no"} | ${e.last_status || "never"} | ${e.run_count} | ${e.fail_count} | ${e.dry_run_remaining} |`
-    );
-    const table = `| ID | Cron | Role | Enabled | Last Status | Runs | Fails | Dry-Run |
-|---|---|---|---|---|---|---|---|
-${lines.join("\n")}
-
-Max concurrent: ${crontab.max_concurrent}`;
-    return { content: [{ type: "text", text: table }] };
-  }
-  if (request.params.name === "remove_meta_cron") {
-    const { id, workspace_path } = request.params.arguments;
-    if (!id || !workspace_path) throw new Error("Missing required fields: id, workspace_path");
-    const crontab = loadCrontab(workspace_path);
-    if (!crontab) return { content: [{ type: "text", text: "No crontab found." }] };
-    const idx = crontab.crons.findIndex((cr) => cr.id === id);
-    if (idx === -1) return { content: [{ type: "text", text: `Cron entry '${id}' not found.` }] };
-    crontab.crons.splice(idx, 1);
-    saveCrontab(workspace_path, crontab);
-    const lockPath = import_path4.default.join(workspace_path, ".optimus", "system", "cron-locks", id + ".lock");
-    try {
-      if (import_fs4.default.existsSync(lockPath)) import_fs4.default.unlinkSync(lockPath);
-    } catch (e) {
-      console.error("[Lock] cleanup error: " + String(e));
-    }
-    return { content: [{ type: "text", text: `Removed Meta-Cron entry '${id}' and cleaned up lock file.` }] };
   }
   throw new import_types.McpError(import_types.ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
@@ -5941,19 +5667,19 @@ if (process.argv.includes("--run-task")) {
     const transport = new import_stdio.StdioServerTransport();
     await server.connect(transport);
     console.error("Optimus Spartan Swarm MCP server running on stdio");
-    const workspaceRoot2 = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     try {
-      cleanStaleAgents(workspaceRoot2);
+      cleanStaleAgents(workspaceRoot);
     } catch (e) {
       console.error(`[Agent GC] Warning: ${e.message}`);
     }
     try {
-      const rolesDir = import_path4.default.join(workspaceRoot2, ".optimus", "roles");
-      if (import_fs4.default.existsSync(rolesDir)) {
-        const roleFiles = import_fs4.default.readdirSync(rolesDir).filter((f) => f.endsWith(".md"));
+      const rolesDir = import_path3.default.join(workspaceRoot, ".optimus", "roles");
+      if (import_fs3.default.existsSync(rolesDir)) {
+        const roleFiles = import_fs3.default.readdirSync(rolesDir).filter((f) => f.endsWith(".md"));
         for (const file of roleFiles) {
-          const filePath = import_path4.default.join(rolesDir, file);
-          const content = import_fs4.default.readFileSync(filePath, "utf8");
+          const filePath = import_path3.default.join(rolesDir, file);
+          const content = import_fs3.default.readFileSync(filePath, "utf8");
           const bodyMatch = content.replace(/\r\n/g, "\n").match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
           const body = bodyMatch ? bodyMatch[1] : content;
           const contentLineCount = body.split("\n").filter((l) => l.trim().length > 0).length;
@@ -5966,13 +5692,6 @@ if (process.argv.includes("--run-task")) {
       console.error(`[Thin Scanner] Warning: ${e.message}`);
     }
   }
-  try {
-    MetaCronEngine.init(workspaceRoot);
-  } catch (e) {
-    console.error(`[Meta-Cron] Init failed: ${e.message}`);
-  }
-  process.on("SIGTERM", () => MetaCronEngine.shutdown());
-  process.on("SIGINT", () => MetaCronEngine.shutdown());
   main().catch((error) => {
     console.error("Server error:", error);
     process.exit(1);

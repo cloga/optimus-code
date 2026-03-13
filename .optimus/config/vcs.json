@@ -4,5 +4,10 @@
     "auth": "env:GITHUB_TOKEN",
     "owner": "cloga",
     "repo": "optimus-code"
+  },
+  "pre_merge_build": {
+    "enabled": true,
+    "command": "npm run build",
+    "cwd": "optimus-plugin"
   }
 }

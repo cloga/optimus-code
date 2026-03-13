@@ -12,7 +12,14 @@
     "project": "",
     "defaults": {
       "work_item_type": "Task",
-      "auto_tags": ["created-by:optimus-code"]
+      "auto_tags": [
+        "created-by:optimus-code"
+      ]
     }
+  },
+  "pre_merge_build": {
+    "enabled": false,
+    "command": "npm run build",
+    "cwd": "."
   }
 }
