@@ -242,23 +242,50 @@ export class MetaCronEngine {
             delegation_depth: 0,
         });
 
+        // __filename resolves to the bundled mcp-server.js at runtime (same file that hosts this code).
+        // Previous code used path.join(__dirname, '..', '..', 'dist', 'mcp-server.js') which resolved
+        // incorrectly in the esbuild bundle (pointed to workspace-root/dist/ instead of optimus-plugin/dist/).
         const child = spawn(process.execPath, [
-            path.join(__dirname, '..', '..', 'dist', 'mcp-server.js'),
+            __filename,
             '--run-task', taskId, this.workspacePath
         ], {
             detached: true, stdio: 'ignore', windowsHide: true,
+            cwd: this.workspacePath,
             env: { ...process.env, OPTIMUS_DELEGATION_DEPTH: '0', OPTIMUS_CRON_TRIGGERED: 'true' }
         });
         child.unref();
 
         const entryId = entry.id;
         const ws = this.workspacePath;
+        const fireTime = Date.now();
 
         const checkInterval = setInterval(() => {
             try {
                 const manifest = TaskManifestManager.loadManifest(ws);
                 const task = manifest[taskId];
-                if (task && (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded')) {
+                if (!task) return;
+
+                // Detect stuck-pending: child process failed to start (wrong path, crash, etc.)
+                // If still pending after 2 minutes, the spawned process never called runAsyncWorker.
+                if (task.status === 'pending' && (Date.now() - fireTime) > 2 * 60 * 1000) {
+                    console.error(`[Meta-Cron] Task '${taskId}' still pending after 2 minutes — child process likely failed to start. Marking as failed.`);
+                    TaskManifestManager.updateTask(ws, taskId, { status: 'failed', error_message: 'Child process failed to start (task remained pending)' });
+                    clearInterval(checkInterval);
+                    deleteLock(ws, entryId);
+                    MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
+                    const freshCrontab = loadCrontab(ws);
+                    if (freshCrontab) {
+                        const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
+                        if (freshEntry) {
+                            freshEntry.last_status = 'failed';
+                            freshEntry.fail_count++;
+                            saveCrontab(ws, freshCrontab);
+                        }
+                    }
+                    return;
+                }
+
+                if (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded') {
                     clearInterval(checkInterval);
                     deleteLock(ws, entryId);
                     MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
@@ -280,6 +307,17 @@ export class MetaCronEngine {
             clearInterval(checkInterval);
             deleteLock(ws, entryId);
             MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
+            // Update crontab so last_status doesn't stay "running" forever
+            const freshCrontab = loadCrontab(ws);
+            if (freshCrontab) {
+                const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
+                if (freshEntry && freshEntry.last_status === 'running') {
+                    freshEntry.last_status = 'failed';
+                    freshEntry.fail_count++;
+                    saveCrontab(ws, freshCrontab);
+                    console.error(`[Meta-Cron] Safety timeout: cron '${entryId}' exceeded 2h limit. Marked as failed.`);
+                }
+            }
         }, 2 * 60 * 60 * 1000);
         if (typeof safetyTimer.unref === 'function') safetyTimer.unref();
     }
