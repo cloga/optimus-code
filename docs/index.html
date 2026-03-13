@@ -14,7 +14,7 @@
   --border:#2a2a2e;
   --text:#e4e4e7;
   --text-secondary:#a1a1aa;
-  --text-tertiary:#7e7e86;
+  --text-tertiary:#71717a;
   --accent:#3b82f6;
   --accent-hover:#60a5fa;
   --accent-secondary:#10b981;
@@ -36,43 +36,25 @@ a:hover{color:var(--accent)}
 
 .container{max-width:1100px;margin:0 auto;padding:0 24px}
 
-/* ========== NAV BAR ========== */
-.topnav{
-  position:sticky;top:0;z-index:100;
-  background:rgba(10,10,11,.85);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  border-bottom:1px solid var(--border);
-  padding:14px 24px;
-}
-.topnav-inner{
-  max-width:1100px;margin:0 auto;
-  display:flex;align-items:center;justify-content:space-between;
-}
-.topnav-logo{font-weight:700;font-size:1rem;color:var(--text)}
-.topnav-logo:hover{color:var(--accent-hover)}
-.topnav-links{display:flex;gap:16px;align-items:center}
-.topnav-links a{font-size:.85rem;color:var(--text-tertiary);transition:color .2s}
-.topnav-links a:hover{color:var(--text)}
+/* ========== LANGUAGE TOGGLE ========== */
 .lang-toggle{
-  display:inline-flex;align-items:center;
-  background:var(--bg);border:1px solid var(--border);border-radius:6px;
-  overflow:hidden;margin-left:8px;
+  position:fixed;top:20px;right:20px;z-index:1000;
+  display:flex;align-items:center;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  overflow:hidden;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+  transition:border-color .2s;
 }
 .lang-toggle:hover{border-color:var(--accent)}
 .lang-btn{
-  padding:5px 10px;font-size:.75rem;font-weight:600;
+  padding:8px 14px;font-size:.8rem;font-weight:600;
   color:var(--text-tertiary);background:transparent;
   border:none;cursor:pointer;transition:all .2s;
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
-.lang-btn.active{color:#fff;background:var(--accent)}
-/* Hamburger */
-.hamburger{
-  display:none;background:none;border:1px solid var(--border);
-  border-radius:6px;padding:6px 8px;cursor:pointer;color:var(--text);line-height:0;
+.lang-btn.active{
+  color:#fff;background:var(--accent);
 }
-.hamburger:hover{border-color:var(--accent)}
-.hamburger svg{display:block}
 
 /* ========== HERO ========== */
 .hero{
@@ -114,38 +96,74 @@ a:hover{color:var(--accent)}
 .tool-logos span{opacity:0;animation:fadeIn .5s ease forwards}
 .tool-logos span:hover{border-color:var(--accent)}
 
-/* Hero terminal animation */
+/* Hero terminal */
 .hero-terminal{
-  width:100%;max-width:600px;margin:0 auto 40px;
-  background:var(--code-bg);border:1px solid var(--border);border-radius:10px;
-  overflow:hidden;text-align:left;box-shadow:0 8px 40px rgba(0,0,0,.4);
-}
-.terminal-bar{
-  display:flex;align-items:center;gap:7px;
-  padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);
-}
-.terminal-dot{width:10px;height:10px;border-radius:50%}
-.terminal-dot.red{background:#ff5f57}
-.terminal-dot.yellow{background:#febc2e}
-.terminal-dot.green{background:#28c840}
-.terminal-bar-title{
-  flex:1;text-align:center;font-size:.75rem;color:var(--text-tertiary);
+  width:100%;max-width:560px;margin:0 auto 40px;
+  border-radius:12px;overflow:hidden;
+  border:1px solid var(--border);
+  background:var(--code-bg);
   font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.875rem;text-align:left;
 }
-.terminal-body{
-  padding:18px 22px;min-height:200px;
-  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
-  font-size:.85rem;line-height:1.7;
+.term-titlebar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 16px;background:var(--surface);
+  border-bottom:1px solid var(--border);
 }
-.terminal-body .line{opacity:0;white-space:pre-wrap;word-break:break-word}
-.terminal-body .line.visible{opacity:1}
-.terminal-body .prompt{color:var(--accent-secondary)}
-.terminal-body .cmd{color:var(--text)}
-.terminal-body .info{color:var(--accent)}
-.terminal-body .ok{color:var(--accent-secondary)}
-.terminal-body .muted{color:var(--text-tertiary)}
-.terminal-body .blink{display:inline-block;animation:termBlink 1s step-end infinite}
-@keyframes termBlink{0%,50%{opacity:1}51%,100%{opacity:0}}
+.term-dot{width:12px;height:12px;border-radius:50%}
+.term-dot--red{background:#ff5f57}
+.term-dot--yellow{background:#febc2e}
+.term-dot--green{background:#28c840}
+.term-titlebar-text{
+  flex:1;text-align:center;font-size:.75rem;
+  color:var(--text-tertiary);font-family:inherit;
+}
+.term-body{padding:16px 20px;min-height:160px;line-height:1.7;position:relative}
+.term-line{opacity:0;transition:opacity .3s}
+.term-line.visible{opacity:1}
+.term-prompt-line{color:var(--code-text)}
+.term-prompt-prefix{color:var(--accent);user-select:none}
+.term-cursor{
+  display:inline-block;width:8px;height:1.1em;
+  background:var(--code-text);vertical-align:text-bottom;
+  animation:blink 1s step-end infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.term-agent{margin-top:4px}
+.term-agent-icon{margin-right:4px}
+.term-agent--architect{color:#8b5cf6}
+.term-agent--developer{color:#10b981}
+.term-agent--qa{color:#f59e0b}
+.term-agent .term-check{opacity:0;transition:opacity .3s;color:#10b981;margin-left:6px}
+.term-agent .term-check.visible{opacity:1}
+.term-result{color:#10b981;margin-top:4px;font-weight:600;opacity:0;transition:opacity .3s}
+.term-result.visible{opacity:1}
+/* Copy prompt button */
+.term-copy-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  margin-top:16px;padding:8px 16px;
+  background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  color:var(--text-secondary);font-size:.8rem;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  cursor:pointer;transition:border-color .2s,color .2s;position:relative;
+}
+.term-copy-btn:hover{border-color:var(--accent);color:var(--text)}
+.term-copy-tooltip{
+  position:absolute;top:-32px;left:50%;transform:translateX(-50%);
+  background:var(--accent-secondary);color:#fff;padding:4px 12px;
+  border-radius:4px;font-size:.75rem;
+  opacity:0;pointer-events:none;transition:opacity .3s;
+}
+.term-copy-tooltip.show{opacity:1}
+/* Reduced motion: show final state, no animation */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
+  .term-cursor{opacity:0}
+  .term-line,.term-agent .term-check,.term-result{opacity:1}
+  .animate-on-scroll{opacity:1;transform:none}
+  .tool-logos,.tool-logos span{opacity:1}
+  .scroll-indicator{opacity:1}
+}
 
 /* CTA buttons */
 .cta-group{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:24px}
@@ -367,6 +385,18 @@ footer{
   content:'\2192';position:absolute;top:12px;right:-12px;
   font-size:1.1rem;color:var(--text-tertiary);z-index:2;
 }
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(24px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.animate-on-scroll{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
+.stagger-1{transition-delay:.1s}
+.stagger-2{transition-delay:.2s}
+.stagger-3{transition-delay:.3s}
+.stagger-4{transition-delay:.4s}
+.stagger-5{transition-delay:.5s}
+.stagger-6{transition-delay:.6s}
 
 /* ========== ANIMATIONS ========== */
 @keyframes fadeIn{
@@ -401,19 +431,12 @@ footer{
   .eco-grid{grid-template-columns:repeat(2,1fr)}
   section{padding:80px 0}
   .hero{padding:60px 16px 40px}
+  .hero-terminal{font-size:.75rem}
+  .term-body{min-height:180px;padding:12px 14px}
   .cta-group{flex-direction:column;align-items:center}
   .btn-primary,.btn-secondary{width:100%;max-width:280px;justify-content:center}
   .tier-flow{flex-direction:column;gap:0}
   .tier-arrow{transform:rotate(90deg);padding:8px 0}
-  /* Hamburger nav */
-  .topnav-links{
-    display:none;flex-direction:column;position:absolute;
-    top:100%;left:0;right:0;background:var(--surface);
-    border-bottom:1px solid var(--border);padding:16px 24px;gap:12px;
-  }
-  .topnav-links.open{display:flex}
-  .topnav-inner{position:relative}
-  .hamburger{display:block}
   /* Workflow vertical timeline */
   .workflow-pipeline{
     flex-direction:column;align-items:flex-start;gap:0;
@@ -456,24 +479,11 @@ footer{
 </head>
 <body>
 
-<!-- Top Navigation -->
-<nav class="topnav">
-  <div class="topnav-inner">
-    <a href="index.html" class="topnav-logo">Optimus Code</a>
-    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle navigation">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-    </button>
-    <div class="topnav-links" id="navLinks">
-      <a href="architecture.html" data-i18n="nav_architecture">Architecture</a>
-      <a href="guide.html" data-i18n="nav_tutorial">Tutorial</a>
-      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
-      <div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
-        <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
-        <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
-      </div>
-    </div>
-  </div>
-</nav>
+<!-- Language Toggle -->
+<div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
+  <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
+  <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
+</div>
 
 <!-- ==================== SECTION 1: HERO ==================== -->
 <section class="hero" id="hero">
@@ -490,23 +500,40 @@ footer{
       <span>Roo Cline</span>
     </div>
 
-    <!-- Animated Terminal Hero -->
-    <div class="hero-terminal" role="img" aria-label="Animated terminal showing Optimus orchestrating an agent swarm">
-      <div class="terminal-bar">
-        <span class="terminal-dot red"></span>
-        <span class="terminal-dot yellow"></span>
-        <span class="terminal-dot green"></span>
-        <span class="terminal-bar-title">optimus &mdash; swarm</span>
+    <!-- Hero Terminal Animation -->
+    <div class="hero-terminal" id="heroTerminal" role="img" aria-label="Animated terminal demo showing a user prompt triggering three AI agents that work in parallel to deliver a merged pull request">
+      <div class="term-titlebar">
+        <span class="term-dot term-dot--red"></span>
+        <span class="term-dot term-dot--yellow"></span>
+        <span class="term-dot term-dot--green"></span>
+        <span class="term-titlebar-text">optimus</span>
       </div>
-      <div class="terminal-body" id="terminalBody">
-        <div class="line" data-delay="300"><span class="prompt">$ </span><span class="cmd">optimus dispatch &quot;Add dark-mode toggle&quot;</span></div>
-        <div class="line" data-delay="900"><span class="info">[Master]</span> <span class="muted" data-i18n="term_analyzing">Analyzing request&hellip;</span></div>
-        <div class="line" data-delay="1500"><span class="info">[Master]</span> <span class="muted" data-i18n="term_spawning">Spawning council: Architect + Dev + QA</span></div>
-        <div class="line" data-delay="2200"><span class="ok">[Architect]</span> <span class="muted" data-i18n="term_design">Design proposal written &rarr; .optimus/proposals/</span></div>
-        <div class="line" data-delay="2900"><span class="ok">[Developer]</span> <span class="muted" data-i18n="term_impl">Implementation complete &mdash; 4 files changed</span></div>
-        <div class="line" data-delay="3600"><span class="ok">[QA]</span> <span class="muted" data-i18n="term_tests">All tests passing (12/12)</span></div>
-        <div class="line" data-delay="4300"><span class="info">[Master]</span> <span class="ok" data-i18n="term_pr">PR #42 created &amp; merged</span> <span class="blink">&#9608;</span></div>
+      <div class="term-body" aria-live="polite">
+        <div class="term-line term-prompt-line visible" id="termPromptLine">
+          <span class="term-prompt-prefix">$ </span><span id="termTyped"></span><span class="term-cursor" id="termCursor"></span>
+        </div>
+        <div class="term-line term-agent term-agent--architect" id="termArch">
+          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_architect">Architect &#8594; designing schema</span><span class="term-check" id="termArchCheck">&#10003;</span>
+        </div>
+        <div class="term-line term-agent term-agent--developer" id="termDev">
+          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_developer">Developer &#8594; writing code</span><span class="term-check" id="termDevCheck">&#10003;</span>
+        </div>
+        <div class="term-line term-agent term-agent--qa" id="termQa">
+          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_qa">QA &#8594; running tests</span><span class="term-check" id="termQaCheck">&#10003;</span>
+        </div>
+        <div class="term-line term-result" id="termResult">
+          <span data-i18n="term_result">PR #42 merged</span> &#10003;
+        </div>
       </div>
+      <div style="padding:0 20px 16px;text-align:center">
+        <button class="term-copy-btn" id="termCopyBtn" aria-label="Copy sample prompt to clipboard">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          <span data-i18n="term_copy">Copy prompt</span>
+          <span class="term-copy-tooltip" id="termCopyTooltip" data-i18n="copied">Copied!</span>
+        </button>
+      </div>
+      <!-- Screen-reader accessible full prompt text -->
+      <span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Sample prompt: Add a login page with OAuth</span>
     </div>
 
     <div class="cta-group">
@@ -822,7 +849,7 @@ footer{
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener" data-i18n="footer_docs">Documentation</a>
       <a href="architecture.html" data-i18n="footer_arch">Architecture</a>
-      <a href="guide.html" data-i18n="nav_tutorial">Tutorial</a>
+      <a href="guide.html">Tutorial</a>
       <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
     <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
@@ -833,18 +860,10 @@ footer{
 /* Translation dictionary */
 var i18n={
   en:{
-    nav_architecture:"Architecture",
-    nav_tutorial:"Tutorial",
     hero_title:"Your AI coding tool's operating system",
     hero_subtitle:"Turn one AI assistant into a coordinated dev team. Works with Cursor, Claude Code, Copilot, Windsurf, and any MCP client.",
     hero_cta_start:"Get Started",
     copied:"Copied!",
-    term_analyzing:"Analyzing request\u2026",
-    term_spawning:"Spawning council: Architect + Dev + QA",
-    term_design:"Design proposal written \u2192 .optimus/proposals/",
-    term_impl:"Implementation complete \u2014 4 files changed",
-    term_tests:"All tests passing (12/12)",
-    term_pr:"PR #42 created & merged",
     how_title:"How It Works",
     how_subtitle:"A self-evolving agent lifecycle",
     how_orchestrate_title:"Orchestrate",
@@ -922,21 +941,26 @@ var i18n={
     footer_arch:"Architecture",
     footer_license:"MIT License",
     footer_tagline:"Stop prompting. Start orchestrating.",
-    scroll_down:"Scroll"
+    svg_master:"Master",
+    svg_agent:"Agent",
+    svg_architect:"Architect",
+    svg_design:"design",
+    svg_developer:"Developer",
+    svg_build:"build",
+    svg_verify:"verify",
+    scroll_down:"Scroll",
+    term_prompt:"Add a login page with OAuth",
+    term_architect:"Architect \u2192 designing schema",
+    term_developer:"Developer \u2192 writing code",
+    term_qa:"QA \u2192 running tests",
+    term_result:"PR #42 merged",
+    term_copy:"Copy prompt"
   },
   zh:{
-    nav_architecture:"\u67B6\u6784",
-    nav_tutorial:"\u6559\u7A0B",
     hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
     hero_subtitle:"\u5C06\u4E00\u4E2A AI \u52A9\u624B\u8F6C\u53D8\u4E3A\u534F\u8C03\u7684\u5F00\u53D1\u56E2\u961F\u3002\u652F\u6301 Cursor\u3001Claude Code\u3001Copilot\u3001Windsurf \u53CA\u4EFB\u4F55 MCP \u5BA2\u6237\u7AEF\u3002",
     hero_cta_start:"\u5F00\u59CB\u4F7F\u7528",
     copied:"\u5DF2\u590D\u5236\uFF01",
-    term_analyzing:"\u5206\u6790\u8BF7\u6C42\u4E2D\u2026",
-    term_spawning:"\u542F\u52A8\u59D4\u5458\u4F1A\uFF1A\u67B6\u6784\u5E08 + \u5F00\u53D1\u8005 + QA",
-    term_design:"\u8BBE\u8BA1\u63D0\u6848\u5DF2\u5199\u5165 \u2192 .optimus/proposals/",
-    term_impl:"\u5B9E\u73B0\u5B8C\u6210 \u2014 4 \u4E2A\u6587\u4EF6\u5DF2\u4FEE\u6539",
-    term_tests:"\u6240\u6709\u6D4B\u8BD5\u901A\u8FC7 (12/12)",
-    term_pr:"PR #42 \u5DF2\u521B\u5EFA\u5E76\u5408\u5E76",
     how_title:"\u5DE5\u4F5C\u539F\u7406",
     how_subtitle:"\u81EA\u8FDB\u5316\u7684\u667A\u80FD\u4F53\u751F\u547D\u5468\u671F",
     how_orchestrate_title:"\u7F16\u6392",
@@ -1014,7 +1038,20 @@ var i18n={
     footer_arch:"\u67B6\u6784",
     footer_license:"MIT \u8BB8\u53EF\u8BC1",
     footer_tagline:"\u505C\u6B62\u63D0\u793A\u8BCD\u5DE5\u7A0B\u3002\u5F00\u59CB\u7F16\u6392\u3002",
-    scroll_down:"\u4E0B\u6ED1"
+    svg_master:"\u4E3B\u63A7",
+    svg_agent:"\u667A\u80FD\u4F53",
+    svg_architect:"\u67B6\u6784\u5E08",
+    svg_design:"\u8BBE\u8BA1",
+    svg_developer:"\u5F00\u53D1\u8005",
+    svg_build:"\u6784\u5EFA",
+    svg_verify:"\u9A8C\u8BC1",
+    scroll_down:"\u4E0B\u6ED1",
+    term_prompt:"\u6DFB\u52A0\u4E00\u4E2A\u5E26 OAuth \u7684\u767B\u5F55\u9875\u9762",
+    term_architect:"\u67B6\u6784\u5E08 \u2192 \u8BBE\u8BA1\u65B9\u6848",
+    term_developer:"\u5F00\u53D1\u8005 \u2192 \u7F16\u5199\u4EE3\u7801",
+    term_qa:"QA \u2192 \u8FD0\u884C\u6D4B\u8BD5",
+    term_result:"PR #42 \u5DF2\u5408\u5E76",
+    term_copy:"\u590D\u5236\u63D0\u793A\u8BCD"
   }
 };
 
@@ -1053,6 +1090,9 @@ function setLang(lang){
     btn.classList.toggle('active',isActive);
     btn.setAttribute('aria-checked',isActive?'true':'false');
   });
+
+  /* Restart terminal animation with new locale */
+  if(typeof restartTerminalAnimation==='function') restartTerminalAnimation();
 }
 
 /* Language toggle click handler */
@@ -1066,30 +1106,6 @@ function setLang(lang){
     if(lang&&lang!==currentLang){
       setLang(lang);
     }
-  });
-})();
-
-/* Hamburger menu toggle */
-(function(){
-  var btn=document.getElementById('hamburgerBtn');
-  var nav=document.getElementById('navLinks');
-  if(!btn||!nav)return;
-  btn.addEventListener('click',function(){
-    nav.classList.toggle('open');
-  });
-  /* Close on link click */
-  nav.querySelectorAll('a').forEach(function(a){
-    a.addEventListener('click',function(){nav.classList.remove('open')});
-  });
-})();
-
-/* Terminal typewriter animation */
-(function(){
-  var lines=document.querySelectorAll('#terminalBody .line');
-  if(!lines.length)return;
-  lines.forEach(function(line){
-    var delay=parseInt(line.getAttribute('data-delay'),10)||0;
-    setTimeout(function(){line.classList.add('visible')},delay);
   });
 })();
 
@@ -1134,6 +1150,132 @@ function setLang(lang){
   btn.addEventListener('keydown',function(e){
     if(e.key==='Enter'||e.key===' '){e.preventDefault();doCopy();}
   });
+})();
+
+/* ========== Terminal Hero Animation ========== */
+var _termAnimId=0;
+function cancelTerminalAnimation(){_termAnimId++}
+function restartTerminalAnimation(){cancelTerminalAnimation();runTerminalAnimation()}
+function runTerminalAnimation(){
+  var myId=_termAnimId;
+  var typed=document.getElementById('termTyped');
+  var cursor=document.getElementById('termCursor');
+  var arch=document.getElementById('termArch');
+  var dev=document.getElementById('termDev');
+  var qa=document.getElementById('termQa');
+  var archCheck=document.getElementById('termArchCheck');
+  var devCheck=document.getElementById('termDevCheck');
+  var qaCheck=document.getElementById('termQaCheck');
+  var result=document.getElementById('termResult');
+  if(!typed)return;
+
+  typed.textContent='';
+  cursor.style.display='';
+  [arch,dev,qa].forEach(function(el){el.classList.remove('visible')});
+  [archCheck,devCheck,qaCheck].forEach(function(el){el.classList.remove('visible')});
+  result.classList.remove('visible');
+
+  var prompt=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+  var idx=0;
+  var cancelled=function(){return _termAnimId!==myId};
+
+  function delay(ms){
+    return new Promise(function(resolve){setTimeout(resolve,ms)});
+  }
+
+  function typeNext(){
+    if(cancelled())return Promise.resolve();
+    if(idx<prompt.length){
+      typed.textContent+=prompt.charAt(idx);
+      idx++;
+      return delay(60).then(typeNext);
+    }
+    return Promise.resolve();
+  }
+
+  delay(500).then(function(){
+    if(cancelled())return;
+    return typeNext();
+  }).then(function(){
+    if(cancelled())return;
+    cursor.style.display='none';
+    return delay(300);
+  }).then(function(){
+    if(cancelled())return;
+    arch.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    dev.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    qa.classList.add('visible');
+    return delay(800);
+  }).then(function(){
+    if(cancelled())return;
+    archCheck.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    devCheck.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    qaCheck.classList.add('visible');
+    return delay(500);
+  }).then(function(){
+    if(cancelled())return;
+    result.classList.add('visible');
+    return delay(2000);
+  }).then(function(){
+    if(cancelled())return;
+    runTerminalAnimation();
+  });
+}
+
+if(!window.matchMedia||!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+  runTerminalAnimation();
+}else{
+  (function(){
+    var typed=document.getElementById('termTyped');
+    if(!typed)return;
+    typed.textContent=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+    document.getElementById('termCursor').style.display='none';
+    ['termArch','termDev','termQa'].forEach(function(id){
+      document.getElementById(id).classList.add('visible');
+    });
+    ['termArchCheck','termDevCheck','termQaCheck'].forEach(function(id){
+      document.getElementById(id).classList.add('visible');
+    });
+    document.getElementById('termResult').classList.add('visible');
+  })();
+}
+
+/* Copy-to-clipboard for terminal prompt */
+(function(){
+  var btn=document.getElementById('termCopyBtn');
+  var tip=document.getElementById('termCopyTooltip');
+  if(!btn||!tip)return;
+  function doCopy(){
+    var prompt=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(prompt).then(function(){showTip()}).catch(function(){});
+    }else{
+      var ta=document.createElement('textarea');
+      ta.value=prompt;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');showTip();}catch(e){}
+      document.body.removeChild(ta);
+    }
+  }
+  function showTip(){
+    var msg=i18n[currentLang].copied||'Copied!';
+    tip.textContent=msg;
+    tip.classList.add('show');
+    setTimeout(function(){tip.classList.remove('show')},1500);
+  }
+  btn.addEventListener('click',doCopy);
 })();
 </script>
 </body>

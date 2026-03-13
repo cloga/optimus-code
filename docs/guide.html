@@ -305,6 +305,11 @@ footer{
   .topnav-inner{position:relative}
   .hamburger{display:block}
 }
+/* ========== REDUCED MOTION ========== */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
+  .fade-section{opacity:1;transform:none}
+}
 </style>
 </head>
 <body>
