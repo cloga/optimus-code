@@ -134,8 +134,8 @@ export class VcsProviderFactory {
             // Default to GitHub if unable to detect
             console.warn(`Unable to detect VCS provider from remote URL: ${remoteUrl}. Defaulting to GitHub.`);
             return 'github';
-        } catch (error) {
-            console.warn('Failed to detect git remote URL. Defaulting to GitHub.');
+        } catch (error: any) {
+            console.warn('Failed to detect git remote URL: ' + error.message + '. Defaulting to GitHub.');
             return 'github';
         }
     }

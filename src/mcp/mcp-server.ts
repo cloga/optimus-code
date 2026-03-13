@@ -493,7 +493,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "check_task_status") {
     let { taskId, workspace_path } = request.params.arguments as any;
-    if (!taskId || !workspace_path) throw new Error("Missing taskId or workspace_path");
+    requireParams("check_task_status", request.params.arguments as any, ["taskId", "workspace_path"]);
     
     TaskManifestManager.reapStaleTasks(workspace_path); // Trigger reaper
     const manifest = TaskManifestManager.loadManifest(workspace_path);
@@ -998,9 +998,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments as any;
-    if (!pull_request_id || !workspace_path) {
-      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for vcs_merge_pr: missing required parameter(s). Requires: pull_request_id, workspace_path. Received keys: [" + Object.keys(request.params.arguments as any).join(', ') + "]");
-    }
+    requireParams("vcs_merge_pr", request.params.arguments as any, ["pull_request_id", "workspace_path"]);
 
     const PROTECTED_BRANCHES = ['master', 'main', 'develop', 'release'];
 
@@ -1103,9 +1101,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments as any;
-    if (!item_type || !item_id || !comment || !workspace_path) {
-      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for vcs_add_comment: missing required parameter(s). Requires: item_type, item_id, comment, workspace_path. Received keys: [" + Object.keys(request.params.arguments as any).join(', ') + "]");
-    }
+    requireParams("vcs_add_comment", request.params.arguments as any, ["item_type", "item_id", "comment", "workspace_path"]);
 
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);

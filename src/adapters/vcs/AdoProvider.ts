@@ -7,6 +7,16 @@ import { marked } from 'marked';
  * Implements the unified VCS interface using Azure DevOps REST API.
  * Uses Personal Access Tokens (PATs) for authentication.
  */
+function adoHttpRecoveryHint(status: number): string {
+    const hints: Record<number, string> = {
+        401: "ADO PAT may be expired or invalid. Regenerate at dev.azure.com > User Settings > Personal Access Tokens.",
+        403: "Insufficient permissions. Verify the PAT has the required scopes (Code: Read&Write, Work Items: Read&Write).",
+        404: "Resource not found. Verify org/project/repo names in .optimus/config/vcs.json match your Azure DevOps setup.",
+        409: "Conflict detected. The resource may have been modified concurrently. Retry the operation."
+    };
+    return hints[status] || "Unexpected HTTP " + status + ". Check ADO service health at https://status.dev.azure.com.";
+}
+
 export class AdoProvider implements IVcsProvider {
     private organization: string;
     private project: string;
@@ -109,7 +119,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!response.ok) {
-                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
             }
 
             const data = await response.json() as any;
@@ -184,7 +194,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!response.ok) {
-                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
             }
 
             const data = await response.json() as any;
@@ -224,11 +234,13 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!repoResponse.ok) {
+                console.error("[mergePullRequest] ADO repo-list request failed with status " + repoResponse.status + ". " + adoHttpRecoveryHint(repoResponse.status));
                 return { merged: false };
             }
 
             const repos = await repoResponse.json() as any;
             if (!repos.value || repos.value.length === 0) {
+                console.error("[mergePullRequest] No repositories found in project. Verify org/project in .optimus/config/vcs.json.");
                 return { merged: false };
             }
 
@@ -254,7 +266,8 @@ export class AdoProvider implements IVcsProvider {
                     headBranch = prData.sourceRefName?.replace('refs/heads/', '');
                     baseBranch = prData.targetRefName?.replace('refs/heads/', '');
                 }
-            } catch {
+            } catch (e: any) {
+                console.error("[mergePullRequest] Warning: failed to fetch PR branch names:", e.message);
                 // Best-effort: continue with merge even if branch name fetch fails
             }
 
@@ -286,7 +299,8 @@ export class AdoProvider implements IVcsProvider {
             );
 
             return { merged: response.ok, headBranch, baseBranch };
-        } catch {
+        } catch (e: any) {
+            console.error("[mergePullRequest] Merge failed:", e.message);
             return { merged: false };
         }
     }
@@ -321,7 +335,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
                 }
 
                 const data = await response.json() as any;
@@ -372,7 +386,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
                 }
 
                 const data = await response.json() as any;
