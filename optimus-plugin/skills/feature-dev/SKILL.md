@@ -171,11 +171,27 @@ Each architect designs from a different angle:
 PM reads all proposals, picks the best fit (or synthesizes a hybrid), and
 documents the decision with rationale.
 
+### Update vs Create Path Separation (MANDATORY)
+
+Before designing, explicitly classify this task:
+- **Update path**: Modifying an existing feature, file, or module. You MUST read the current implementation in full before designing changes. Never design against an assumed state — verify first.
+- **Create path**: Building a net-new feature with no prior implementation. Skip "current state" analysis but still study adjacent code for conventions and integration points.
+
+State your classification ("This is an UPDATE to [component]" or "This is a CREATE of [component]") at the top of your architecture design. Wrong classification leads to overwrites of existing behavior (Update misclassified as Create) or redundant code (Create misclassified as Update).
+
 ---
 
 ## Phase 4: Implementation
 
 **product-manager → senior-full-stack-builder (delegate_task, sync)** · Output: open PR
+
+### required_skills Self-Check (MANDATORY)
+
+Before delegating to Dev, PM MUST verify that every skill listed in `required_skills` actually exists at `.optimus/skills/<name>/SKILL.md`. If a skill is missing:
+1. Delegate to `skill-creator` to create it first
+2. Then proceed with the Dev delegation
+
+Never pass a `required_skills` entry that doesn't have a corresponding SKILL.md — the delegation will be rejected by the system, wasting a turn.
 
 PM calls:
 ```
@@ -234,6 +250,15 @@ Before calling `vcs_merge_pr`, you MUST verify:
 2. Build status shows success
 3. No unresolved errors in the test output
 If ANY of these fail, reject the PR with specific feedback and re-delegate to Dev.
+
+### Skill Usage Verification (MANDATORY)
+
+Before merging, PM MUST verify the Dev agent actually used the skills listed in `required_skills`:
+1. Check the Dev's output report for evidence of skill usage (e.g., `git-workflow` → branch creation, conventional commits, PR creation)
+2. If `required_skills` included `git-workflow` but the Dev pushed directly to master or skipped the PR, **reject and re-delegate**
+3. If the Dev improvised a workflow instead of following the skill's prescribed steps, flag it as a protocol violation
+
+This catches agents that ignore their required skills and drift into ad-hoc behavior.
 
 **Self-Assessment Review**: When reading agent outputs (implementation reports, review reports), PM should look for `## Self-Assessment` sections. If an agent identifies meaningful role/skill gaps, PM decides whether to:
 - Invoke `role-creator` to update the Role template

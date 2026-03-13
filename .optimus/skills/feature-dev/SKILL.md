@@ -68,6 +68,19 @@ How to implement this:
 This ensures agents accumulate project understanding across phases rather than
 starting fresh each time.
 
+### Issue Lineage Rule (MANDATORY)
+
+After you create your Epic's GitHub Issue (e.g., #N via `vcs_create_work_item`), ALL subsequent `delegate_task`, `delegate_task_async`, and `dispatch_council` calls in this workflow MUST include `parent_issue_number: N`. This creates a visible parent→child tree in GitHub so the user can trace the full delegation chain.
+
+Example:
+- PM creates Issue #150 for this feature
+- PM delegates to dev: `delegate_task({ ..., parent_issue_number: 150 })`
+- Dev's auto-created sub-issue will reference "Parent Epic: #150"
+- PM dispatches council: `dispatch_council({ ..., parent_issue_number: 150 })`
+- Each reviewer's auto-created sub-issue will also reference "#150"
+
+Failure to pass `parent_issue_number` breaks traceability and is considered a protocol violation.
+
 ```
 User ↔ Master Agent
            │
@@ -101,6 +114,15 @@ that's complete enough for all downstream work.
 
 After this phase, Master hands off to PM via `delegate_task_async` for Phase 2-6.
 
+### Pre-Existing Tracking Issue
+
+If your prompt header contains a "## Tracking Issue" section with an existing Issue number (e.g., #N), that Issue was auto-created by the system to track this task. In that case:
+- **DO NOT** create a new Issue via `vcs_create_work_item`
+- Use #N as your Epic Issue for all sub-delegations (`parent_issue_number: N`)
+- You can also check the `OPTIMUS_TRACKING_ISSUE` environment variable as a fallback
+
+This prevents duplicate Issues from being created for the same task.
+
 ---
 
 ## Phase 2: Codebase Exploration
@@ -112,6 +134,7 @@ PM calls:
 dispatch_council(
   proposal_path: ".optimus/tasks/requirements_<feature>.md",
   roles: ["code-explorer", "code-explorer", "code-explorer"],
+  parent_issue_number: <issue_number>,
   workspace_path: "<project root>"
 )
 ```
@@ -135,6 +158,7 @@ PM calls:
 dispatch_council(
   proposal_path: ".optimus/tasks/requirements_<feature>.md",  // enriched with project context
   roles: ["code-architect", "code-architect", "code-architect"],
+  parent_issue_number: <issue_number>,
   workspace_path: "<project root>"
 )
 ```
@@ -147,11 +171,27 @@ Each architect designs from a different angle:
 PM reads all proposals, picks the best fit (or synthesizes a hybrid), and
 documents the decision with rationale.
 
+### Update vs Create Path Separation (MANDATORY)
+
+Before designing, explicitly classify this task:
+- **Update path**: Modifying an existing feature, file, or module. You MUST read the current implementation in full before designing changes. Never design against an assumed state — verify first.
+- **Create path**: Building a net-new feature with no prior implementation. Skip "current state" analysis but still study adjacent code for conventions and integration points.
+
+State your classification ("This is an UPDATE to [component]" or "This is a CREATE of [component]") at the top of your architecture design. Wrong classification leads to overwrites of existing behavior (Update misclassified as Create) or redundant code (Create misclassified as Update).
+
 ---
 
 ## Phase 4: Implementation
 
 **product-manager → senior-full-stack-builder (delegate_task, sync)** · Output: open PR
+
+### required_skills Self-Check (MANDATORY)
+
+Before delegating to Dev, PM MUST verify that every skill listed in `required_skills` actually exists at `.optimus/skills/<name>/SKILL.md`. If a skill is missing:
+1. Delegate to `skill-creator` to create it first
+2. Then proceed with the Dev delegation
+
+Never pass a `required_skills` entry that doesn't have a corresponding SKILL.md — the delegation will be rejected by the system, wasting a turn.
 
 PM calls:
 ```
@@ -159,6 +199,7 @@ delegate_task(
   role: "senior-full-stack-builder",
   task_description: "<chosen architecture + requirements + key files>",
   required_skills: ["git-workflow"],
+  parent_issue_number: <issue_number>,
   output_path: ".optimus/reports/implementation_<feature>.md",
   workspace_path: "<project root>",
   context_files: ["<requirements doc>", "<architecture review files>"]
@@ -188,6 +229,7 @@ PM calls:
 dispatch_council(
   proposal_path: ".optimus/reports/implementation_<feature>.md",
   roles: ["code-reviewer", "code-reviewer", "code-reviewer"],
+  parent_issue_number: <issue_number>,
   workspace_path: "<project root>"
 )
 ```
@@ -201,8 +243,6 @@ PM reads all reviews and ranks issues by severity:
 - **Critical issues found** → PM delegates back to dev for fixes, then re-reviews
 - **Clean** → PM merges the PR via `vcs_merge_pr`
 
----
-
 
 ### Pre-Merge Checklist (MANDATORY — do NOT skip)
 Before calling `vcs_merge_pr`, you MUST verify:
@@ -210,6 +250,33 @@ Before calling `vcs_merge_pr`, you MUST verify:
 2. Build status shows success
 3. No unresolved errors in the test output
 If ANY of these fail, reject the PR with specific feedback and re-delegate to Dev.
+
+### Skill Usage Verification (MANDATORY)
+
+Before merging, PM MUST verify the Dev agent actually used the skills listed in `required_skills`:
+1. Check the Dev's output report for evidence of skill usage (e.g., `git-workflow` → branch creation, conventional commits, PR creation)
+2. If `required_skills` included `git-workflow` but the Dev pushed directly to master or skipped the PR, **reject and re-delegate**
+3. If the Dev improvised a workflow instead of following the skill's prescribed steps, flag it as a protocol violation
+
+This catches agents that ignore their required skills and drift into ad-hoc behavior.
+
+**Self-Assessment Review**: When reading agent outputs (implementation reports, review reports), PM should look for `## Self-Assessment` sections. If an agent identifies meaningful role/skill gaps, PM decides whether to:
+- Invoke `role-creator` to update the Role template
+- Invoke `skill-creator` to create a missing Skill
+- Promote cross-cutting lessons to project memory via `append_memory`
+- Dismiss as not actionable
+
+**IMPORTANT**: The ONLY way to merge code to master is via `vcs_merge_pr`.
+Never use `git merge` locally and push. The PR merge triggers GitHub auto-close for `fixes #N`.
+
+### Destructive Edge Case Testing (MANDATORY for file operations)
+Any feature that involves file overwrite, delete, migrate, or upgrade MUST include edge case tests with:
+- A target directory containing user-customized config files (not empty defaults)
+- Verification that user values survive the operation
+- Test both "first install" (empty target) AND "upgrade" (existing data) scenarios
+Example: `optimus upgrade` must be tested against a `.optimus/config/vcs.json` with real org/project values.
+
+---
 
 ## Phase 6: Summary
 
@@ -222,3 +289,8 @@ PM documents:
 - Suggested follow-ups (tests, docs, related features)
 
 Updates the VCS work item via `vcs_add_comment`.
+
+### Retrospective Memory Capture
+After completing a feature, if you encountered any bugs, surprises, or learned something
+non-obvious, use `append_memory` to record it for future agents. Use category: "bug-postmortem"
+for bug lessons, "architecture-decision" for design choices, "best-practice" for patterns that worked well.
