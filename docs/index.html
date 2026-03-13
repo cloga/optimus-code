@@ -14,7 +14,7 @@
   --border:#2a2a2e;
   --text:#e4e4e7;
   --text-secondary:#a1a1aa;
-  --text-tertiary:#7e7e86;
+  --text-tertiary:#71717a;
   --accent:#3b82f6;
   --accent-hover:#60a5fa;
   --accent-secondary:#10b981;
@@ -96,80 +96,73 @@ a:hover{color:var(--accent)}
 .tool-logos span{opacity:0;animation:fadeIn .5s ease forwards}
 .tool-logos span:hover{border-color:var(--accent)}
 
-/* Hero animation */
-.hero-animation{
-  width:100%;max-width:500px;height:300px;margin:0 auto 40px;position:relative;
+/* Hero terminal */
+.hero-terminal{
+  width:100%;max-width:560px;margin:0 auto 40px;
+  border-radius:12px;overflow:hidden;
+  border:1px solid var(--border);
+  background:var(--code-bg);
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.875rem;text-align:left;
 }
-.hero-animation svg{width:100%;height:100%}
-
-/* Master node */
-.master-node{
-  animation:pulse 3s ease-in-out infinite;
+.term-titlebar{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 16px;background:var(--surface);
+  border-bottom:1px solid var(--border);
 }
-@keyframes pulse{
-  0%,100%{filter:drop-shadow(0 0 8px rgba(59,130,246,.3))}
-  50%{filter:drop-shadow(0 0 20px rgba(59,130,246,.6))}
+.term-dot{width:12px;height:12px;border-radius:50%}
+.term-dot--red{background:#ff5f57}
+.term-dot--yellow{background:#febc2e}
+.term-dot--green{background:#28c840}
+.term-titlebar-text{
+  flex:1;text-align:center;font-size:.75rem;
+  color:var(--text-tertiary);font-family:inherit;
 }
-
-/* Connection lines */
-.conn-line{
-  stroke-dasharray:200;
-  stroke-dashoffset:200;
-  animation:drawLine 2s ease forwards;
+.term-body{padding:16px 20px;min-height:160px;line-height:1.7;position:relative}
+.term-line{opacity:0;transition:opacity .3s}
+.term-line.visible{opacity:1}
+.term-prompt-line{color:var(--code-text)}
+.term-prompt-prefix{color:var(--accent);user-select:none}
+.term-cursor{
+  display:inline-block;width:8px;height:1.1em;
+  background:var(--code-text);vertical-align:text-bottom;
+  animation:blink 1s step-end infinite;
 }
-.conn-line:nth-child(1){animation-delay:0s}
-.conn-line:nth-child(2){animation-delay:.3s}
-.conn-line:nth-child(3){animation-delay:.6s}
-@keyframes drawLine{
-  to{stroke-dashoffset:0}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.term-agent{margin-top:4px}
+.term-agent-icon{margin-right:4px}
+.term-agent--architect{color:#8b5cf6}
+.term-agent--developer{color:#10b981}
+.term-agent--qa{color:#f59e0b}
+.term-agent .term-check{opacity:0;transition:opacity .3s;color:#10b981;margin-left:6px}
+.term-agent .term-check.visible{opacity:1}
+.term-result{color:#10b981;margin-top:4px;font-weight:600;opacity:0;transition:opacity .3s}
+.term-result.visible{opacity:1}
+/* Copy prompt button */
+.term-copy-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  margin-top:16px;padding:8px 16px;
+  background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  color:var(--text-secondary);font-size:.8rem;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  cursor:pointer;transition:border-color .2s,color .2s;position:relative;
 }
-
-/* Agent nodes */
-.agent-node{
-  opacity:0;
-  animation:nodeAppear .6s ease forwards;
+.term-copy-btn:hover{border-color:var(--accent);color:var(--text)}
+.term-copy-tooltip{
+  position:absolute;top:-32px;left:50%;transform:translateX(-50%);
+  background:var(--accent-secondary);color:#fff;padding:4px 12px;
+  border-radius:4px;font-size:.75rem;
+  opacity:0;pointer-events:none;transition:opacity .3s;
 }
-.agent-node:nth-of-type(1){animation-delay:1.5s}
-.agent-node:nth-of-type(2){animation-delay:1.8s}
-.agent-node:nth-of-type(3){animation-delay:2.1s}
-@keyframes nodeAppear{
-  from{opacity:0;transform:scale(.8)}
-  to{opacity:1;transform:scale(1)}
-}
-
-/* Data particles */
-.particle{
-  r:3;fill:var(--accent);opacity:0;
-}
-.particle-out{
-  animation:particleOut 4s ease-in-out infinite;
-}
-.particle-in{
-  animation:particleIn 4s ease-in-out infinite;
-}
-@keyframes particleOut{
-  0%{opacity:0;offset-distance:0%}
-  10%{opacity:1}
-  50%{opacity:1;offset-distance:100%}
-  51%{opacity:0}
-  100%{opacity:0}
-}
-@keyframes particleIn{
-  0%,50%{opacity:0;offset-distance:100%}
-  60%{opacity:1}
-  90%{opacity:1;offset-distance:0%}
-  91%{opacity:0}
-  100%{opacity:0}
-}
-
-/* Checkmark */
-.check-mark{
-  opacity:0;
-  animation:showCheck .5s ease forwards 12s;
-}
-@keyframes showCheck{
-  from{opacity:0;transform:scale(.5)}
-  to{opacity:1;transform:scale(1)}
+.term-copy-tooltip.show{opacity:1}
+/* Reduced motion: show final state, no animation */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
+  .term-cursor{opacity:0}
+  .term-line,.term-agent .term-check,.term-result{opacity:1}
+  .animate-on-scroll{opacity:1;transform:none}
+  .tool-logos,.tool-logos span{opacity:1}
+  .scroll-indicator{opacity:1}
 }
 
 /* CTA buttons */
@@ -438,7 +431,8 @@ footer{
   .eco-grid{grid-template-columns:repeat(2,1fr)}
   section{padding:80px 0}
   .hero{padding:60px 16px 40px}
-  .hero-animation{height:220px}
+  .hero-terminal{font-size:.75rem}
+  .term-body{min-height:180px;padding:12px 14px}
   .cta-group{flex-direction:column;align-items:center}
   .btn-primary,.btn-secondary{width:100%;max-width:280px;justify-content:center}
   .tier-flow{flex-direction:column;gap:0}
@@ -506,58 +500,40 @@ footer{
       <span>Roo Cline</span>
     </div>
 
-    <!-- Hero SVG Animation: Master Agent delegates to 3 specialists -->
-    <div class="hero-animation" role="img" aria-label="Animation showing Master Agent delegating tasks to Architect, Developer, and QA specialists">
-      <svg viewBox="0 0 500 300" xmlns="http://www.w3.org/2000/svg">
-        <!-- Connection lines (drawn first, appear behind nodes) -->
-        <line class="conn-line" x1="250" y1="110" x2="100" y2="230" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
-        <line class="conn-line" x1="250" y1="110" x2="250" y2="240" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
-        <line class="conn-line" x1="250" y1="110" x2="400" y2="230" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
-
-        <!-- Master Agent node (center top) -->
-        <g class="master-node">
-          <circle cx="250" cy="90" r="36" fill="#141416" stroke="#3b82f6" stroke-width="2"/>
-          <text x="250" y="85" text-anchor="middle" fill="#e4e4e7" font-size="11" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_master">Master</text>
-          <text x="250" y="99" text-anchor="middle" fill="#a1a1aa" font-size="9" font-family="Inter,sans-serif" data-i18n="svg_agent">Agent</text>
-        </g>
-
-        <!-- Architect node -->
-        <g class="agent-node" style="animation-delay:1.5s">
-          <circle cx="100" cy="240" r="30" fill="#141416" stroke="#8b5cf6" stroke-width="2"/>
-          <text x="100" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_architect">Architect</text>
-          <text x="100" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_design">design</text>
-        </g>
-
-        <!-- Developer node -->
-        <g class="agent-node" style="animation-delay:1.8s">
-          <circle cx="250" cy="250" r="30" fill="#141416" stroke="#10b981" stroke-width="2"/>
-          <text x="250" y="247" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_developer">Developer</text>
-          <text x="250" y="260" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_build">build</text>
-        </g>
-
-        <!-- QA node -->
-        <g class="agent-node" style="animation-delay:2.1s">
-          <circle cx="400" cy="240" r="30" fill="#141416" stroke="#f59e0b" stroke-width="2"/>
-          <text x="400" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">QA</text>
-          <text x="400" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_verify">verify</text>
-        </g>
-
-        <!-- Outbound particles (data flowing to agents) -->
-        <circle class="particle particle-out" style="offset-path:path('M250,110 L100,230');animation-delay:3s;fill:#8b5cf6"/>
-        <circle class="particle particle-out" style="offset-path:path('M250,110 L250,240');animation-delay:3.3s;fill:#10b981"/>
-        <circle class="particle particle-out" style="offset-path:path('M250,110 L400,230');animation-delay:3.6s;fill:#f59e0b"/>
-
-        <!-- Return particles (results flowing back) -->
-        <circle class="particle particle-in" style="offset-path:path('M250,110 L100,230');animation-delay:4s;fill:#8b5cf6"/>
-        <circle class="particle particle-in" style="offset-path:path('M250,110 L250,240');animation-delay:4.3s;fill:#10b981"/>
-        <circle class="particle particle-in" style="offset-path:path('M250,110 L400,230');animation-delay:4.6s;fill:#f59e0b"/>
-
-        <!-- Success checkmark -->
-        <g class="check-mark" transform="translate(250,90)">
-          <circle r="14" fill="#10b981" opacity=".2"/>
-          <path d="M-5,0 L-1,4 L6,-4" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </g>
-      </svg>
+    <!-- Hero Terminal Animation -->
+    <div class="hero-terminal" id="heroTerminal" role="img" aria-label="Animated terminal demo showing a user prompt triggering three AI agents that work in parallel to deliver a merged pull request">
+      <div class="term-titlebar">
+        <span class="term-dot term-dot--red"></span>
+        <span class="term-dot term-dot--yellow"></span>
+        <span class="term-dot term-dot--green"></span>
+        <span class="term-titlebar-text">optimus</span>
+      </div>
+      <div class="term-body" aria-live="polite">
+        <div class="term-line term-prompt-line visible" id="termPromptLine">
+          <span class="term-prompt-prefix">$ </span><span id="termTyped"></span><span class="term-cursor" id="termCursor"></span>
+        </div>
+        <div class="term-line term-agent term-agent--architect" id="termArch">
+          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_architect">Architect &#8594; designing schema</span><span class="term-check" id="termArchCheck">&#10003;</span>
+        </div>
+        <div class="term-line term-agent term-agent--developer" id="termDev">
+          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_developer">Developer &#8594; writing code</span><span class="term-check" id="termDevCheck">&#10003;</span>
+        </div>
+        <div class="term-line term-agent term-agent--qa" id="termQa">
+          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_qa">QA &#8594; running tests</span><span class="term-check" id="termQaCheck">&#10003;</span>
+        </div>
+        <div class="term-line term-result" id="termResult">
+          <span data-i18n="term_result">PR #42 merged</span> &#10003;
+        </div>
+      </div>
+      <div style="padding:0 20px 16px;text-align:center">
+        <button class="term-copy-btn" id="termCopyBtn" aria-label="Copy sample prompt to clipboard">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          <span data-i18n="term_copy">Copy prompt</span>
+          <span class="term-copy-tooltip" id="termCopyTooltip" data-i18n="copied">Copied!</span>
+        </button>
+      </div>
+      <!-- Screen-reader accessible full prompt text -->
+      <span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Sample prompt: Add a login page with OAuth</span>
     </div>
 
     <div class="cta-group">
@@ -972,7 +948,13 @@ var i18n={
     svg_developer:"Developer",
     svg_build:"build",
     svg_verify:"verify",
-    scroll_down:"Scroll"
+    scroll_down:"Scroll",
+    term_prompt:"Add a login page with OAuth",
+    term_architect:"Architect \u2192 designing schema",
+    term_developer:"Developer \u2192 writing code",
+    term_qa:"QA \u2192 running tests",
+    term_result:"PR #42 merged",
+    term_copy:"Copy prompt"
   },
   zh:{
     hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
@@ -1063,7 +1045,13 @@ var i18n={
     svg_developer:"\u5F00\u53D1\u8005",
     svg_build:"\u6784\u5EFA",
     svg_verify:"\u9A8C\u8BC1",
-    scroll_down:"\u4E0B\u6ED1"
+    scroll_down:"\u4E0B\u6ED1",
+    term_prompt:"\u6DFB\u52A0\u4E00\u4E2A\u5E26 OAuth \u7684\u767B\u5F55\u9875\u9762",
+    term_architect:"\u67B6\u6784\u5E08 \u2192 \u8BBE\u8BA1\u65B9\u6848",
+    term_developer:"\u5F00\u53D1\u8005 \u2192 \u7F16\u5199\u4EE3\u7801",
+    term_qa:"QA \u2192 \u8FD0\u884C\u6D4B\u8BD5",
+    term_result:"PR #42 \u5DF2\u5408\u5E76",
+    term_copy:"\u590D\u5236\u63D0\u793A\u8BCD"
   }
 };
 
@@ -1102,6 +1090,9 @@ function setLang(lang){
     btn.classList.toggle('active',isActive);
     btn.setAttribute('aria-checked',isActive?'true':'false');
   });
+
+  /* Restart terminal animation with new locale */
+  if(typeof restartTerminalAnimation==='function') restartTerminalAnimation();
 }
 
 /* Language toggle click handler */
@@ -1159,6 +1150,132 @@ function setLang(lang){
   btn.addEventListener('keydown',function(e){
     if(e.key==='Enter'||e.key===' '){e.preventDefault();doCopy();}
   });
+})();
+
+/* ========== Terminal Hero Animation ========== */
+var _termAnimId=0;
+function cancelTerminalAnimation(){_termAnimId++}
+function restartTerminalAnimation(){cancelTerminalAnimation();runTerminalAnimation()}
+function runTerminalAnimation(){
+  var myId=_termAnimId;
+  var typed=document.getElementById('termTyped');
+  var cursor=document.getElementById('termCursor');
+  var arch=document.getElementById('termArch');
+  var dev=document.getElementById('termDev');
+  var qa=document.getElementById('termQa');
+  var archCheck=document.getElementById('termArchCheck');
+  var devCheck=document.getElementById('termDevCheck');
+  var qaCheck=document.getElementById('termQaCheck');
+  var result=document.getElementById('termResult');
+  if(!typed)return;
+
+  typed.textContent='';
+  cursor.style.display='';
+  [arch,dev,qa].forEach(function(el){el.classList.remove('visible')});
+  [archCheck,devCheck,qaCheck].forEach(function(el){el.classList.remove('visible')});
+  result.classList.remove('visible');
+
+  var prompt=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+  var idx=0;
+  var cancelled=function(){return _termAnimId!==myId};
+
+  function delay(ms){
+    return new Promise(function(resolve){setTimeout(resolve,ms)});
+  }
+
+  function typeNext(){
+    if(cancelled())return Promise.resolve();
+    if(idx<prompt.length){
+      typed.textContent+=prompt.charAt(idx);
+      idx++;
+      return delay(60).then(typeNext);
+    }
+    return Promise.resolve();
+  }
+
+  delay(500).then(function(){
+    if(cancelled())return;
+    return typeNext();
+  }).then(function(){
+    if(cancelled())return;
+    cursor.style.display='none';
+    return delay(300);
+  }).then(function(){
+    if(cancelled())return;
+    arch.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    dev.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    qa.classList.add('visible');
+    return delay(800);
+  }).then(function(){
+    if(cancelled())return;
+    archCheck.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    devCheck.classList.add('visible');
+    return delay(200);
+  }).then(function(){
+    if(cancelled())return;
+    qaCheck.classList.add('visible');
+    return delay(500);
+  }).then(function(){
+    if(cancelled())return;
+    result.classList.add('visible');
+    return delay(2000);
+  }).then(function(){
+    if(cancelled())return;
+    runTerminalAnimation();
+  });
+}
+
+if(!window.matchMedia||!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+  runTerminalAnimation();
+}else{
+  (function(){
+    var typed=document.getElementById('termTyped');
+    if(!typed)return;
+    typed.textContent=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+    document.getElementById('termCursor').style.display='none';
+    ['termArch','termDev','termQa'].forEach(function(id){
+      document.getElementById(id).classList.add('visible');
+    });
+    ['termArchCheck','termDevCheck','termQaCheck'].forEach(function(id){
+      document.getElementById(id).classList.add('visible');
+    });
+    document.getElementById('termResult').classList.add('visible');
+  })();
+}
+
+/* Copy-to-clipboard for terminal prompt */
+(function(){
+  var btn=document.getElementById('termCopyBtn');
+  var tip=document.getElementById('termCopyTooltip');
+  if(!btn||!tip)return;
+  function doCopy(){
+    var prompt=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(prompt).then(function(){showTip()}).catch(function(){});
+    }else{
+      var ta=document.createElement('textarea');
+      ta.value=prompt;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');showTip();}catch(e){}
+      document.body.removeChild(ta);
+    }
+  }
+  function showTip(){
+    var msg=i18n[currentLang].copied||'Copied!';
+    tip.textContent=msg;
+    tip.classList.add('show');
+    setTimeout(function(){tip.classList.remove('show')},1500);
+  }
+  btn.addEventListener('click',doCopy);
 })();
 </script>
 </body>
