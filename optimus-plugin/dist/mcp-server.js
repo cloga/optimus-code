@@ -4478,7 +4478,7 @@ var VcsProviderFactory = class {
       console.warn(`Unable to detect VCS provider from remote URL: ${remoteUrl}. Defaulting to GitHub.`);
       return "github";
     } catch (error) {
-      console.warn("Failed to detect git remote URL: " + error.message + ". Defaulting to GitHub.");
+      console.warn("Failed to detect git remote URL. Defaulting to GitHub.");
       return "github";
     }
   }
@@ -4586,6 +4586,15 @@ function validateRoleNotModelName(role) {
 }
 
 // ../src/mcp/mcp-server.ts
+function requireParams(toolName, params, required) {
+  const missing = required.filter((k2) => params[k2] == null || params[k2] === "");
+  if (missing.length > 0) {
+    throw new import_types2.McpError(
+      import_types2.ErrorCode.InvalidParams,
+      `Invalid arguments for ${toolName}: missing required parameter(s): ${missing.join(", ")}. Received keys: [${Object.keys(params).join(", ")}]`
+    );
+  }
+}
 function reloadEnv() {
   if (process.env.DOTENV_PATH) {
     import_dotenv.default.config({ path: import_path3.default.resolve(process.env.DOTENV_PATH), override: true });
@@ -5086,10 +5095,7 @@ Error: ${task.error_message}`;
   }
   if (request.params.name === "delegate_task_async") {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
-    if (!role || !task_description || !output_path || !workspace_path) {
-      const missing = [!role && "role", !task_description && "task_description", !output_path && "output_path", !workspace_path && "workspace_path"].filter(Boolean).join(", ");
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "delegate_task_async: missing required parameter(s): " + missing);
-    }
+    requireParams("delegate_task_async", request.params.arguments, ["role", "task_description", "output_path", "workspace_path"]);
     validateRoleNotModelName(role);
     validateEngineAndModel(role_engine, role_model, workspace_path);
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
@@ -5154,9 +5160,9 @@ Use check_task_status tool periodically with this task ID to check its completio
   }
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
-    if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
-      const missing = [!proposal_path && "proposal_path", !Array.isArray(roles) && "roles (must be array)", !workspace_path && "workspace_path"].filter(Boolean).join(", ");
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "dispatch_council_async: missing required parameter(s): " + missing);
+    requireParams("dispatch_council_async", request.params.arguments, ["proposal_path", "workspace_path"]);
+    if (!Array.isArray(roles) || roles.length === 0) {
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for dispatch_council_async: 'roles' must be a non-empty array of expert role names (e.g., ['security-expert', 'performance-tyrant'])");
     }
     const modelAsRole = roles.find((r) => looksLikeModelName(r));
     if (modelAsRole) {
@@ -5219,8 +5225,9 @@ Use check_task_status tool periodically with this Council ID to check completion
   }
   if (request.params.name === "dispatch_council") {
     let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
-    if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
+    requireParams("dispatch_council", request.params.arguments, ["proposal_path"]);
+    if (!Array.isArray(roles) || roles.length === 0) {
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for dispatch_council: 'roles' must be a non-empty array of expert role names (e.g., ['security-expert', 'performance-tyrant'])");
     }
     const modelAsRoleSync = roles.find((r) => looksLikeModelName(r));
     if (modelAsRoleSync) {
@@ -5312,9 +5319,7 @@ Memory appended to: ${memoryFile}`
     }
   } else if (request.params.name === "roster_check") {
     const { workspace_path } = request.params.arguments;
-    if (!workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires workspace_path");
-    }
+    requireParams("roster_check", request.params.arguments, ["workspace_path"]);
     const t1Dir = import_path3.default.join(workspace_path, ".optimus", "agents");
     const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
     if (!import_fs3.default.existsSync(t2Dir)) {
@@ -5453,9 +5458,7 @@ Memory appended to: ${memoryFile}`
     let workspace_path = request.params.arguments.workspace_path;
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
-    if (!role || !task_description || !output_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
-    }
+    requireParams("delegate_task", request.params.arguments, ["role", "task_description", "output_path"]);
     if (!workspace_path) {
       workspace_path = process.cwd();
       if (output_path.includes("optimus-code")) {
@@ -5493,9 +5496,7 @@ Memory appended to: ${memoryFile}`
       priority,
       agent_role
     } = request.params.arguments;
-    if (!title || !body || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
-    }
+    requireParams("vcs_create_work_item", request.params.arguments, ["title", "body", "workspace_path"]);
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalBody = agent_role ? body + agentSignature(agent_role) : body;
@@ -5523,7 +5524,7 @@ Memory appended to: ${memoryFile}`
   } else if (request.params.name === "vcs_create_pr") {
     const { title, body, head, base, workspace_path, agent_role } = request.params.arguments;
     if (!title || !body || !head || !base || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for vcs_create_pr: missing required parameter(s). Requires: title, body, head, base, workspace_path. Received keys: [" + Object.keys(request.params.arguments).join(", ") + "]");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
@@ -5546,7 +5547,7 @@ Memory appended to: ${memoryFile}`
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments;
     if (!pull_request_id || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for vcs_merge_pr: missing required parameter(s). Requires: pull_request_id, workspace_path. Received keys: [" + Object.keys(request.params.arguments).join(", ") + "]");
     }
     const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
     try {
@@ -5638,7 +5639,7 @@ Fix the build errors and try again.`
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments;
     if (!item_type || !item_id || !comment || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for vcs_add_comment: missing required parameter(s). Requires: item_type, item_id, comment, workspace_path. Received keys: [" + Object.keys(request.params.arguments).join(", ") + "]");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);

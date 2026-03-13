@@ -1,3 +1,19 @@
+/**
+ * Error Message Contract
+ *
+ * All errors thrown or logged from this module MUST follow this format:
+ *   [Category] What failed: <details>. Suggested fix: <action>.
+ *
+ * Categories:
+ *   [Spawner]        — Worker process lifecycle (spawn, heartbeat, reap)
+ *   [Engine]         — Engine/model resolution and adapter instantiation
+ *   [T2 Guard]       — T2 role template quality gate
+ *   [Precipitation]  — T3→T2 or T2→T1 tier promotion
+ *   [Config]         — Config file read/parse/validation
+ *   [Orchestrator]   — Top-level delegation or council dispatch
+ *
+ * All catch blocks MUST log via console.error() — no silent swallowing.
+ */
 import fs from "fs";
 import path from "path";
 import os from "os";

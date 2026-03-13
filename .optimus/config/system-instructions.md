@@ -142,6 +142,17 @@ Never catch an exception and return a default/empty value without logging. At mi
 - Include context about what operation failed and what the user should check
 - Prefer actionable error messages: "Auto-detect failed: git not found in PATH. Set organization and project in .optimus/config/vcs.json"
 
+### Post-Error Self-Recovery Protocol
+When an MCP tool call or delegation fails, the agent MUST follow this sequence:
+1. **Read the error message** in full before taking any action
+2. **Identify the category** from the error prefix (e.g., `[Engine]`, `[T2 Guard]`, `[Config]`)
+3. **Follow the suggested fix** provided in the error message
+4. **If no suggestion**, check: missing params, invalid engine/model, auth failure, path errors
+5. **Retry** with corrected parameters
+6. **After 3 failures**, halt and report the exact error to the user
+
+Never silently ignore a tool failure or assume success without verification.
+
 ### Merge-First for Config Overwrites
 Any operation that writes to user-editable config files (vcs.json, available-agents.json, etc.) MUST:
 1. Read existing file first
