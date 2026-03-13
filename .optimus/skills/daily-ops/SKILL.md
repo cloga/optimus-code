@@ -12,13 +12,13 @@ You have been triggered by Meta-Cron for a routine system patrol. Your job: insp
 ### Phase 0: Previous Patrol Context
 Before inspecting the system, check for a previous patrol report to maintain cross-patrol awareness:
 
-1. List files matching `.optimus/reports/daily-ops-*.md` and find the most recent one by filename date
+1. List files matching `.optimus/reports/daily-ops-YYYY-MM-DD.md` (ISO 8601 date format) and find the most recent one by lexicographic sort of the date portion
 2. If a previous report exists, read it and note:
    - Outstanding recommendations from last patrol
    - Items that were "report-only" last time — have they been addressed?
    - Any action items that were deferred due to budget limits
 3. If no previous report exists (first patrol), skip this phase
-4. Do NOT let previous findings bias your current observations — complete Phase 1 independently, then cross-reference in Phase 2
+4. Note items from the previous patrol for cross-referencing in Phase 2. In Phase 1, evaluate each area based on current system state — do not skip areas or assume issues are resolved based solely on the previous report.
 
 ### Phase 1: Observe
 Read the following blackboard locations and note anything anomalous:
@@ -83,16 +83,17 @@ Read the following blackboard locations and note anything anomalous:
 8. **Failed Task Analysis** — `.optimus/state/task-manifest.json`
    Scan for tasks with `"status": "failed"` to identify systemic issues:
    1. Read `task-manifest.json` and filter for tasks where `status` is `"failed"`
-   2. Only consider tasks that failed within the last 7 days (compare `startTime` epoch ms to current time)
+   2. Only consider tasks that failed within the last 7 days (compare `startTime` epoch ms to current time). If `startTime` is missing, `0`, or `null`, skip that task (treat as outside the 7-day window).
    3. Group failures by root cause category:
       - **Model Error**: `error_message` contains "model" and ("invalid" or "not in the allowed list")
       - **Auth Error**: `error_message` contains "authentication" or "No authentication" or "401" or "403"
-      - **Timeout**: `error_message` contains "timed out" or "Watchdog"
+      - **Timeout/Startup**: `error_message` contains "timed out", "Watchdog", "failed to start", or "remained pending"
       - **Output Error**: `error_message` contains "ENOENT" or "no such file"
       - **Unknown**: `error_message` is missing or doesn't match above categories
    4. For each category, report: count, affected roles, and a representative error snippet (first 100 chars)
    5. If a specific role has 3+ failures in the last 7 days, flag it as a quarantine candidate (cross-reference with Area 5 Role Health — do NOT double-count)
-   6. This is a **report-only** inspection — do NOT retry, fix, or delete failed tasks
+   6. Exclude tasks that were already flagged and acted upon in Area 1 during this patrol (e.g., stale tasks marked as failed by the steward). Since Phase 1 observation happens before Phase 3 actions, Area 8 captures the pre-action snapshot — but note the overlap in your report if any exist.
+   7. This is a **report-only** inspection — do NOT retry, fix, or delete failed tasks
 
 ### Phase 2: Decide
 Apply this decision matrix:
@@ -110,6 +111,8 @@ Apply this decision matrix:
 | Issue without priority label | Assess and add P0/P1/P2/P3 label via `github_update_issue` | Medium |
 | Issue already implemented (commit ref exists) | Close via `github_update_issue` with commit reference | Low |
 | Issue processed by steward | Add `system-maintained` label via `github_update_issue` | Low |
+| Deferred action from previous patrol still applicable | Execute if budget allows (counts toward action budget) | Medium |
+| Previous recommendation not addressed after 2+ patrols | Escalate in report as recurring issue | Info |
 | Failed tasks in last 7 days | Report failure summary by category | Info |
 
 ### Phase 3: Act
