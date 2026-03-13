@@ -160,31 +160,42 @@ module.exports = function init() {
   const injectResult = injectSystemInstructions(cwd);
 
   if (injectResult.created.length > 0) {
-    console.log('\n📝 Created IDE instruction files with Optimus reference:');
+    console.log('\n📝 Created IDE instruction files:');
     for (const f of injectResult.created) console.log(`  + ${f}`);
   }
   if (injectResult.injected.length > 0) {
-    console.log('\n🔗 Injected Optimus reference into existing files:');
+    console.log('\n🔗 Injected Optimus instructions into existing files:');
     for (const f of injectResult.injected) console.log(`  → ${f}`);
+  }
+  if (injectResult.replaced.length > 0) {
+    console.log('\n🔄 Updated stale instruction blocks:');
+    for (const r of injectResult.replaced) {
+      const ver = r.from != null ? `(v${r.from} → v${r.to})` : '(updated)';
+      console.log(`  → ${r.path} ${ver}`);
+    }
   }
   if (injectResult.skipped.length > 0) {
     console.log('\n⏭️  Already configured:');
     for (const f of injectResult.skipped) console.log(`  ✓ ${f}`);
   }
+  if (injectResult.errors.length > 0) {
+    console.log('\n⚠️  Warnings:');
+    for (const e of injectResult.errors) console.log(`  ! ${e}`);
+  }
 
-  console.log('\n✅ Workspace initialized! Your .optimus/ directory is ready.');
-  console.log('   System instructions: .optimus/config/system-instructions.md (served via MCP Resource)');
-  console.log('   Run `optimus serve` or configure your MCP client to start.\n');
-
-  console.log('╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  🚀 Try your first command!                                 ║');
-  console.log('║                                                              ║');
-  console.log('║  Paste this into your AI assistant (Copilot/Claude/Trae):    ║');
-  console.log('║                                                              ║');
-  console.log('║  "Run roster_check to see my AI team, then use the           ║');
-  console.log('║   feature-dev skill to help me build [your feature here]"    ║');
-  console.log('║                                                              ║');
-  console.log('║  📖 Docs: https://cloga.github.io/optimus-code              ║');
-  console.log('╚══════════════════════════════════════════════════════════════╝');
+  console.log('\n✅ Workspace initialized! Your AI development team is ready.');
+  console.log('\n📋 What happened:');
+  console.log('   • Created .optimus/ with agent roles, skills, and config');
+  console.log('   • Configured MCP server connection for your IDE');
+  console.log('   • Injected Optimus instructions into IDE config files');
+  console.log('\n🚀 Next steps:');
+  console.log('   1. Restart your IDE (or run "Developer: Reload Window" in VS Code)');
+  console.log('   2. Open your AI assistant and try one of these prompts:');
+  console.log('');
+  console.log('   💬 "Run roster_check to see what agents are available"');
+  console.log('   💬 "Help me build [your feature] — use the Optimus swarm to delegate the work"');
+  console.log('   💬 "Create a GitHub Issue for [task] and delegate it to the right specialist"');
+  console.log('');
+  console.log('   📖 Full protocol: .optimus/config/system-instructions.md');
   console.log('');
 };

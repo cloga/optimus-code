@@ -197,8 +197,19 @@ module.exports = function upgrade() {
     for (const f of injectResult.created) console.log(`  + ${f}`);
   }
   if (injectResult.injected.length > 0) {
-    console.log('\n🔗 Fixed missing Optimus reference in:');
+    console.log('\n🔗 Injected Optimus instructions into:');
     for (const f of injectResult.injected) console.log(`  → ${f}`);
+  }
+  if (injectResult.replaced.length > 0) {
+    console.log('\n🔄 Updated IDE instruction files with latest Optimus guidance:');
+    for (const r of injectResult.replaced) {
+      const ver = r.from != null ? `(v${r.from} → v${r.to})` : '(updated)';
+      console.log(`  → ${r.path} ${ver}`);
+    }
+  }
+  if (injectResult.errors.length > 0) {
+    console.log('\n⚠️  Injection warnings:');
+    for (const e of injectResult.errors) console.log(`  ! ${e}`);
   }
 
   // 8. Summary
