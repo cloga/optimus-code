@@ -115,6 +115,150 @@ export function saveT3UsageLog(workspacePath: string, log: Record<string, T3Usag
     fs.writeFileSync(logPath, JSON.stringify(log, null, 2), 'utf8');
 }
 
+// ─── Engine+Model Health Tracking ───
+
+/** Time-to-live for unhealthy status: after this period, allow a probe attempt */
+const ENGINE_HEALTH_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// File-level mutex for engine-health.json (same pattern as t3LogMutex)
+let engineHealthMutex: Promise<void> = Promise.resolve();
+
+interface EngineHealthEntry {
+    engine: string;
+    model: string;
+    invocations: number;
+    successes: number;
+    failures: number;
+    consecutive_failures: number;
+    last_success: string; // ISO timestamp
+    last_failure: string; // ISO timestamp
+    status: 'healthy' | 'degraded' | 'unhealthy';
+}
+
+function getEngineHealthPath(workspacePath: string): string {
+    return path.join(workspacePath, '.optimus', 'state', 'engine-health.json');
+}
+
+function loadEngineHealth(workspacePath: string): Record<string, EngineHealthEntry> {
+    const healthPath = getEngineHealthPath(workspacePath);
+    try {
+        if (fs.existsSync(healthPath)) {
+            return JSON.parse(fs.readFileSync(healthPath, 'utf8'));
+        }
+    } catch (e: any) {
+        console.error(`[EngineHealth] Warning: failed to read engine-health.json: ${e.message}`);
+    }
+    return {};
+}
+
+function saveEngineHealth(workspacePath: string, health: Record<string, EngineHealthEntry>): void {
+    const healthPath = getEngineHealthPath(workspacePath);
+    const dir = path.dirname(healthPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const tmpPath = healthPath + '.tmp.' + process.pid;
+    fs.writeFileSync(tmpPath, JSON.stringify(health, null, 2), 'utf8');
+    fs.renameSync(tmpPath, healthPath);
+}
+
+function computeHealthStatus(consecutiveFailures: number): 'healthy' | 'degraded' | 'unhealthy' {
+    if (consecutiveFailures >= 3) return 'unhealthy';
+    if (consecutiveFailures >= 2) return 'degraded';
+    return 'healthy';
+}
+
+function trackEngineHealth(workspacePath: string, engine: string, model: string, success: boolean): void {
+    engineHealthMutex = engineHealthMutex.then(() => {
+        const health = loadEngineHealth(workspacePath);
+        const key = `${engine}:${model}`;
+        if (!health[key]) {
+            health[key] = {
+                engine,
+                model,
+                invocations: 0,
+                successes: 0,
+                failures: 0,
+                consecutive_failures: 0,
+                last_success: '',
+                last_failure: '',
+                status: 'healthy'
+            };
+        }
+        const entry = health[key];
+        entry.invocations++;
+        if (success) {
+            entry.successes++;
+            entry.consecutive_failures = 0;
+            entry.last_success = new Date().toISOString();
+        } else {
+            entry.failures++;
+            entry.consecutive_failures++;
+            entry.last_failure = new Date().toISOString();
+        }
+        const oldStatus = entry.status;
+        entry.status = computeHealthStatus(entry.consecutive_failures);
+        if (oldStatus !== entry.status) {
+            console.error(`[EngineHealth] ${engine}/${model} status transition: ${oldStatus} → ${entry.status} (consecutive_failures=${entry.consecutive_failures})`);
+        }
+        saveEngineHealth(workspacePath, health);
+    }).catch(() => {});
+}
+
+function resolveHealthyModel(workspacePath: string, engine: string, model: string): { engine: string; model: string } {
+    const health = loadEngineHealth(workspacePath);
+    const key = `${engine}:${model}`;
+    const entry = health[key];
+
+    // If no entry or healthy → return as-is
+    if (!entry || entry.status === 'healthy' || entry.status === 'degraded') {
+        return { engine, model };
+    }
+
+    // Unhealthy — check TTL for self-heal probe
+    if (entry.last_failure) {
+        const elapsed = Date.now() - new Date(entry.last_failure).getTime();
+        if (elapsed > ENGINE_HEALTH_TTL_MS) {
+            console.error(`[EngineHealth] ${engine}/${model} TTL expired (${Math.round(elapsed / 60000)}min since last failure). Resetting to healthy for probe.`);
+            entry.status = 'healthy';
+            entry.consecutive_failures = 0;
+            saveEngineHealth(workspacePath, health);
+            return { engine, model };
+        }
+    }
+
+    // Unhealthy within TTL — find fallback
+    const { engines: availEngines, models: availModels } = loadValidEnginesAndModels(workspacePath);
+
+    // 1. Try other models on the same engine
+    const sameEngineModels = availModels[engine] || [];
+    for (const candidateModel of sameEngineModels) {
+        if (candidateModel === model) continue;
+        const candidateKey = `${engine}:${candidateModel}`;
+        const candidateEntry = health[candidateKey];
+        if (!candidateEntry || candidateEntry.status !== 'unhealthy') {
+            console.error(`[EngineHealth] Fallback selected: ${engine}/${candidateModel} (same engine, replacing unhealthy ${engine}/${model})`);
+            return { engine, model: candidateModel };
+        }
+    }
+
+    // 2. Try other engines
+    for (const candidateEngine of availEngines) {
+        if (candidateEngine === engine) continue;
+        const candidateModels = availModels[candidateEngine] || [];
+        for (const candidateModel of candidateModels) {
+            const candidateKey = `${candidateEngine}:${candidateModel}`;
+            const candidateEntry = health[candidateKey];
+            if (!candidateEntry || candidateEntry.status !== 'unhealthy') {
+                console.error(`[EngineHealth] Fallback selected: ${candidateEngine}/${candidateModel} (cross-engine, replacing unhealthy ${engine}/${model})`);
+                return { engine: candidateEngine, model: candidateModel };
+            }
+        }
+    }
+
+    // 3. All combos unhealthy — escape hatch: return original (R3.4)
+    console.error(`[EngineHealth] All engine+model combos are unhealthy. Proceeding with original ${engine}/${model} as last resort.`);
+    return { engine, model };
+}
+
 function trackT3Usage(workspacePath: string, role: string, success: boolean, engine: string, model?: string): void {
     // Serialize access via mutex to prevent concurrent overwrites
     t3LogMutex = t3LogMutex.then(() => {
@@ -806,6 +950,18 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         }
     }
 
+    // --- Engine Health Check & Fallback ---
+    let wasFallback = false;
+    if (activeModel) {
+        const resolved = resolveHealthyModel(workspacePath, activeEngine, activeModel);
+        if (resolved.engine !== activeEngine || resolved.model !== activeModel) {
+            console.error(`[EngineHealth] Fallback: ${activeEngine}/${activeModel} → ${resolved.engine}/${resolved.model}`);
+            activeEngine = resolved.engine;
+            activeModel = resolved.model;
+            wasFallback = true;
+        }
+    }
+
     // --- Skill Pre-Flight Check ---
     // If Master specified required_skills, verify they all exist before proceeding.
     // Missing skills → reject with actionable error so Master can create them first.
@@ -1035,6 +1191,10 @@ Please provide your complete execution result below.`;
         if (isT3) {
             trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
         }
+        // Track engine+model health on success
+        if (activeModel) {
+            trackEngineHealth(workspacePath, activeEngine, activeModel, true);
+        }
 
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
     } catch (e: any) {
@@ -1042,10 +1202,15 @@ Please provide your complete execution result below.`;
         if (isT3) {
             trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
         }
+        // Track engine+model health on failure
+        if (activeModel) {
+            trackEngineHealth(workspacePath, activeEngine, activeModel, false);
+        }
         // Check quarantine threshold: 3+ consecutive failures with 0 successes
+        // Don't quarantine role if failure was due to engine/model health (wasFallback)
         const log = loadT3UsageLog(workspacePath);
         const entry = log[role];
-        if (entry && entry.consecutive_failures >= 3 && entry.successes === 0) {
+        if (entry && entry.consecutive_failures >= 3 && entry.successes === 0 && !wasFallback) {
             const t2RolePath = path.join(workspacePath, '.optimus', 'roles', `${sanitizeRoleName(role)}.md`);
             if (fs.existsSync(t2RolePath)) {
                 const t2Content = fs.readFileSync(t2RolePath, 'utf8');
