@@ -1755,7 +1755,7 @@ var init_AdoProvider = __esm({
 // ../src/mcp/mcp-server.ts
 var import_server = require("@modelcontextprotocol/sdk/server/index.js");
 var import_stdio = require("@modelcontextprotocol/sdk/server/stdio.js");
-var import_types = require("@modelcontextprotocol/sdk/types.js");
+var import_types2 = require("@modelcontextprotocol/sdk/types.js");
 var import_fs3 = __toESM(require("fs"));
 var import_path3 = __toESM(require("path"));
 var import_crypto = __toESM(require("crypto"));
@@ -4536,6 +4536,34 @@ var VcsProviderFactory = class {
   }
 };
 
+// ../src/utils/validateMcpInput.ts
+var import_types = require("@modelcontextprotocol/sdk/types.js");
+var MODEL_NAME_PATTERN = /^(claude|gemini|gpt|o1|llama|mistral)-/i;
+function looksLikeModelName(name) {
+  return MODEL_NAME_PATTERN.test(name);
+}
+function validateEngineAndModel(engine, model, workspacePath) {
+  if (!engine && !model) return;
+  const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
+  if (engine && !isValidEngine(engine, validEngines)) {
+    const hint = validEngines.length > 0 ? `Valid engines: ${validEngines.join(", ")}. Remove role_engine to use the default.` : "No engines configured in available-agents.json.";
+    throw new import_types.McpError(import_types.ErrorCode.InvalidParams, `Invalid engine '${engine}'. ${hint}`);
+  }
+  if (model && engine && !isValidModel(model, engine, validModels)) {
+    const allowed = validModels[engine] || [];
+    const hint = allowed.length > 0 ? `Valid models for engine '${engine}': ${allowed.join(", ")}. Remove role_model to use the default.` : `No models configured for engine '${engine}' in available-agents.json.`;
+    throw new import_types.McpError(import_types.ErrorCode.InvalidParams, `Invalid model '${model}' for engine '${engine}'. ${hint}`);
+  }
+}
+function validateRoleNotModelName(role) {
+  if (looksLikeModelName(role)) {
+    throw new import_types.McpError(
+      import_types.ErrorCode.InvalidParams,
+      `Role '${role}' looks like a model name, not a role name. Use role names like 'senior-dev' or 'security-auditor'. To specify a model, use the role_model parameter instead.`
+    );
+  }
+}
+
 // ../src/mcp/mcp-server.ts
 function reloadEnv() {
   if (process.env.DOTENV_PATH) {
@@ -4557,7 +4585,7 @@ var server = new import_server.Server(
     }
   }
 );
-server.setRequestHandler(import_types.ListResourcesRequestSchema, async () => {
+server.setRequestHandler(import_types2.ListResourcesRequestSchema, async () => {
   return {
     resources: [
       {
@@ -4569,12 +4597,12 @@ server.setRequestHandler(import_types.ListResourcesRequestSchema, async () => {
     ]
   };
 });
-server.setRequestHandler(import_types.ReadResourceRequestSchema, async (request) => {
+server.setRequestHandler(import_types2.ReadResourceRequestSchema, async (request) => {
   if (request.params.uri === "optimus://system/instructions") {
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     const instructionsPath = import_path3.default.resolve(workspacePath, ".optimus", "config", "system-instructions.md");
     if (!instructionsPath.startsWith(import_path3.default.resolve(workspacePath))) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidRequest, `Path traversal detected`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidRequest, `Path traversal detected`);
     }
     try {
       if (import_fs3.default.existsSync(instructionsPath)) {
@@ -4589,15 +4617,15 @@ server.setRequestHandler(import_types.ReadResourceRequestSchema, async (request)
           ]
         };
       } else {
-        throw new import_types.McpError(import_types.ErrorCode.InvalidRequest, `The system-instructions.md file does not exist at ${instructionsPath}`);
+        throw new import_types2.McpError(import_types2.ErrorCode.InvalidRequest, `The system-instructions.md file does not exist at ${instructionsPath}`);
       }
     } catch (e) {
-      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to read instructions: ${e.message}`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InternalError, `Failed to read instructions: ${e.message}`);
     }
   }
-  throw new import_types.McpError(import_types.ErrorCode.InvalidRequest, `Resource not found: ${request.params.uri}`);
+  throw new import_types2.McpError(import_types2.ErrorCode.InvalidRequest, `Resource not found: ${request.params.uri}`);
 });
-server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
+server.setRequestHandler(import_types2.ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
@@ -4946,7 +4974,7 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
     ]
   };
 });
-server.setRequestHandler(import_types.CallToolRequestSchema, async (request) => {
+server.setRequestHandler(import_types2.CallToolRequestSchema, async (request) => {
   if (request.params.name === "check_task_status") {
     let { taskId, workspace_path } = request.params.arguments;
     if (!taskId || !workspace_path) throw new Error("Missing taskId or workspace_path");
@@ -5008,19 +5036,10 @@ Error: ${task.error_message}`;
   if (request.params.name === "delegate_task_async") {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
     if (!role || !task_description || !output_path || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments");
     }
-    if (role_engine || role_model) {
-      const { engines: ve2, models: vm } = loadValidEnginesAndModels(workspace_path);
-      if (role_engine && !isValidEngine(role_engine, ve2)) {
-        console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve2.join(", ")}`);
-        role_engine = void 0;
-        role_model = void 0;
-      } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
-        console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(", ")}`);
-        role_model = void 0;
-      }
-    }
+    validateRoleNotModelName(role);
+    validateEngineAndModel(role_engine, role_model, workspace_path);
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync) ? void 0 : rawParentAsync);
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -5084,7 +5103,14 @@ Use check_task_status tool periodically with this task ID to check its completio
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments");
+    }
+    const modelAsRole = roles.find((r) => looksLikeModelName(r));
+    if (modelAsRole) {
+      throw new import_types2.McpError(
+        import_types2.ErrorCode.InvalidParams,
+        `Council role '${modelAsRole}' looks like a model name, not a role name. Use role names like 'security-expert' or 'performance-tyrant'. Council roles do not accept engine/model parameters \u2014 they use project defaults.`
+      );
     }
     const rawParentAsync2 = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync2) ? void 0 : rawParentAsync2);
@@ -5141,7 +5167,14 @@ Use check_task_status tool periodically with this Council ID to check completion
   if (request.params.name === "dispatch_council") {
     let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
+    }
+    const modelAsRoleSync = roles.find((r) => looksLikeModelName(r));
+    if (modelAsRoleSync) {
+      throw new import_types2.McpError(
+        import_types2.ErrorCode.InvalidParams,
+        `Council role '${modelAsRoleSync}' looks like a model name, not a role name. Use role names like 'security-expert' or 'performance-tyrant'. Council roles do not accept engine/model parameters \u2014 they use project defaults.`
+      );
     }
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
@@ -5227,7 +5260,7 @@ Memory appended to: ${memoryFile}`
   } else if (request.params.name === "roster_check") {
     const { workspace_path } = request.params.arguments;
     if (!workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires workspace_path");
     }
     const t1Dir = import_path3.default.join(workspace_path, ".optimus", "agents");
     const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
@@ -5363,7 +5396,7 @@ Memory appended to: ${memoryFile}`
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
     if (!role || !task_description || !output_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path");
     }
     if (!workspace_path) {
       workspace_path = process.cwd();
@@ -5371,17 +5404,8 @@ Memory appended to: ${memoryFile}`
         workspace_path = output_path.split("optimus-code")[0] + "optimus-code";
       }
     }
-    if (role_engine || role_model) {
-      const { engines: ve2, models: vm } = loadValidEnginesAndModels(workspace_path);
-      if (role_engine && !isValidEngine(role_engine, ve2)) {
-        console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve2.join(", ")}`);
-        role_engine = void 0;
-        role_model = void 0;
-      } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
-        console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(", ")}`);
-        role_model = void 0;
-      }
-    }
+    validateRoleNotModelName(role);
+    validateEngineAndModel(role_engine, role_model, workspace_path);
     const sessionId = import_crypto.default.randomUUID();
     const workspacePath = workspace_path;
     const optimusDir = import_path3.default.join(workspacePath, ".optimus");
@@ -5412,7 +5436,7 @@ Memory appended to: ${memoryFile}`
       agent_role
     } = request.params.arguments;
     if (!title || !body || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, and workspace_path");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
@@ -5436,12 +5460,12 @@ Memory appended to: ${memoryFile}`
         }]
       };
     } catch (error) {
-      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
     }
   } else if (request.params.name === "vcs_create_pr") {
     const { title, body, head, base, workspace_path, agent_role } = request.params.arguments;
     if (!title || !body || !head || !base || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires title, body, head, base, and workspace_path");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
@@ -5459,12 +5483,12 @@ Memory appended to: ${memoryFile}`
         }]
       };
     } catch (error) {
-      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to create pull request: ${error.message}`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InternalError, `Failed to create pull request: ${error.message}`);
     }
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments;
     if (!pull_request_id || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires pull_request_id and workspace_path");
     }
     const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
     try {
@@ -5513,12 +5537,12 @@ Memory appended to: ${memoryFile}`
         }]
       };
     } catch (error) {
-      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
     }
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments;
     if (!item_type || !item_id || !comment || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires item_type, item_id, comment, and workspace_path");
     }
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
@@ -5534,17 +5558,17 @@ Memory appended to: ${memoryFile}`
         }]
       };
     } catch (error) {
-      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments;
     if (!artifact_path || content === void 0 || content === null || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
     }
     const optimusRoot = import_path3.default.resolve(workspace_path, ".optimus");
     const resolvedTarget = import_path3.default.resolve(optimusRoot, artifact_path);
     if (!resolvedTarget.startsWith(optimusRoot + import_path3.default.sep) && resolvedTarget !== optimusRoot) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
     }
     let existingPath = resolvedTarget;
     let suffix = "";
@@ -5556,25 +5580,25 @@ Memory appended to: ${memoryFile}`
     const realTarget = import_path3.default.join(realExisting, suffix);
     const realOptimus = import_fs3.default.existsSync(optimusRoot) ? import_fs3.default.realpathSync(optimusRoot) : optimusRoot;
     if (!realTarget.startsWith(realOptimus + import_path3.default.sep) && realTarget !== realOptimus) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
     }
     try {
       import_fs3.default.mkdirSync(import_path3.default.dirname(resolvedTarget), { recursive: true });
       import_fs3.default.writeFileSync(resolvedTarget, content, "utf8");
       return { content: [{ type: "text", text: `Artifact written to: ${resolvedTarget}` }] };
     } catch (error) {
-      throw new import_types.McpError(import_types.ErrorCode.InternalError, `Failed to write artifact: ${error.message}`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InternalError, `Failed to write artifact: ${error.message}`);
     }
   } else if (request.params.name === "hello") {
     const { name } = request.params.arguments;
     if (!name) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameter: name");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Missing required parameter: name");
     }
     return { content: [{ type: "text", text: `Hello, ${name}! Optimus Swarm is running.` }] };
   } else if (request.params.name === "quarantine_role") {
     const { role, action, workspace_path } = request.params.arguments;
     if (!role || !action || !workspace_path) {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
     }
     const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
     const rolePath = import_path3.default.join(t2Dir, `${role}.md`);
@@ -5607,10 +5631,10 @@ Memory appended to: ${memoryFile}`
       }
       return { content: [{ type: "text", text: `Role '${role}' has been unquarantined and is available for dispatch again.` }] };
     } else {
-      throw new import_types.McpError(import_types.ErrorCode.InvalidParams, `Invalid action '${action}'. Must be 'quarantine' or 'unquarantine'.`);
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, `Invalid action '${action}'. Must be 'quarantine' or 'unquarantine'.`);
     }
   }
-  throw new import_types.McpError(import_types.ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
+  throw new import_types2.McpError(import_types2.ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
 if (process.argv.includes("--run-task")) {
   const idx = process.argv.indexOf("--run-task");
