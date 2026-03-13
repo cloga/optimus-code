@@ -321,7 +321,7 @@ export class AdoProvider implements IVcsProvider {
             if (itemType === 'workitem') {
                 // Add comment to work item
                 const response = await fetch(
-                    `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0`,
+                    `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0-preview.3`,
                     {
                         method: 'POST',
                         headers: {

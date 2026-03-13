@@ -59,7 +59,14 @@ export class VcsProviderFactory {
 
         // Auto-detect provider if not explicitly configured
         if (providerType === 'auto-detect') {
-            providerType = this.detectProviderFromGitRemote(resolvedWorkspacePath);
+            // Check explicit config fields before falling back to git remote
+            if (config.ado?.organization && config.ado?.project) {
+                providerType = 'azure-devops';
+            } else if (config.github?.owner && config.github?.repo) {
+                providerType = 'github';
+            } else {
+                providerType = this.detectProviderFromGitRemote(resolvedWorkspacePath);
+            }
         }
 
         // Create provider instance using lazy loading

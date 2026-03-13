@@ -1686,7 +1686,7 @@ var init_AdoProvider = __esm({
         try {
           if (itemType === "workitem") {
             const response = await fetch(
-              `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0`,
+              `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0-preview.3`,
               {
                 method: "POST",
                 headers: {
@@ -4433,7 +4433,13 @@ var VcsProviderFactory = class {
     const config = this.loadConfig(resolvedWorkspacePath);
     let providerType = config.provider || "auto-detect";
     if (providerType === "auto-detect") {
-      providerType = this.detectProviderFromGitRemote(resolvedWorkspacePath);
+      if (config.ado?.organization && config.ado?.project) {
+        providerType = "azure-devops";
+      } else if (config.github?.owner && config.github?.repo) {
+        providerType = "github";
+      } else {
+        providerType = this.detectProviderFromGitRemote(resolvedWorkspacePath);
+      }
     }
     let provider;
     if (providerType === "github") {
