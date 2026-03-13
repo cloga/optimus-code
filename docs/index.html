@@ -463,6 +463,23 @@ footer{
 @media(max-width:374px){
   .container{padding:0 12px}
 }
+
+/* ========== SCROLL INDICATOR ========== */
+.scroll-indicator{
+  position:absolute;bottom:32px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  color:var(--text-tertiary);font-size:.75rem;letter-spacing:.06em;
+  text-transform:uppercase;opacity:0;animation:fadeIn 1s ease forwards 2s;
+  cursor:pointer;transition:color .2s;
+}
+.scroll-indicator:hover{color:var(--accent)}
+.scroll-indicator svg{
+  animation:scrollBounce 2s ease-in-out infinite;
+}
+@keyframes scrollBounce{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(6px)}
+}
 </style>
 </head>
 <body>
@@ -556,6 +573,12 @@ footer{
       <span class="copy-tooltip" id="copyTooltip" data-i18n="copied">Copied!</span>
     </div>
   </div>
+
+  <!-- Scroll-down indicator -->
+  <a href="#how-it-works" class="scroll-indicator" aria-label="Scroll down">
+    <span data-i18n="scroll_down">Scroll</span>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+  </a>
 </section>
 
 <!-- ==================== SECTION 2: HOW IT WORKS ==================== -->
@@ -719,7 +742,7 @@ footer{
           <span class="arch-stat" data-i18n="arch_stat_roles">Unlimited Roles</span>
           <span class="arch-stat" data-i18n="arch_stat_config">Zero Config</span>
         </div>
-        <a href="ARCHITECTURE.md" class="btn-primary" data-i18n-html="arch_cta">Read Architecture Whitepaper &rarr;</a>
+        <a href="architecture.html" class="btn-primary" data-i18n-html="arch_cta">Read Architecture Whitepaper &rarr;</a>
       </div>
       <div class="arch-graphic animate-on-scroll" aria-label="Architecture layers diagram">
         <div class="arch-layer" style="border-color:var(--accent)">
@@ -848,7 +871,7 @@ footer{
     <div class="footer-links">
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener" data-i18n="footer_docs">Documentation</a>
-      <a href="ARCHITECTURE.md" data-i18n="footer_arch">Architecture</a>
+      <a href="architecture.html" data-i18n="footer_arch">Architecture</a>
       <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
     <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
@@ -946,7 +969,8 @@ var i18n={
     svg_design:"design",
     svg_developer:"Developer",
     svg_build:"build",
-    svg_verify:"verify"
+    svg_verify:"verify",
+    scroll_down:"Scroll"
   },
   zh:{
     hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
@@ -1036,7 +1060,8 @@ var i18n={
     svg_design:"\u8BBE\u8BA1",
     svg_developer:"\u5F00\u53D1\u8005",
     svg_build:"\u6784\u5EFA",
-    svg_verify:"\u9A8C\u8BC1"
+    svg_verify:"\u9A8C\u8BC1",
+    scroll_down:"\u4E0B\u6ED1"
   }
 };
 
