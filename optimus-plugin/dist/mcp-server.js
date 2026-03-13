@@ -29899,6 +29899,7 @@ var MetaCronEngine = class _MetaCronEngine {
       taskId,
       type: "delegate_task",
       role: entry.role,
+      role_description: entry.role_description || `System role '${entry.role}' responsible for automated ${entry.capability_tier}-tier operations. Equipped with skills: ${(entry.required_skills || []).join(", ")}.`,
       task_description: taskDescription,
       output_path: `.optimus/reports/cron-${entry.id}-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.md`,
       workspacePath: this.workspacePath,
