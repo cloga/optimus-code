@@ -105,7 +105,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 `async_council_${taskId}`,
                 task.workspacePath,
                 parentDepth,
-                parentIssueNumber
+                parentIssueNumber,
+                task.role_descriptions
             );
 
             // Phase 3: Concatenate into COUNCIL_SYNTHESIS.md

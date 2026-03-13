@@ -162,6 +162,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
             },
+            role_descriptions: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Optional map of role name to its description. Example: { 'security': 'Security expert specializing in...' }. Used to create proper T2 role templates for council members."
+            },
           },
           required: ["proposal_path", "roles"],
         },
@@ -306,6 +311,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
+            },
+            role_descriptions: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Optional map of role name to its description. Example: { 'security': 'Security expert specializing in...' }. Used to create proper T2 role templates for council members."
             },
           },
           required: ["proposal_path", "roles", "workspace_path"],
@@ -520,7 +530,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [],
         role_description, role_engine, role_model, required_skills,
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
-        parent_issue_number: parentIssueNumber
+        parent_issue_number: parentIssueNumber,
+        role_descriptions: role_descriptions || undefined
     });
 
     // Best-effort: auto-create GitHub Issue for traceability
@@ -551,7 +562,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "dispatch_council_async") {
-    let { proposal_path, roles, workspace_path } = request.params.arguments as any;
+    let { proposal_path, roles, workspace_path, role_descriptions } = request.params.arguments as any;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
@@ -597,7 +608,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "dispatch_council") {
 
-    let { proposal_path, roles, workspace_path } = request.params.arguments as any;
+    let { proposal_path, roles, workspace_path, role_descriptions } = request.params.arguments as any;
 
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
@@ -629,7 +640,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // In Phase 2 implementation, this is where we invoke worker-spawner.js for Promise.all
     // Launching autonomous CLI instances concurrently
     console.error(`[MCP] Dispatching council with roles: ${roles.join(', ')}`);
-    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, undefined, parentIssueNumber);
+    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, undefined, parentIssueNumber, role_descriptions);
 
     return {
       content: [
