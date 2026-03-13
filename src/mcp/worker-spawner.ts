@@ -1,3 +1,9 @@
+// Error Message Contract:
+// All errors thrown to agents MUST include:
+// 1. WHAT failed (operation name)
+// 2. WHY it failed (specific cause)
+// 3. HOW to fix (actionable next step)
+
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -76,7 +82,7 @@ export function loadT3UsageLog(workspacePath: string): Record<string, T3UsageEnt
         if (fs.existsSync(logPath)) {
             return JSON.parse(fs.readFileSync(logPath, 'utf8'));
         }
-    } catch {}
+    } catch (e: any) { console.error('[T3 Usage] Warning: failed to load T3 usage log:', e.message); }
     return {};
 }
 
@@ -109,7 +115,7 @@ function trackT3Usage(workspacePath: string, role: string, success: boolean, eng
         log[role].engine = engine;
         if (model) log[role].model = model;
         saveT3UsageLog(workspacePath, log);
-    }).catch(() => {});
+    }).catch((e: any) => { console.error('[T3 Usage] Warning: failed to track T3 usage:', e.message); });
 }
 
 /**
@@ -156,7 +162,7 @@ export function loadValidEnginesAndModels(workspacePath: string): { engines: str
             }
             return { engines, models };
         }
-    } catch {}
+    } catch (e: any) { console.error('[Engine Config] Warning: failed to load available-agents.json:', e.message); }
     return { engines: [], models: {} };
 }
 
@@ -274,7 +280,7 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
                 console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 from plugin template at ${t2Path}`);
                 return t2Path;
             }
-        } catch {}
+        } catch (e: any) { console.error('[Precipitation] Warning: failed to read plugin role template:', (e as any).message); }
     }
 
     // No plugin template found — check if Master provided a meaningful description
@@ -476,16 +482,16 @@ export class AgentLockManager {
                 fs.mkdirSync(this.lockDir, { recursive: true });
             }
             fs.writeFileSync(this.lockFilePath(role), JSON.stringify({ pid: process.pid, timestamp: Date.now() }), 'utf8');
-        } catch {
-            // Best-effort; in-memory lock is the primary mechanism
+        } catch (e: any) {
+            console.error("[AgentLockManager] Warning: failed to write lock file:", e.message);
         }
     }
 
     private deleteLockFile(role: string): void {
         try {
             fs.unlinkSync(this.lockFilePath(role));
-        } catch {
-            // File may already be gone
+        } catch (e: any) {
+            console.error("[AgentLockManager] Warning: failed to delete lock file:", e.message);
         }
     }
 
@@ -502,13 +508,13 @@ export class AgentLockManager {
                         fs.unlinkSync(filePath);
                         console.error(`[AgentLockManager] Cleaned stale lock for ${file} (PID ${content.pid} no longer running)`);
                     }
-                } catch {
-                    // Malformed lock file — remove it
-                    try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+                } catch (e: any) {
+                    console.error("[AgentLockManager] Warning: malformed lock file " + file + ":", e.message); — remove it
+                    try { fs.unlinkSync(filePath); } catch (ue: any) { console.error("[AgentLockManager] Warning: cannot remove " + file + ":", ue.message); }
                 }
             }
-        } catch {
-            // Best-effort cleanup
+        } catch (e: any) {
+            console.error('[AgentLockManager] Warning: failed to clean stale locks:', e.message);
         }
     }
 }
@@ -631,7 +637,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     const legacyT1Dir = path.join(workspacePath, '.optimus', 'personas');
     const t1Dir = path.join(workspacePath, '.optimus', 'agents');
     if (fs.existsSync(legacyT1Dir) && !fs.existsSync(t1Dir)) {
-        try { fs.renameSync(legacyT1Dir, t1Dir); } catch(e) {}
+        try { fs.renameSync(legacyT1Dir, t1Dir); } catch(e: any) { console.error('[Orchestrator] Warning: failed to migrate legacy personas dir:', e.message); }
     }
     
     const t2Dir = path.join(workspacePath, '.optimus', 'roles');
@@ -733,7 +739,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
                     }
                 }
             }
-        } catch {}
+        } catch (e: any) { console.error('[Orchestrator] Warning: failed to read available-agents.json for engine fallback:', e.message); }
     }
 
     if (!activeEngine) {
@@ -817,7 +823,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
             try {
                 const systemInstructions = fs.readFileSync(systemInstructionsPath, 'utf8');
                 personaContext += `\n\n--- START WORKSPACE SYSTEM INSTRUCTIONS ---\n${systemInstructions.trim()}\n--- END WORKSPACE SYSTEM INSTRUCTIONS ---`;
-            } catch (e) {}
+            } catch (e: any) { console.error('[Orchestrator] Warning: failed to read system-instructions.md:', e.message); }
         }
     }
 
@@ -935,7 +941,7 @@ Please provide your complete execution result below.`;
             // Clean up temp T1 — don't leave zombies
             const tempFile = t1Path || path.join(workspacePath, '.optimus', 'agents', `${role}_pending_${tempId}.md`);
             if (fs.existsSync(tempFile) && tempFile.includes('pending_')) {
-                try { fs.unlinkSync(tempFile); } catch {}
+                try { fs.unlinkSync(tempFile); } catch (e: any) { console.error('[Orchestrator] Warning: failed to clean temp T1 file:', e.message); }
             }
             throw new Error(
                 `⚠️ **Delegation Failed (Engine Error)**: Role \`${role}\` on engine \`${activeEngine}\` returned an error.\n\n` +
@@ -967,7 +973,7 @@ Please provide your complete execution result below.`;
             fs.writeFileSync(finalT1Path, updated, 'utf8');
             // Clean up temp/old file if path changed
             if (currentT1 !== finalT1Path && fs.existsSync(currentT1)) {
-                try { fs.unlinkSync(currentT1); } catch {}
+                try { fs.unlinkSync(currentT1); } catch (e: any) { console.error('[Orchestrator] Warning: failed to clean old T1 file:', e.message); }
             }
             console.error(`[Orchestrator] T1 finalized: '${role}' → ${path.basename(finalT1Path)}, session=${newSessionId || 'none'}, status=idle`);
         }

@@ -169,6 +169,13 @@ Agents MAY include a `## Self-Assessment` section at the end of their output rep
 - The PM or Master reads Self-Assessment sections during review phases and decides whether to invoke `agent-creator` or `skill-creator` to evolve the team
 - Self-assessment proposals feed into the existing T3→T2→T1 evolution mechanisms, not a parallel path
 
+## Post-Error Reflection Protocol
+When an agent encounters an error and successfully resolves it:
+1. Record the error pattern and resolution via `append_memory` (level: project or role)
+2. Evaluate: Could this error have been prevented by better Role/Skill definitions?
+3. If yes, propose Role/Skill updates in the Self-Assessment section of the output report
+4. The system should learn from every error, not just fix it and move on
+
 ---
 
 # Part 2: Project-Specific Constraints (Optimus Code Repository)
