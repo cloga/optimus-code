@@ -1013,11 +1013,12 @@ Please provide your complete execution result below.`;
 /**
  * Spawns a single expert worker process for council review.
  */
-export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number): Promise<string> {
+export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescription?: string): Promise<string> {
     try {
         console.error(`[Spawner] Launching Real Worker ${role} for council review`);
+        const masterInfo: MasterRoleInfo | undefined = roleDescription ? { description: roleDescription } : undefined;
         return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, undefined, parentDepth, parentIssueNumber);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, masterInfo, parentDepth, parentIssueNumber);
     } catch (err: any) {
         console.error(`[Spawner] Worker ${role} failed to start:`, err);
         return `❌ ${role}: exited with errors (${err.message}).`;
@@ -1027,10 +1028,10 @@ Provide your expert critique from the perspective of your role (${role}). Identi
 /**
  * Dispatches the council of experts concurrently.
  */
-export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number): Promise<string[]> {
+export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescriptions?: Record<string, string>): Promise<string[]> {
   const promises = roles.map(role => {
     const outputPath = path.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber);
+    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role]);
   });
 
   const results = await Promise.allSettled(promises);
