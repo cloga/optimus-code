@@ -3276,8 +3276,21 @@ function saveEngineHealth(workspacePath, health) {
   const dir = import_path2.default.dirname(healthPath);
   if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
   const tmpPath = healthPath + ".tmp." + process.pid;
-  import_fs2.default.writeFileSync(tmpPath, JSON.stringify(health, null, 2), "utf8");
-  import_fs2.default.renameSync(tmpPath, healthPath);
+  try {
+    import_fs2.default.writeFileSync(tmpPath, JSON.stringify(health, null, 2), "utf8");
+    try {
+      import_fs2.default.unlinkSync(healthPath);
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e;
+    }
+    import_fs2.default.renameSync(tmpPath, healthPath);
+  } catch (err) {
+    try {
+      import_fs2.default.unlinkSync(tmpPath);
+    } catch (_2) {
+    }
+    throw err;
+  }
 }
 function computeHealthStatus(consecutiveFailures) {
   if (consecutiveFailures >= 3) return "unhealthy";
@@ -3318,7 +3331,8 @@ function trackEngineHealth(workspacePath, engine, model, success) {
       console.error(`[EngineHealth] ${engine}/${model} status transition: ${oldStatus} \u2192 ${entry.status} (consecutive_failures=${entry.consecutive_failures})`);
     }
     saveEngineHealth(workspacePath, health);
-  }).catch(() => {
+  }).catch((err) => {
+    console.error(`[EngineHealth] Failed to update engine health for ${engine}:${model}: ${err.message}`);
   });
 }
 function resolveHealthyModel(workspacePath, engine, model) {
