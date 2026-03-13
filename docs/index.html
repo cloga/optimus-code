@@ -467,18 +467,19 @@ footer{
 /* ========== SCROLL INDICATOR ========== */
 .scroll-indicator{
   position:absolute;bottom:32px;left:50%;transform:translateX(-50%);
-  display:flex;flex-direction:column;align-items:center;gap:6px;
-  color:var(--text-tertiary);font-size:.75rem;letter-spacing:.06em;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  color:var(--text-secondary);font-size:.85rem;font-weight:600;letter-spacing:.1em;
   text-transform:uppercase;opacity:0;animation:fadeIn 1s ease forwards 2s;
-  cursor:pointer;transition:color .2s;
+  cursor:pointer;transition:color .2s,filter .2s;
 }
-.scroll-indicator:hover{color:var(--accent)}
+.scroll-indicator:hover{color:var(--accent);filter:drop-shadow(0 0 8px rgba(59,130,246,.5))}
 .scroll-indicator svg{
-  animation:scrollBounce 2s ease-in-out infinite;
+  animation:scrollBounce 1.5s ease-in-out infinite;
+  filter:drop-shadow(0 0 6px rgba(59,130,246,.4));
 }
 @keyframes scrollBounce{
   0%,100%{transform:translateY(0)}
-  50%{transform:translateY(6px)}
+  50%{transform:translateY(10px)}
 }
 </style>
 </head>
@@ -577,7 +578,7 @@ footer{
   <!-- Scroll-down indicator -->
   <a href="#how-it-works" class="scroll-indicator" aria-label="Scroll down">
     <span data-i18n="scroll_down">Scroll</span>
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l5 5 5-5"/><path d="M7 10l5 5 5-5"/></svg>
   </a>
 </section>
 
