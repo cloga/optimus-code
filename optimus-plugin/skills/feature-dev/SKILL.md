@@ -219,7 +219,7 @@ PM reads all reviews and ranks issues by severity:
 - **Clean** → PM merges the PR via `vcs_merge_pr`
 
 **Self-Assessment Review**: When reading agent outputs (implementation reports, review reports), PM should look for `## Self-Assessment` sections. If an agent identifies meaningful role/skill gaps, PM decides whether to:
-- Invoke `agent-creator` to update the Role template
+- Invoke `role-creator` to update the Role template
 - Invoke `skill-creator` to create a missing Skill
 - Promote cross-cutting lessons to project memory via `append_memory`
 - Dismiss as not actionable

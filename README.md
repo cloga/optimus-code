@@ -163,7 +163,7 @@ Once the server is running, your AI assistant gains these tools:
 - **Enhanced ADO Work Items** — `vcs_create_work_item` supports `area_path`, `iteration_path`, `assigned_to`, `parent_id`, `priority` with `vcs.json` defaults, Markdown→HTML conversion, and auto-tagging.
 - **Engine/Model Validation** — Engine and model names are validated against `available-agents.json` before being persisted to role templates.
 - **Auto-Skill Genesis** — Skills are auto-generated after successful T3 role execution.
-- **Rich T3→T2 Precipitation** — New roles get professional-grade role definitions via `agent-creator` instead of thin fallback templates.
+- **Rich T3→T2 Precipitation** — New roles get professional-grade role definitions via `role-creator` instead of thin fallback templates.
 
 ## How It Works
 
@@ -174,7 +174,7 @@ User request → Master Agent
                    │
                    ├─① roster_check (see who's available)
                    │
-                   ├─② Select/create role (agent-creator meta-skill)
+                   ├─② Select/create role (role-creator meta-skill)
                    │     └─ T3 first use → auto-creates T2 role template
                    │
                    ├─③ Check/create skills (skill-creator meta-skill)
@@ -202,7 +202,7 @@ The system ships with 5 pre-installed skills. Two are **meta-skills** that enabl
 
 | Skill | Type | Purpose |
 |-------|------|---------|
-| `agent-creator` | 🧬 Meta | Teaches Master how to build & evolve the team |
+| `role-creator` | 🧬 Meta | Teaches Master how to build & evolve the team |
 | `skill-creator` | 🧬 Meta | Teaches Master how to create new skills |
 | `delegate-task` | Core | Async-first task delegation protocol |
 | `council-review` | Core | Parallel expert review (Map-Reduce) |

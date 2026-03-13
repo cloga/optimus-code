@@ -1,9 +1,9 @@
 ---
-name: agent-creator
+name: role-creator
 description: Teaches the Master Agent how to build, select, and evolve the agent team. Use whenever you need to create a new role, pick a specialist for delegation, improve an underperforming agent, assign engine/model bindings, or figure out why a delegate_task failed due to weak role context. Also use when the user says "find someone to do X", "we need an expert for Y", or "who can handle Z".
 ---
 
-# Agent Creator
+# Role Creator
 
 You are building and managing a team of specialized AI agents. Each role you
 create becomes a persistent member of the project's workforce. The quality of
