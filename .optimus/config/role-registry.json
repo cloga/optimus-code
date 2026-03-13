@@ -1,0 +1,29 @@
+{
+  "roles": {
+    "code-architect": {
+      "aliases": [],
+      "category": "auto",
+      "description": "Software architect who designs implementation approaches. Three architects will each approach from a different angle: (1) Minimal — smallest diff, maximum reuse of existing patterns, (2) Clean — best "
+    },
+    "code-reviewer": {
+      "aliases": [],
+      "category": "auto",
+      "description": "Code reviewer examining the PR on branch feature/issue-302-steward-patrol-enhancements. Three review lenses: (1) Quality — simplicity, clarity, consistency of the SKILL.md additions, (2) Correctness —"
+    },
+    "copywriter": {
+      "aliases": [],
+      "category": "auto",
+      "description": "Technical copywriter who crafts compelling developer-facing messaging. Evaluates sample prompts, CTAs, and microcopy for clarity and impact."
+    },
+    "system-steward": {
+      "aliases": [],
+      "category": "auto",
+      "description": "System role 'system-steward' responsible for automated maintain-tier operations. Equipped with skills: daily-ops."
+    },
+    "patrol-manager": {
+      "aliases": [],
+      "category": "auto",
+      "description": "System patrol manager that inspects project health (Issues, PRs, branches, tasks) and delegates remediation to specialists. Executes maintenance actions directly at depth-1."
+    }
+  }
+}

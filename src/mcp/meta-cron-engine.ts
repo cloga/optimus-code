@@ -14,6 +14,7 @@ interface CronEntry {
     capability_tier: string;
     concurrency_policy: string;
     max_actions: number;
+    max_delegations?: number;
     dry_run_remaining: number;
     enabled: boolean;
     last_run: string | null;
@@ -147,7 +148,9 @@ export function saveCrontab(workspacePath: string, data: CrontabData): void {
     const crontabPath = getCrontabPath(workspacePath);
     const dir = path.dirname(crontabPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(crontabPath, JSON.stringify(data, null, 2), 'utf8');
+    const tmpPath = crontabPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmpPath, crontabPath);
 }
 
 // ─── Core Engine ───
