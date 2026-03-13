@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Optimus Code — Investor Pitch</title>
+<meta name="description" content="Optimus Code: The operating system for AI coding tools. Multi-agent orchestration for the next generation of software development.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0b;
+  --surface:#141416;
+  --surface-hover:#1c1c20;
+  --border:#2a2a2e;
+  --text:#e4e4e7;
+  --text-secondary:#a1a1aa;
+  --text-tertiary:#7e7e86;
+  --accent:#3b82f6;
+  --accent-hover:#60a5fa;
+  --accent-secondary:#10b981;
+  --accent-tertiary:#8b5cf6;
+  --code-bg:#18181b;
+  --code-text:#4ade80;
+  --warning:#f59e0b;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  line-height:1.6;
+  overflow-x:hidden;
+}
+a{color:var(--accent-hover);text-decoration:none;transition:color .2s}
+a:hover{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
+
+/* ========== LANGUAGE TOGGLE ========== */
+.lang-toggle{
+  position:fixed;top:20px;right:20px;z-index:1000;
+  display:flex;align-items:center;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  overflow:hidden;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+  transition:border-color .2s;
+}
+.lang-toggle:hover{border-color:var(--accent)}
+.lang-btn{
+  padding:8px 14px;font-size:.8rem;font-weight:600;
+  color:var(--text-tertiary);background:transparent;
+  border:none;cursor:pointer;transition:all .2s;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+.lang-btn.active{color:#fff;background:var(--accent)}
+
+/* ========== NAV ========== */
+.pitch-nav{
+  position:fixed;top:20px;left:20px;z-index:1000;
+}
+.pitch-nav a{
+  font-size:.8rem;font-weight:600;color:var(--text-tertiary);
+  padding:8px 14px;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;transition:border-color .2s,color .2s;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+}
+.pitch-nav a:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ========== SECTIONS COMMON ========== */
+section{padding:100px 0}
+.section-header{text-align:center;margin-bottom:56px}
+.section-header h2{
+  font-size:clamp(1.5rem,3.5vw,2.25rem);font-weight:700;line-height:1.2;
+  margin-bottom:12px;
+}
+.section-header p{
+  color:var(--text-secondary);max-width:560px;margin:0 auto;
+  font-size:1.05rem;line-height:1.6;
+}
+.section-label{
+  display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;padding:4px 12px;border-radius:4px;
+  margin-bottom:16px;
+}
+
+/* ========== HERO / COVER ========== */
+.pitch-hero{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:80px 24px 60px;position:relative;overflow:hidden;
+}
+.pitch-hero::before{
+  content:'';position:absolute;top:15%;left:50%;transform:translateX(-50%);
+  width:900px;height:900px;
+  background:radial-gradient(circle,rgba(59,130,246,.08),transparent 70%);
+  pointer-events:none;
+}
+.pitch-hero-inner{position:relative;z-index:1;max-width:800px;margin:0 auto}
+.pitch-hero h1{
+  font-size:clamp(2.2rem,5.5vw,3.5rem);font-weight:800;
+  line-height:1.1;margin-bottom:20px;
+}
+.pitch-hero .tagline{
+  font-size:clamp(1rem,2vw,1.25rem);color:var(--text-secondary);
+  max-width:620px;margin:0 auto 32px;line-height:1.6;
+}
+.pitch-hero .meta-line{
+  font-size:.9rem;color:var(--text-tertiary);margin-bottom:8px;
+}
+
+/* ========== PROBLEM / SOLUTION CARDS ========== */
+.split-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:stretch;
+}
+.split-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:32px;transition:border-color .2s;
+}
+.split-card:hover{border-color:var(--accent)}
+.split-card h3{font-size:1.25rem;font-weight:600;margin-bottom:12px}
+.split-card p,.split-card li{font-size:.95rem;color:var(--text-secondary);line-height:1.7}
+.split-card ul{list-style:none;padding:0}
+.split-card ul li{padding:6px 0;padding-left:20px;position:relative}
+.split-card ul li::before{
+  content:'';position:absolute;left:0;top:14px;
+  width:8px;height:8px;border-radius:50%;
+}
+.card-problem ul li::before{background:var(--warning)}
+.card-solution ul li::before{background:var(--accent-secondary)}
+
+/* ========== STATS ROW ========== */
+.stats-row{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:24px;
+  text-align:center;
+}
+.stat-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px 16px;transition:border-color .2s;
+}
+.stat-box:hover{border-color:var(--accent)}
+.stat-number{
+  font-size:clamp(1.8rem,4vw,2.5rem);font-weight:800;
+  background:linear-gradient(135deg,var(--accent),var(--accent-tertiary));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  margin-bottom:4px;
+}
+.stat-label{font-size:.85rem;color:var(--text-secondary)}
+
+/* ========== MARKET TAM CHART ========== */
+.tam-chart{
+  max-width:700px;margin:0 auto;
+}
+.tam-bar-group{margin-bottom:24px}
+.tam-bar-label{
+  display:flex;justify-content:space-between;margin-bottom:6px;
+  font-size:.9rem;font-weight:600;
+}
+.tam-bar-label span:last-child{color:var(--accent)}
+.tam-bar-track{
+  width:100%;height:32px;background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;overflow:hidden;
+}
+.tam-bar-fill{
+  height:100%;border-radius:8px;width:0;
+  transition:width 1.5s cubic-bezier(.25,.8,.25,1);
+}
+.tam-bar-fill.tam{background:linear-gradient(90deg,var(--accent),var(--accent-tertiary))}
+.tam-bar-fill.sam{background:linear-gradient(90deg,var(--accent-tertiary),#c084fc)}
+.tam-bar-fill.som{background:linear-gradient(90deg,var(--accent-secondary),#34d399)}
+
+/* ========== HOW IT WORKS ========== */
+.how-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
+}
+.how-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px;text-align:center;transition:border-color .2s,transform .3s;
+}
+.how-card:hover{border-color:var(--accent);transform:translateY(-4px)}
+.how-icon{font-size:2.2rem;margin-bottom:12px;display:block}
+.how-card h3{font-size:1.1rem;font-weight:600;margin-bottom:8px;line-height:1.3}
+.how-card p{font-size:.9rem;color:var(--text-secondary);line-height:1.6}
+
+/* ========== COMPETITIVE TABLE ========== */
+.comp-table-wrap{overflow-x:auto}
+.comp-table{
+  width:100%;border-collapse:collapse;font-size:.9rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;
+}
+.comp-table th,.comp-table td{
+  padding:14px 18px;text-align:left;border-bottom:1px solid var(--border);
+}
+.comp-table thead th{
+  background:var(--code-bg);font-weight:700;font-size:.8rem;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--text-secondary);
+}
+.comp-table tbody tr:last-child td{border-bottom:none}
+.comp-table tbody tr:hover{background:var(--surface-hover)}
+.comp-table .highlight-col{
+  background:rgba(59,130,246,.06);font-weight:600;color:var(--accent-hover);
+}
+.comp-table thead .highlight-col{
+  background:rgba(59,130,246,.12);color:var(--accent);
+}
+.check{color:var(--accent-secondary)}
+.cross{color:var(--text-tertiary)}
+.partial{color:var(--warning)}
+
+/* ========== BUSINESS MODEL ========== */
+.model-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
+}
+.model-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px;transition:border-color .2s;
+}
+.model-card:hover{border-color:var(--accent-secondary)}
+.model-card h3{font-size:1.1rem;font-weight:600;margin-bottom:8px}
+.model-card .price{
+  font-size:1.6rem;font-weight:800;color:var(--accent-secondary);margin-bottom:12px;
+}
+.model-card p{font-size:.9rem;color:var(--text-secondary);line-height:1.6}
+
+/* ========== ROADMAP ========== */
+.roadmap{max-width:700px;margin:0 auto}
+.roadmap-item{
+  display:flex;gap:20px;margin-bottom:28px;
+}
+.roadmap-marker{
+  flex-shrink:0;width:40px;display:flex;flex-direction:column;align-items:center;
+}
+.roadmap-dot{
+  width:14px;height:14px;border-radius:50%;border:3px solid var(--accent);
+  background:var(--bg);flex-shrink:0;
+}
+.roadmap-dot.done{background:var(--accent-secondary);border-color:var(--accent-secondary)}
+.roadmap-dot.current{background:var(--accent);border-color:var(--accent)}
+.roadmap-line{width:2px;flex:1;background:var(--border);margin-top:4px}
+.roadmap-content h4{font-size:1rem;font-weight:600;margin-bottom:4px}
+.roadmap-content p{font-size:.9rem;color:var(--text-secondary);line-height:1.5}
+.roadmap-content .rm-date{font-size:.75rem;color:var(--text-tertiary);font-weight:600;margin-bottom:2px}
+
+/* ========== TEAM ========== */
+.team-grid{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:24px;max-width:700px;margin:0 auto;
+}
+.team-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px;display:flex;gap:20px;align-items:center;transition:border-color .2s;
+}
+.team-card:hover{border-color:var(--accent-tertiary)}
+.team-avatar{
+  width:56px;height:56px;border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--accent-tertiary));
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  font-size:1.4rem;font-weight:700;color:#fff;
+}
+.team-info h4{font-size:1rem;font-weight:600;margin-bottom:2px}
+.team-info p{font-size:.85rem;color:var(--text-secondary)}
+
+/* ========== ASK / CTA ========== */
+.ask-card{
+  max-width:700px;margin:0 auto;
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:48px;text-align:center;
+}
+.ask-card h3{font-size:1.5rem;font-weight:700;margin-bottom:16px}
+.ask-card .ask-amount{
+  font-size:clamp(2rem,5vw,3rem);font-weight:800;
+  background:linear-gradient(135deg,var(--accent),var(--accent-secondary));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:16px;
+}
+.ask-card p{font-size:1rem;color:var(--text-secondary);line-height:1.7;margin-bottom:24px}
+.ask-uses{
+  display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:28px;
+}
+.ask-use{
+  font-size:.85rem;color:var(--text-tertiary);
+  padding:6px 14px;border:1px solid var(--border);border-radius:6px;
+}
+.btn-primary{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:14px 28px;border-radius:8px;font-weight:600;font-size:1rem;
+  background:linear-gradient(135deg,var(--accent),var(--accent-tertiary));
+  color:#fff;border:none;cursor:pointer;
+  transition:transform .2s,box-shadow .2s;
+}
+.btn-primary:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 30px rgba(59,130,246,.3);color:#fff;
+}
+
+/* ========== FOOTER ========== */
+footer{border-top:1px solid var(--border);padding:48px 0;text-align:center}
+.footer-logo{font-size:1.1rem;font-weight:700;margin-bottom:12px}
+.footer-tagline{color:var(--text-tertiary);font-size:.875rem;font-style:italic}
+
+/* ========== ANIMATIONS ========== */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.animate-on-scroll{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
+.stagger-1{transition-delay:.1s}
+.stagger-2{transition-delay:.2s}
+.stagger-3{transition-delay:.3s}
+.stagger-4{transition-delay:.4s}
+.stagger-5{transition-delay:.5s}
+
+/* ========== RESPONSIVE ========== */
+@media(max-width:767px){
+  .split-grid,.how-grid,.model-grid,.stats-row{grid-template-columns:1fr}
+  .team-grid{grid-template-columns:1fr}
+  section{padding:80px 0}
+  .pitch-hero{padding:60px 16px 40px}
+  .comp-table{font-size:.8rem}
+  .comp-table th,.comp-table td{padding:10px 12px}
+  .ask-card{padding:32px 20px}
+  .pitch-nav{display:none}
+}
+@media(min-width:768px) and (max-width:1023px){
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- Language Toggle -->
+<div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
+  <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
+  <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
+</div>
+
+<!-- Back to homepage -->
+<div class="pitch-nav">
+  <a href="index.html" data-i18n="nav_home">&larr; Home</a>
+</div>
+
+<!-- ==================== SECTION 1: COVER / HERO ==================== -->
+<section class="pitch-hero" id="cover">
+  <div class="pitch-hero-inner">
+    <p class="meta-line" data-i18n="cover_meta">Investor Overview 2026</p>
+    <h1 data-i18n="cover_title">The Operating System for AI Coding Tools</h1>
+    <p class="tagline" data-i18n="cover_tagline">Optimus Code turns a single AI assistant into a coordinated development team. Multi-agent orchestration for every MCP-compatible coding tool.</p>
+    <p class="meta-line" data-i18n="cover_oss">Open Source &middot; MIT License &middot; MCP Protocol</p>
+  </div>
+</section>
+
+<!-- ==================== SECTION 2: PROBLEM ==================== -->
+<section id="problem">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label" style="background:rgba(245,158,11,.12);color:var(--warning)" data-i18n="problem_label">The Problem</span>
+      <h2 data-i18n="problem_title">AI Coding Tools Hit a Ceiling</h2>
+      <p data-i18n="problem_subtitle">Every developer has an AI assistant. None of them has an AI team.</p>
+    </div>
+    <div class="split-grid">
+      <div class="split-card card-problem animate-on-scroll">
+        <h3 data-i18n="problem_h1">Single-Agent Bottleneck</h3>
+        <ul>
+          <li data-i18n="problem_p1">One AI handles planning, coding, reviewing, and testing &mdash; all in one context window</li>
+          <li data-i18n="problem_p2">No separation of concerns: architecture decisions mixed with implementation</li>
+          <li data-i18n="problem_p3">Context windows overflow on complex tasks, leading to degraded output</li>
+        </ul>
+      </div>
+      <div class="split-card card-problem animate-on-scroll stagger-1">
+        <h3 data-i18n="problem_h2">No Memory, No Process</h3>
+        <ul>
+          <li data-i18n="problem_p4">Every conversation starts from scratch &mdash; no project history, no learned patterns</li>
+          <li data-i18n="problem_p5">No SDLC enforcement: changes happen without issues, branches, or reviews</li>
+          <li data-i18n="problem_p6">Vendor lock-in: workflows tied to a single AI tool with no portability</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 3: SOLUTION ==================== -->
+<section id="solution">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label" style="background:rgba(16,185,129,.12);color:var(--accent-secondary)" data-i18n="solution_label">The Solution</span>
+      <h2 data-i18n="solution_title">Optimus Code: Multi-Agent Orchestration</h2>
+      <p data-i18n="solution_subtitle">An operating system layer that sits between your AI tool and your codebase.</p>
+    </div>
+    <div class="split-grid">
+      <div class="split-card card-solution animate-on-scroll">
+        <h3 data-i18n="solution_h1">Specialized Agent Teams</h3>
+        <ul>
+          <li data-i18n="solution_p1">Master Agent orchestrates &mdash; PM, Architect, Developer, QA each handle their domain</li>
+          <li data-i18n="solution_p2">Council pattern: parallel expert reviews with automatic synthesis</li>
+          <li data-i18n="solution_p3">Self-evolving agents: ephemeral workers become reusable team members over time</li>
+        </ul>
+      </div>
+      <div class="split-card card-solution animate-on-scroll stagger-1">
+        <h3 data-i18n="solution_h2">Built-in Process &amp; Memory</h3>
+        <ul>
+          <li data-i18n="solution_p4">Issue-first SDLC: every change has a branch, PR, and review &mdash; automatically</li>
+          <li data-i18n="solution_p5">Continuous memory: lessons from past tasks applied to future decisions</li>
+          <li data-i18n="solution_p6">Works with any MCP client: Cursor, Claude Code, Copilot, Windsurf, and more</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 4: TRACTION ==================== -->
+<section id="traction">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label" style="background:rgba(59,130,246,.12);color:var(--accent)" data-i18n="traction_label">Traction</span>
+      <h2 data-i18n="traction_title">Growing Fast in the Open</h2>
+    </div>
+    <div class="stats-row">
+      <div class="stat-box animate-on-scroll">
+        <div class="stat-number" data-counter="310" data-suffix="+">0</div>
+        <div class="stat-label" data-i18n="traction_issues">GitHub Issues Resolved</div>
+      </div>
+      <div class="stat-box animate-on-scroll stagger-1">
+        <div class="stat-number" data-counter="50" data-suffix="+">0</div>
+        <div class="stat-label" data-i18n="traction_agents">Agent Roles Created</div>
+      </div>
+      <div class="stat-box animate-on-scroll stagger-2">
+        <div class="stat-number" data-counter="6">0</div>
+        <div class="stat-label" data-i18n="traction_engines">Engines Supported</div>
+      </div>
+      <div class="stat-box animate-on-scroll stagger-3">
+        <div class="stat-number" data-counter="15" data-suffix="+">0</div>
+        <div class="stat-label" data-i18n="traction_skills">Built-in Skills</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 5: MARKET ==================== -->
+<section id="market">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-label" style="background:rgba(139,92,246,.12);color:var(--accent-tertiary)" data-i18n="market_label">Market</span>
+      <h2 data-i18n="market_title">The AI Developer Tools Market</h2>
+      <p data-i18n="market_subtitle">AI-assisted coding is projected to be a massive market, and orchestration is the missing layer.</p>
+    </div>
+    <div class="tam-chart">
+      <div class="tam-bar-group animate-on-scroll">
+        <div class="tam-bar-label">
+          <span data-i18n="market_tam">TAM &mdash; AI Developer Tools</span>
+          <span>$45B</span>
+        </div>
+        <div class="tam-bar-track">
+          <div class="tam-bar-fill tam" data-bar-width="100%"></div>
+        </div>
+      </div>
+      <div class="tam-bar-group animate-on-scroll stagger-1">
+        <div class="tam-bar-label">
+          <span data-i18n="market_sam">SAM &mdash; AI Coding Assistants</span>
+          <span>$15B</span>
+        </div>
+        <div class="tam-bar-track">
+          <div class="tam-bar-fill sam" data-bar-width="33%"></div>
+        </div>
+      </div>
+      <div class="tam-bar-group animate-on-scroll stagger-2">
+        <div class="tam-bar-label">
+          <span data-i18n="market_som">SOM &mdash; Multi-Agent Orchestration</span>
+          <span>$3B</span>
+        </div>
+        <div class="tam-bar-track">
+          <div class="tam-bar-fill som" data-bar-width="7%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 6: HOW IT WORKS ==================== -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="how_title">How It Works</h2>
+      <p data-i18n="how_subtitle">Three primitives power the entire system.</p>
+    </div>
+    <div class="how-grid">
+      <div class="how-card animate-on-scroll">
+        <span class="how-icon" aria-hidden="true">&#9881;&#65039;</span>
+        <h3 data-i18n="how_h1">Roles &amp; Tiers</h3>
+        <p data-i18n="how_p1">Agents evolve from ephemeral (T3) to template (T2) to persistent instance (T1). Your team grows with usage.</p>
+      </div>
+      <div class="how-card animate-on-scroll stagger-1">
+        <span class="how-icon" aria-hidden="true">&#128101;</span>
+        <h3 data-i18n="how_h2">Council Pattern</h3>
+        <p data-i18n="how_p2">Spawn parallel expert reviews on any proposal. Map-reduce synthesis produces actionable consensus.</p>
+      </div>
+      <div class="how-card animate-on-scroll stagger-2">
+        <span class="how-icon" aria-hidden="true">&#128279;</span>
+        <h3 data-i18n="how_h3">Issue-First SDLC</h3>
+        <p data-i18n="how_p3">Every change automatically gets a tracking issue, feature branch, PR, and code review. Full traceability.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 7: COMPETITIVE LANDSCAPE ==================== -->
+<section id="competitive">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="comp_title">Competitive Landscape</h2>
+      <p data-i18n="comp_subtitle">Optimus Code occupies a unique position: the orchestration layer above individual AI tools.</p>
+    </div>
+    <div class="comp-table-wrap animate-on-scroll">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th data-i18n="comp_feature">Capability</th>
+            <th class="highlight-col">Optimus Code</th>
+            <th>Cursor</th>
+            <th>GitHub Copilot</th>
+            <th>Devin</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="comp_r1">Multi-agent orchestration</td>
+            <td class="highlight-col"><span class="check" aria-label="Yes">&#10003;</span></td>
+            <td><span class="cross" aria-label="No">&#10007;</span></td>
+            <td><span class="cross" aria-label="No">&#10007;</span></td>
+            <td><span class="partial" aria-label="Partial">&#9679;</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="comp_r2">Works with any MCP client</td>
+            <td class="highlight-col"><span class="check">&#10003;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="comp_r3">Self-evolving roles</td>
+            <td class="highlight-col"><span class="check">&#10003;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="comp_r4">Continuous project memory</td>
+            <td class="highlight-col"><span class="check">&#10003;</span></td>
+            <td><span class="partial">&#9679;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="partial">&#9679;</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="comp_r5">Built-in SDLC automation</td>
+            <td class="highlight-col"><span class="check">&#10003;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="partial">&#9679;</span></td>
+            <td><span class="partial">&#9679;</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="comp_r6">Open source (MIT)</td>
+            <td class="highlight-col"><span class="check">&#10003;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="comp_r7">Parallel expert reviews</td>
+            <td class="highlight-col"><span class="check">&#10003;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+            <td><span class="cross">&#10007;</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 8: BUSINESS MODEL ==================== -->
+<section id="business-model">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="biz_title">Business Model</h2>
+      <p data-i18n="biz_subtitle">Open core with enterprise value-adds.</p>
+    </div>
+    <div class="model-grid">
+      <div class="model-card animate-on-scroll">
+        <h3 data-i18n="biz_free_title">Community</h3>
+        <div class="price" data-i18n="biz_free_price">Free</div>
+        <p data-i18n="biz_free_desc">Full orchestration engine, all agent tiers, council pattern, SDLC automation. MIT-licensed, forever.</p>
+      </div>
+      <div class="model-card animate-on-scroll stagger-1" style="border-color:var(--accent)">
+        <h3 data-i18n="biz_team_title">Team</h3>
+        <div class="price" data-i18n="biz_team_price">$29/seat/mo</div>
+        <p data-i18n="biz_team_desc">Hosted agent fleet, team-wide memory sharing, analytics dashboard, priority support.</p>
+      </div>
+      <div class="model-card animate-on-scroll stagger-2">
+        <h3 data-i18n="biz_ent_title">Enterprise</h3>
+        <div class="price" data-i18n="biz_ent_price">Custom</div>
+        <p data-i18n="biz_ent_desc">On-prem deployment, SSO, audit logging, dedicated success engineer, custom role libraries.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 9: ROADMAP ==================== -->
+<section id="roadmap">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="roadmap_title">Roadmap</h2>
+    </div>
+    <div class="roadmap">
+      <div class="roadmap-item animate-on-scroll">
+        <div class="roadmap-marker">
+          <div class="roadmap-dot done"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="rm-date">Q4 2025</div>
+          <h4 data-i18n="roadmap_q4_title">Foundation</h4>
+          <p data-i18n="roadmap_q4_desc">MCP server, multi-engine support, role/skill system, council pattern, issue-first SDLC.</p>
+        </div>
+      </div>
+      <div class="roadmap-item animate-on-scroll stagger-1">
+        <div class="roadmap-marker">
+          <div class="roadmap-dot current"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="rm-date">Q1 2026</div>
+          <h4 data-i18n="roadmap_q1_title">Intelligence Layer</h4>
+          <p data-i18n="roadmap_q1_desc">Engine health tracking, meta-cron automation, continuous memory, agent self-evolution.</p>
+        </div>
+      </div>
+      <div class="roadmap-item animate-on-scroll stagger-2">
+        <div class="roadmap-marker">
+          <div class="roadmap-dot"></div>
+          <div class="roadmap-line"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="rm-date">Q2 2026</div>
+          <h4 data-i18n="roadmap_q2_title">Team &amp; Cloud</h4>
+          <p data-i18n="roadmap_q2_desc">Hosted agent fleet, team memory sharing, analytics dashboard, Agent Client Protocol (ACP).</p>
+        </div>
+      </div>
+      <div class="roadmap-item animate-on-scroll stagger-3">
+        <div class="roadmap-marker">
+          <div class="roadmap-dot"></div>
+        </div>
+        <div class="roadmap-content">
+          <div class="rm-date">Q3 2026</div>
+          <h4 data-i18n="roadmap_q3_title">Enterprise</h4>
+          <p data-i18n="roadmap_q3_desc">On-prem deployment, SSO integration, compliance audit trails, enterprise role libraries.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 10: TEAM ==================== -->
+<section id="team">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="team_title">Team</h2>
+      <p data-i18n="team_subtitle">Built by engineers who live in AI-assisted development every day.</p>
+    </div>
+    <div class="team-grid">
+      <div class="team-card animate-on-scroll">
+        <div class="team-avatar">LC</div>
+        <div class="team-info">
+          <h4>Logan Chen</h4>
+          <p data-i18n="team_logan">Founder &amp; CEO &mdash; Full-stack engineer, AI/ML practitioner</p>
+        </div>
+      </div>
+      <div class="team-card animate-on-scroll stagger-1">
+        <div class="team-avatar" style="background:linear-gradient(135deg,var(--accent-secondary),var(--accent))">AI</div>
+        <div class="team-info">
+          <h4 data-i18n="team_swarm_name">The Swarm</h4>
+          <p data-i18n="team_swarm_desc">50+ autonomous agent roles that co-develop the platform &mdash; dogfooding at its finest</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 11: THE ASK ==================== -->
+<section id="ask">
+  <div class="container">
+    <div class="ask-card animate-on-scroll">
+      <span class="section-label" style="background:rgba(59,130,246,.12);color:var(--accent)" data-i18n="ask_label">The Ask</span>
+      <h3 data-i18n="ask_title">Seed Round</h3>
+      <div class="ask-amount" data-i18n="ask_amount">$2M</div>
+      <p data-i18n="ask_desc">To build the hosted platform, grow the team, and capture the early multi-agent orchestration market.</p>
+      <div class="ask-uses">
+        <span class="ask-use" data-i18n="ask_eng">Engineering (60%)</span>
+        <span class="ask-use" data-i18n="ask_growth">Growth (25%)</span>
+        <span class="ask-use" data-i18n="ask_ops">Operations (15%)</span>
+      </div>
+      <a href="mailto:contact@optimus-code.dev" class="btn-primary" data-i18n="ask_cta">Get in Touch</a>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 12: VISION / CLOSING ==================== -->
+<section id="vision">
+  <div class="container">
+    <div class="section-header">
+      <h2 data-i18n="vision_title">The Future of Software Development</h2>
+      <p data-i18n="vision_desc">Every developer will have an AI team, not just an AI assistant. Optimus Code is the operating system that makes that possible &mdash; open, portable, and self-evolving.</p>
+    </div>
+    <div style="text-align:center" class="animate-on-scroll">
+      <a href="index.html" class="btn-primary" data-i18n="vision_cta">Explore Optimus Code &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FOOTER ==================== -->
+<footer>
+  <div class="container">
+    <div class="footer-logo">Optimus Code</div>
+    <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
+  </div>
+</footer>
+
+<script>
+/* ========== Translation Dictionary ========== */
+var i18n={
+  en:{
+    nav_home:"\u2190 Home",
+    cover_meta:"Investor Overview 2026",
+    cover_title:"The Operating System for AI Coding Tools",
+    cover_tagline:"Optimus Code turns a single AI assistant into a coordinated development team. Multi-agent orchestration for every MCP-compatible coding tool.",
+    cover_oss:"Open Source \u00b7 MIT License \u00b7 MCP Protocol",
+    problem_label:"The Problem",
+    problem_title:"AI Coding Tools Hit a Ceiling",
+    problem_subtitle:"Every developer has an AI assistant. None of them has an AI team.",
+    problem_h1:"Single-Agent Bottleneck",
+    problem_p1:"One AI handles planning, coding, reviewing, and testing \u2014 all in one context window",
+    problem_p2:"No separation of concerns: architecture decisions mixed with implementation",
+    problem_p3:"Context windows overflow on complex tasks, leading to degraded output",
+    problem_h2:"No Memory, No Process",
+    problem_p4:"Every conversation starts from scratch \u2014 no project history, no learned patterns",
+    problem_p5:"No SDLC enforcement: changes happen without issues, branches, or reviews",
+    problem_p6:"Vendor lock-in: workflows tied to a single AI tool with no portability",
+    solution_label:"The Solution",
+    solution_title:"Optimus Code: Multi-Agent Orchestration",
+    solution_subtitle:"An operating system layer that sits between your AI tool and your codebase.",
+    solution_h1:"Specialized Agent Teams",
+    solution_p1:"Master Agent orchestrates \u2014 PM, Architect, Developer, QA each handle their domain",
+    solution_p2:"Council pattern: parallel expert reviews with automatic synthesis",
+    solution_p3:"Self-evolving agents: ephemeral workers become reusable team members over time",
+    solution_h2:"Built-in Process & Memory",
+    solution_p4:"Issue-first SDLC: every change has a branch, PR, and review \u2014 automatically",
+    solution_p5:"Continuous memory: lessons from past tasks applied to future decisions",
+    solution_p6:"Works with any MCP client: Cursor, Claude Code, Copilot, Windsurf, and more",
+    traction_label:"Traction",
+    traction_title:"Growing Fast in the Open",
+    traction_issues:"GitHub Issues Resolved",
+    traction_agents:"Agent Roles Created",
+    traction_engines:"Engines Supported",
+    traction_skills:"Built-in Skills",
+    market_label:"Market",
+    market_title:"The AI Developer Tools Market",
+    market_subtitle:"AI-assisted coding is projected to be a massive market, and orchestration is the missing layer.",
+    market_tam:"TAM \u2014 AI Developer Tools",
+    market_sam:"SAM \u2014 AI Coding Assistants",
+    market_som:"SOM \u2014 Multi-Agent Orchestration",
+    how_title:"How It Works",
+    how_subtitle:"Three primitives power the entire system.",
+    how_h1:"Roles & Tiers",
+    how_p1:"Agents evolve from ephemeral (T3) to template (T2) to persistent instance (T1). Your team grows with usage.",
+    how_h2:"Council Pattern",
+    how_p2:"Spawn parallel expert reviews on any proposal. Map-reduce synthesis produces actionable consensus.",
+    how_h3:"Issue-First SDLC",
+    how_p3:"Every change automatically gets a tracking issue, feature branch, PR, and code review. Full traceability.",
+    comp_title:"Competitive Landscape",
+    comp_subtitle:"Optimus Code occupies a unique position: the orchestration layer above individual AI tools.",
+    comp_feature:"Capability",
+    comp_r1:"Multi-agent orchestration",
+    comp_r2:"Works with any MCP client",
+    comp_r3:"Self-evolving roles",
+    comp_r4:"Continuous project memory",
+    comp_r5:"Built-in SDLC automation",
+    comp_r6:"Open source (MIT)",
+    comp_r7:"Parallel expert reviews",
+    biz_title:"Business Model",
+    biz_subtitle:"Open core with enterprise value-adds.",
+    biz_free_title:"Community",
+    biz_free_price:"Free",
+    biz_free_desc:"Full orchestration engine, all agent tiers, council pattern, SDLC automation. MIT-licensed, forever.",
+    biz_team_title:"Team",
+    biz_team_price:"$29/seat/mo",
+    biz_team_desc:"Hosted agent fleet, team-wide memory sharing, analytics dashboard, priority support.",
+    biz_ent_title:"Enterprise",
+    biz_ent_price:"Custom",
+    biz_ent_desc:"On-prem deployment, SSO, audit logging, dedicated success engineer, custom role libraries.",
+    roadmap_title:"Roadmap",
+    roadmap_q4_title:"Foundation",
+    roadmap_q4_desc:"MCP server, multi-engine support, role/skill system, council pattern, issue-first SDLC.",
+    roadmap_q1_title:"Intelligence Layer",
+    roadmap_q1_desc:"Engine health tracking, meta-cron automation, continuous memory, agent self-evolution.",
+    roadmap_q2_title:"Team & Cloud",
+    roadmap_q2_desc:"Hosted agent fleet, team memory sharing, analytics dashboard, Agent Client Protocol (ACP).",
+    roadmap_q3_title:"Enterprise",
+    roadmap_q3_desc:"On-prem deployment, SSO integration, compliance audit trails, enterprise role libraries.",
+    team_title:"Team",
+    team_subtitle:"Built by engineers who live in AI-assisted development every day.",
+    team_logan:"Founder & CEO \u2014 Full-stack engineer, AI/ML practitioner",
+    team_swarm_name:"The Swarm",
+    team_swarm_desc:"50+ autonomous agent roles that co-develop the platform \u2014 dogfooding at its finest",
+    ask_label:"The Ask",
+    ask_title:"Seed Round",
+    ask_amount:"$2M",
+    ask_desc:"To build the hosted platform, grow the team, and capture the early multi-agent orchestration market.",
+    ask_eng:"Engineering (60%)",
+    ask_growth:"Growth (25%)",
+    ask_ops:"Operations (15%)",
+    ask_cta:"Get in Touch",
+    vision_title:"The Future of Software Development",
+    vision_desc:"Every developer will have an AI team, not just an AI assistant. Optimus Code is the operating system that makes that possible \u2014 open, portable, and self-evolving.",
+    vision_cta:"Explore Optimus Code \u2192",
+    footer_tagline:"Stop prompting. Start orchestrating."
+  },
+  zh:{
+    nav_home:"\u2190 \u9996\u9875",
+    cover_meta:"\u6295\u8D44\u8005\u6982\u89C8 2026",
+    cover_title:"AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
+    cover_tagline:"Optimus Code \u5C06\u5355\u4E2A AI \u52A9\u624B\u8F6C\u53D8\u4E3A\u534F\u8C03\u7684\u5F00\u53D1\u56E2\u961F\u3002\u4E3A\u6BCF\u4E2A MCP \u517C\u5BB9\u7F16\u7801\u5DE5\u5177\u63D0\u4F9B\u591A\u667A\u80FD\u4F53\u7F16\u6392\u3002",
+    cover_oss:"\u5F00\u6E90 \u00b7 MIT \u8BB8\u53EF\u8BC1 \u00b7 MCP \u534F\u8BAE",
+    problem_label:"\u75DB\u70B9",
+    problem_title:"AI \u7F16\u7801\u5DE5\u5177\u9047\u5230\u4E86\u5929\u82B1\u677F",
+    problem_subtitle:"\u6BCF\u4E2A\u5F00\u53D1\u8005\u90FD\u6709 AI \u52A9\u624B\uFF0C\u4F46\u6CA1\u4EBA\u6709 AI \u56E2\u961F\u3002",
+    problem_h1:"\u5355\u667A\u80FD\u4F53\u74F6\u9888",
+    problem_p1:"\u4E00\u4E2A AI \u540C\u65F6\u5904\u7406\u89C4\u5212\u3001\u7F16\u7801\u3001\u5BA1\u67E5\u548C\u6D4B\u8BD5 \u2014 \u5168\u90E8\u5728\u4E00\u4E2A\u4E0A\u4E0B\u6587\u7A97\u53E3\u4E2D",
+    problem_p2:"\u6CA1\u6709\u804C\u8D23\u5206\u79BB\uFF1A\u67B6\u6784\u51B3\u7B56\u4E0E\u5B9E\u73B0\u6DF7\u5728\u4E00\u8D77",
+    problem_p3:"\u590D\u6742\u4EFB\u52A1\u4E0A\u4E0B\u6587\u7A97\u53E3\u6EA2\u51FA\uFF0C\u5BFC\u81F4\u8F93\u51FA\u8D28\u91CF\u4E0B\u964D",
+    problem_h2:"\u65E0\u8BB0\u5FC6\u3001\u65E0\u6D41\u7A0B",
+    problem_p4:"\u6BCF\u6B21\u5BF9\u8BDD\u4ECE\u96F6\u5F00\u59CB \u2014 \u6CA1\u6709\u9879\u76EE\u5386\u53F2\uFF0C\u6CA1\u6709\u5B66\u4E60\u5230\u7684\u6A21\u5F0F",
+    problem_p5:"\u6CA1\u6709 SDLC \u5F3A\u5236\uFF1A\u53D8\u66F4\u6CA1\u6709 Issue\u3001\u5206\u652F\u6216\u5BA1\u67E5",
+    problem_p6:"\u4F9B\u5E94\u5546\u9501\u5B9A\uFF1A\u5DE5\u4F5C\u6D41\u7ED1\u5B9A\u5728\u5355\u4E00 AI \u5DE5\u5177\u4E0A\uFF0C\u65E0\u6CD5\u8FC1\u79FB",
+    solution_label:"\u89E3\u51B3\u65B9\u6848",
+    solution_title:"Optimus Code\uFF1A\u591A\u667A\u80FD\u4F53\u7F16\u6392",
+    solution_subtitle:"\u4E00\u4E2A\u4F4D\u4E8E AI \u5DE5\u5177\u548C\u4EE3\u7801\u5E93\u4E4B\u95F4\u7684\u64CD\u4F5C\u7CFB\u7EDF\u5C42\u3002",
+    solution_h1:"\u4E13\u4E1A\u667A\u80FD\u4F53\u56E2\u961F",
+    solution_p1:"\u4E3B\u63A7\u667A\u80FD\u4F53\u7F16\u6392 \u2014 \u4EA7\u54C1\u7ECF\u7406\u3001\u67B6\u6784\u5E08\u3001\u5F00\u53D1\u8005\u3001QA \u5404\u53F8\u5176\u804C",
+    solution_p2:"Council \u6A21\u5F0F\uFF1A\u5E76\u884C\u4E13\u5BB6\u5BA1\u67E5\u4E0E\u81EA\u52A8\u7EFC\u5408",
+    solution_p3:"\u81EA\u8FDB\u5316\u667A\u80FD\u4F53\uFF1A\u4E34\u65F6\u5DE5\u4F5C\u8005\u968F\u65F6\u95F4\u6210\u4E3A\u53EF\u590D\u7528\u56E2\u961F\u6210\u5458",
+    solution_h2:"\u5185\u7F6E\u6D41\u7A0B\u4E0E\u8BB0\u5FC6",
+    solution_p4:"Issue \u9A71\u52A8 SDLC\uFF1A\u6BCF\u6B21\u53D8\u66F4\u81EA\u52A8\u62E5\u6709\u5206\u652F\u3001PR \u548C\u5BA1\u67E5",
+    solution_p5:"\u6301\u7EED\u8BB0\u5FC6\uFF1A\u8FC7\u53BB\u4EFB\u52A1\u7684\u7ECF\u9A8C\u5E94\u7528\u4E8E\u672A\u6765\u51B3\u7B56",
+    solution_p6:"\u652F\u6301\u4EFB\u4F55 MCP \u5BA2\u6237\u7AEF\uFF1ACursor\u3001Claude Code\u3001Copilot\u3001Windsurf \u7B49",
+    traction_label:"\u589E\u957F\u6570\u636E",
+    traction_title:"\u5F00\u6E90\u793E\u533A\u5FEB\u901F\u589E\u957F",
+    traction_issues:"GitHub Issue \u5DF2\u89E3\u51B3",
+    traction_agents:"\u667A\u80FD\u4F53\u89D2\u8272\u5DF2\u521B\u5EFA",
+    traction_engines:"\u5F15\u64CE\u652F\u6301",
+    traction_skills:"\u5185\u7F6E\u6280\u80FD",
+    market_label:"\u5E02\u573A",
+    market_title:"AI \u5F00\u53D1\u8005\u5DE5\u5177\u5E02\u573A",
+    market_subtitle:"AI \u8F85\u52A9\u7F16\u7801\u9884\u8BA1\u662F\u4E00\u4E2A\u5DE8\u5927\u7684\u5E02\u573A\uFF0C\u7F16\u6392\u5C42\u662F\u7F3A\u5931\u7684\u4E00\u73AF\u3002",
+    market_tam:"TAM \u2014 AI \u5F00\u53D1\u8005\u5DE5\u5177",
+    market_sam:"SAM \u2014 AI \u7F16\u7801\u52A9\u624B",
+    market_som:"SOM \u2014 \u591A\u667A\u80FD\u4F53\u7F16\u6392",
+    how_title:"\u5DE5\u4F5C\u539F\u7406",
+    how_subtitle:"\u4E09\u4E2A\u539F\u8BED\u9A71\u52A8\u6574\u4E2A\u7CFB\u7EDF\u3002",
+    how_h1:"\u89D2\u8272\u4E0E\u5C42\u7EA7",
+    how_p1:"\u667A\u80FD\u4F53\u4ECE\u4E34\u65F6\u4F53\uFF08T3\uFF09\u8FDB\u5316\u4E3A\u6A21\u677F\uFF08T2\uFF09\u518D\u5230\u6301\u4E45\u5B9E\u4F8B\uFF08T1\uFF09\u3002\u56E2\u961F\u968F\u4F7F\u7528\u800C\u58EE\u5927\u3002",
+    how_h2:"Council \u6A21\u5F0F",
+    how_p2:"\u5BF9\u4EFB\u4F55\u63D0\u6848\u542F\u52A8\u5E76\u884C\u4E13\u5BB6\u5BA1\u67E5\u3002MapReduce \u7EFC\u5408\u4EA7\u751F\u53EF\u6267\u884C\u7684\u5171\u8BC6\u3002",
+    how_h3:"Issue \u9A71\u52A8 SDLC",
+    how_p3:"\u6BCF\u6B21\u53D8\u66F4\u81EA\u52A8\u83B7\u5F97\u8DDF\u8E2A Issue\u3001\u529F\u80FD\u5206\u652F\u3001PR \u548C\u4EE3\u7801\u5BA1\u67E5\u3002\u5B8C\u6574\u53EF\u8FFD\u6EAF\u3002",
+    comp_title:"\u7ADE\u4E89\u683C\u5C40",
+    comp_subtitle:"Optimus Code \u5360\u636E\u72EC\u7279\u4F4D\u7F6E\uFF1A\u4F4D\u4E8E\u5404\u4E2A AI \u5DE5\u5177\u4E4B\u4E0A\u7684\u7F16\u6392\u5C42\u3002",
+    comp_feature:"\u80FD\u529B",
+    comp_r1:"\u591A\u667A\u80FD\u4F53\u7F16\u6392",
+    comp_r2:"\u652F\u6301\u4EFB\u4F55 MCP \u5BA2\u6237\u7AEF",
+    comp_r3:"\u81EA\u8FDB\u5316\u89D2\u8272",
+    comp_r4:"\u6301\u7EED\u9879\u76EE\u8BB0\u5FC6",
+    comp_r5:"\u5185\u7F6E SDLC \u81EA\u52A8\u5316",
+    comp_r6:"\u5F00\u6E90 (MIT)",
+    comp_r7:"\u5E76\u884C\u4E13\u5BB6\u5BA1\u67E5",
+    biz_title:"\u5546\u4E1A\u6A21\u5F0F",
+    biz_subtitle:"\u5F00\u6E90\u6838\u5FC3 + \u4F01\u4E1A\u7EA7\u589E\u503C\u670D\u52A1\u3002",
+    biz_free_title:"\u793E\u533A\u7248",
+    biz_free_price:"\u514D\u8D39",
+    biz_free_desc:"\u5B8C\u6574\u7F16\u6392\u5F15\u64CE\u3001\u6240\u6709\u667A\u80FD\u4F53\u5C42\u7EA7\u3001Council \u6A21\u5F0F\u3001SDLC \u81EA\u52A8\u5316\u3002MIT \u8BB8\u53EF\uFF0C\u6C38\u4E45\u514D\u8D39\u3002",
+    biz_team_title:"\u56E2\u961F\u7248",
+    biz_team_price:"$29/\u5E2D\u4F4D/\u6708",
+    biz_team_desc:"\u6258\u7BA1\u667A\u80FD\u4F53\u8230\u961F\u3001\u56E2\u961F\u8BB0\u5FC6\u5171\u4EAB\u3001\u5206\u6790\u4EEA\u8868\u76D8\u3001\u4F18\u5148\u652F\u6301\u3002",
+    biz_ent_title:"\u4F01\u4E1A\u7248",
+    biz_ent_price:"\u5B9A\u5236",
+    biz_ent_desc:"\u79C1\u6709\u90E8\u7F72\u3001SSO\u3001\u5BA1\u8BA1\u65E5\u5FD7\u3001\u4E13\u5C5E\u6210\u529F\u5DE5\u7A0B\u5E08\u3001\u5B9A\u5236\u89D2\u8272\u5E93\u3002",
+    roadmap_title:"\u8DEF\u7EBF\u56FE",
+    roadmap_q4_title:"\u57FA\u7840\u5EFA\u8BBE",
+    roadmap_q4_desc:"MCP \u670D\u52A1\u5668\u3001\u591A\u5F15\u64CE\u652F\u6301\u3001\u89D2\u8272/\u6280\u80FD\u7CFB\u7EDF\u3001Council \u6A21\u5F0F\u3001Issue \u9A71\u52A8 SDLC\u3002",
+    roadmap_q1_title:"\u667A\u80FD\u5C42",
+    roadmap_q1_desc:"\u5F15\u64CE\u5065\u5EB7\u8DDF\u8E2A\u3001\u5143\u5B9A\u65F6\u81EA\u52A8\u5316\u3001\u6301\u7EED\u8BB0\u5FC6\u3001\u667A\u80FD\u4F53\u81EA\u8FDB\u5316\u3002",
+    roadmap_q2_title:"\u56E2\u961F\u4E0E\u4E91",
+    roadmap_q2_desc:"\u6258\u7BA1\u667A\u80FD\u4F53\u8230\u961F\u3001\u56E2\u961F\u8BB0\u5FC6\u5171\u4EAB\u3001\u5206\u6790\u4EEA\u8868\u76D8\u3001Agent Client Protocol (ACP)\u3002",
+    roadmap_q3_title:"\u4F01\u4E1A\u7EA7",
+    roadmap_q3_desc:"\u79C1\u6709\u90E8\u7F72\u3001SSO \u96C6\u6210\u3001\u5408\u89C4\u5BA1\u8BA1\u8DDF\u8E2A\u3001\u4F01\u4E1A\u89D2\u8272\u5E93\u3002",
+    team_title:"\u56E2\u961F",
+    team_subtitle:"\u7531\u6BCF\u5929\u751F\u6D3B\u5728 AI \u8F85\u52A9\u5F00\u53D1\u4E2D\u7684\u5DE5\u7A0B\u5E08\u6784\u5EFA\u3002",
+    team_logan:"\u521B\u59CB\u4EBA\u517C CEO \u2014 \u5168\u6808\u5DE5\u7A0B\u5E08\u3001AI/ML \u4ECE\u4E1A\u8005",
+    team_swarm_name:"\u667A\u80FD\u4F53\u96C6\u7FA4",
+    team_swarm_desc:"50+ \u81EA\u4E3B\u667A\u80FD\u4F53\u89D2\u8272\u5171\u540C\u5F00\u53D1\u5E73\u53F0 \u2014 \u6700\u6781\u81F4\u7684\u5403\u81EA\u5DF1\u7684\u72D7\u7CAE",
+    ask_label:"\u878D\u8D44\u9700\u6C42",
+    ask_title:"\u79CD\u5B50\u8F6E",
+    ask_amount:"$2M",
+    ask_desc:"\u7528\u4E8E\u6784\u5EFA\u6258\u7BA1\u5E73\u53F0\u3001\u58EE\u5927\u56E2\u961F\u3001\u62A2\u5360\u65E9\u671F\u591A\u667A\u80FD\u4F53\u7F16\u6392\u5E02\u573A\u3002",
+    ask_eng:"\u5DE5\u7A0B (60%)",
+    ask_growth:"\u589E\u957F (25%)",
+    ask_ops:"\u8FD0\u8425 (15%)",
+    ask_cta:"\u8054\u7CFB\u6211\u4EEC",
+    vision_title:"\u8F6F\u4EF6\u5F00\u53D1\u7684\u672A\u6765",
+    vision_desc:"\u6BCF\u4E2A\u5F00\u53D1\u8005\u90FD\u5C06\u62E5\u6709 AI \u56E2\u961F\uFF0C\u800C\u4E0D\u4EC5\u662F AI \u52A9\u624B\u3002Optimus Code \u662F\u5B9E\u73B0\u8FD9\u4E00\u76EE\u6807\u7684\u64CD\u4F5C\u7CFB\u7EDF \u2014 \u5F00\u653E\u3001\u53EF\u8FC1\u79FB\u3001\u81EA\u8FDB\u5316\u3002",
+    vision_cta:"\u63A2\u7D22 Optimus Code \u2192",
+    footer_tagline:"\u505C\u6B62\u63D0\u793A\u8BCD\u5DE5\u7A0B\u3002\u5F00\u59CB\u7F16\u6392\u3002"
+  }
+};
+
+var currentLang='en';
+
+function setLang(lang){
+  currentLang=lang;
+  document.documentElement.lang=lang;
+  var dict=i18n[lang];
+  if(!dict)return;
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var key=el.getAttribute('data-i18n');
+    if(dict[key]!==undefined) el.textContent=dict[key];
+  });
+  document.title=lang==='zh'
+    ?'Optimus Code \u2014 \u6295\u8D44\u8005\u6982\u89C8'
+    :'Optimus Code \u2014 Investor Pitch';
+  document.querySelectorAll('.lang-btn').forEach(function(btn){
+    var isActive=btn.getAttribute('data-lang')===lang;
+    btn.classList.toggle('active',isActive);
+    btn.setAttribute('aria-checked',isActive?'true':'false');
+  });
+}
+
+/* Language toggle */
+(function(){
+  var toggle=document.getElementById('langToggle');
+  if(!toggle)return;
+  toggle.addEventListener('click',function(e){
+    var btn=e.target.closest('.lang-btn');
+    if(!btn)return;
+    var lang=btn.getAttribute('data-lang');
+    if(lang&&lang!==currentLang) setLang(lang);
+  });
+})();
+
+/* IntersectionObserver for scroll animations + bar chart + counters */
+(function(){
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('visible');
+
+        /* Animate bar fills */
+        var bars=e.target.querySelectorAll('.tam-bar-fill[data-bar-width]');
+        bars.forEach(function(bar){
+          bar.style.width=bar.getAttribute('data-bar-width');
+        });
+
+        /* Animate counters */
+        var counters=e.target.querySelectorAll('[data-counter]');
+        counters.forEach(function(el){
+          var target=parseInt(el.getAttribute('data-counter'),10);
+          var suffix=el.getAttribute('data-suffix')||'';
+          var duration=1500;
+          var start=performance.now();
+          function tick(now){
+            var elapsed=now-start;
+            var progress=Math.min(elapsed/duration,1);
+            var eased=1-Math.pow(1-progress,3);
+            var current=Math.round(target*eased);
+            el.textContent=current+suffix;
+            if(progress<1) requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        });
+
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:0.15});
+  document.querySelectorAll('.animate-on-scroll').forEach(function(el){io.observe(el)});
+
+  /* Also observe stat boxes and bar groups directly */
+  document.querySelectorAll('.stat-box,.tam-bar-group').forEach(function(el){
+    if(!el.classList.contains('animate-on-scroll')){
+      el.classList.add('animate-on-scroll');
+      io.observe(el);
+    }
+  });
+})();
+</script>
+</body>
+</html>
