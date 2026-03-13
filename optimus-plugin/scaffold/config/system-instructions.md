@@ -150,6 +150,7 @@ When an MCP tool call or delegation fails, the agent MUST follow this sequence:
 4. **If no suggestion**, check: missing params, invalid engine/model, auth failure, path errors
 5. **Retry** with corrected parameters
 6. **After 3 failures**, halt and report the exact error to the user
+7. **After resolution**, record the error pattern and fix via `append_memory` so future agents can avoid the same mistake
 
 Never silently ignore a tool failure or assume success without verification.
 

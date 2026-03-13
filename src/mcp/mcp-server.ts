@@ -707,6 +707,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
         } else if (request.params.name === "append_memory") {
       let { category, tags, content } = request.params.arguments as any;
+      requireParams("append_memory", request.params.arguments as any, ["category", "content"]);
       const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
       const memoryDir = path.resolve(workspacePath, '.optimus', 'memory');
       const memoryFile = path.join(memoryDir, 'continuous-memory.md');
@@ -1119,8 +1120,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments as any;
-    if (!artifact_path || content === undefined || content === null || !workspace_path) {
-        throw new McpError(ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
+    requireParams("write_blackboard_artifact", request.params.arguments as any, ["artifact_path", "workspace_path"]);
+    if (content === undefined || content === null) {
+        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for write_blackboard_artifact: 'content' must be provided (can be empty string, but not null/undefined)");
     }
 
     // Resolve target path: workspace/.optimus/<artifact_path>
@@ -1159,15 +1161,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } else if (request.params.name === "hello") {
     const { name } = request.params.arguments as any;
-    if (!name) {
-      throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: name");
-    }
+    requireParams("hello", request.params.arguments as any, ["name"]);
     return { content: [{ type: "text", text: `Hello, ${name}! Optimus Swarm is running.` }] };
   } else if (request.params.name === "quarantine_role") {
     const { role, action, workspace_path } = request.params.arguments as any;
-    if (!role || !action || !workspace_path) {
-      throw new McpError(ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
-    }
+    requireParams("quarantine_role", request.params.arguments as any, ["role", "action", "workspace_path"]);
 
     const t2Dir = path.join(workspace_path, '.optimus', 'roles');
     const rolePath = path.join(t2Dir, `${role}.md`);
@@ -1215,7 +1213,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "register_meta_cron") {
     const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments as any;
-    if (!id || !cron_expression || !role || !workspace_path) throw new Error("Missing required fields: id, cron_expression, role, workspace_path");
+    requireParams("register_meta_cron", request.params.arguments as any, ["id", "cron_expression", "role", "workspace_path"]);
     if (process.env.OPTIMUS_CRON_TRIGGERED === 'true') {
       return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
     }
@@ -1240,7 +1238,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "list_meta_crons") {
     const { workspace_path } = request.params.arguments as any;
-    if (!workspace_path) throw new Error("Missing workspace_path");
+    requireParams("list_meta_crons", request.params.arguments as any, ["workspace_path"]);
     const crontab = loadCrontab(workspace_path);
     if (!crontab || crontab.crons.length === 0) {
       return { content: [{ type: "text", text: "No Meta-Cron entries registered." }] };
@@ -1254,7 +1252,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "remove_meta_cron") {
     const { id, workspace_path } = request.params.arguments as any;
-    if (!id || !workspace_path) throw new Error("Missing required fields: id, workspace_path");
+    requireParams("remove_meta_cron", request.params.arguments as any, ["id", "workspace_path"]);
     const crontab = loadCrontab(workspace_path);
     if (!crontab) return { content: [{ type: "text", text: "No crontab found." }] };
     const idx = crontab.crons.findIndex((cr: any) => cr.id === id);

@@ -1446,6 +1446,15 @@ var AdoProvider_exports = {};
 __export(AdoProvider_exports, {
   AdoProvider: () => AdoProvider
 });
+function adoHttpRecoveryHint(status) {
+  const hints = {
+    401: "ADO PAT may be expired or invalid. Regenerate at dev.azure.com > User Settings > Personal Access Tokens.",
+    403: "Insufficient permissions. Verify the PAT has the required scopes (Code: Read&Write, Work Items: Read&Write).",
+    404: "Resource not found. Verify org/project/repo names in .optimus/config/vcs.json match your Azure DevOps setup.",
+    409: "Conflict detected. The resource may have been modified concurrently. Retry the operation."
+  };
+  return hints[status] || "Unexpected HTTP " + status + ". Check ADO service health at https://status.dev.azure.com.";
+}
 var AdoProvider;
 var init_AdoProvider = __esm({
   "../src/adapters/vcs/AdoProvider.ts"() {
@@ -1520,7 +1529,7 @@ var init_AdoProvider = __esm({
             }
           );
           if (!response.ok) {
-            throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+            throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
           }
           const data = await response.json();
           return {
@@ -1578,7 +1587,7 @@ var init_AdoProvider = __esm({
             }
           );
           if (!response.ok) {
-            throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+            throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
           }
           const data = await response.json();
           return {
@@ -1608,10 +1617,12 @@ var init_AdoProvider = __esm({
             }
           );
           if (!repoResponse.ok) {
+            console.error("[mergePullRequest] ADO repo-list request failed with status " + repoResponse.status + ". " + adoHttpRecoveryHint(repoResponse.status));
             return { merged: false };
           }
           const repos = await repoResponse.json();
           if (!repos.value || repos.value.length === 0) {
+            console.error("[mergePullRequest] No repositories found in project. Verify org/project in .optimus/config/vcs.json.");
             return { merged: false };
           }
           const repositoryId = repos.value[0].id;
@@ -1634,7 +1645,8 @@ var init_AdoProvider = __esm({
               headBranch = prData.sourceRefName?.replace("refs/heads/", "");
               baseBranch = prData.targetRefName?.replace("refs/heads/", "");
             }
-          } catch {
+          } catch (e) {
+            console.error("[mergePullRequest] Warning: failed to fetch PR branch names:", e.message);
           }
           const mergeData = {
             status: "completed",
@@ -1660,7 +1672,8 @@ var init_AdoProvider = __esm({
             }
           );
           return { merged: response.ok, headBranch, baseBranch };
-        } catch {
+        } catch (e) {
+          console.error("[mergePullRequest] Merge failed:", e.message);
           return { merged: false };
         }
       }
@@ -1686,7 +1699,7 @@ var init_AdoProvider = __esm({
               }
             );
             if (!response.ok) {
-              throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+              throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
             }
             const data = await response.json();
             return {
@@ -1730,7 +1743,7 @@ var init_AdoProvider = __esm({
               }
             );
             if (!response.ok) {
-              throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
+              throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
             }
             const data = await response.json();
             return {
@@ -4478,7 +4491,7 @@ var VcsProviderFactory = class {
       console.warn(`Unable to detect VCS provider from remote URL: ${remoteUrl}. Defaulting to GitHub.`);
       return "github";
     } catch (error) {
-      console.warn("Failed to detect git remote URL. Defaulting to GitHub.");
+      console.warn("Failed to detect git remote URL: " + error.message + ". Defaulting to GitHub.");
       return "github";
     }
   }
@@ -5036,7 +5049,7 @@ server.setRequestHandler(import_types2.ListToolsRequestSchema, async () => {
 server.setRequestHandler(import_types2.CallToolRequestSchema, async (request) => {
   if (request.params.name === "check_task_status") {
     let { taskId, workspace_path } = request.params.arguments;
-    if (!taskId || !workspace_path) throw new Error("Missing taskId or workspace_path");
+    requireParams("check_task_status", request.params.arguments, ["taskId", "workspace_path"]);
     TaskManifestManager.reapStaleTasks(workspace_path);
     const manifest = TaskManifestManager.loadManifest(workspace_path);
     const task = manifest[taskId];
@@ -5268,6 +5281,7 @@ Please read these review files to continue.`
     };
   } else if (request.params.name === "append_memory") {
     let { category, tags, content } = request.params.arguments;
+    requireParams("append_memory", request.params.arguments, ["category", "content"]);
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     const memoryDir = import_path3.default.resolve(workspacePath, ".optimus", "memory");
     const memoryFile = import_path3.default.join(memoryDir, "continuous-memory.md");
@@ -5523,9 +5537,7 @@ Memory appended to: ${memoryFile}`
     }
   } else if (request.params.name === "vcs_create_pr") {
     const { title, body, head, base, workspace_path, agent_role } = request.params.arguments;
-    if (!title || !body || !head || !base || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for vcs_create_pr: missing required parameter(s). Requires: title, body, head, base, workspace_path. Received keys: [" + Object.keys(request.params.arguments).join(", ") + "]");
-    }
+    requireParams("vcs_create_pr", request.params.arguments, ["title", "body", "head", "base", "workspace_path"]);
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalBody = agent_role ? body + agentSignature(agent_role) : body;
@@ -5546,9 +5558,7 @@ Memory appended to: ${memoryFile}`
     }
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments;
-    if (!pull_request_id || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for vcs_merge_pr: missing required parameter(s). Requires: pull_request_id, workspace_path. Received keys: [" + Object.keys(request.params.arguments).join(", ") + "]");
-    }
+    requireParams("vcs_merge_pr", request.params.arguments, ["pull_request_id", "workspace_path"]);
     const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
@@ -5638,9 +5648,7 @@ Fix the build errors and try again.`
     }
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments;
-    if (!item_type || !item_id || !comment || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for vcs_add_comment: missing required parameter(s). Requires: item_type, item_id, comment, workspace_path. Received keys: [" + Object.keys(request.params.arguments).join(", ") + "]");
-    }
+    requireParams("vcs_add_comment", request.params.arguments, ["item_type", "item_id", "comment", "workspace_path"]);
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalComment = agent_role ? comment + agentSignature(agent_role) : comment;
@@ -5659,8 +5667,9 @@ Fix the build errors and try again.`
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments;
-    if (!artifact_path || content === void 0 || content === null || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Missing required parameters: artifact_path, content, workspace_path");
+    requireParams("write_blackboard_artifact", request.params.arguments, ["artifact_path", "workspace_path"]);
+    if (content === void 0 || content === null) {
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments for write_blackboard_artifact: 'content' must be provided (can be empty string, but not null/undefined)");
     }
     const optimusRoot = import_path3.default.resolve(workspace_path, ".optimus");
     const resolvedTarget = import_path3.default.resolve(optimusRoot, artifact_path);
@@ -5688,15 +5697,11 @@ Fix the build errors and try again.`
     }
   } else if (request.params.name === "hello") {
     const { name } = request.params.arguments;
-    if (!name) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Missing required parameter: name");
-    }
+    requireParams("hello", request.params.arguments, ["name"]);
     return { content: [{ type: "text", text: `Hello, ${name}! Optimus Swarm is running.` }] };
   } else if (request.params.name === "quarantine_role") {
     const { role, action, workspace_path } = request.params.arguments;
-    if (!role || !action || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Missing required parameters: role, action, workspace_path");
-    }
+    requireParams("quarantine_role", request.params.arguments, ["role", "action", "workspace_path"]);
     const t2Dir = import_path3.default.join(workspace_path, ".optimus", "roles");
     const rolePath = import_path3.default.join(t2Dir, `${role}.md`);
     if (!import_fs3.default.existsSync(rolePath)) {
@@ -5733,7 +5738,7 @@ Fix the build errors and try again.`
   }
   if (request.params.name === "register_meta_cron") {
     const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments;
-    if (!id || !cron_expression || !role || !workspace_path) throw new Error("Missing required fields: id, cron_expression, role, workspace_path");
+    requireParams("register_meta_cron", request.params.arguments, ["id", "cron_expression", "role", "workspace_path"]);
     if (process.env.OPTIMUS_CRON_TRIGGERED === "true") {
       return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
     }
@@ -5762,7 +5767,7 @@ Fix the build errors and try again.`
   }
   if (request.params.name === "list_meta_crons") {
     const { workspace_path } = request.params.arguments;
-    if (!workspace_path) throw new Error("Missing workspace_path");
+    requireParams("list_meta_crons", request.params.arguments, ["workspace_path"]);
     const crontab = loadCrontab(workspace_path);
     if (!crontab || crontab.crons.length === 0) {
       return { content: [{ type: "text", text: "No Meta-Cron entries registered." }] };
@@ -5779,7 +5784,7 @@ Max concurrent: ${crontab.max_concurrent}`;
   }
   if (request.params.name === "remove_meta_cron") {
     const { id, workspace_path } = request.params.arguments;
-    if (!id || !workspace_path) throw new Error("Missing required fields: id, workspace_path");
+    requireParams("remove_meta_cron", request.params.arguments, ["id", "workspace_path"]);
     const crontab = loadCrontab(workspace_path);
     if (!crontab) return { content: [{ type: "text", text: "No crontab found." }] };
     const idx = crontab.crons.findIndex((cr) => cr.id === id);
