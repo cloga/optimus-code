@@ -99,6 +99,19 @@ Write a patrol report to `.optimus/reports/daily-ops-<YYYY-MM-DD>.md` with:
 - Items deferred (over budget or report-only)
 - Recommendations for human review
 
+### Phase 5: Health Log Update
+After writing the local patrol report, post a brief one-line summary as a comment on the System Health Log Issue.
+
+1. Read the Health Log Issue number from `.optimus/system/meta-crontab.json` field `health_log_issue`
+2. If the field is missing or `null`, skip this phase (Health Log not configured)
+3. Compose a one-line summary in one of these formats:
+   - `✅ All clear. [actions taken summary]` — no findings or only Info-level items
+   - `⚠️ [findings summary]. [actions taken]` — Low/Medium findings with actions taken
+   - `🔴 [critical findings]` — High severity findings (e.g., unreleased P0)
+4. Post via `vcs_add_comment` with `item_type: "workitem"`, `item_id: <health_log_issue>`, and the summary as `comment`
+
+In Dry-Run mode, still post to the health log but prefix the comment with `DRY RUN: `.
+
 ## Dry-Run Mode
 If Meta-Cron indicates this is a dry-run (first 3 runs), execute Phases 1-2 only. Write the report with "DRY RUN" prefix. Do NOT take any actions.
 
