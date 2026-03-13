@@ -402,18 +402,6 @@ footer{
 @keyframes fadeIn{
   from{opacity:0}to{opacity:1}
 }
-@keyframes fadeUp{
-  from{opacity:0;transform:translateY(24px)}
-  to{opacity:1;transform:translateY(0)}
-}
-.animate-on-scroll{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
-.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
-.stagger-1{transition-delay:.1s}
-.stagger-2{transition-delay:.2s}
-.stagger-3{transition-delay:.3s}
-.stagger-4{transition-delay:.4s}
-.stagger-5{transition-delay:.5s}
-.stagger-6{transition-delay:.6s}
 
 /* ========== RESPONSIVE ========== */
 @media(min-width:768px) and (max-width:1023px){
@@ -508,7 +496,7 @@ footer{
         <span class="term-dot term-dot--green"></span>
         <span class="term-titlebar-text">optimus</span>
       </div>
-      <div class="term-body" aria-live="polite">
+      <div class="term-body" aria-live="off">
         <div class="term-line term-prompt-line visible" id="termPromptLine">
           <span class="term-prompt-prefix">$ </span><span id="termTyped"></span><span class="term-cursor" id="termCursor"></span>
         </div>
@@ -533,7 +521,7 @@ footer{
         </button>
       </div>
       <!-- Screen-reader accessible full prompt text -->
-      <span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Sample prompt: Add a login page with OAuth</span>
+      <span class="sr-only" data-i18n="term_sr_prompt" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Sample prompt: Add a login page with OAuth</span>
     </div>
 
     <div class="cta-group">
@@ -954,7 +942,8 @@ var i18n={
     term_developer:"Developer \u2192 writing code",
     term_qa:"QA \u2192 running tests",
     term_result:"PR #42 merged",
-    term_copy:"Copy prompt"
+    term_copy:"Copy prompt",
+    term_sr_prompt:"Sample prompt: Add a login page with OAuth"
   },
   zh:{
     hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
@@ -1051,7 +1040,8 @@ var i18n={
     term_developer:"\u5F00\u53D1\u8005 \u2192 \u7F16\u5199\u4EE3\u7801",
     term_qa:"QA \u2192 \u8FD0\u884C\u6D4B\u8BD5",
     term_result:"PR #42 \u5DF2\u5408\u5E76",
-    term_copy:"\u590D\u5236\u63D0\u793A\u8BCD"
+    term_copy:"\u590D\u5236\u63D0\u793A\u8BCD",
+    term_sr_prompt:"\u793A\u4F8B\u63D0\u793A\u8BCD\uFF1A\u6DFB\u52A0\u4E00\u4E2A\u5E26 OAuth \u7684\u767B\u5F55\u9875\u9762"
   }
 };
 
