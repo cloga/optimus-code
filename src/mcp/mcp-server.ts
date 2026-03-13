@@ -22,6 +22,7 @@ import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 import { agentSignature } from "../utils/agentSignature";
 import { validateRoleNotModelName, validateEngineAndModel, looksLikeModelName } from "../utils/validateMcpInput";
+import { resolveRoleName, resolveRoleNames, getRegisteredRoles } from "../utils/resolveRoleName";
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
 function requireParams(toolName: string, params: Record<string, any>, required: string[]): void {
@@ -547,6 +548,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
+    // Resolve role alias to canonical name before validation
+    role = resolveRoleName(role, workspace_path);
+
     // Input validation gateway — hard rejection with actionable messages
     validateRoleNotModelName(role);
     validateEngineAndModel(role_engine, role_model, workspace_path);
@@ -598,6 +602,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!Array.isArray(roles) || roles.length === 0) {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for dispatch_council_async: 'roles' must be a non-empty array of expert role names (e.g., ['security-expert', 'performance-tyrant'])");
     }
+
+    // Resolve role aliases to canonical names
+    roles = resolveRoleNames(roles, workspace_path);
 
     // Input validation gateway — reject model names passed as council roles
     const modelAsRole = roles.find((r: string) => looksLikeModelName(r));
@@ -658,6 +665,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for dispatch_council: 'roles' must be a non-empty array of expert role names (e.g., ['security-expert', 'performance-tyrant'])");
     }
 
+    // Resolve workspace first (needed for alias resolution)
+    let workspacePath: string;
+    const optimusIndex = proposal_path.indexOf('.optimus');
+    if (optimusIndex !== -1) {
+      workspacePath = proposal_path.substring(0, optimusIndex);
+    } else {
+      workspacePath = path.resolve(path.dirname(proposal_path));
+    }
+
+    // Resolve role aliases to canonical names
+    roles = resolveRoleNames(roles, workspacePath);
+
     // Input validation gateway — reject model names passed as council roles
     const modelAsRoleSync = roles.find((r: string) => looksLikeModelName(r));
     if (modelAsRoleSync) {
@@ -673,19 +692,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentSync) ? undefined : rawParentSync);
-    
-    // Resolve workspace root from the proposal_path instead of process.cwd().
-    // Global MCP servers boot in the user home directory, so we must calculate the project root dynamically.
-    // Assuming proposal_path is something like <ProjectRoot>/.optimus/PROPOSAL_xxx.md
-    let workspacePath: string;
-    const optimusIndex = proposal_path.indexOf('.optimus');
-    if (optimusIndex !== -1) {
-      workspacePath = proposal_path.substring(0, optimusIndex);
-    } else {
-      // Fallback: proposal file is not under .optimus/, treat its parent directory as the workspace root.
-      // This preserves backward compatibility but callers should pass a path inside .optimus/.
-      workspacePath = path.resolve(path.dirname(proposal_path));
-    }
 
     const timestampId = Date.now();
     const reviewsPath = path.join(workspacePath, ".optimus", "reviews", timestampId.toString());
@@ -845,6 +851,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       roster += "(No project roles directory found)\n";
     }
 
+    // Show role aliases from registry
+    const registeredRoles = getRegisteredRoles(workspace_path);
+    if (registeredRoles.length > 0) {
+      roster += "\n### Role Aliases (Quick Reference)\n";
+      const byCategory: Record<string, Array<{ canonical: string; aliases: string[] }>> = {};
+      for (const r of registeredRoles) {
+        const cat = r.category || "uncategorized";
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push({ canonical: r.canonical, aliases: r.aliases });
+      }
+      for (const [cat, roles] of Object.entries(byCategory)) {
+        const roleStrs = roles.map(r => {
+          const aliasStr = r.aliases.length > 0 ? ` (aliases: ${r.aliases.join(', ')})` : '';
+          return `${r.canonical}${aliasStr}`;
+        }).join(', ');
+        roster += `**${cat}**: ${roleStrs}\n`;
+      }
+      roster += "*Tip: You can use any alias in delegate_task — it auto-resolves to the canonical name.*\n";
+    }
+
     // Show T3 usage stats if available
     const t3LogPath = path.join(workspace_path, '.optimus', 'state', 't3-usage-log.json');
     if (fs.existsSync(t3LogPath)) {
@@ -922,6 +948,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
          workspace_path = output_path.split("optimus-code")[0] + "optimus-code";
        }
     }
+
+    // Resolve role alias to canonical name before validation
+    role = resolveRoleName(role, workspace_path);
 
     // Input validation gateway — hard rejection with actionable messages
     validateRoleNotModelName(role);

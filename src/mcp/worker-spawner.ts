@@ -22,6 +22,7 @@ import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
 import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
+import { registerRole } from "../utils/resolveRoleName";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -291,6 +292,7 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
                 }
                 fs.writeFileSync(t2Path, finalContent, 'utf8');
                 console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 from plugin template at ${t2Path}`);
+                registerRole(workspacePath, safeRole, desc);
                 return t2Path;
             }
         } catch (e: any) { console.error(`[Precipitation] Warning: failed to process plugin template: ${e.message}`); }
@@ -348,6 +350,7 @@ ${desc}
 `;
         fs.writeFileSync(t2Path, template, 'utf8');
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (thin) at ${t2Path}`);
+        registerRole(workspacePath, safeRole, desc);
         return t2Path;
     }
 
@@ -355,6 +358,7 @@ ${desc}
     try {
         await generateRichT2Role(workspacePath, role, validatedEng, validatedMod || undefined, desc, t2Path, currentDepthLocal);
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via role-creator) at ${t2Path}`);
+        registerRole(workspacePath, safeRole, desc);
         return t2Path;
     } catch (err: any) {
         // Do NOT write a thin fallback — let the role remain T3 and retry next invocation
