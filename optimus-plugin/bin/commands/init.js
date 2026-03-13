@@ -155,56 +155,21 @@ module.exports = function init() {
     }
   }
 
-  // 5. Inject reference into existing AI client instruction files (do NOT create new ones)
-  // Single source of truth: .optimus/config/system-instructions.md (also served via MCP Resource)
-  const injectMarker = '<!-- optimus-instructions -->';
-  const injectBlock = [
-    injectMarker,
-    '<!-- Auto-injected by optimus init — DO NOT EDIT this block -->',
-    '## Optimus Swarm Instructions',
-    '',
-    'This project uses the [Optimus Spartan Swarm](https://github.com/cloga/optimus-code) multi-agent orchestrator.',
-    'System instructions are maintained in `.optimus/config/system-instructions.md` and served via MCP Resource `optimus://system/instructions`.',
-    '',
-    'Please read and follow `.optimus/config/system-instructions.md` for all workflow protocols.',
-    '<!-- /optimus-instructions -->',
-  ].join('\n');
+  // 5. Inject system-instructions reference into IDE client config files
+  const { injectSystemInstructions } = require('../lib/inject');
+  const injectResult = injectSystemInstructions(cwd);
 
-  let injected = [];
-
-  // Claude Code: CLAUDE.md (only if it already exists)
-  const claudeMdPath = path.join(cwd, 'CLAUDE.md');
-  if (fs.existsSync(claudeMdPath)) {
-    const existing = fs.readFileSync(claudeMdPath, 'utf8');
-    if (!existing.includes(injectMarker)) {
-      fs.appendFileSync(claudeMdPath, '\n\n' + injectBlock + '\n');
-      injected.push('CLAUDE.md');
-    }
+  if (injectResult.created.length > 0) {
+    console.log('\n📝 Created IDE instruction files with Optimus reference:');
+    for (const f of injectResult.created) console.log(`  + ${f}`);
   }
-
-  // GitHub Copilot: .github/copilot-instructions.md (only if it already exists)
-  const copilotPath = path.join(cwd, '.github', 'copilot-instructions.md');
-  if (fs.existsSync(copilotPath)) {
-    const existing = fs.readFileSync(copilotPath, 'utf8');
-    if (!existing.includes(injectMarker)) {
-      fs.appendFileSync(copilotPath, '\n\n' + injectBlock + '\n');
-      injected.push('.github/copilot-instructions.md');
-    }
+  if (injectResult.injected.length > 0) {
+    console.log('\n🔗 Injected Optimus reference into existing files:');
+    for (const f of injectResult.injected) console.log(`  → ${f}`);
   }
-
-  // Cursor: .cursor/rules/ (only if directory already exists)
-  const cursorRulesDir = path.join(cwd, '.cursor', 'rules');
-  if (fs.existsSync(cursorRulesDir)) {
-    const cursorRulePath = path.join(cursorRulesDir, 'optimus.mdc');
-    if (!fs.existsSync(cursorRulePath)) {
-      fs.writeFileSync(cursorRulePath, injectBlock + '\n', 'utf8');
-      injected.push('.cursor/rules/optimus.mdc');
-    }
-  }
-
-  if (injected.length > 0) {
-    console.log('\n🔗 Injected Optimus reference into existing client config(s):');
-    for (const f of injected) console.log(`  → ${f}`);
+  if (injectResult.skipped.length > 0) {
+    console.log('\n⏭️  Already configured:');
+    for (const f of injectResult.skipped) console.log(`  ✓ ${f}`);
   }
 
   console.log('\n✅ Workspace initialized! Your .optimus/ directory is ready.');

@@ -188,7 +188,20 @@ module.exports = function upgrade() {
   }
   console.log(`   📍 MCP server path: ${distPath}`);
 
-  // 7. Summary
+  // 7. Ensure system-instructions references exist in IDE instruction files
+  const { injectSystemInstructions } = require('../lib/inject');
+  const injectResult = injectSystemInstructions(cwd);
+
+  if (injectResult.created.length > 0) {
+    console.log('\n📝 Created missing IDE instruction files:');
+    for (const f of injectResult.created) console.log(`  + ${f}`);
+  }
+  if (injectResult.injected.length > 0) {
+    console.log('\n🔗 Fixed missing Optimus reference in:');
+    for (const f of injectResult.injected) console.log(`  → ${f}`);
+  }
+
+  // 8. Summary
   console.log(`\n✅ Upgrade complete: ${skillCount} skills, ${roleCount} roles, ${configCount} config files updated.`);
   console.log('   User agents and runtime data preserved.\n');
 };
