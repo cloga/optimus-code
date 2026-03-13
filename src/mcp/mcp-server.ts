@@ -22,6 +22,7 @@ import { spawn, execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 import { agentSignature } from "../utils/agentSignature";
+import { validateRoleNotModelName, validateEngineAndModel, looksLikeModelName } from "../utils/validateMcpInput";
 
 // Load environment variables: prefer DOTENV_PATH from mcp.json env mount, fallback to cwd
 function reloadEnv() {
@@ -537,18 +538,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
 
-    // Validate engine/model before persisting to TaskManifest
-    if (role_engine || role_model) {
-        const { engines: ve, models: vm } = loadValidEnginesAndModels(workspace_path);
-        if (role_engine && !isValidEngine(role_engine, ve)) {
-            console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve.join(', ')}`);
-            role_engine = undefined;
-            role_model = undefined; // engine invalid → discard model
-        } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
-            console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(', ')}`);
-            role_model = undefined;
-        }
-    }
+    // Input validation gateway — hard rejection with actionable messages
+    validateRoleNotModelName(role);
+    validateEngineAndModel(role_engine, role_model, workspace_path);
 
     // Resolve parent issue: explicit param > env var > undefined (with NaN guard)
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
@@ -597,6 +589,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
     }
 
+    // Input validation gateway — reject model names passed as council roles
+    const modelAsRole = roles.find((r: string) => looksLikeModelName(r));
+    if (modelAsRole) {
+        throw new McpError(
+            ErrorCode.InvalidParams,
+            `Council role '${modelAsRole}' looks like a model name, not a role name. ` +
+            `Use role names like 'security-expert' or 'performance-tyrant'. ` +
+            `Council roles do not accept engine/model parameters — they use project defaults.`
+        );
+    }
+
     // Resolve parent issue: explicit param > env var > undefined (with NaN guard)
     const rawParentAsync2 = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
@@ -642,6 +645,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
+    }
+
+    // Input validation gateway — reject model names passed as council roles
+    const modelAsRoleSync = roles.find((r: string) => looksLikeModelName(r));
+    if (modelAsRoleSync) {
+        throw new McpError(
+            ErrorCode.InvalidParams,
+            `Council role '${modelAsRoleSync}' looks like a model name, not a role name. ` +
+            `Use role names like 'security-expert' or 'performance-tyrant'. ` +
+            `Council roles do not accept engine/model parameters — they use project defaults.`
+        );
     }
 
     // Resolve parent issue: explicit param > env var > undefined
@@ -899,18 +913,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
        }
     }
 
-    // Validate engine/model before passing to delegateTaskSingle
-    if (role_engine || role_model) {
-        const { engines: ve, models: vm } = loadValidEnginesAndModels(workspace_path);
-        if (role_engine && !isValidEngine(role_engine, ve)) {
-            console.error(`[T2 Guard] Rejected invalid engine '${role_engine}' for role '${role}'. Valid: ${ve.join(', ')}`);
-            role_engine = undefined;
-            role_model = undefined; // engine invalid → discard model
-        } else if (role_model && role_engine && !isValidModel(role_model, role_engine, vm)) {
-            console.error(`[T2 Guard] Rejected invalid model '${role_model}' for engine '${role_engine}' on role '${role}'. Valid: ${(vm[role_engine] || []).join(', ')}`);
-            role_model = undefined;
-        }
-    }
+    // Input validation gateway — hard rejection with actionable messages
+    validateRoleNotModelName(role);
+    validateEngineAndModel(role_engine, role_model, workspace_path);
 
     const sessionId = crypto.randomUUID();
     const workspacePath = workspace_path;
