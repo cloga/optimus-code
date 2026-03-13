@@ -29,6 +29,12 @@ export async function createGitHubIssue(
     const token = getToken();
     if (!token) return null;
 
+    // Defense-in-depth: ensure optimus-bot label is always present
+    const issueLabels = Array.isArray(labels) ? [...labels] : [];
+    if (!issueLabels.includes('optimus-bot')) {
+        issueLabels.push('optimus-bot');
+    }
+
     try {
         const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
             method: "POST",
@@ -38,12 +44,17 @@ export async function createGitHubIssue(
                 "Content-Type": "application/json",
                 "User-Agent": "Optimus-Agent"
             },
-            body: JSON.stringify({ title, body, labels })
+            body: JSON.stringify({ title, body, labels: issueLabels })
         });
-        if (!resp.ok) return null;
+        if (!resp.ok) {
+            const errText = await resp.text().catch(() => '(unreadable)');
+            console.error(`[githubApi] createGitHubIssue failed: ${resp.status} ${errText}`);
+            return null;
+        }
         const data: any = await resp.json();
         return { number: data.number, html_url: data.html_url };
-    } catch {
+    } catch (err: any) {
+        console.error(`[githubApi] createGitHubIssue exception: ${err.message}`);
         return null;
     }
 }
