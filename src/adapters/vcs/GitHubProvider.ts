@@ -259,32 +259,48 @@ export class GitHubProvider implements IVcsProvider {
 
         // Both issues and PRs use the same comments endpoint in GitHub
         try {
-            let url = `https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/comments`;
+            const allComments: VcsComment[] = [];
+            let url: string | null = `https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/comments?per_page=100`;
             if (since) {
-                url += `?since=${encodeURIComponent(since)}`;
+                url += `&since=${encodeURIComponent(since)}`;
             }
 
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Optimus-Agent'
+            while (url) {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'User-Agent': 'Optimus-Agent'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
                 }
-            });
 
-            if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                const data = await response.json() as any[];
+                for (const comment of data) {
+                    allComments.push({
+                        id: comment.id,
+                        author: comment.user?.login || 'unknown',
+                        author_association: comment.author_association,
+                        body: comment.body || '',
+                        created_at: comment.created_at
+                    });
+                }
+
+                // Follow Link header pagination
+                const linkHeader = response.headers.get('link');
+                url = null;
+                if (linkHeader) {
+                    const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                    if (nextMatch) {
+                        url = nextMatch[1];
+                    }
+                }
             }
 
-            const data = await response.json() as any[];
-
-            return data.map((comment: any) => ({
-                id: comment.id,
-                author: comment.user?.login || 'unknown',
-                author_association: comment.author_association,
-                body: comment.body || '',
-                created_at: comment.created_at
-            }));
+            return allComments;
         } catch (error: any) {
             throw new Error(`Failed to get GitHub comments: ${error.message}`);
         }

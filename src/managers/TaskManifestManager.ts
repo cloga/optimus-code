@@ -52,6 +52,7 @@ export interface TaskRecord {
     pause_count?: number;
     human_answer?: string;
     max_pause_timeout_ms?: number;
+    resume_task_id?: string;
 }
 
 export class TaskManifestManager {

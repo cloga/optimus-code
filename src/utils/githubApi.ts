@@ -120,32 +120,49 @@ export async function getIssueComments(
     if (!token) return [];
 
     try {
-        let url = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`;
+        const allComments: GitHubCommentResult[] = [];
+        let url: string | null = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=100`;
         if (since) {
-            url += `?since=${encodeURIComponent(since)}`;
+            url += `&since=${encodeURIComponent(since)}`;
         }
 
-        const resp = await fetch(url, {
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "Optimus-Agent"
+        while (url) {
+            const resp = await fetch(url, {
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Optimus-Agent"
+                }
+            });
+
+            if (!resp.ok) {
+                console.error(`[githubApi] getIssueComments failed: ${resp.status}`);
+                return allComments;
             }
-        });
 
-        if (!resp.ok) {
-            console.error(`[githubApi] getIssueComments failed: ${resp.status}`);
-            return [];
+            const data: any[] = await resp.json() as any[];
+            for (const c of data) {
+                allComments.push({
+                    id: c.id,
+                    author: c.user?.login || 'unknown',
+                    author_association: c.author_association || '',
+                    body: c.body || '',
+                    created_at: c.created_at
+                });
+            }
+
+            // Follow Link header pagination
+            const linkHeader = resp.headers.get('link');
+            url = null;
+            if (linkHeader) {
+                const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                if (nextMatch) {
+                    url = nextMatch[1];
+                }
+            }
         }
 
-        const data: any[] = await resp.json() as any[];
-        return data.map((c: any) => ({
-            id: c.id,
-            author: c.user?.login || 'unknown',
-            author_association: c.author_association || '',
-            body: c.body || '',
-            created_at: c.created_at
-        }));
+        return allComments;
     } catch (err: any) {
         console.error(`[githubApi] getIssueComments exception: ${err.message}`);
         return [];

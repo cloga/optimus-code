@@ -258,7 +258,7 @@ export class MetaCronEngine {
             try {
                 const manifest = TaskManifestManager.loadManifest(ws);
                 const task = manifest[taskId];
-                if (task && (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input')) {
+                if (task && (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded')) {
                     clearInterval(checkInterval);
                     deleteLock(ws, entryId);
                     MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);

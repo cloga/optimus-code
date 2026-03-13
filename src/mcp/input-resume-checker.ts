@@ -3,7 +3,7 @@ import path from "path";
 import { spawn } from "child_process";
 import { TaskManifestManager, TaskRecord } from "../managers/TaskManifestManager";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
-import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
+import { sanitizeExternalContent, wrapUntrusted } from "../utils/sanitizeExternalContent";
 import { AgentLockManager } from "./worker-spawner";
 
 const DEFAULT_PAUSE_TIMEOUT_MS = 48 * 60 * 60 * 1000; // 48 hours
@@ -126,19 +126,20 @@ async function processAwaitingTask(
         // Sanitize the human answer
         const { sanitized: sanitizedAnswer } = sanitizeExternalContent(answer.body, `human-answer:issue-${task.github_issue_number}`);
 
-        // Atomically update task
-        TaskManifestManager.updateTask(workspacePath, task.taskId, {
-            status: 'running',
-            human_answer: sanitizedAnswer,
-            heartbeatTime: Date.now()
-        });
-
         // Build resume context for the fresh agent
         const resumeTaskDescription = buildResumeContext(task, sanitizedAnswer);
 
         // Create a new task record for the resume agent
         const resumeTaskId = `resume_${task.taskId}_${Date.now()}`;
         const outputPath = task.output_path || `.optimus/results/resume_${task.taskId}.md`;
+
+        // Mark original task as completed (not running) to prevent the reaper from killing it.
+        // Only the new resume task should be in running state.
+        TaskManifestManager.updateTask(workspacePath, task.taskId, {
+            status: 'completed',
+            human_answer: sanitizedAnswer,
+            resume_task_id: resumeTaskId
+        });
 
         TaskManifestManager.createTask(workspacePath, {
             taskId: resumeTaskId,
@@ -196,7 +197,7 @@ ${task.pause_context || '(no context available)'}
 ${task.pause_question || '(no question recorded)'}
 
 ## Human's Answer
-${humanAnswer}
+${wrapUntrusted(humanAnswer, 'human-answer')}
 
 ## Instructions
 Continue the original task, incorporating the human's answer. Write your final output to the same output_path.`;
