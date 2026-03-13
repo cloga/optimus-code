@@ -1,7 +1,7 @@
 /**
  * Standalone esbuild config for the Optimus MCP Plugin
  * Compiles src/mcp/mcp-server.ts → optimus-plugin/dist/mcp-server.js
- * 
+ *
  * This build is completely independent from the VS Code extension build.
  * It produces a single self-contained CJS bundle with zero vscode dependencies.
  */
@@ -21,16 +21,8 @@ async function build() {
     platform: 'node',
     target: 'node18',
     outfile: path.resolve(__dirname, 'dist', 'mcp-server.js'),
-    // CRITICAL: vscode must NEVER be bundled — it should not even be imported
-    // If it appears, the build should fail, not silently externalize it.
-    // Runtime deps are external — resolved from node_modules at runtime.
-    external: [
-      '@modelcontextprotocol/sdk',
-      '@modelcontextprotocol/sdk/*',
-      'dotenv',
-      'strip-ansi',
-      'iconv-lite',
-    ],
+    // All dependencies are fully bundled — esbuild transpiles ESM→CJS at build time.
+    // vscode guard is enforced via metafile analysis below (not via external).
     logLevel: 'info',
     metafile: true,
     tsconfig: path.resolve(__dirname, '..', 'tsconfig.json'),
@@ -50,6 +42,26 @@ async function build() {
   console.log(`\n✅ Plugin build complete (${(outputSize / 1024).toFixed(1)} KB)`);
   if (production) {
     console.log('   Mode: production (minified)');
+  }
+
+  // Post-build validation: top-10 largest bundled inputs (detect unexpected transitive deps)
+  const inputEntries = Object.entries(result.metafile.inputs)
+    .map(([file, meta]) => ({ file, bytes: meta.bytes }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 10);
+  console.log('\n📦 Top 10 largest bundled inputs:');
+  for (const entry of inputEntries) {
+    console.log(`   ${(entry.bytes / 1024).toFixed(1).padStart(7)} KB  ${entry.file}`);
+  }
+
+  // Post-build validation: verify the bundle can be require()'d without error
+  const outfile = path.resolve(__dirname, 'dist', 'mcp-server.js');
+  try {
+    require(outfile);
+    console.log('\n✅ Post-build require() check passed');
+  } catch (err) {
+    console.error(`\n🚨 FATAL: Bundle failed require() check: ${err.message}`);
+    process.exit(1);
   }
 }
 

@@ -33,14 +33,12 @@
     "ai-agents"
   ],
   "license": "MIT",
-  "dependencies": {
+  "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "dotenv": "^16.4.5",
-    "iconv-lite": "^0.6.3",
-    "strip-ansi": "6.0.1"
-  },
-  "devDependencies": {
     "esbuild": "^0.25.0",
+    "iconv-lite": "^0.6.3",
+    "strip-ansi": "^7.2.0",
     "typescript": "^5.8.2"
   }
 }
