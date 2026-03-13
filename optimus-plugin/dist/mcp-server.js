@@ -29819,7 +29819,9 @@ function saveCrontab(workspacePath, data) {
   const crontabPath = getCrontabPath(workspacePath);
   const dir = import_path4.default.dirname(crontabPath);
   if (!import_fs4.default.existsSync(dir)) import_fs4.default.mkdirSync(dir, { recursive: true });
-  import_fs4.default.writeFileSync(crontabPath, JSON.stringify(data, null, 2), "utf8");
+  const tmpPath = crontabPath + ".tmp";
+  import_fs4.default.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf8");
+  import_fs4.default.renameSync(tmpPath, crontabPath);
 }
 var MetaCronEngine = class _MetaCronEngine {
   static interval = null;
