@@ -43,6 +43,12 @@ Commonly requested domain roles:
 - `product-expert`: User stories, requirements alignment, scope validation
 - `ux-researcher`: Developer experience, API ergonomics, onboarding friction
 
+### First Principles Directive
+
+At least one expert in every council SHOULD approach the problem from first principles: decompose the requirements to their fundamental constraints and design upward, rather than pattern-matching against familiar solutions. This counterbalances the tendency of LLMs to reproduce training data patterns instead of reasoning from the specific problem's unique constraints.
+
+When writing the proposal for the council, include a prompt for one expert: "Ignore convention for a moment. If you were solving this problem for the first time with no existing patterns, what would you build?"
+
 ### Step 3: Dispatch the Council via MCP Tool
 1. Tell the user you have finalized the proposal and are dispatching the expert council.
 2. Use `dispatch_council_async` (preferred) or `dispatch_council`.

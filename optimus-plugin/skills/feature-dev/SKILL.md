@@ -171,6 +171,17 @@ Each architect designs from a different angle:
 PM reads all proposals, picks the best fit (or synthesizes a hybrid), and
 documents the decision with rationale.
 
+### Pre-Mortem Analysis (MANDATORY for architects)
+
+Before finalizing a design, each architect MUST perform a pre-mortem: "Assume this implementation has already shipped and failed. What caused the failure?"
+
+Include a `## Pre-Mortem` section in every architecture proposal with:
+1. Top 3 most likely failure modes
+2. How the proposed design prevents or mitigates each
+3. What monitoring or fallback would detect the failure early
+
+This catches optimism bias — LLMs tend to design for the happy path.
+
 ### Update vs Create Path Separation (MANDATORY)
 
 Before designing, explicitly classify this task:
@@ -208,6 +219,15 @@ delegate_task(
 
 Dev creates a branch, implements, builds, verifies, and **creates a PR but does
 NOT merge**. The PR stays open for review in Phase 5.
+
+### Pre-Mortem Check (before coding)
+
+Before writing code, the Dev agent must list the top 3 ways this implementation could go wrong:
+1. What existing behavior could break?
+2. What edge case is most likely to be missed?
+3. What file or module could be accidentally modified outside scope?
+
+Address each risk in the implementation. Include the list in the output report under `## Pre-Mortem Risks Addressed`.
 
 ### Test Results Format (MANDATORY)
 Every Dev agent's output report MUST include a `## Test Results` section with:
