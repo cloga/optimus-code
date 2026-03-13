@@ -183,6 +183,15 @@ Agents MAY include a `## Self-Assessment` section at the end of their output rep
 - The PM or Master reads Self-Assessment sections during review phases and decides whether to invoke `role-creator` or `skill-creator` to evolve the team
 - Self-assessment proposals feed into the existing T3→T2→T1 evolution mechanisms, not a parallel path
 
+## Post-Error Self-Recovery Protocol
+
+When a tool call or operation fails:
+1. **Read** the full error message — it contains the function name, failure detail, and often a recovery hint
+2. **Diagnose** — Identify whether this is a config issue, missing input, or a bug
+3. **Retry** with corrected inputs if the error message suggests a fix
+4. **Escalate** to the user only after 3 failed attempts
+5. **Never** silently swallow errors or assume success after failure
+
 ---
 
 # Part 2: Project-Specific Constraints (Optimus Code Repository)

@@ -7,6 +7,17 @@ import { marked } from 'marked';
  * Implements the unified VCS interface using Azure DevOps REST API.
  * Uses Personal Access Tokens (PATs) for authentication.
  */
+
+function adoRecoveryHint(status: number): string {
+    const hints: Record<number, string> = {
+        401: "Check ADO_PAT token validity and scope (Settings → Personal Access Tokens)",
+        403: "Verify PAT has required permissions for this operation (Code: Read/Write, Work Items: Read/Write/Manage)",
+        404: "Verify ADO org/project/repo names in vcs.json match your Azure DevOps instance exactly",
+        409: "Resource conflict — the item may already exist or be locked by another operation",
+    };
+    return hints[status] || "Check ADO PAT configuration and vcs.json settings";
+}
+
 export class AdoProvider implements IVcsProvider {
     private organization: string;
     private project: string;
@@ -109,7 +120,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!response.ok) {
-                throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: ${adoRecoveryHint(response.status)}`);
             }
 
             const data = await response.json() as any;
@@ -150,7 +161,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!repoResponse.ok) {
-                throw new Error(`Failed to get repository info: ${repoResponse.status}`);
+                throw new Error(`Failed to get repository info: ${repoResponse.status}. Recovery: ${adoRecoveryHint(repoResponse.status)}`);
             }
 
             const repos = await repoResponse.json() as any;
@@ -184,7 +195,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!response.ok) {
-                throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: ${adoRecoveryHint(response.status)}`);
             }
 
             const data = await response.json() as any;
@@ -321,7 +332,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: ${adoRecoveryHint(response.status)}`);
                 }
 
                 const data = await response.json() as any;
@@ -344,7 +355,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!repoResponse.ok) {
-                    throw new Error('Failed to get repository info');
+                    throw new Error('Failed to get repository info. Recovery: Verify ADO org/project/repo names in vcs.json match your Azure DevOps instance exactly');
                 }
 
                 const repos = await repoResponse.json() as any;
@@ -372,7 +383,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: ${adoRecoveryHint(response.status)}`);
                 }
 
                 const data = await response.json() as any;
