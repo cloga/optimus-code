@@ -24,6 +24,7 @@ import { agentSignature } from "../utils/agentSignature";
 import { validateRoleNotModelName, validateEngineAndModel, looksLikeModelName } from "../utils/validateMcpInput";
 import { resolveRoleName, resolveRoleNames, getRegisteredRoles } from "../utils/resolveRoleName";
 import { MetaCronEngine, loadCrontab, saveCrontab } from "./meta-cron-engine";
+import { checkAndResumeAwaitingTasks } from "./input-resume-checker";
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
 function requireParams(toolName: string, params: Record<string, any>, required: string[]): void {
@@ -493,6 +494,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "remove_meta_cron",
         description: "Remove a Meta-Cron entry by ID.",
         inputSchema: { type: "object", properties: { id: { type: "string", description: "The cron entry ID to remove" }, workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["id", "workspace_path"] }
+      },
+      {
+        name: "request_human_input",
+        description: "Request human input when an agent is blocked. Posts a question on the linked GitHub Issue and pauses the task until a human responds.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            question: { type: "string", description: "The question or decision needed from the human" },
+            context_summary: { type: "string", description: "Summary of work done so far and why the agent is blocked" },
+            options: { type: "array", items: { type: "string" }, description: "Optional: suggested answer options for the human" },
+            task_id: { type: "string", description: "The task ID of the calling agent's task (from OPTIMUS_TASK_ID env var)" },
+            workspace_path: { type: "string", description: "Absolute workspace path" }
+          },
+          required: ["question", "context_summary", "workspace_path"]
+        }
       }
     ],
   };
@@ -546,6 +562,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       details = `Task ${taskId} status: **partial** ⚠️\n\nProcess exited successfully but output artifact was not found at: \`${task.output_path}\``;
     } else if (task.status === 'failed') {
       details = `Task ${taskId} status: **failed** ❌\n\nError: ${task.error_message}`;
+    } else if (task.status === 'awaiting_input') {
+      const pauseAge = task.pause_timestamp ? Math.round((Date.now() - task.pause_timestamp) / 60000) : 0;
+      details = `Task ${taskId} status: **awaiting_input** ⏸️\n\nAgent is waiting for human input (${pauseAge}m elapsed).\n\n**Question:** ${task.pause_question || '(none)'}\n**Pause count:** ${task.pause_count || 0}/3${task.github_issue_number ? `\n**GitHub Issue:** #${task.github_issue_number}` : ''}`;
+    } else if (task.status === 'expired') {
+      details = `Task ${taskId} status: **expired** ⏰\n\nHuman input request expired without a response. ${task.error_message || ''}`;
     } else {
       details = `Task ${taskId} status: **${task.status}**`;
     }
@@ -1302,6 +1323,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: `Removed Meta-Cron entry '${id}' and cleaned up lock file.` }] };
   }
 
+  if (request.params.name === "request_human_input") {
+    const { question, context_summary, options, task_id, workspace_path } = request.params.arguments as any;
+    requireParams("request_human_input", request.params.arguments as any, ["question", "context_summary", "workspace_path"]);
+
+    const MAX_PAUSE_CYCLES = 3;
+
+    // Resolve task ID: explicit param > env var
+    const resolvedTaskId = task_id || process.env.OPTIMUS_TASK_ID;
+    if (!resolvedTaskId) {
+      throw new McpError(ErrorCode.InvalidParams, "Cannot determine task ID. Provide task_id parameter or ensure OPTIMUS_TASK_ID env var is set.");
+    }
+
+    // Look up the task in manifest
+    const manifest = TaskManifestManager.loadManifest(workspace_path);
+    const task = manifest[resolvedTaskId];
+    if (!task) {
+      throw new McpError(ErrorCode.InvalidParams, `Task '${resolvedTaskId}' not found in manifest.`);
+    }
+
+    // Check pause count limit
+    const currentPauseCount = task.pause_count || 0;
+    if (currentPauseCount >= MAX_PAUSE_CYCLES) {
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Task has reached the maximum number of pause cycles (${MAX_PAUSE_CYCLES}). You must either complete the task with available information or mark it as failed.`
+        }]
+      };
+    }
+
+    // Post formatted comment on the linked GitHub Issue
+    let commentId: string | undefined;
+    if (task.github_issue_number) {
+      try {
+        const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+        let commentBody = `🔴 **Agent Needs Human Input**\n\n**Role:** \`${task.role || 'unknown'}\`\n**Task:** ${(task.task_description || '').substring(0, 200)}${(task.task_description || '').length > 200 ? '...' : ''}\n\n### Question\n${question}\n\n### Context\n${context_summary}\n\n### How to Respond\nReply to this issue with your answer. The agent will automatically resume within ~5 minutes.`;
+
+        if (options && Array.isArray(options) && options.length > 0) {
+          commentBody += `\n\n### Suggested Options\n${options.map((o: string) => `- ${o}`).join('\n')}`;
+        }
+
+        const result = await vcsProvider.addComment('workitem', task.github_issue_number, commentBody);
+        commentId = result.id;
+      } catch (e: any) {
+        console.error(`[request_human_input] Failed to post comment on issue #${task.github_issue_number}: ${e.message}`);
+      }
+    }
+
+    // Update TaskRecord with pause state
+    TaskManifestManager.updateTask(workspace_path, resolvedTaskId, {
+      status: 'awaiting_input',
+      pause_question: question,
+      pause_context: context_summary,
+      pause_timestamp: Date.now(),
+      pause_github_comment_id: commentId ? parseInt(commentId) : undefined,
+      pause_count: currentPauseCount + 1
+    });
+
+    const issueRef = task.github_issue_number ? ` A question has been posted on issue #${task.github_issue_number}.` : ' No linked GitHub issue found — the question could not be posted externally.';
+    return {
+      content: [{
+        type: "text",
+        text: `✅ Task paused successfully. Status set to 'awaiting_input'.${issueRef}\n\nYou can now exit cleanly. A human will answer the question, and the system will automatically resume a fresh agent with the answer within ~5 minutes of the response.`
+      }]
+    };
+  }
+
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
 
@@ -1360,6 +1448,18 @@ if (process.argv.includes("--run-task")) {
     } catch (e: any) {
       console.error(`[Meta-Cron] Init failed: ${e.message}`);
     }
+
+    // Resume checker: periodically check for human answers on paused tasks
+    const resumeInterval = setInterval(async () => {
+      try {
+        const result = await checkAndResumeAwaitingTasks(workspaceRoot);
+        if (result) console.error(`[ResumeChecker] ${result}`);
+      } catch (e: any) {
+        console.error(`[ResumeChecker] Error: ${e.message}`);
+      }
+    }, 5 * 60 * 1000); // every 5 minutes
+    if (typeof resumeInterval.unref === 'function') resumeInterval.unref();
+
     process.on('SIGTERM', () => MetaCronEngine.shutdown());
     process.on('SIGINT', () => MetaCronEngine.shutdown());
   }

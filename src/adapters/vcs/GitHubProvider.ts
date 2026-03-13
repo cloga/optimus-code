@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 
 /**
  * GitHub VCS Provider Implementation
@@ -242,6 +242,67 @@ export class GitHubProvider implements IVcsProvider {
             };
         } catch (error: any) {
             throw new Error(`Failed to add GitHub comment: ${error.message}`);
+        }
+    }
+
+    async getComments(
+        itemType: 'workitem' | 'pullrequest',
+        itemId: string | number,
+        since?: string
+    ): Promise<VcsComment[]> {
+        const token = this.getToken();
+        if (!token) {
+            throw new Error('GitHub token not found in environment variables');
+        }
+
+        const id = typeof itemId === 'string' ? parseInt(itemId) : itemId;
+
+        // Both issues and PRs use the same comments endpoint in GitHub
+        try {
+            const allComments: VcsComment[] = [];
+            let url: string | null = `https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/comments?per_page=100`;
+            if (since) {
+                url += `&since=${encodeURIComponent(since)}`;
+            }
+
+            while (url) {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'User-Agent': 'Optimus-Agent'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                }
+
+                const data = await response.json() as any[];
+                for (const comment of data) {
+                    allComments.push({
+                        id: comment.id,
+                        author: comment.user?.login || 'unknown',
+                        author_association: comment.author_association,
+                        body: comment.body || '',
+                        created_at: comment.created_at
+                    });
+                }
+
+                // Follow Link header pagination
+                const linkHeader = response.headers.get('link');
+                url = null;
+                if (linkHeader) {
+                    const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                    if (nextMatch) {
+                        url = nextMatch[1];
+                    }
+                }
+            }
+
+            return allComments;
+        } catch (error: any) {
+            throw new Error(`Failed to get GitHub comments: ${error.message}`);
         }
     }
 

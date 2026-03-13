@@ -104,3 +104,67 @@ export async function closeGitHubIssue(
         return false;
     }
 }
+
+export interface GitHubCommentResult {
+    id: number;
+    author: string;
+    author_association: string;
+    body: string;
+    created_at: string;
+}
+
+export async function getIssueComments(
+    owner: string, repo: string, issueNumber: number, since?: string
+): Promise<GitHubCommentResult[]> {
+    const token = getToken();
+    if (!token) return [];
+
+    try {
+        const allComments: GitHubCommentResult[] = [];
+        let url: string | null = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=100`;
+        if (since) {
+            url += `&since=${encodeURIComponent(since)}`;
+        }
+
+        while (url) {
+            const resp = await fetch(url, {
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "Optimus-Agent"
+                }
+            });
+
+            if (!resp.ok) {
+                console.error(`[githubApi] getIssueComments failed: ${resp.status}`);
+                return allComments;
+            }
+
+            const data: any[] = await resp.json() as any[];
+            for (const c of data) {
+                allComments.push({
+                    id: c.id,
+                    author: c.user?.login || 'unknown',
+                    author_association: c.author_association || '',
+                    body: c.body || '',
+                    created_at: c.created_at
+                });
+            }
+
+            // Follow Link header pagination
+            const linkHeader = resp.headers.get('link');
+            url = null;
+            if (linkHeader) {
+                const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                if (nextMatch) {
+                    url = nextMatch[1];
+                }
+            }
+        }
+
+        return allComments;
+    } catch (err: any) {
+        console.error(`[githubApi] getIssueComments exception: ${err.message}`);
+        return [];
+    }
+}
