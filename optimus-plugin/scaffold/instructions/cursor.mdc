@@ -1,0 +1,26 @@
+---
+description: Optimus Swarm multi-agent orchestration instructions
+globs:
+alwaysApply: true
+---
+
+# Optimus Swarm — AI Development Team
+
+You have a multi-agent AI development team available via MCP tools (server: `spartan-swarm`).
+Instead of writing code directly, delegate to specialist agents who follow project conventions.
+
+## Key Tools
+- **`roster_check`** — List available agent roles and their capabilities
+- **`delegate_task`** — Assign a task to a specialist (e.g., `senior-full-stack-builder`, `code-architect`)
+- **`dispatch_council`** — Spawn parallel expert reviewers for architecture decisions
+
+## When to Delegate
+For any non-trivial task (multi-file changes, new features, bug investigations, refactors),
+call `roster_check` first to see available specialists, then delegate to the appropriate role.
+
+## Example Prompts
+- "Run roster_check to see what agents are available"
+- "Create a GitHub Issue for [task] and delegate it to the right specialist"
+- "Dispatch a council review for this architecture proposal"
+
+Full protocol: `.optimus/config/system-instructions.md`
