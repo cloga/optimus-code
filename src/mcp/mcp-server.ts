@@ -569,6 +569,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentAsync) ? undefined : rawParentAsync);
 
+    // Canonicalize output_path: resolve relative paths and scope to .optimus/results/ when needed
+    // (mirrors the sync delegate_task handler to prevent path escaping .optimus/)
+    const optimusDir = path.join(workspace_path, ".optimus");
+    const resolvedOutputPath = path.resolve(workspace_path, output_path);
+    output_path = resolvedOutputPath.startsWith(optimusDir)
+      ? resolvedOutputPath
+      : path.join(optimusDir, "results", path.basename(output_path));
+
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     TaskManifestManager.createTask(workspace_path, {
         taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [],
@@ -595,10 +603,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             issueInfo = `\n**GitHub Issue**: ${issue.html_url}`;
         }
     }
-    
-    // Spawn background process
+
+    // Spawn background process — set cwd to workspace so relative paths resolve correctly
     const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
-        detached: true, stdio: "ignore", windowsHide: true
+        detached: true, stdio: "ignore", windowsHide: true, cwd: workspace_path
     });
     child.unref();
     
@@ -656,12 +664,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
     }
     
-    // Spawn background process
+    // Spawn background process — set cwd to workspace so relative paths resolve correctly
     const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
-        detached: true, stdio: "ignore", windowsHide: true
+        detached: true, stdio: "ignore", windowsHide: true, cwd: workspace_path
     });
     child.unref();
-    
+
     return { content: [{ type: "text", text: `✅ Council spawned successfully in background.\n\n**Council ID**: ${taskId}\n**Roles**: ${roles.join(", ")}${issueInfo}\n\nUse check_task_status tool periodically with this Council ID to check completion.` }] };
   }
 

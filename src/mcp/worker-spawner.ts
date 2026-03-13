@@ -68,6 +68,16 @@ function sanitizeRoleName(role: string): string {
     return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
 }
 
+/**
+ * Normalize a Windows path to use forward slashes for safe embedding in agent prompts.
+ * Backslashes in JSON strings must be escaped (\\), and LLMs sometimes fail to do this
+ * when re-using paths from their prompt context in tool call arguments. Forward slashes
+ * are accepted by the Windows API and Node.js, and require no JSON escaping.
+ */
+function normalizePathForAgent(p: string): string {
+    return p.replace(/\\/g, '/');
+}
+
 // ─── T3 Usage Tracking & Precipitation ───
 
 // File-level mutex to prevent concurrent read-modify-write on t3-usage-log.json
@@ -826,7 +836,21 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     // T2→T1 instantiation happens AFTER task execution (when session_id is captured).
 
     const rawTaskText = fs.existsSync(taskPath) ? fs.readFileSync(taskPath, 'utf8') : taskPath;
-    const { sanitized: taskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
+    const { sanitized: sanitizedTaskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
+    // Normalize Windows backslash paths to forward slashes within the task text.
+    // LLMs often fail to escape backslashes in JSON tool call arguments, causing
+    // paths like C:\Users\foo to become C:Usersfoo when the JSON parser strips them.
+    // We replace the known workspace path and common .optimus\ relative patterns.
+    let taskText = sanitizedTaskText;
+    if (process.platform === 'win32') {
+        // Replace the absolute workspace path with its forward-slash form
+        const bsWorkspace = workspacePath.replace(/\//g, '\\');
+        const fsWorkspace = normalizePathForAgent(workspacePath);
+        taskText = taskText.split(bsWorkspace).join(fsWorkspace);
+        // Also normalize any remaining backslash-separated path segments that look like
+        // file paths (drive-letter prefix or .optimus\ or src\ etc.)
+        taskText = taskText.replace(/([A-Za-z]):\\(?=[A-Za-z])/g, '$1:/');
+    }
 
     let personaContext = "";
     if (t1Content) {
@@ -867,7 +891,7 @@ let contextContent = "";
                 contextContent += `\n--- END OF ${cf} ---\n\n`;
             } else {
                 contextContent += `--- START OF ${cf} ---\n`;
-                contextContent += `(File not found at ${absolutePath})\n`;
+                contextContent += `(File not found at ${normalizePathForAgent(absolutePath)})\n`;
                 contextContent += `--- END OF ${cf} ---\n\n`;
             }
         }
@@ -1012,7 +1036,7 @@ Please provide your complete execution result below.`;
             trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
         }
 
-        return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${outputPath}\`.`;
+        return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
     } catch (e: any) {
         // Track T3 failures too
         if (isT3) {

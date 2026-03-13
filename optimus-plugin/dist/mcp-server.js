@@ -3167,6 +3167,9 @@ function updateFrontmatter(content, updates) {
 function sanitizeRoleName(role) {
   return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
 }
+function normalizePathForAgent(p) {
+  return p.replace(/\\/g, "/");
+}
 var t3LogMutex = Promise.resolve();
 function getT3UsageLogPath(workspacePath) {
   return import_path2.default.join(workspacePath, ".optimus", "state", "t3-usage-log.json");
@@ -3762,7 +3765,14 @@ ${content}
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
   console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
   const rawTaskText = import_fs2.default.existsSync(taskPath) ? import_fs2.default.readFileSync(taskPath, "utf8") : taskPath;
-  const { sanitized: taskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
+  const { sanitized: sanitizedTaskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
+  let taskText = sanitizedTaskText;
+  if (process.platform === "win32") {
+    const bsWorkspace = workspacePath.replace(/\//g, "\\");
+    const fsWorkspace = normalizePathForAgent(workspacePath);
+    taskText = taskText.split(bsWorkspace).join(fsWorkspace);
+    taskText = taskText.replace(/([A-Za-z]):\\(?=[A-Za-z])/g, "$1:/");
+  }
   let personaContext = "";
   if (t1Content) {
     personaContext = parseFrontmatter(t1Content).body.trim();
@@ -3811,7 +3821,7 @@ ${memoryContent}
       } else {
         contextContent += `--- START OF ${cf} ---
 `;
-        contextContent += `(File not found at ${absolutePath})
+        contextContent += `(File not found at ${normalizePathForAgent(absolutePath)})
 `;
         contextContent += `--- END OF ${cf} ---
 
@@ -3958,7 +3968,7 @@ ${firstLines.trim()}
 
 **System Note**: ${personaProof}
 
-Agent has finished execution. Check standard output at \`${outputPath}\`.`;
+Agent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
   } catch (e) {
     if (isT3) {
       trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
@@ -5463,6 +5473,9 @@ Error: ${task.error_message}`;
     validateEngineAndModel(role_engine, role_model, workspace_path);
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync) ? void 0 : rawParentAsync);
+    const optimusDir = import_path5.default.join(workspace_path, ".optimus");
+    const resolvedOutputPath = import_path5.default.resolve(workspace_path, output_path);
+    output_path = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path5.default.join(optimusDir, "results", import_path5.default.basename(output_path));
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     TaskManifestManager.createTask(workspace_path, {
       taskId,
@@ -5511,7 +5524,8 @@ ${truncDesc}` + agentSignature(role, taskId),
     const child = (0, import_child_process4.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
       detached: true,
       stdio: "ignore",
-      windowsHide: true
+      windowsHide: true,
+      cwd: workspace_path
     });
     child.unref();
     return { content: [{ type: "text", text: `\u2705 Task spawned successfully in background.
@@ -5577,7 +5591,8 @@ Use check_task_status tool periodically with this task ID to check its completio
     const child = (0, import_child_process4.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
       detached: true,
       stdio: "ignore",
-      windowsHide: true
+      windowsHide: true,
+      cwd: workspace_path
     });
     child.unref();
     return { content: [{ type: "text", text: `\u2705 Council spawned successfully in background.
