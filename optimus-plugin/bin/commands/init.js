@@ -71,6 +71,13 @@ module.exports = function init() {
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
   }
 
+  // 2.1 Copy scaffold system files (crontab, lock dirs)
+  const systemSrc = path.join(scaffoldDir, 'system');
+  if (fs.existsSync(systemSrc)) {
+    console.log('\n\u23f0 Installing system scheduler config...');
+    copyDirRecursive(systemSrc, path.join(optimusDir, 'system'));
+  }
+
   // 2.5 Copy plugin roles as starter T2 templates.
   // These provide rich persona definitions for common roles (architect, pm, qa-engineer, etc.)
   // so that council reviews and delegations have meaningful agent context from day one.
