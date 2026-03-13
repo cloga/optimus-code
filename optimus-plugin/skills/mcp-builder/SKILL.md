@@ -193,6 +193,93 @@ Create an XML file with this structure:
 
 ---
 
+# Extending an Existing MCP Server
+
+When adding new tools to an existing MCP server (rather than building one from scratch), follow this streamlined process. This is the common case in established projects like Optimus.
+
+## Step 1: Understand the Existing Patterns
+
+Before writing any code, read the existing MCP server implementation end-to-end:
+1. **Schema registration**: How are tool schemas defined? (inline object vs. Zod vs. separate file)
+2. **Handler dispatch**: How does the `CallToolRequest` handler route to the right logic? (switch/case, if-chain, function map)
+3. **Parameter extraction**: How are `request.params.arguments` destructured and validated?
+4. **Response format**: What shape do successful responses use? (`text` array, `structuredContent`, etc.)
+5. **Error handling**: Is there a shared error helper? (`requireParams`, `McpError`, etc.)
+
+Match these patterns exactly. Do not introduce new patterns unless the existing ones are broken.
+
+## Step 2: Define the Tool Schema
+
+Add your tool to the `ListToolsRequest` handler alongside existing tools:
+
+```typescript
+{
+  name: "your_tool_name",
+  description: "Concise description of what this tool does and when to use it.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      required_param: { type: "string", description: "What this parameter controls" },
+      optional_param: { type: "string", description: "Optional. Defaults to X if omitted." }
+    },
+    required: ["required_param"]
+  }
+}
+```
+
+**Naming convention**: Use `snake_case` with a domain prefix matching existing tools (e.g., `vcs_create_pr`, `delegate_task`).
+
+## Step 3: Implement the Handler
+
+Add your handler branch in the `CallToolRequest` handler, following the existing pattern:
+
+```typescript
+case "your_tool_name": {
+  // 1. Extract and validate parameters
+  const { required_param, optional_param } = request.params.arguments as any;
+  requireParams("your_tool_name", request.params.arguments as any, ["required_param"]);
+
+  // 2. Input validation gateway (reject bad inputs early with actionable messages)
+  if (!isValidValue(required_param)) {
+    throw new McpError(ErrorCode.InvalidParams, "required_param must be ...");
+  }
+
+  // 3. Core logic
+  const result = await doTheThing(required_param, optional_param);
+
+  // 4. Return response in the project's standard format
+  return {
+    content: [{ type: "text", text: `✅ Success: ${result.summary}` }]
+  };
+}
+```
+
+## Step 4: Error Message Standard
+
+Every error thrown from a tool handler must be actionable:
+- **What failed**: Name the operation and the parameter that caused the failure
+- **Why it failed**: State the validation rule that was violated
+- **How to fix it**: Tell the caller exactly what value or format to use instead
+- **Recovery hint**: For external service errors (HTTP 401, 403, 404), include the specific fix (e.g., "Regenerate PAT at ...")
+
+Example:
+```
+"role 'claude-opus-4' looks like a model name, not a role name.
+ Use role_model for model selection. Valid roles: product-manager, code-reviewer, ..."
+```
+
+## Step 5: Testing Checklist
+
+Before submitting your PR:
+- [ ] `npm run build` passes with no TypeScript errors
+- [ ] New tool appears in `ListToolsRequest` output
+- [ ] Required params are validated via `requireParams` or equivalent
+- [ ] Error messages include recovery hints (not just "invalid input")
+- [ ] Response format matches existing tools (same `content` shape)
+- [ ] No new dependencies introduced unless absolutely necessary
+
+---
+
 # Reference Files
 
 ## 📚 Documentation Library

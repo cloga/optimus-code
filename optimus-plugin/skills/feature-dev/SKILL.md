@@ -218,6 +218,14 @@ Every Dev agent's output report MUST include a `## Test Results` section with:
 
 If this section is missing, the PM MUST reject the PR and send it back.
 
+### MCP Tool Development Rule
+
+When the feature involves adding or modifying MCP tools (new handlers in `mcp-server.ts`, schema changes, new tool registrations), PM MUST add `"mcp-builder"` to `required_skills` in the Dev delegation. This ensures the Dev agent reads the "Extending an Existing MCP Server" section of the mcp-builder skill before coding, which teaches pattern-matching against the existing server conventions.
+
+```
+required_skills: ["git-workflow", "mcp-builder"]
+```
+
 ---
 
 ## Phase 5: Quality Review + Merge

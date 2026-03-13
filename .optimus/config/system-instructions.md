@@ -7,17 +7,17 @@
 > These rules apply to ALL projects using the Optimus Spartan Swarm. They are shipped via `optimus init` and must NOT be modified per-project.
 
 ## Issue First Protocol
-Before any work begins, a VCS Work Item must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
+Before any work begins, a GitHub Issue must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
 
 ## Artifact Isolation
 ALL generated reports, tasks, and memory artifacts MUST be saved inside `.optimus/` subdirectories. Never write loose files to the repository root.
 
 ## Workflow
-1. **Issue First** — Create a VCS Work Item via MCP (`vcs_create_work_item`)
+1. **Issue First** — Create a GitHub Issue via MCP
 2. **Analyze & Bind** — Create `.optimus/tasks/task_issue_<ID>.md`
-3. **Plan** — Council review, results pushed back to VCS Work Item
+3. **Plan** — Council review, results pushed back to GitHub Issue
 4. **Execute** — Dev works on `feature/issue-<ID>-desc` branch
-5. **Test** — QA verifies, files bug work items for defects
+5. **Test** — QA verifies, files bug issues for defects
 6. **Approve** — PM reviews PR and merges
 
 ### Protected Branch Rule
@@ -119,14 +119,14 @@ Agent delegation is limited to a maximum of **3 nested layers** to prevent infin
 
 ## Issue Lineage Protocol (MANDATORY)
 
-When an agent creates a VCS Work Item (via `vcs_create_work_item`) and then delegates sub-tasks, it **MUST** pass its own Work Item number as `parent_issue_number` to ALL subsequent `delegate_task`, `delegate_task_async`, and `dispatch_council` calls. This ensures hierarchical traceability across multi-layer delegation.
+When an agent creates a GitHub Issue or Work Item (via `vcs_create_work_item`) and then delegates sub-tasks, it **MUST** pass its own Issue number as `parent_issue_number` to ALL subsequent `delegate_task`, `delegate_task_async`, and `dispatch_council` calls. This ensures hierarchical traceability across multi-layer delegation.
 
-The system automatically injects `OPTIMUS_PARENT_ISSUE` into child agent processes, allowing child-created Work Items to display their parent relationship. But this only works if the orchestrating agent passes `parent_issue_number` in every delegation call.
+The system automatically injects `OPTIMUS_PARENT_ISSUE` into child agent processes, allowing child-created Issues to display their parent relationship. But this only works if the orchestrating agent passes `parent_issue_number` in every delegation call.
 
-**Rule**: No `delegate_task` or `dispatch_council` call should omit `parent_issue_number` when a tracking Work Item exists for the current workflow.
+**Rule**: No `delegate_task` or `dispatch_council` call should omit `parent_issue_number` when a tracking Issue exists for the current workflow.
 
-## VCS Auto-Tagging
-All Work Items and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability across both GitHub and Azure DevOps platforms.
+## GitHub Auto-Tagging
+All Issues and PRs created via MCP tools are automatically tagged with `[Optimus]` prefix and `optimus-bot` label for traceability.
 
 ## Engineering Safety Rules
 
@@ -214,6 +214,9 @@ This repository contains **two intertwined codebases**:
 When making any code modifications to the Optimus project itself (e.g., `src/`, `optimus-plugin/`, or MCP server logic):
 1. **Agent MUST Build**: The agent must automatically run the build command (`cd optimus-plugin && npm run build`) after modifications.
 2. **Prompt User to Reload**: After a successful build, the agent **MUST explicitly and clearly prompt the user** to execute the "Developer: Reload Window" command in VS Code, as this is strictly required for the new MCP server binary to be loaded.
+
+## MCP Tool Development Standard
+When adding or modifying MCP tools in `src/mcp/mcp-server.ts`, agents MUST use the `mcp-builder` skill (`required_skills: ["mcp-builder"]`). This ensures they follow the "Extending an Existing MCP Server" guide — matching existing schema patterns, handler structure, `requireParams` validation, and actionable error messages.
 
 ### Impact Rule: When making changes, ALWAYS evaluate whether the change should propagate to the plugin.
 
