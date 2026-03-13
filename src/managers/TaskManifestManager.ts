@@ -23,7 +23,7 @@ function withManifestLock<T>(fn: () => T): Promise<T> {
 export interface TaskRecord {
     taskId: string;
     type: 'delegate_task' | 'dispatch_council';
-    status: 'pending' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded';
+    status: 'pending' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired';
     role?: string;
     roles?: string[];
     task_description?: string;
@@ -44,6 +44,14 @@ export interface TaskRecord {
     delegation_depth?: number;
     role_descriptions?: Record<string, string>;
     agent_id?: string;
+    // Pause/resume fields (agent pause/resume mechanism)
+    pause_question?: string;
+    pause_context?: string;
+    pause_timestamp?: number;
+    pause_github_comment_id?: number;
+    pause_count?: number;
+    human_answer?: string;
+    max_pause_timeout_ms?: number;
 }
 
 export class TaskManifestManager {

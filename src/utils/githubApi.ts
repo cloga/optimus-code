@@ -104,3 +104,50 @@ export async function closeGitHubIssue(
         return false;
     }
 }
+
+export interface GitHubCommentResult {
+    id: number;
+    author: string;
+    author_association: string;
+    body: string;
+    created_at: string;
+}
+
+export async function getIssueComments(
+    owner: string, repo: string, issueNumber: number, since?: string
+): Promise<GitHubCommentResult[]> {
+    const token = getToken();
+    if (!token) return [];
+
+    try {
+        let url = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`;
+        if (since) {
+            url += `?since=${encodeURIComponent(since)}`;
+        }
+
+        const resp = await fetch(url, {
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "Optimus-Agent"
+            }
+        });
+
+        if (!resp.ok) {
+            console.error(`[githubApi] getIssueComments failed: ${resp.status}`);
+            return [];
+        }
+
+        const data: any[] = await resp.json() as any[];
+        return data.map((c: any) => ({
+            id: c.id,
+            author: c.user?.login || 'unknown',
+            author_association: c.author_association || '',
+            body: c.body || '',
+            created_at: c.created_at
+        }));
+    } catch (err: any) {
+        console.error(`[githubApi] getIssueComments exception: ${err.message}`);
+        return [];
+    }
+}

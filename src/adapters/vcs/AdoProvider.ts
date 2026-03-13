@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 import { marked } from 'marked';
 
 /**
@@ -399,6 +399,15 @@ export class AdoProvider implements IVcsProvider {
         } catch (error: any) {
             throw new Error(`Failed to add ADO comment: ${error.message}`);
         }
+    }
+
+    async getComments(
+        _itemType: 'workitem' | 'pullrequest',
+        _itemId: string | number,
+        _since?: string
+    ): Promise<VcsComment[]> {
+        console.error('[AdoProvider] getComments() is not yet implemented for Azure DevOps. Returning empty array.');
+        return [];
     }
 
     getProviderName(): string {

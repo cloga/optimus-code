@@ -24,6 +24,14 @@ export interface CommentResult {
     url: string;
 }
 
+export interface VcsComment {
+    id: number | string;
+    author: string;
+    author_association?: string;
+    body: string;
+    created_at: string;
+}
+
 export interface MergeResult {
     merged: boolean;
     headBranch?: string;  // source branch name (for local cleanup)
@@ -106,6 +114,20 @@ export interface IVcsProvider {
         itemId: string | number,
         comment: string
     ): Promise<CommentResult>;
+
+    /**
+     * Get comments on a work item or pull request
+     *
+     * @param itemType - Type of item ('workitem' or 'pullrequest')
+     * @param itemId - Work item or PR ID/number
+     * @param since - Optional ISO timestamp to filter comments created after this time
+     * @returns Promise with array of comments
+     */
+    getComments(
+        itemType: 'workitem' | 'pullrequest',
+        itemId: string | number,
+        since?: string
+    ): Promise<VcsComment[]>;
 
     /**
      * Get provider name for diagnostics
