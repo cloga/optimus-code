@@ -1771,11 +1771,12 @@ var import_stdio = require("@modelcontextprotocol/sdk/server/stdio.js");
 var import_types2 = require("@modelcontextprotocol/sdk/types.js");
 var import_fs4 = __toESM(require("fs"));
 var import_path4 = __toESM(require("path"));
-var import_crypto = __toESM(require("crypto"));
+var import_crypto2 = __toESM(require("crypto"));
 
 // ../src/mcp/worker-spawner.ts
 var import_fs2 = __toESM(require("fs"));
 var import_path2 = __toESM(require("path"));
+var import_crypto = __toESM(require("crypto"));
 
 // ../src/constants.ts
 var MAX_DELEGATION_DEPTH = 3;
@@ -3859,8 +3860,9 @@ ${skillContent}
 
 Please provide your complete execution result below.`;
   const isT3 = resolvedTier.startsWith("T3");
+  const lockKey = agentId || `${role}_ephemeral_${import_crypto.default.randomUUID().slice(0, 8)}`;
   const lockManager = getLockManager(workspacePath);
-  await lockManager.acquireLock(role);
+  await lockManager.acquireLock(lockKey);
   try {
     await ConcurrencyGovernor.acquire();
     await ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo, currentDepth);
@@ -3992,7 +3994,7 @@ Agent has finished execution. Check standard output at \`${outputPath}\`.`;
     throw new Error(`Worker execution failed for role '${role}' on engine '${activeEngine}': ${e.message}`);
   } finally {
     ConcurrencyGovernor.release();
-    lockManager.releaseLock(role);
+    lockManager.releaseLock(lockKey);
   }
 }
 async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath, parentDepth, parentIssueNumber, roleDescription) {
@@ -4523,7 +4525,7 @@ var import_dotenv = __toESM(require("dotenv"));
 // ../src/adapters/vcs/VcsProviderFactory.ts
 var path7 = __toESM(require("path"));
 var fs7 = __toESM(require("fs"));
-var crypto = __toESM(require("crypto"));
+var crypto2 = __toESM(require("crypto"));
 var import_child_process2 = require("child_process");
 var VcsProviderFactory = class {
   static cachedProvider = null;
@@ -4539,7 +4541,7 @@ var VcsProviderFactory = class {
     const resolvedWorkspacePath = workspacePath || process.cwd();
     const configPath = this.getConfigPath(resolvedWorkspacePath);
     const configContent = fs7.existsSync(configPath) ? fs7.readFileSync(configPath, "utf8") : "";
-    const configHash = crypto.createHash("md5").update(configContent).digest("hex");
+    const configHash = crypto2.createHash("md5").update(configContent).digest("hex");
     if (this.cachedProvider && this.cachedConfigPath === configPath && this.cachedConfigHash === configHash) {
       return this.cachedProvider;
     }
@@ -5631,7 +5633,7 @@ Memory appended to: ${memoryFile}`
     role = resolveRoleName(role, workspace_path);
     validateRoleNotModelName(role);
     validateEngineAndModel(role_engine, role_model, workspace_path);
-    const sessionId = import_crypto.default.randomUUID();
+    const sessionId = import_crypto2.default.randomUUID();
     const workspacePath = workspace_path;
     const optimusDir = import_path4.default.join(workspacePath, ".optimus");
     const resolvedOutputPath = import_path4.default.resolve(workspacePath, output_path);

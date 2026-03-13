@@ -17,6 +17,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import crypto from "crypto";
 import { AgentAdapter } from "../adapters/AgentAdapter";
 import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
@@ -906,8 +907,11 @@ Please provide your complete execution result below.`;
 
     const isT3 = resolvedTier.startsWith('T3');
 
+    // Lock by agent_id (serial for same session) or ephemeral key (parallel for independent tasks)
+    // This allows multiple tasks for the same ROLE to run in parallel when they don't share a session.
+    const lockKey = agentId || `${role}_ephemeral_${crypto.randomUUID().slice(0, 8)}`;
     const lockManager = getLockManager(workspacePath);
-    await lockManager.acquireLock(role);
+    await lockManager.acquireLock(lockKey);
     try {
         await ConcurrencyGovernor.acquire();
 
@@ -1046,7 +1050,7 @@ Please provide your complete execution result below.`;
         throw new Error(`Worker execution failed for role '${role}' on engine '${activeEngine}': ${e.message}`);
     } finally {
         ConcurrencyGovernor.release();
-        lockManager.releaseLock(role);
+        lockManager.releaseLock(lockKey);
     }
 }
 
