@@ -96,7 +96,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 },
                 parentDepth,
                 parentIssueNumber,
-                task.github_issue_number  // auto-created tracking issue
+                task.github_issue_number,  // auto-created tracking issue
+                task.agent_id
             );
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(

@@ -639,7 +639,7 @@ function loadProjectMemory(workspacePath: string, maxChars: number = 4000): stri
 /**
  * Executes a single task delegation synchronously.
  */
-export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number): Promise<string> {
+export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number, agentId?: string): Promise<string> {
     const parsedRole = parseRoleSpec(roleArg);
     const role = sanitizeRoleName(parsedRole.role);
 
@@ -678,8 +678,21 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     let resolvedTier = 'T3 (Zero-Shot Outsource)';
     let personaProof = 'No dedicated role template found in T2 or T1. Using T3 generic prompt.';
 
-    // --- T1 Lookup: glob agents/{role}_*.md, find matching engine ---
-    if (fs.existsSync(t1Dir)) {
+    // --- T1 Lookup: exact agent_id match, or glob agents/{role}_*.md ---
+    if (agentId && fs.existsSync(t1Dir)) {
+        // Exact T1 lookup by agent_id (e.g., 'product-manager_1e5b9723')
+        const exactPath = path.join(t1Dir, `${agentId}.md`);
+        if (fs.existsSync(exactPath)) {
+            t1Path = exactPath;
+            t1Content = fs.readFileSync(exactPath, 'utf8');
+            resolvedTier = `T1 (Agent Instance -> ${agentId}.md, via agent_id)`;
+            personaProof = `Resumed specific agent instance: ${t1Path}`;
+            console.error(`[Orchestrator] agent_id="${agentId}" resolved to T1 instance: ${exactPath}`);
+        } else {
+            console.error(`[Orchestrator] agent_id="${agentId}" not found at ${exactPath} — falling back to role-based lookup`);
+        }
+    }
+    if (!t1Content && fs.existsSync(t1Dir)) {
         const t1Candidates = fs.readdirSync(t1Dir)
             .filter(f => f.startsWith(`${role}_`) && f.endsWith('.md'));
         for (const candidate of t1Candidates) {

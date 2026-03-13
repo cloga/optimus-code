@@ -3605,7 +3605,7 @@ function loadProjectMemory(workspacePath, maxChars = 4e3) {
     return "";
   }
 }
-async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles, masterInfo, parentDepth, parentIssueNumber, autoIssueNumber) {
+async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles, masterInfo, parentDepth, parentIssueNumber, autoIssueNumber, agentId) {
   const parsedRole = parseRoleSpec(roleArg);
   const role = sanitizeRoleName(parsedRole.role);
   const currentDepth = parentDepth !== void 0 ? parentDepth : parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10);
@@ -3637,7 +3637,19 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   let shouldLocalize = false;
   let resolvedTier = "T3 (Zero-Shot Outsource)";
   let personaProof = "No dedicated role template found in T2 or T1. Using T3 generic prompt.";
-  if (import_fs2.default.existsSync(t1Dir)) {
+  if (agentId && import_fs2.default.existsSync(t1Dir)) {
+    const exactPath = import_path2.default.join(t1Dir, `${agentId}.md`);
+    if (import_fs2.default.existsSync(exactPath)) {
+      t1Path = exactPath;
+      t1Content = import_fs2.default.readFileSync(exactPath, "utf8");
+      resolvedTier = `T1 (Agent Instance -> ${agentId}.md, via agent_id)`;
+      personaProof = `Resumed specific agent instance: ${t1Path}`;
+      console.error(`[Orchestrator] agent_id="${agentId}" resolved to T1 instance: ${exactPath}`);
+    } else {
+      console.error(`[Orchestrator] agent_id="${agentId}" not found at ${exactPath} \u2014 falling back to role-based lookup`);
+    }
+  }
+  if (!t1Content && import_fs2.default.existsSync(t1Dir)) {
     const t1Candidates = import_fs2.default.readdirSync(t1Dir).filter((f) => f.startsWith(`${role}_`) && f.endsWith(".md"));
     for (const candidate of t1Candidates) {
       const candidatePath = import_path2.default.join(t1Dir, candidate);
@@ -4308,8 +4320,9 @@ async function runAsyncWorker(taskId, workspacePath) {
         },
         parentDepth,
         parentIssueNumber,
-        task.github_issue_number
+        task.github_issue_number,
         // auto-created tracking issue
+        task.agent_id
       );
     } else if (task.type === "dispatch_council") {
       await dispatchCouncilConcurrent(
@@ -4901,6 +4914,10 @@ server.setRequestHandler(import_types2.ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
+            },
+            agent_id: {
+              type: "string",
+              description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation. Use this for multi-phase workflows where the same agent must retain context across delegations."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]
@@ -4953,6 +4970,10 @@ server.setRequestHandler(import_types2.ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
+            },
+            agent_id: {
+              type: "string",
+              description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]
@@ -5204,7 +5225,7 @@ Error: ${task.error_message}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id } = request.params.arguments;
     requireParams("delegate_task_async", request.params.arguments, ["role", "task_description", "output_path", "workspace_path"]);
     role = resolveRoleName(role, workspace_path);
     validateRoleNotModelName(role);
@@ -5226,7 +5247,8 @@ Error: ${task.error_message}`;
       required_skills,
       delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10),
       parent_issue_number: parentIssueNumber,
-      role_descriptions: role_descriptions || void 0
+      role_descriptions: role_descriptions || void 0,
+      agent_id: agent_id || void 0
     });
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);
@@ -5587,7 +5609,7 @@ Memory appended to: ${memoryFile}`
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills, agent_id } = request.params.arguments;
     let workspace_path = request.params.arguments.workspace_path;
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
@@ -5612,7 +5634,7 @@ Memory appended to: ${memoryFile}`
     import_fs4.default.writeFileSync(taskArtifactPath, task_description, "utf8");
     import_fs4.default.mkdirSync(import_path4.default.dirname(canonicalOutputPath), { recursive: true });
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
-    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, void 0, parentIssueNumber);
+    const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, void 0, parentIssueNumber, void 0, agent_id);
     return {
       content: [{ type: "text", text: result }]
     };

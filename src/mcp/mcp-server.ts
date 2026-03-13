@@ -247,6 +247,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
             },
+            agent_id: {
+              type: "string",
+              description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation. Use this for multi-phase workflows where the same agent must retain context across delegations."
+            },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
         }
@@ -298,6 +302,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
+            },
+            agent_id: {
+              type: "string",
+              description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation."
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
@@ -545,7 +553,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
     // Resolve role alias to canonical name before validation
@@ -566,7 +574,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         role_description, role_engine, role_model, required_skills,
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
         parent_issue_number: parentIssueNumber,
-        role_descriptions: role_descriptions || undefined
+        role_descriptions: role_descriptions || undefined,
+        agent_id: agent_id || undefined
     });
 
     // Best-effort: auto-create GitHub Issue for traceability
@@ -931,7 +940,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: roster }]
     };
   } else if (request.params.name === "delegate_task") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills, agent_id } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;
 
     // Resolve parent issue: explicit param > env var > undefined
@@ -979,7 +988,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
     
     // 2. Delegate to the single worker pool (use canonicalOutputPath so agent writes inside .optimus/)
-      const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, undefined, parentIssueNumber);
+      const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, undefined, parentIssueNumber, undefined, agent_id);
     return {
       content: [{ type: "text", text: result }]
     };

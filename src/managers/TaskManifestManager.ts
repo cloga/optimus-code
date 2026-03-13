@@ -43,6 +43,7 @@ export interface TaskRecord {
     required_skills?: string[];
     delegation_depth?: number;
     role_descriptions?: Record<string, string>;
+    agent_id?: string;
 }
 
 export class TaskManifestManager {
