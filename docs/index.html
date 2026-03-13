@@ -35,6 +35,26 @@ a:hover{color:var(--accent)}
 
 .container{max-width:1100px;margin:0 auto;padding:0 24px}
 
+/* ========== LANGUAGE TOGGLE ========== */
+.lang-toggle{
+  position:fixed;top:20px;right:20px;z-index:1000;
+  display:flex;align-items:center;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  overflow:hidden;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+  transition:border-color .2s;
+}
+.lang-toggle:hover{border-color:var(--accent)}
+.lang-btn{
+  padding:8px 14px;font-size:.8rem;font-weight:600;
+  color:var(--text-tertiary);background:transparent;
+  border:none;cursor:pointer;transition:all .2s;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+.lang-btn.active{
+  color:#fff;background:var(--accent);
+}
+
 /* ========== HERO ========== */
 .hero{
   min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -149,16 +169,6 @@ a:hover{color:var(--accent)}
 @keyframes showCheck{
   from{opacity:0;transform:scale(.5)}
   to{opacity:1;transform:scale(1)}
-}
-
-/* Looping wrapper */
-.hero-animation{
-  animation:heroLoop 15s linear infinite;
-}
-@keyframes heroLoop{
-  0%,95%{opacity:1}
-  97%{opacity:0}
-  100%{opacity:1}
 }
 
 /* CTA buttons */
@@ -400,11 +410,17 @@ footer{
 </head>
 <body>
 
+<!-- Language Toggle -->
+<div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
+  <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
+  <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
+</div>
+
 <!-- ==================== SECTION 1: HERO ==================== -->
 <section class="hero" id="hero">
   <div class="hero-inner">
-    <h1>Your AI coding tool's operating system</h1>
-    <p class="subtitle">Turn one AI assistant into a coordinated dev team. Works with Cursor, Claude Code, Copilot, Windsurf, and any MCP client.</p>
+    <h1 data-i18n="hero_title">Your AI coding tool's operating system</h1>
+    <p class="subtitle" data-i18n="hero_subtitle">Turn one AI assistant into a coordinated dev team. Works with Cursor, Claude Code, Copilot, Windsurf, and any MCP client.</p>
 
     <div class="tool-logos" aria-label="Compatible tools">
       <span>Cursor</span>
@@ -426,29 +442,29 @@ footer{
         <!-- Master Agent node (center top) -->
         <g class="master-node">
           <circle cx="250" cy="90" r="36" fill="#141416" stroke="#3b82f6" stroke-width="2"/>
-          <text x="250" y="85" text-anchor="middle" fill="#e4e4e7" font-size="11" font-weight="600" font-family="Inter,sans-serif">Master</text>
-          <text x="250" y="99" text-anchor="middle" fill="#a1a1aa" font-size="9" font-family="Inter,sans-serif">Agent</text>
+          <text x="250" y="85" text-anchor="middle" fill="#e4e4e7" font-size="11" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_master">Master</text>
+          <text x="250" y="99" text-anchor="middle" fill="#a1a1aa" font-size="9" font-family="Inter,sans-serif" data-i18n="svg_agent">Agent</text>
         </g>
 
         <!-- Architect node -->
         <g class="agent-node" style="animation-delay:1.5s">
           <circle cx="100" cy="240" r="30" fill="#141416" stroke="#8b5cf6" stroke-width="2"/>
-          <text x="100" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">Architect</text>
-          <text x="100" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif">design</text>
+          <text x="100" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_architect">Architect</text>
+          <text x="100" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_design">design</text>
         </g>
 
         <!-- Developer node -->
         <g class="agent-node" style="animation-delay:1.8s">
           <circle cx="250" cy="250" r="30" fill="#141416" stroke="#10b981" stroke-width="2"/>
-          <text x="250" y="247" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">Developer</text>
-          <text x="250" y="260" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif">build</text>
+          <text x="250" y="247" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_developer">Developer</text>
+          <text x="250" y="260" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_build">build</text>
         </g>
 
         <!-- QA node -->
         <g class="agent-node" style="animation-delay:2.1s">
           <circle cx="400" cy="240" r="30" fill="#141416" stroke="#f59e0b" stroke-width="2"/>
           <text x="400" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">QA</text>
-          <text x="400" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif">verify</text>
+          <text x="400" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_verify">verify</text>
         </g>
 
         <!-- Outbound particles (data flowing to agents) -->
@@ -470,7 +486,7 @@ footer{
     </div>
 
     <div class="cta-group">
-      <a href="#quickstart" class="btn-primary">Get Started</a>
+      <a href="#quickstart" class="btn-primary" data-i18n="hero_cta_start">Get Started</a>
       <a href="https://github.com/cloga/optimus-code" class="btn-secondary" target="_blank" rel="noopener">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
         GitHub
@@ -480,7 +496,7 @@ footer{
     <div class="install-block" id="installCmd" role="button" tabindex="0" aria-label="Copy install command to clipboard">
       <code>npx -y github:cloga/optimus-code init</code>
       <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-      <span class="copy-tooltip" id="copyTooltip">Copied!</span>
+      <span class="copy-tooltip" id="copyTooltip" data-i18n="copied">Copied!</span>
     </div>
   </div>
 </section>
@@ -489,25 +505,25 @@ footer{
 <section id="how-it-works">
   <div class="container">
     <div class="section-header">
-      <h2>How It Works</h2>
-      <p>A self-evolving agent lifecycle</p>
+      <h2 data-i18n="how_title">How It Works</h2>
+      <p data-i18n="how_subtitle">A self-evolving agent lifecycle</p>
     </div>
 
     <div class="how-grid">
       <div class="how-card animate-on-scroll">
         <span class="how-icon" aria-hidden="true">&#9881;&#65039;</span>
-        <h3>Orchestrate</h3>
-        <p>Your AI assistant becomes a Master Agent that analyzes tasks and selects the right specialists.</p>
+        <h3 data-i18n="how_orchestrate_title">Orchestrate</h3>
+        <p data-i18n="how_orchestrate_desc">Your AI assistant becomes a Master Agent that analyzes tasks and selects the right specialists.</p>
       </div>
       <div class="how-card animate-on-scroll stagger-1">
         <span class="how-icon" aria-hidden="true">&#128640;</span>
-        <h3>Delegate</h3>
-        <p>Tasks are dispatched to specialized roles — Architect, PM, QA, Dev — that work in parallel via the Council pattern.</p>
+        <h3 data-i18n="how_delegate_title">Delegate</h3>
+        <p data-i18n="how_delegate_desc">Tasks are dispatched to specialized roles — Architect, PM, QA, Dev — that work in parallel via the Council pattern.</p>
       </div>
       <div class="how-card animate-on-scroll stagger-2">
         <span class="how-icon" aria-hidden="true">&#129516;</span>
-        <h3>Evolve</h3>
-        <p>Agents start ephemeral (T3), precipitate into templates (T2), and freeze as reusable instances (T1). Your team grows with every task.</p>
+        <h3 data-i18n="how_evolve_title">Evolve</h3>
+        <p data-i18n="how_evolve_desc">Agents start ephemeral (T3), precipitate into templates (T2), and freeze as reusable instances (T1). Your team grows with every task.</p>
       </div>
     </div>
 
@@ -515,17 +531,17 @@ footer{
     <div class="tier-flow animate-on-scroll stagger-3">
       <div class="tier-box">
         <div class="tier-label">T3</div>
-        <div class="tier-name">Ephemeral</div>
+        <div class="tier-name" data-i18n="tier_ephemeral">Ephemeral</div>
       </div>
       <div class="tier-arrow" aria-hidden="true">&#8594;</div>
       <div class="tier-box">
         <div class="tier-label">T2</div>
-        <div class="tier-name">Template</div>
+        <div class="tier-name" data-i18n="tier_template">Template</div>
       </div>
       <div class="tier-arrow" aria-hidden="true">&#8594;</div>
       <div class="tier-box">
         <div class="tier-label">T1</div>
-        <div class="tier-name">Instance</div>
+        <div class="tier-name" data-i18n="tier_instance">Instance</div>
       </div>
     </div>
   </div>
@@ -535,42 +551,42 @@ footer{
 <section id="see-it-in-action">
   <div class="container">
     <div class="section-header">
-      <h2>See It In Action</h2>
-      <p>Real workflows, not demos</p>
+      <h2 data-i18n="action_title">See It In Action</h2>
+      <p data-i18n="action_subtitle">Real workflows, not demos</p>
     </div>
 
     <div class="usecase-grid">
       <div class="usecase-card animate-on-scroll">
-        <h3>Bug Fix</h3>
+        <h3 data-i18n="action_bugfix_title">Bug Fix</h3>
         <div>
-          <span class="usecase-label label-before">Before</span>
-          <p class="usecase-before">You debug alone, context scattered across files and tabs.</p>
+          <span class="usecase-label label-before" data-i18n="label_before">Before</span>
+          <p class="usecase-before" data-i18n="action_bugfix_before">You debug alone, context scattered across files and tabs.</p>
         </div>
         <div>
-          <span class="usecase-label label-after">After</span>
-          <p class="usecase-after">PM creates issue, Architect designs fix, Dev implements, QA verifies — all tracked.</p>
+          <span class="usecase-label label-after" data-i18n="label_after">After</span>
+          <p class="usecase-after" data-i18n="action_bugfix_after">PM creates issue, Architect designs fix, Dev implements, QA verifies — all tracked.</p>
         </div>
       </div>
       <div class="usecase-card animate-on-scroll stagger-1">
-        <h3>New Feature</h3>
+        <h3 data-i18n="action_feature_title">New Feature</h3>
         <div>
-          <span class="usecase-label label-before">Before</span>
-          <p class="usecase-before">Solo agent guesses at architecture and writes everything in one pass.</p>
+          <span class="usecase-label label-before" data-i18n="label_before">Before</span>
+          <p class="usecase-before" data-i18n="action_feature_before">Solo agent guesses at architecture and writes everything in one pass.</p>
         </div>
         <div>
-          <span class="usecase-label label-after">After</span>
-          <p class="usecase-after">Council debates architecture, then Dev builds with full context and reviewed design.</p>
+          <span class="usecase-label label-after" data-i18n="label_after">After</span>
+          <p class="usecase-after" data-i18n="action_feature_after">Council debates architecture, then Dev builds with full context and reviewed design.</p>
         </div>
       </div>
       <div class="usecase-card animate-on-scroll stagger-2">
-        <h3>Code Review</h3>
+        <h3 data-i18n="action_review_title">Code Review</h3>
         <div>
-          <span class="usecase-label label-before">Before</span>
-          <p class="usecase-before">One reviewer, one perspective, blind spots everywhere.</p>
+          <span class="usecase-label label-before" data-i18n="label_before">Before</span>
+          <p class="usecase-before" data-i18n="action_review_before">One reviewer, one perspective, blind spots everywhere.</p>
         </div>
         <div>
-          <span class="usecase-label label-after">After</span>
-          <p class="usecase-after">3 expert reviewers in parallel with synthesis report — security, performance, and architecture.</p>
+          <span class="usecase-label label-after" data-i18n="label_after">After</span>
+          <p class="usecase-after" data-i18n="action_review_after">3 expert reviewers in parallel with synthesis report — security, performance, and architecture.</p>
         </div>
       </div>
     </div>
@@ -581,39 +597,39 @@ footer{
 <section id="architecture">
   <div class="container">
     <div class="section-header">
-      <h2>The Architecture</h2>
+      <h2 data-i18n="arch_title">The Architecture</h2>
     </div>
 
     <div class="arch-split">
       <div class="arch-text">
-        <p>Optimus Code is built on a Great Unification architecture — a pure Node.js MCP daemon with self-evolving agents, map-reduce councils, and issue-first SDLC. Read the full technical deep-dive.</p>
+        <p data-i18n="arch_desc">Optimus Code is built on a Great Unification architecture — a pure Node.js MCP daemon with self-evolving agents, map-reduce councils, and issue-first SDLC. Read the full technical deep-dive.</p>
         <div class="arch-stats">
-          <span class="arch-stat">3 Agent Tiers</span>
-          <span class="arch-stat">5 Core Skills</span>
-          <span class="arch-stat">Unlimited Roles</span>
-          <span class="arch-stat">Zero Config</span>
+          <span class="arch-stat" data-i18n="arch_stat_tiers">3 Agent Tiers</span>
+          <span class="arch-stat" data-i18n="arch_stat_skills">5 Core Skills</span>
+          <span class="arch-stat" data-i18n="arch_stat_roles">Unlimited Roles</span>
+          <span class="arch-stat" data-i18n="arch_stat_config">Zero Config</span>
         </div>
-        <a href="ARCHITECTURE.md" class="btn-primary">Read Architecture Whitepaper &rarr;</a>
+        <a href="ARCHITECTURE.md" class="btn-primary" data-i18n-html="arch_cta">Read Architecture Whitepaper &rarr;</a>
       </div>
       <div class="arch-graphic animate-on-scroll" aria-label="Architecture layers diagram">
         <div class="arch-layer" style="border-color:var(--accent)">
-          <div class="al-title">User Layer</div>
-          <div class="al-desc">Any MCP client</div>
+          <div class="al-title" data-i18n="arch_layer_user">User Layer</div>
+          <div class="al-desc" data-i18n="arch_layer_user_desc">Any MCP client</div>
         </div>
         <div class="arch-connector"></div>
         <div class="arch-layer" style="border-color:var(--accent-tertiary)">
-          <div class="al-title">Meta Kernel</div>
-          <div class="al-desc">Memory, cron, reflection</div>
+          <div class="al-title" data-i18n="arch_layer_kernel">Meta Kernel</div>
+          <div class="al-desc" data-i18n="arch_layer_kernel_desc">Memory, cron, reflection</div>
         </div>
         <div class="arch-connector"></div>
         <div class="arch-layer" style="border-color:#f59e0b">
-          <div class="al-title">Organization</div>
-          <div class="al-desc">PM, Architect — plan &amp; review</div>
+          <div class="al-title" data-i18n="arch_layer_org">Organization</div>
+          <div class="al-desc" data-i18n="arch_layer_org_desc">PM, Architect — plan &amp; review</div>
         </div>
         <div class="arch-connector"></div>
         <div class="arch-layer" style="border-color:var(--accent-secondary)">
-          <div class="al-title">Execution</div>
-          <div class="al-desc">Dev, QA — build &amp; test</div>
+          <div class="al-title" data-i18n="arch_layer_exec">Execution</div>
+          <div class="al-desc" data-i18n="arch_layer_exec_desc">Dev, QA — build &amp; test</div>
         </div>
       </div>
     </div>
@@ -624,39 +640,39 @@ footer{
 <section id="features">
   <div class="container">
     <div class="section-header">
-      <h2>Features</h2>
+      <h2 data-i18n="feat_title">Features</h2>
     </div>
 
     <div class="features-grid">
       <div class="feature-card animate-on-scroll">
         <span class="feat-icon" aria-hidden="true">&#128209;</span>
-        <h3>Plan Mode</h3>
-        <p>Orchestrators plan, developers code. Separation of concerns enforced by the system.</p>
+        <h3 data-i18n="feat_plan_title">Plan Mode</h3>
+        <p data-i18n="feat_plan_desc">Orchestrators plan, developers code. Separation of concerns enforced by the system.</p>
       </div>
       <div class="feature-card animate-on-scroll stagger-1">
         <span class="feat-icon" aria-hidden="true">&#128101;</span>
-        <h3>Council Pattern</h3>
-        <p>Spawn parallel expert reviews. Map-reduce consensus from multiple perspectives.</p>
+        <h3 data-i18n="feat_council_title">Council Pattern</h3>
+        <p data-i18n="feat_council_desc">Spawn parallel expert reviews. Map-reduce consensus from multiple perspectives.</p>
       </div>
       <div class="feature-card animate-on-scroll stagger-2">
         <span class="feat-icon" aria-hidden="true">&#128295;</span>
-        <h3>Skills System</h3>
-        <p>Roles define WHO. Skills define HOW. Many-to-many binding at runtime.</p>
+        <h3 data-i18n="feat_skills_title">Skills System</h3>
+        <p data-i18n="feat_skills_desc">Roles define WHO. Skills define HOW. Many-to-many binding at runtime.</p>
       </div>
       <div class="feature-card animate-on-scroll stagger-3">
         <span class="feat-icon" aria-hidden="true">&#128279;</span>
-        <h3>Issue Lineage</h3>
-        <p>Parent-child traceability across all GitHub Issues. Every delegation tracked.</p>
+        <h3 data-i18n="feat_lineage_title">Issue Lineage</h3>
+        <p data-i18n="feat_lineage_desc">Parent-child traceability across all GitHub Issues. Every delegation tracked.</p>
       </div>
       <div class="feature-card animate-on-scroll stagger-4">
         <span class="feat-icon" aria-hidden="true">&#129504;</span>
-        <h3>Memory System</h3>
-        <p>Continuous learning from project history. Past mistakes never repeated.</p>
+        <h3 data-i18n="feat_memory_title">Memory System</h3>
+        <p data-i18n="feat_memory_desc">Continuous learning from project history. Past mistakes never repeated.</p>
       </div>
       <div class="feature-card animate-on-scroll stagger-5">
         <span class="feat-icon" aria-hidden="true">&#129516;</span>
-        <h3>Self-Evolving Agents</h3>
-        <p>Ephemeral &rarr; Template &rarr; Instance. Your team grows with every task.</p>
+        <h3 data-i18n="feat_evolve_title">Self-Evolving Agents</h3>
+        <p data-i18n="feat_evolve_desc">Ephemeral &rarr; Template &rarr; Instance. Your team grows with every task.</p>
       </div>
     </div>
   </div>
@@ -666,27 +682,27 @@ footer{
 <section id="quickstart">
   <div class="container">
     <div class="section-header">
-      <h2>Get Started in 60 Seconds</h2>
+      <h2 data-i18n="qs_title">Get Started in 60 Seconds</h2>
     </div>
 
     <div class="quickstart">
       <div class="qs-step animate-on-scroll">
         <div class="qs-step-num">1</div>
-        <h3>Initialize</h3>
+        <h3 data-i18n="qs_step1_title">Initialize</h3>
         <div class="code-block">npx -y github:cloga/optimus-code init</div>
       </div>
       <div class="qs-step animate-on-scroll stagger-1">
         <div class="qs-step-num">2</div>
-        <h3>Configure (optional)</h3>
-        <p>VS Code users are auto-configured. Others: add to your MCP client config.</p>
+        <h3 data-i18n="qs_step2_title">Configure (optional)</h3>
+        <p data-i18n="qs_step2_desc">VS Code users are auto-configured. Others: add to your MCP client config.</p>
       </div>
       <div class="qs-step animate-on-scroll stagger-2">
         <div class="qs-step-num">3</div>
-        <h3>Orchestrate</h3>
+        <h3 data-i18n="qs_step3_title">Orchestrate</h3>
         <div class="code-block">"Use dispatch_council to review our design with Chief Architect and QA Engineer"</div>
       </div>
       <div class="animate-on-scroll stagger-3" style="text-align:center;margin-top:40px">
-        <a href="https://github.com/cloga/optimus-code#readme" class="btn-secondary" target="_blank" rel="noopener">Full Documentation &rarr;</a>
+        <a href="https://github.com/cloga/optimus-code#readme" class="btn-secondary" target="_blank" rel="noopener" data-i18n-html="qs_docs_link">Full Documentation &rarr;</a>
       </div>
     </div>
   </div>
@@ -696,8 +712,8 @@ footer{
 <section id="ecosystem">
   <div class="container">
     <div class="section-header">
-      <h2>Works With Everything</h2>
-      <p>Any MCP-compatible AI coding tool. No lock-in.</p>
+      <h2 data-i18n="eco_title">Works With Everything</h2>
+      <p data-i18n="eco_subtitle">Any MCP-compatible AI coding tool. No lock-in.</p>
     </div>
 
     <div class="eco-grid">
@@ -710,7 +726,7 @@ footer{
     </div>
 
     <div style="text-align:center">
-      <span class="eco-badge">Built on Model Context Protocol</span>
+      <span class="eco-badge" data-i18n="eco_badge">Built on Model Context Protocol</span>
     </div>
   </div>
 </section>
@@ -721,15 +737,226 @@ footer{
     <div class="footer-logo">Optimus Code</div>
     <div class="footer-links">
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener">Documentation</a>
-      <a href="ARCHITECTURE.md">Architecture</a>
-      <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener">MIT License</a>
+      <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener" data-i18n="footer_docs">Documentation</a>
+      <a href="ARCHITECTURE.md" data-i18n="footer_arch">Architecture</a>
+      <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
-    <div class="footer-tagline">Stop prompting. Start orchestrating.</div>
+    <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
   </div>
 </footer>
 
 <script>
+/* Translation dictionary */
+var i18n={
+  en:{
+    hero_title:"Your AI coding tool's operating system",
+    hero_subtitle:"Turn one AI assistant into a coordinated dev team. Works with Cursor, Claude Code, Copilot, Windsurf, and any MCP client.",
+    hero_cta_start:"Get Started",
+    copied:"Copied!",
+    how_title:"How It Works",
+    how_subtitle:"A self-evolving agent lifecycle",
+    how_orchestrate_title:"Orchestrate",
+    how_orchestrate_desc:"Your AI assistant becomes a Master Agent that analyzes tasks and selects the right specialists.",
+    how_delegate_title:"Delegate",
+    how_delegate_desc:"Tasks are dispatched to specialized roles \u2014 Architect, PM, QA, Dev \u2014 that work in parallel via the Council pattern.",
+    how_evolve_title:"Evolve",
+    how_evolve_desc:"Agents start ephemeral (T3), precipitate into templates (T2), and freeze as reusable instances (T1). Your team grows with every task.",
+    tier_ephemeral:"Ephemeral",
+    tier_template:"Template",
+    tier_instance:"Instance",
+    action_title:"See It In Action",
+    action_subtitle:"Real workflows, not demos",
+    action_bugfix_title:"Bug Fix",
+    label_before:"Before",
+    label_after:"After",
+    action_bugfix_before:"You debug alone, context scattered across files and tabs.",
+    action_bugfix_after:"PM creates issue, Architect designs fix, Dev implements, QA verifies \u2014 all tracked.",
+    action_feature_title:"New Feature",
+    action_feature_before:"Solo agent guesses at architecture and writes everything in one pass.",
+    action_feature_after:"Council debates architecture, then Dev builds with full context and reviewed design.",
+    action_review_title:"Code Review",
+    action_review_before:"One reviewer, one perspective, blind spots everywhere.",
+    action_review_after:"3 expert reviewers in parallel with synthesis report \u2014 security, performance, and architecture.",
+    arch_title:"The Architecture",
+    arch_desc:"Optimus Code is built on a Great Unification architecture \u2014 a pure Node.js MCP daemon with self-evolving agents, map-reduce councils, and issue-first SDLC. Read the full technical deep-dive.",
+    arch_stat_tiers:"3 Agent Tiers",
+    arch_stat_skills:"5 Core Skills",
+    arch_stat_roles:"Unlimited Roles",
+    arch_stat_config:"Zero Config",
+    arch_cta:"Read Architecture Whitepaper &rarr;",
+    arch_layer_user:"User Layer",
+    arch_layer_user_desc:"Any MCP client",
+    arch_layer_kernel:"Meta Kernel",
+    arch_layer_kernel_desc:"Memory, cron, reflection",
+    arch_layer_org:"Organization",
+    arch_layer_org_desc:"PM, Architect \u2014 plan & review",
+    arch_layer_exec:"Execution",
+    arch_layer_exec_desc:"Dev, QA \u2014 build & test",
+    feat_title:"Features",
+    feat_plan_title:"Plan Mode",
+    feat_plan_desc:"Orchestrators plan, developers code. Separation of concerns enforced by the system.",
+    feat_council_title:"Council Pattern",
+    feat_council_desc:"Spawn parallel expert reviews. Map-reduce consensus from multiple perspectives.",
+    feat_skills_title:"Skills System",
+    feat_skills_desc:"Roles define WHO. Skills define HOW. Many-to-many binding at runtime.",
+    feat_lineage_title:"Issue Lineage",
+    feat_lineage_desc:"Parent-child traceability across all GitHub Issues. Every delegation tracked.",
+    feat_memory_title:"Memory System",
+    feat_memory_desc:"Continuous learning from project history. Past mistakes never repeated.",
+    feat_evolve_title:"Self-Evolving Agents",
+    feat_evolve_desc:"Ephemeral &rarr; Template &rarr; Instance. Your team grows with every task.",
+    qs_title:"Get Started in 60 Seconds",
+    qs_step1_title:"Initialize",
+    qs_step2_title:"Configure (optional)",
+    qs_step2_desc:"VS Code users are auto-configured. Others: add to your MCP client config.",
+    qs_step3_title:"Orchestrate",
+    qs_docs_link:"Full Documentation &rarr;",
+    eco_title:"Works With Everything",
+    eco_subtitle:"Any MCP-compatible AI coding tool. No lock-in.",
+    eco_badge:"Built on Model Context Protocol",
+    footer_docs:"Documentation",
+    footer_arch:"Architecture",
+    footer_license:"MIT License",
+    footer_tagline:"Stop prompting. Start orchestrating.",
+    svg_master:"Master",
+    svg_agent:"Agent",
+    svg_architect:"Architect",
+    svg_design:"design",
+    svg_developer:"Developer",
+    svg_build:"build",
+    svg_verify:"verify"
+  },
+  zh:{
+    hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
+    hero_subtitle:"\u5C06\u4E00\u4E2A AI \u52A9\u624B\u8F6C\u53D8\u4E3A\u534F\u8C03\u7684\u5F00\u53D1\u56E2\u961F\u3002\u652F\u6301 Cursor\u3001Claude Code\u3001Copilot\u3001Windsurf \u53CA\u4EFB\u4F55 MCP \u5BA2\u6237\u7AEF\u3002",
+    hero_cta_start:"\u5F00\u59CB\u4F7F\u7528",
+    copied:"\u5DF2\u590D\u5236\uFF01",
+    how_title:"\u5DE5\u4F5C\u539F\u7406",
+    how_subtitle:"\u81EA\u8FDB\u5316\u7684\u667A\u80FD\u4F53\u751F\u547D\u5468\u671F",
+    how_orchestrate_title:"\u7F16\u6392",
+    how_orchestrate_desc:"\u4F60\u7684 AI \u52A9\u624B\u5347\u7EA7\u4E3A\u4E3B\u63A7\u667A\u80FD\u4F53\uFF0C\u5206\u6790\u4EFB\u52A1\u5E76\u9009\u62E9\u5408\u9002\u7684\u4E13\u5BB6\u3002",
+    how_delegate_title:"\u59D4\u6D3E",
+    how_delegate_desc:"\u4EFB\u52A1\u88AB\u5206\u914D\u7ED9\u4E13\u4E1A\u89D2\u8272 \u2014 \u67B6\u6784\u5E08\u3001\u4EA7\u54C1\u7ECF\u7406\u3001QA\u3001\u5F00\u53D1\u8005 \u2014 \u901A\u8FC7 Council \u6A21\u5F0F\u5E76\u884C\u5DE5\u4F5C\u3002",
+    how_evolve_title:"\u8FDB\u5316",
+    how_evolve_desc:"\u667A\u80FD\u4F53\u4ECE\u4E34\u65F6\u72B6\u6001\uFF08T3\uFF09\u6C89\u6DC0\u4E3A\u6A21\u677F\uFF08T2\uFF09\uFF0C\u518D\u51BB\u7ED3\u4E3A\u53EF\u590D\u7528\u5B9E\u4F8B\uFF08T1\uFF09\u3002\u4F60\u7684\u56E2\u961F\u968F\u6BCF\u6B21\u4EFB\u52A1\u4E0D\u65AD\u58EE\u5927\u3002",
+    tier_ephemeral:"\u4E34\u65F6\u4F53",
+    tier_template:"\u6A21\u677F",
+    tier_instance:"\u5B9E\u4F8B",
+    action_title:"\u5B9E\u6218\u6F14\u793A",
+    action_subtitle:"\u771F\u5B9E\u5DE5\u4F5C\u6D41\uFF0C\u800C\u975E\u6F14\u793A",
+    action_bugfix_title:"\u4FEE\u590D Bug",
+    label_before:"\u4F7F\u7528\u524D",
+    label_after:"\u4F7F\u7528\u540E",
+    action_bugfix_before:"\u72EC\u81EA\u8C03\u8BD5\uFF0C\u4E0A\u4E0B\u6587\u5206\u6563\u5728\u5404\u4E2A\u6587\u4EF6\u548C\u6807\u7B7E\u9875\u4E2D\u3002",
+    action_bugfix_after:"\u4EA7\u54C1\u7ECF\u7406\u521B\u5EFA Issue\uFF0C\u67B6\u6784\u5E08\u8BBE\u8BA1\u4FEE\u590D\u65B9\u6848\uFF0C\u5F00\u53D1\u8005\u5B9E\u73B0\uFF0CQA \u9A8C\u8BC1 \u2014 \u5168\u7A0B\u8FFD\u8E2A\u3002",
+    action_feature_title:"\u65B0\u529F\u80FD",
+    action_feature_before:"\u5355\u4E2A\u667A\u80FD\u4F53\u731C\u6D4B\u67B6\u6784\uFF0C\u4E00\u6B21\u6027\u5199\u5B8C\u6240\u6709\u4EE3\u7801\u3002",
+    action_feature_after:"Council \u8BA8\u8BBA\u67B6\u6784\uFF0C\u7136\u540E\u5F00\u53D1\u8005\u5728\u5B8C\u6574\u4E0A\u4E0B\u6587\u548C\u5BA1\u67E5\u8BBE\u8BA1\u4E0B\u6784\u5EFA\u3002",
+    action_review_title:"\u4EE3\u7801\u5BA1\u67E5",
+    action_review_before:"\u4E00\u4E2A\u5BA1\u67E5\u8005\uFF0C\u4E00\u4E2A\u89C6\u89D2\uFF0C\u5230\u5904\u662F\u76F2\u533A\u3002",
+    action_review_after:"3 \u4E2A\u4E13\u5BB6\u5E76\u884C\u5BA1\u67E5\uFF0C\u751F\u6210\u7EFC\u5408\u62A5\u544A \u2014 \u5B89\u5168\u3001\u6027\u80FD\u548C\u67B6\u6784\u5168\u8986\u76D6\u3002",
+    arch_title:"\u7CFB\u7EDF\u67B6\u6784",
+    arch_desc:"Optimus Code \u57FA\u4E8E\u5927\u7EDF\u4E00\u67B6\u6784\u6784\u5EFA \u2014 \u7EAF Node.js MCP \u5B88\u62A4\u8FDB\u7A0B\uFF0C\u96C6\u6210\u81EA\u8FDB\u5316\u667A\u80FD\u4F53\u3001MapReduce \u8BC4\u5BA1\u59D4\u5458\u4F1A\u548C Issue \u9A71\u52A8\u7684\u8F6F\u4EF6\u5F00\u53D1\u751F\u547D\u5468\u671F\u3002\u9605\u8BFB\u5B8C\u6574\u7684\u6280\u672F\u6DF1\u5165\u89E3\u6790\u3002",
+    arch_stat_tiers:"3 \u5C42\u667A\u80FD\u4F53",
+    arch_stat_skills:"5 \u9879\u6838\u5FC3\u6280\u80FD",
+    arch_stat_roles:"\u65E0\u9650\u89D2\u8272",
+    arch_stat_config:"\u96F6\u914D\u7F6E",
+    arch_cta:"\u9605\u8BFB\u67B6\u6784\u767D\u76AE\u4E66 &rarr;",
+    arch_layer_user:"\u7528\u6237\u5C42",
+    arch_layer_user_desc:"\u4EFB\u610F MCP \u5BA2\u6237\u7AEF",
+    arch_layer_kernel:"\u5143\u5185\u6838",
+    arch_layer_kernel_desc:"\u8BB0\u5FC6\u3001\u5B9A\u65F6\u4EFB\u52A1\u3001\u53CD\u601D",
+    arch_layer_org:"\u7EC4\u7EC7\u5C42",
+    arch_layer_org_desc:"\u4EA7\u54C1\u7ECF\u7406\u3001\u67B6\u6784\u5E08 \u2014 \u89C4\u5212\u4E0E\u5BA1\u67E5",
+    arch_layer_exec:"\u6267\u884C\u5C42",
+    arch_layer_exec_desc:"\u5F00\u53D1\u8005\u3001QA \u2014 \u6784\u5EFA\u4E0E\u6D4B\u8BD5",
+    feat_title:"\u529F\u80FD\u7279\u6027",
+    feat_plan_title:"\u89C4\u5212\u6A21\u5F0F",
+    feat_plan_desc:"\u7F16\u6392\u8005\u89C4\u5212\uFF0C\u5F00\u53D1\u8005\u7F16\u7801\u3002\u7CFB\u7EDF\u5F3A\u5236\u804C\u8D23\u5206\u79BB\u3002",
+    feat_council_title:"Council \u6A21\u5F0F",
+    feat_council_desc:"\u542F\u52A8\u5E76\u884C\u4E13\u5BB6\u5BA1\u67E5\u3002\u901A\u8FC7 MapReduce \u4ECE\u591A\u89C6\u89D2\u8FBE\u6210\u5171\u8BC6\u3002",
+    feat_skills_title:"\u6280\u80FD\u7CFB\u7EDF",
+    feat_skills_desc:"\u89D2\u8272\u5B9A\u4E49\u201C\u8C01\u201D\u3002\u6280\u80FD\u5B9A\u4E49\u201C\u600E\u4E48\u505A\u201D\u3002\u8FD0\u884C\u65F6\u591A\u5BF9\u591A\u7ED1\u5B9A\u3002",
+    feat_lineage_title:"Issue \u8FFD\u8E2A",
+    feat_lineage_desc:"\u8DE8\u6240\u6709 GitHub Issue \u7684\u7236\u5B50\u53EF\u8FFD\u6EAF\u6027\u3002\u6BCF\u6B21\u59D4\u6D3E\u5747\u88AB\u8BB0\u5F55\u3002",
+    feat_memory_title:"\u8BB0\u5FC6\u7CFB\u7EDF",
+    feat_memory_desc:"\u4ECE\u9879\u76EE\u5386\u53F2\u4E2D\u6301\u7EED\u5B66\u4E60\u3002\u8FC7\u53BB\u7684\u9519\u8BEF\u4E0D\u518D\u91CD\u590D\u3002",
+    feat_evolve_title:"\u81EA\u8FDB\u5316\u667A\u80FD\u4F53",
+    feat_evolve_desc:"\u4E34\u65F6\u4F53 &rarr; \u6A21\u677F &rarr; \u5B9E\u4F8B\u3002\u4F60\u7684\u56E2\u961F\u968F\u6BCF\u6B21\u4EFB\u52A1\u4E0D\u65AD\u58EE\u5927\u3002",
+    qs_title:"60 \u79D2\u5FEB\u901F\u5F00\u59CB",
+    qs_step1_title:"\u521D\u59CB\u5316",
+    qs_step2_title:"\u914D\u7F6E\uFF08\u53EF\u9009\uFF09",
+    qs_step2_desc:"VS Code \u7528\u6237\u81EA\u52A8\u914D\u7F6E\u3002\u5176\u4ED6\u5DE5\u5177\uFF1A\u6DFB\u52A0\u5230\u4F60\u7684 MCP \u5BA2\u6237\u7AEF\u914D\u7F6E\u5373\u53EF\u3002",
+    qs_step3_title:"\u7F16\u6392",
+    qs_docs_link:"\u5B8C\u6574\u6587\u6863 &rarr;",
+    eco_title:"\u517C\u5BB9\u6240\u6709\u5DE5\u5177",
+    eco_subtitle:"\u4EFB\u4F55 MCP \u517C\u5BB9\u7684 AI \u7F16\u7801\u5DE5\u5177\u3002\u65E0\u4F9B\u5E94\u5546\u9501\u5B9A\u3002",
+    eco_badge:"\u57FA\u4E8E Model Context Protocol \u6784\u5EFA",
+    footer_docs:"\u6587\u6863",
+    footer_arch:"\u67B6\u6784",
+    footer_license:"MIT \u8BB8\u53EF\u8BC1",
+    footer_tagline:"\u505C\u6B62\u63D0\u793A\u8BCD\u5DE5\u7A0B\u3002\u5F00\u59CB\u7F16\u6392\u3002",
+    svg_master:"\u4E3B\u63A7",
+    svg_agent:"\u667A\u80FD\u4F53",
+    svg_architect:"\u67B6\u6784\u5E08",
+    svg_design:"\u8BBE\u8BA1",
+    svg_developer:"\u5F00\u53D1\u8005",
+    svg_build:"\u6784\u5EFA",
+    svg_verify:"\u9A8C\u8BC1"
+  }
+};
+
+var currentLang='en';
+
+function setLang(lang){
+  currentLang=lang;
+  document.documentElement.lang=lang;
+  var dict=i18n[lang];
+  if(!dict)return;
+
+  /* Update all data-i18n elements (textContent) */
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    var key=el.getAttribute('data-i18n');
+    if(dict[key]!==undefined){
+      el.textContent=dict[key];
+    }
+  });
+
+  /* Update all data-i18n-html elements (innerHTML, for &rarr; etc.) */
+  document.querySelectorAll('[data-i18n-html]').forEach(function(el){
+    var key=el.getAttribute('data-i18n-html');
+    if(dict[key]!==undefined){
+      el.innerHTML=dict[key];
+    }
+  });
+
+  /* Update page title */
+  document.title=lang==='zh'
+    ?'Optimus Code \u2014 \u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF'
+    :'Optimus Code \u2014 Your AI coding tool\u2019s operating system';
+
+  /* Toggle button active state */
+  document.querySelectorAll('.lang-btn').forEach(function(btn){
+    var isActive=btn.getAttribute('data-lang')===lang;
+    btn.classList.toggle('active',isActive);
+    btn.setAttribute('aria-checked',isActive?'true':'false');
+  });
+}
+
+/* Language toggle click handler */
+(function(){
+  var toggle=document.getElementById('langToggle');
+  if(!toggle)return;
+  toggle.addEventListener('click',function(e){
+    var btn=e.target.closest('.lang-btn');
+    if(!btn)return;
+    var lang=btn.getAttribute('data-lang');
+    if(lang&&lang!==currentLang){
+      setLang(lang);
+    }
+  });
+})();
+
 /* IntersectionObserver for scroll-triggered animations */
 (function(){
   var io=new IntersectionObserver(function(entries){
