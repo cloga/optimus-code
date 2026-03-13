@@ -29,7 +29,7 @@ You cannot command an army blindly.
 
 ### Step 2: Manpower Assessment
 
-Analyze the user's task request against the roster you just retrieved. Follow the `agent-creator` meta-skill for detailed guidance on role selection and creation.
+Analyze the user's task request against the roster you just retrieved. Follow the `role-creator` meta-skill for detailed guidance on role selection and creation.
 
 * **T1 Priority (Local Project Experts)**: If the task requires deep domain knowledge of this specific project, and there is a matching T1 Expert, they MUST be your first choice.
 * **T2 Priority (Project Roles)**: If it's a general architectural, security, or universal pattern task, and a T2 Role exists, use them.

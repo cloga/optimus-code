@@ -3110,10 +3110,12 @@ function trackT3Usage(workspacePath, role, success, engine, model) {
   });
 }
 function checkRequiredSkills(workspacePath, skills) {
+  const SKILL_ALIASES = { "agent-creator": "role-creator" };
   const found = /* @__PURE__ */ new Map();
   const missing = [];
   for (const skill of skills) {
-    const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", skill, "SKILL.md");
+    const resolvedSkill = SKILL_ALIASES[skill] || skill;
+    const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", resolvedSkill, "SKILL.md");
     if (import_fs.default.existsSync(skillPath)) {
       found.set(skill, import_fs.default.readFileSync(skillPath, "utf8"));
     } else {
@@ -3235,11 +3237,11 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
   const hasExplicitDescription = !!masterInfo?.description && masterInfo.description.trim().length > 0;
   if (!hasExplicitDescription) {
     console.error(
-      `[T2 Guard] Refused to create T2 for '${safeRole}': no role_description provided by Master. Role will run as T3 zero-shot. To create a proper T2, the delegating agent should either: (1) provide a detailed role_description in delegate_task, or (2) use agent-creator to pre-create the role before delegation.`
+      `[T2 Guard] Refused to create T2 for '${safeRole}': no role_description provided by Master. Role will run as T3 zero-shot. To create a proper T2, the delegating agent should either: (1) provide a detailed role_description in delegate_task, or (2) use role-creator to pre-create the role before delegation.`
     );
     return null;
   }
-  const META_ROLES = ["agent-creator", "skill-creator"];
+  const META_ROLES = ["role-creator", "skill-creator", "agent-creator"];
   const safeRoleCheck = sanitizeRoleName(role);
   const currentDepthLocal = delegationDepth ?? 0;
   const { engines: validEnginesFallback, models: validModelsFallback } = loadValidEnginesAndModels(workspacePath);
@@ -3275,19 +3277,19 @@ ${desc}
   }
   try {
     await generateRichT2Role(workspacePath, role, validatedEng, validatedMod || void 0, desc, t2Path, currentDepthLocal);
-    console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via agent-creator) at ${t2Path}`);
+    console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via role-creator) at ${t2Path}`);
     return t2Path;
   } catch (err) {
-    console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
+    console.error(`[Precipitation] role-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
     return null;
   }
 }
 async function generateRichT2Role(workspacePath, role, engine, model, description, t2Path, delegationDepth) {
   const safeRole = sanitizeRoleName(role);
-  const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", "agent-creator", "SKILL.md");
-  let agentCreatorSkillContent = "";
+  const skillPath = import_path.default.join(workspacePath, ".optimus", "skills", "role-creator", "SKILL.md");
+  let roleCreatorSkillContent = "";
   if (import_fs.default.existsSync(skillPath)) {
-    agentCreatorSkillContent = import_fs.default.readFileSync(skillPath, "utf8");
+    roleCreatorSkillContent = import_fs.default.readFileSync(skillPath, "utf8");
   }
   const formattedRole = safeRole.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
   const prompt = `You are a role-creation specialist. Your task is to create a professional-grade T2 role template.
@@ -3298,7 +3300,7 @@ Role description: ${description}
 Engine: ${engine}
 Model: ${model || "default"}
 
-Using the agent-creator skill guidance below, produce a COMPLETE role definition file.
+Using the role-creator skill guidance below, produce a COMPLETE role definition file.
 
 The output MUST be a valid markdown file with YAML frontmatter. Output ONLY the file content \u2014 no explanations, no code fences around it.
 
@@ -3323,8 +3325,8 @@ Required body sections:
 ## Constraints
 - <2-3 behavioral boundaries>
 
-${agentCreatorSkillContent ? `=== SKILL REFERENCE ===
-${agentCreatorSkillContent}
+${roleCreatorSkillContent ? `=== SKILL REFERENCE ===
+${roleCreatorSkillContent}
 === END SKILL REFERENCE ===` : ""}`;
   const adapter = getAdapterForEngine(engine, void 0, model);
   const childDepth = delegationDepth + 1;
@@ -3334,12 +3336,12 @@ ${agentCreatorSkillContent}
   const response = await adapter.invoke(prompt, "agent", void 0, void 0, extraEnv);
   const fmStart = response.indexOf("---");
   if (fmStart === -1) {
-    throw new Error("agent-creator response did not contain valid frontmatter (no --- found)");
+    throw new Error("role-creator response did not contain valid frontmatter (no --- found)");
   }
   const content = response.slice(fmStart).trim();
   const secondDash = content.indexOf("---", 3);
   if (secondDash === -1) {
-    throw new Error("agent-creator response had opening --- but no closing frontmatter delimiter");
+    throw new Error("role-creator response had opening --- but no closing frontmatter delimiter");
   }
   const dir = import_path.default.dirname(t2Path);
   if (!import_fs.default.existsSync(dir)) import_fs.default.mkdirSync(dir, { recursive: true });
@@ -3860,20 +3862,21 @@ Agent has finished execution. Check standard output at \`${outputPath}\`.`;
     lockManager.releaseLock(role);
   }
 }
-async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath, parentDepth, parentIssueNumber) {
+async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath, parentDepth, parentIssueNumber, roleDescription) {
   try {
     console.error(`[Spawner] Launching Real Worker ${role} for council review`);
+    const masterInfo = roleDescription ? { description: roleDescription } : void 0;
     return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, void 0, void 0, parentDepth, parentIssueNumber);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, void 0, masterInfo, parentDepth, parentIssueNumber);
   } catch (err) {
     console.error(`[Spawner] Worker ${role} failed to start:`, err);
     return `\u274C ${role}: exited with errors (${err.message}).`;
   }
 }
-async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath, parentDepth, parentIssueNumber) {
+async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath, parentDepth, parentIssueNumber, roleDescriptions) {
   const promises = roles.map((role) => {
     const outputPath = import_path.default.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber);
+    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role]);
   });
   const results = await Promise.allSettled(promises);
   const succeeded = [];
@@ -4193,7 +4196,8 @@ async function runAsyncWorker(taskId, workspacePath) {
         `async_council_${taskId}`,
         task.workspacePath,
         parentDepth,
-        parentIssueNumber
+        parentIssueNumber,
+        task.role_descriptions
       );
       const reviewsPath = task.output_path;
       const synthesisPath = import_path2.default.join(reviewsPath, "COUNCIL_SYNTHESIS.md");
@@ -4658,6 +4662,11 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
+            },
+            role_descriptions: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Optional map of role name to its description. Example: { 'security': 'Security expert specializing in...' }. Used to create proper T2 role templates for council members."
             }
           },
           required: ["proposal_path", "roles"]
@@ -4803,6 +4812,11 @@ server.setRequestHandler(import_types.ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for issue lineage tracking."
+            },
+            role_descriptions: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Optional map of role name to its description. Example: { 'security': 'Security expert specializing in...' }. Used to create proper T2 role templates for council members."
             }
           },
           required: ["proposal_path", "roles", "workspace_path"]
@@ -5023,7 +5037,8 @@ Error: ${task.error_message}`;
       role_model,
       required_skills,
       delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10),
-      parent_issue_number: parentIssueNumber
+      parent_issue_number: parentIssueNumber,
+      role_descriptions: role_descriptions || void 0
     });
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);
@@ -5067,7 +5082,7 @@ ${truncDesc}` + agentSignature(role, taskId),
 Use check_task_status tool periodically with this task ID to check its completion.` }] };
   }
   if (request.params.name === "dispatch_council_async") {
-    let { proposal_path, roles, workspace_path } = request.params.arguments;
+    let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments");
     }
@@ -5124,7 +5139,7 @@ Use check_task_status tool periodically with this task ID to check its completio
 Use check_task_status tool periodically with this Council ID to check completion.` }] };
   }
   if (request.params.name === "dispatch_council") {
-    let { proposal_path, roles, workspace_path } = request.params.arguments;
+    let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || roles.length === 0) {
       throw new import_types.McpError(import_types.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path and an array of roles");
     }
@@ -5141,7 +5156,7 @@ Use check_task_status tool periodically with this Council ID to check completion
     const reviewsPath = import_path3.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
     import_fs3.default.mkdirSync(reviewsPath, { recursive: true });
     console.error(`[MCP] Dispatching council with roles: ${roles.join(", ")}`);
-    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, void 0, parentIssueNumber);
+    const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, void 0, parentIssueNumber, role_descriptions2);
     return {
       content: [
         {
@@ -5326,7 +5341,7 @@ Memory appended to: ${memoryFile}`
               const autoGenLine = fmMatch[1].split("\n").find((l) => l.startsWith("auto_generated:"));
               if (autoGenLine && autoGenLine.split(":")[1].trim() === "true") isAutoGenerated = true;
             }
-            const isMeta = skill === "agent-creator" || skill === "skill-creator";
+            const isMeta = skill === "role-creator" || skill === "agent-creator" || skill === "skill-creator";
             const nameCollision = t2RoleNames.includes(skill) ? " \u26A0\uFE0F name matches a role" : "";
             const autoTag = isAutoGenerated ? " (auto-generated)" : "";
             roster += `- ${isMeta ? "\u{1F9EC} " : ""}\`${skill}\`${desc}${autoTag}${nameCollision}
