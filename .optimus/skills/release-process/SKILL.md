@@ -47,10 +47,11 @@ Before starting, verify ALL of the following:
 - Run `cd optimus-plugin && npm run build`
 - Verify build succeeds and dist files are generated
 
-### Step 5: Documentation Check
+### Step 5: Documentation & System Prompt Sync Check
 - Verify README.md mentions all new features/commands
-- Verify system-instructions.md is up to date
 - Verify CHANGELOG.md has the new version entry
+- **Sync system-instructions.md**: Ensure `.optimus/config/system-instructions.md` and `optimus-plugin/scaffold/config/system-instructions.md` are identical. If not, copy `.optimus/config/` → `optimus-plugin/scaffold/config/`. This ensures every release ships the latest system-level prompts to end users.
+- **Sync all scaffold configs**: Similarly verify `available-agents.json`, `role-registry.json`, and `meta-crontab.json` are synced between `.optimus/config/` (or `.optimus/system/`) and `optimus-plugin/scaffold/`.
 
 ### Step 6: Clean Up
 - Ensure no stale feature branches remain: `git branch --merged master`
