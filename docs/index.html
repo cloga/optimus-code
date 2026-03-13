@@ -36,25 +36,43 @@ a:hover{color:var(--accent)}
 
 .container{max-width:1100px;margin:0 auto;padding:0 24px}
 
-/* ========== LANGUAGE TOGGLE ========== */
+/* ========== NAV BAR ========== */
+.topnav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,10,11,.85);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:14px 24px;
+}
+.topnav-inner{
+  max-width:1100px;margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.topnav-logo{font-weight:700;font-size:1rem;color:var(--text)}
+.topnav-logo:hover{color:var(--accent-hover)}
+.topnav-links{display:flex;gap:16px;align-items:center}
+.topnav-links a{font-size:.85rem;color:var(--text-tertiary);transition:color .2s}
+.topnav-links a:hover{color:var(--text)}
 .lang-toggle{
-  position:fixed;top:20px;right:20px;z-index:1000;
-  display:flex;align-items:center;
-  background:var(--surface);border:1px solid var(--border);border-radius:8px;
-  overflow:hidden;cursor:pointer;
-  box-shadow:0 4px 16px rgba(0,0,0,.3);
-  transition:border-color .2s;
+  display:inline-flex;align-items:center;
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  overflow:hidden;margin-left:8px;
 }
 .lang-toggle:hover{border-color:var(--accent)}
 .lang-btn{
-  padding:8px 14px;font-size:.8rem;font-weight:600;
+  padding:5px 10px;font-size:.75rem;font-weight:600;
   color:var(--text-tertiary);background:transparent;
   border:none;cursor:pointer;transition:all .2s;
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
-.lang-btn.active{
-  color:#fff;background:var(--accent);
+.lang-btn.active{color:#fff;background:var(--accent)}
+/* Hamburger */
+.hamburger{
+  display:none;background:none;border:1px solid var(--border);
+  border-radius:6px;padding:6px 8px;cursor:pointer;color:var(--text);line-height:0;
 }
+.hamburger:hover{border-color:var(--accent)}
+.hamburger svg{display:block}
 
 /* ========== HERO ========== */
 .hero{
@@ -96,81 +114,38 @@ a:hover{color:var(--accent)}
 .tool-logos span{opacity:0;animation:fadeIn .5s ease forwards}
 .tool-logos span:hover{border-color:var(--accent)}
 
-/* Hero animation */
-.hero-animation{
-  width:100%;max-width:500px;height:300px;margin:0 auto 40px;position:relative;
+/* Hero terminal animation */
+.hero-terminal{
+  width:100%;max-width:600px;margin:0 auto 40px;
+  background:var(--code-bg);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;text-align:left;box-shadow:0 8px 40px rgba(0,0,0,.4);
 }
-.hero-animation svg{width:100%;height:100%}
-
-/* Master node */
-.master-node{
-  animation:pulse 3s ease-in-out infinite;
+.terminal-bar{
+  display:flex;align-items:center;gap:7px;
+  padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);
 }
-@keyframes pulse{
-  0%,100%{filter:drop-shadow(0 0 8px rgba(59,130,246,.3))}
-  50%{filter:drop-shadow(0 0 20px rgba(59,130,246,.6))}
+.terminal-dot{width:10px;height:10px;border-radius:50%}
+.terminal-dot.red{background:#ff5f57}
+.terminal-dot.yellow{background:#febc2e}
+.terminal-dot.green{background:#28c840}
+.terminal-bar-title{
+  flex:1;text-align:center;font-size:.75rem;color:var(--text-tertiary);
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
 }
-
-/* Connection lines */
-.conn-line{
-  stroke-dasharray:200;
-  stroke-dashoffset:200;
-  animation:drawLine 2s ease forwards;
+.terminal-body{
+  padding:18px 22px;min-height:200px;
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.85rem;line-height:1.7;
 }
-.conn-line:nth-child(1){animation-delay:0s}
-.conn-line:nth-child(2){animation-delay:.3s}
-.conn-line:nth-child(3){animation-delay:.6s}
-@keyframes drawLine{
-  to{stroke-dashoffset:0}
-}
-
-/* Agent nodes */
-.agent-node{
-  opacity:0;
-  animation:nodeAppear .6s ease forwards;
-}
-.agent-node:nth-of-type(1){animation-delay:1.5s}
-.agent-node:nth-of-type(2){animation-delay:1.8s}
-.agent-node:nth-of-type(3){animation-delay:2.1s}
-@keyframes nodeAppear{
-  from{opacity:0;transform:scale(.8)}
-  to{opacity:1;transform:scale(1)}
-}
-
-/* Data particles */
-.particle{
-  r:3;fill:var(--accent);opacity:0;
-}
-.particle-out{
-  animation:particleOut 4s ease-in-out infinite;
-}
-.particle-in{
-  animation:particleIn 4s ease-in-out infinite;
-}
-@keyframes particleOut{
-  0%{opacity:0;offset-distance:0%}
-  10%{opacity:1}
-  50%{opacity:1;offset-distance:100%}
-  51%{opacity:0}
-  100%{opacity:0}
-}
-@keyframes particleIn{
-  0%,50%{opacity:0;offset-distance:100%}
-  60%{opacity:1}
-  90%{opacity:1;offset-distance:0%}
-  91%{opacity:0}
-  100%{opacity:0}
-}
-
-/* Checkmark */
-.check-mark{
-  opacity:0;
-  animation:showCheck .5s ease forwards 12s;
-}
-@keyframes showCheck{
-  from{opacity:0;transform:scale(.5)}
-  to{opacity:1;transform:scale(1)}
-}
+.terminal-body .line{opacity:0;white-space:pre-wrap;word-break:break-word}
+.terminal-body .line.visible{opacity:1}
+.terminal-body .prompt{color:var(--accent-secondary)}
+.terminal-body .cmd{color:var(--text)}
+.terminal-body .info{color:var(--accent)}
+.terminal-body .ok{color:var(--accent-secondary)}
+.terminal-body .muted{color:var(--text-tertiary)}
+.terminal-body .blink{display:inline-block;animation:termBlink 1s step-end infinite}
+@keyframes termBlink{0%,50%{opacity:1}51%,100%{opacity:0}}
 
 /* CTA buttons */
 .cta-group{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:24px}
@@ -392,18 +367,6 @@ footer{
   content:'\2192';position:absolute;top:12px;right:-12px;
   font-size:1.1rem;color:var(--text-tertiary);z-index:2;
 }
-@keyframes fadeUp{
-  from{opacity:0;transform:translateY(24px)}
-  to{opacity:1;transform:translateY(0)}
-}
-.animate-on-scroll{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
-.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
-.stagger-1{transition-delay:.1s}
-.stagger-2{transition-delay:.2s}
-.stagger-3{transition-delay:.3s}
-.stagger-4{transition-delay:.4s}
-.stagger-5{transition-delay:.5s}
-.stagger-6{transition-delay:.6s}
 
 /* ========== ANIMATIONS ========== */
 @keyframes fadeIn{
@@ -438,11 +401,19 @@ footer{
   .eco-grid{grid-template-columns:repeat(2,1fr)}
   section{padding:80px 0}
   .hero{padding:60px 16px 40px}
-  .hero-animation{height:220px}
   .cta-group{flex-direction:column;align-items:center}
   .btn-primary,.btn-secondary{width:100%;max-width:280px;justify-content:center}
   .tier-flow{flex-direction:column;gap:0}
   .tier-arrow{transform:rotate(90deg);padding:8px 0}
+  /* Hamburger nav */
+  .topnav-links{
+    display:none;flex-direction:column;position:absolute;
+    top:100%;left:0;right:0;background:var(--surface);
+    border-bottom:1px solid var(--border);padding:16px 24px;gap:12px;
+  }
+  .topnav-links.open{display:flex}
+  .topnav-inner{position:relative}
+  .hamburger{display:block}
   /* Workflow vertical timeline */
   .workflow-pipeline{
     flex-direction:column;align-items:flex-start;gap:0;
@@ -485,11 +456,24 @@ footer{
 </head>
 <body>
 
-<!-- Language Toggle -->
-<div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
-  <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
-  <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
-</div>
+<!-- Top Navigation -->
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">Optimus Code</a>
+    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle navigation">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="topnav-links" id="navLinks">
+      <a href="architecture.html" data-i18n="nav_architecture">Architecture</a>
+      <a href="guide.html" data-i18n="nav_tutorial">Tutorial</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
+        <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
+        <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
+      </div>
+    </div>
+  </div>
+</nav>
 
 <!-- ==================== SECTION 1: HERO ==================== -->
 <section class="hero" id="hero">
@@ -506,58 +490,23 @@ footer{
       <span>Roo Cline</span>
     </div>
 
-    <!-- Hero SVG Animation: Master Agent delegates to 3 specialists -->
-    <div class="hero-animation" role="img" aria-label="Animation showing Master Agent delegating tasks to Architect, Developer, and QA specialists">
-      <svg viewBox="0 0 500 300" xmlns="http://www.w3.org/2000/svg">
-        <!-- Connection lines (drawn first, appear behind nodes) -->
-        <line class="conn-line" x1="250" y1="110" x2="100" y2="230" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
-        <line class="conn-line" x1="250" y1="110" x2="250" y2="240" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
-        <line class="conn-line" x1="250" y1="110" x2="400" y2="230" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
-
-        <!-- Master Agent node (center top) -->
-        <g class="master-node">
-          <circle cx="250" cy="90" r="36" fill="#141416" stroke="#3b82f6" stroke-width="2"/>
-          <text x="250" y="85" text-anchor="middle" fill="#e4e4e7" font-size="11" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_master">Master</text>
-          <text x="250" y="99" text-anchor="middle" fill="#a1a1aa" font-size="9" font-family="Inter,sans-serif" data-i18n="svg_agent">Agent</text>
-        </g>
-
-        <!-- Architect node -->
-        <g class="agent-node" style="animation-delay:1.5s">
-          <circle cx="100" cy="240" r="30" fill="#141416" stroke="#8b5cf6" stroke-width="2"/>
-          <text x="100" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_architect">Architect</text>
-          <text x="100" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_design">design</text>
-        </g>
-
-        <!-- Developer node -->
-        <g class="agent-node" style="animation-delay:1.8s">
-          <circle cx="250" cy="250" r="30" fill="#141416" stroke="#10b981" stroke-width="2"/>
-          <text x="250" y="247" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif" data-i18n="svg_developer">Developer</text>
-          <text x="250" y="260" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_build">build</text>
-        </g>
-
-        <!-- QA node -->
-        <g class="agent-node" style="animation-delay:2.1s">
-          <circle cx="400" cy="240" r="30" fill="#141416" stroke="#f59e0b" stroke-width="2"/>
-          <text x="400" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">QA</text>
-          <text x="400" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif" data-i18n="svg_verify">verify</text>
-        </g>
-
-        <!-- Outbound particles (data flowing to agents) -->
-        <circle class="particle particle-out" style="offset-path:path('M250,110 L100,230');animation-delay:3s;fill:#8b5cf6"/>
-        <circle class="particle particle-out" style="offset-path:path('M250,110 L250,240');animation-delay:3.3s;fill:#10b981"/>
-        <circle class="particle particle-out" style="offset-path:path('M250,110 L400,230');animation-delay:3.6s;fill:#f59e0b"/>
-
-        <!-- Return particles (results flowing back) -->
-        <circle class="particle particle-in" style="offset-path:path('M250,110 L100,230');animation-delay:4s;fill:#8b5cf6"/>
-        <circle class="particle particle-in" style="offset-path:path('M250,110 L250,240');animation-delay:4.3s;fill:#10b981"/>
-        <circle class="particle particle-in" style="offset-path:path('M250,110 L400,230');animation-delay:4.6s;fill:#f59e0b"/>
-
-        <!-- Success checkmark -->
-        <g class="check-mark" transform="translate(250,90)">
-          <circle r="14" fill="#10b981" opacity=".2"/>
-          <path d="M-5,0 L-1,4 L6,-4" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </g>
-      </svg>
+    <!-- Animated Terminal Hero -->
+    <div class="hero-terminal" role="img" aria-label="Animated terminal showing Optimus orchestrating an agent swarm">
+      <div class="terminal-bar">
+        <span class="terminal-dot red"></span>
+        <span class="terminal-dot yellow"></span>
+        <span class="terminal-dot green"></span>
+        <span class="terminal-bar-title">optimus &mdash; swarm</span>
+      </div>
+      <div class="terminal-body" id="terminalBody">
+        <div class="line" data-delay="300"><span class="prompt">$ </span><span class="cmd">optimus dispatch &quot;Add dark-mode toggle&quot;</span></div>
+        <div class="line" data-delay="900"><span class="info">[Master]</span> <span class="muted" data-i18n="term_analyzing">Analyzing request&hellip;</span></div>
+        <div class="line" data-delay="1500"><span class="info">[Master]</span> <span class="muted" data-i18n="term_spawning">Spawning council: Architect + Dev + QA</span></div>
+        <div class="line" data-delay="2200"><span class="ok">[Architect]</span> <span class="muted" data-i18n="term_design">Design proposal written &rarr; .optimus/proposals/</span></div>
+        <div class="line" data-delay="2900"><span class="ok">[Developer]</span> <span class="muted" data-i18n="term_impl">Implementation complete &mdash; 4 files changed</span></div>
+        <div class="line" data-delay="3600"><span class="ok">[QA]</span> <span class="muted" data-i18n="term_tests">All tests passing (12/12)</span></div>
+        <div class="line" data-delay="4300"><span class="info">[Master]</span> <span class="ok" data-i18n="term_pr">PR #42 created &amp; merged</span> <span class="blink">&#9608;</span></div>
+      </div>
     </div>
 
     <div class="cta-group">
@@ -873,7 +822,7 @@ footer{
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener" data-i18n="footer_docs">Documentation</a>
       <a href="architecture.html" data-i18n="footer_arch">Architecture</a>
-      <a href="guide.html">Tutorial</a>
+      <a href="guide.html" data-i18n="nav_tutorial">Tutorial</a>
       <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
     <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
@@ -884,10 +833,18 @@ footer{
 /* Translation dictionary */
 var i18n={
   en:{
+    nav_architecture:"Architecture",
+    nav_tutorial:"Tutorial",
     hero_title:"Your AI coding tool's operating system",
     hero_subtitle:"Turn one AI assistant into a coordinated dev team. Works with Cursor, Claude Code, Copilot, Windsurf, and any MCP client.",
     hero_cta_start:"Get Started",
     copied:"Copied!",
+    term_analyzing:"Analyzing request\u2026",
+    term_spawning:"Spawning council: Architect + Dev + QA",
+    term_design:"Design proposal written \u2192 .optimus/proposals/",
+    term_impl:"Implementation complete \u2014 4 files changed",
+    term_tests:"All tests passing (12/12)",
+    term_pr:"PR #42 created & merged",
     how_title:"How It Works",
     how_subtitle:"A self-evolving agent lifecycle",
     how_orchestrate_title:"Orchestrate",
@@ -965,20 +922,21 @@ var i18n={
     footer_arch:"Architecture",
     footer_license:"MIT License",
     footer_tagline:"Stop prompting. Start orchestrating.",
-    svg_master:"Master",
-    svg_agent:"Agent",
-    svg_architect:"Architect",
-    svg_design:"design",
-    svg_developer:"Developer",
-    svg_build:"build",
-    svg_verify:"verify",
     scroll_down:"Scroll"
   },
   zh:{
+    nav_architecture:"\u67B6\u6784",
+    nav_tutorial:"\u6559\u7A0B",
     hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
     hero_subtitle:"\u5C06\u4E00\u4E2A AI \u52A9\u624B\u8F6C\u53D8\u4E3A\u534F\u8C03\u7684\u5F00\u53D1\u56E2\u961F\u3002\u652F\u6301 Cursor\u3001Claude Code\u3001Copilot\u3001Windsurf \u53CA\u4EFB\u4F55 MCP \u5BA2\u6237\u7AEF\u3002",
     hero_cta_start:"\u5F00\u59CB\u4F7F\u7528",
     copied:"\u5DF2\u590D\u5236\uFF01",
+    term_analyzing:"\u5206\u6790\u8BF7\u6C42\u4E2D\u2026",
+    term_spawning:"\u542F\u52A8\u59D4\u5458\u4F1A\uFF1A\u67B6\u6784\u5E08 + \u5F00\u53D1\u8005 + QA",
+    term_design:"\u8BBE\u8BA1\u63D0\u6848\u5DF2\u5199\u5165 \u2192 .optimus/proposals/",
+    term_impl:"\u5B9E\u73B0\u5B8C\u6210 \u2014 4 \u4E2A\u6587\u4EF6\u5DF2\u4FEE\u6539",
+    term_tests:"\u6240\u6709\u6D4B\u8BD5\u901A\u8FC7 (12/12)",
+    term_pr:"PR #42 \u5DF2\u521B\u5EFA\u5E76\u5408\u5E76",
     how_title:"\u5DE5\u4F5C\u539F\u7406",
     how_subtitle:"\u81EA\u8FDB\u5316\u7684\u667A\u80FD\u4F53\u751F\u547D\u5468\u671F",
     how_orchestrate_title:"\u7F16\u6392",
@@ -1056,13 +1014,6 @@ var i18n={
     footer_arch:"\u67B6\u6784",
     footer_license:"MIT \u8BB8\u53EF\u8BC1",
     footer_tagline:"\u505C\u6B62\u63D0\u793A\u8BCD\u5DE5\u7A0B\u3002\u5F00\u59CB\u7F16\u6392\u3002",
-    svg_master:"\u4E3B\u63A7",
-    svg_agent:"\u667A\u80FD\u4F53",
-    svg_architect:"\u67B6\u6784\u5E08",
-    svg_design:"\u8BBE\u8BA1",
-    svg_developer:"\u5F00\u53D1\u8005",
-    svg_build:"\u6784\u5EFA",
-    svg_verify:"\u9A8C\u8BC1",
     scroll_down:"\u4E0B\u6ED1"
   }
 };
@@ -1115,6 +1066,30 @@ function setLang(lang){
     if(lang&&lang!==currentLang){
       setLang(lang);
     }
+  });
+})();
+
+/* Hamburger menu toggle */
+(function(){
+  var btn=document.getElementById('hamburgerBtn');
+  var nav=document.getElementById('navLinks');
+  if(!btn||!nav)return;
+  btn.addEventListener('click',function(){
+    nav.classList.toggle('open');
+  });
+  /* Close on link click */
+  nav.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('click',function(){nav.classList.remove('open')});
+  });
+})();
+
+/* Terminal typewriter animation */
+(function(){
+  var lines=document.querySelectorAll('#terminalBody .line');
+  if(!lines.length)return;
+  lines.forEach(function(line){
+    var delay=parseInt(line.getAttribute('data-delay'),10)||0;
+    setTimeout(function(){line.classList.add('visible')},delay);
   });
 })();
 
