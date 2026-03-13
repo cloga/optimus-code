@@ -55,7 +55,7 @@ module.exports = function init() {
   // Most agents are auto-generated at runtime via the T3→T2→T1 Cascade.
   // Only the PM (Master Agent) is pre-installed — it bootstraps the entire
   // workflow and cannot be dynamically generated since it's the entry point.
-  const dirs = ['config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state'];
+  const dirs = ['config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state', 'system'];
   for (const dir of dirs) {
     const dirPath = path.join(optimusDir, dir);
     if (!fs.existsSync(dirPath)) {
@@ -69,6 +69,14 @@ module.exports = function init() {
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Installing system config...');
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
+  }
+
+
+  // 2.1 Copy scaffold system config (meta-crontab, cron-locks)
+  const systemSrc = path.join(scaffoldDir, 'system');
+  if (fs.existsSync(systemSrc)) {
+    console.log('\n\u23f0 Installing system scheduler config...');
+    copyDirRecursive(systemSrc, path.join(optimusDir, 'system'));
   }
 
   // 2.5 Copy plugin roles as starter T2 templates.

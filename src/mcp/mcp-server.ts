@@ -442,6 +442,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["role", "action", "workspace_path"]
         }
+      },
+      {
+        name: "register_meta_cron",
+        description: "Register a new scheduled cron entry in the Meta-Cron engine. Self-registration by cron-triggered agents is forbidden.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Unique cron entry ID" },
+            cron_expression: { type: "string", description: "Standard 5-field cron expression" },
+            role: { type: "string", description: "The agent role to invoke" },
+            required_skills: { type: "array", items: { type: "string" }, description: "Skills the agent needs" },
+            capability_tier: { type: "string", enum: ["maintain", "develop", "review"], description: "Capability tier" },
+            concurrency_policy: { type: "string", enum: ["Forbid", "Allow"], description: "Concurrent run policy (default: Forbid)" },
+            max_actions: { type: "number", description: "Max actions per trigger (default: 5)" },
+            dry_run_remaining: { type: "number", description: "Dry-run ticks before live (default: 3)" },
+            workspace_path: { type: "string", description: "Absolute path to workspace root." }
+          },
+          required: ["id", "cron_expression", "role", "required_skills", "capability_tier", "workspace_path"]
+        }
+      },
+      {
+        name: "list_meta_crons",
+        description: "List all registered Meta-Cron entries with their status.",
+        inputSchema: { type: "object", properties: { workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["workspace_path"] }
+      },
+      {
+        name: "remove_meta_cron",
+        description: "Remove a Meta-Cron entry by ID.",
+        inputSchema: { type: "object", properties: { id: { type: "string", description: "The cron entry ID to remove" }, workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["id", "workspace_path"] }
       }
     ],
   };
@@ -1181,6 +1210,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
+
+  if (request.params.name === "register_meta_cron") {
+    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments as any;
+    if (!id || !cron_expression || !role || !workspace_path) throw new Error("Missing required fields: id, cron_expression, role, workspace_path");
+    if (process.env.OPTIMUS_CRON_TRIGGERED === 'true') {
+      return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
+    }
+    const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
+    if (crontab.crons.find((cr: any) => cr.id === id)) {
+      return { content: [{ type: "text", text: `Cron entry '${id}' already exists. Remove it first.` }] };
+    }
+    crontab.crons.push({
+      id, cron_expression, role,
+      required_skills: required_skills || [],
+      capability_tier: capability_tier || 'maintain',
+      concurrency_policy: concurrency_policy || 'Forbid',
+      max_actions: max_actions || 5,
+      dry_run_remaining: dry_run_remaining ?? 3,
+      enabled: true, last_run: null, last_status: null,
+      run_count: 0, fail_count: 0,
+      created_at: new Date().toISOString(),
+    });
+    saveCrontab(workspace_path, crontab);
+    return { content: [{ type: "text", text: `Registered Meta-Cron '${id}' (cron: ${cron_expression}) -> role '${role}'. Dry-run for ${dry_run_remaining ?? 3} ticks.` }] };
+  }
+
+  if (request.params.name === "list_meta_crons") {
+    const { workspace_path } = request.params.arguments as any;
+    if (!workspace_path) throw new Error("Missing workspace_path");
+    const crontab = loadCrontab(workspace_path);
+    if (!crontab || crontab.crons.length === 0) {
+      return { content: [{ type: "text", text: "No Meta-Cron entries registered." }] };
+    }
+    const lines = crontab.crons.map((e: any) =>
+      `| ${e.id} | ${e.cron_expression} | ${e.role} | ${e.enabled ? 'yes' : 'no'} | ${e.last_status || 'never'} | ${e.run_count} | ${e.fail_count} | ${e.dry_run_remaining} |`
+    );
+    const table = `| ID | Cron | Role | Enabled | Last Status | Runs | Fails | Dry-Run |\n|---|---|---|---|---|---|---|---|\n${lines.join('\n')}\n\nMax concurrent: ${crontab.max_concurrent}`;
+    return { content: [{ type: "text", text: table }] };
+  }
+
+  if (request.params.name === "remove_meta_cron") {
+    const { id, workspace_path } = request.params.arguments as any;
+    if (!id || !workspace_path) throw new Error("Missing required fields: id, workspace_path");
+    const crontab = loadCrontab(workspace_path);
+    if (!crontab) return { content: [{ type: "text", text: "No crontab found." }] };
+    const idx = crontab.crons.findIndex((cr: any) => cr.id === id);
+    if (idx === -1) return { content: [{ type: "text", text: `Cron entry '${id}' not found.` }] };
+    crontab.crons.splice(idx, 1);
+    saveCrontab(workspace_path, crontab);
+    const lockPath = path.join(workspace_path, '.optimus', 'system', 'cron-locks', id + '.lock');
+    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch {}
+    return { content: [{ type: "text", text: `Removed Meta-Cron entry '${id}' and cleaned up lock file.` }] };
+  }
+
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
 
@@ -1232,6 +1315,15 @@ if (process.argv.includes("--run-task")) {
     } catch (e: any) {
       console.error(`[Thin Scanner] Warning: ${e.message}`);
     }
+
+    // Meta-Cron: start the in-process scheduler
+    try {
+      MetaCronEngine.init(workspaceRoot);
+    } catch (e: any) {
+      console.error(`[Meta-Cron] Init failed: ${e.message}`);
+    }
+    process.on('SIGTERM', () => MetaCronEngine.shutdown());
+    process.on('SIGINT', () => MetaCronEngine.shutdown());
   }
 
   main().catch((error) => {

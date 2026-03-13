@@ -119,6 +119,33 @@ module.exports = function upgrade() {
     configCount = mergeConfigFiles(configSrc, path.join(optimusDir, 'config'));
   }
 
+
+  // 4.5 System scaffold: ensure meta-crontab and cron-locks are present
+  const systemSrc = path.join(scaffoldDir, 'system');
+  if (fs.existsSync(systemSrc)) {
+    console.log('\n\u23f0 Upgrading system scheduler config...');
+    const destSystem = path.join(optimusDir, 'system');
+    if (!fs.existsSync(destSystem)) fs.mkdirSync(destSystem, { recursive: true });
+
+    // meta-crontab.json: preserve user entries, only install if missing
+    const crontabSrc = path.join(systemSrc, 'meta-crontab.json');
+    const crontabDest = path.join(destSystem, 'meta-crontab.json');
+    if (fs.existsSync(crontabSrc) && !fs.existsSync(crontabDest)) {
+      fs.copyFileSync(crontabSrc, crontabDest);
+      console.log('  \u2705 Installed default meta-crontab.json');
+    } else if (fs.existsSync(crontabDest)) {
+      console.log('  \u23ed\ufe0f  meta-crontab.json preserved (user config)');
+    }
+
+    // Ensure cron-locks directory exists
+    const cronLocksDir = path.join(destSystem, 'cron-locks');
+    if (!fs.existsSync(cronLocksDir)) {
+      fs.mkdirSync(cronLocksDir, { recursive: true });
+      fs.writeFileSync(path.join(cronLocksDir, '.gitkeep'), '');
+      console.log('  \u2705 Created cron-locks directory');
+    }
+  }
+
   // 4. Agents: NEVER TOUCH
   console.log('\n⏭️  Agents preserved (runtime instances)');
 
