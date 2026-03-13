@@ -220,14 +220,13 @@ delegate_task(
 Dev creates a branch, implements, builds, verifies, and **creates a PR but does
 NOT merge**. The PR stays open for review in Phase 5.
 
-### Pre-Mortem Check (before coding)
+### Pre-Mortem Verification (before coding)
 
-Before writing code, the Dev agent must list the top 3 ways this implementation could go wrong:
-1. What existing behavior could break?
-2. What edge case is most likely to be missed?
-3. What file or module could be accidentally modified outside scope?
+Review the architect's Pre-Mortem section from Phase 3. For each identified risk:
+1. Confirm your implementation addresses it
+2. Note any NEW risks discovered during coding that weren't in the architect's analysis
 
-Address each risk in the implementation. Include the list in the output report under `## Pre-Mortem Risks Addressed`.
+Include the verification in your output report under `## Pre-Mortem Risks Addressed`. Do NOT repeat the Phase 3 analysis — reference it and extend it.
 
 ### Test Results Format (MANDATORY)
 Every Dev agent's output report MUST include a `## Test Results` section with:

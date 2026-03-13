@@ -226,6 +226,8 @@ When reporting findings or making claims, agents MUST distinguish between verifi
 
 Never state an assumption with the same confidence as a verified fact. When in doubt, verify before claiming.
 
+**Scope**: This applies to analysis, review, investigation, and decision-making outputs. Simple execution tasks (build, commit, file creation) are exempt.
+
 ---
 
 # Part 2: Project-Specific Constraints (Optimus Code Repository)

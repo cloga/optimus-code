@@ -74,3 +74,7 @@ For any role that does NOT have a T2 template, you MUST either:
 1. Provide `role_descriptions` in the `dispatch_council` call to auto-create proper T2 templates, OR
 2. Pre-create the role via `role-creator` before dispatching the council.
 Failing to do either means the role will run as a T3 zero-shot worker with no persona context.
+
+## Synchronous Execution (Fallback ONLY)
+
+**CRITICAL RULE**: You MUST use the async tool (dispatch_council_async) by default. The synchronous dispatch_council tool is strictly placed at the very end of your priority list and should ONLY be used if the user **explicitly and specifically requests** blocking/synchronous execution. Otherwise, always default to async-first non-blocking delegation.
