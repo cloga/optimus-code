@@ -175,4 +175,16 @@ module.exports = function init() {
   console.log('\n✅ Workspace initialized! Your .optimus/ directory is ready.');
   console.log('   System instructions: .optimus/config/system-instructions.md (served via MCP Resource)');
   console.log('   Run `optimus serve` or configure your MCP client to start.\n');
+
+  console.log('╔══════════════════════════════════════════════════════════════╗');
+  console.log('║  🚀 Try your first command!                                 ║');
+  console.log('║                                                              ║');
+  console.log('║  Paste this into your AI assistant (Copilot/Claude/Trae):    ║');
+  console.log('║                                                              ║');
+  console.log('║  "Run roster_check to see my AI team, then use the           ║');
+  console.log('║   feature-dev skill to help me build [your feature here]"    ║');
+  console.log('║                                                              ║');
+  console.log('║  📖 Docs: https://cloga.github.io/optimus-code              ║');
+  console.log('╚══════════════════════════════════════════════════════════════╝');
+  console.log('');
 };
