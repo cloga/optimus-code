@@ -156,8 +156,16 @@ function saveEngineHealth(workspacePath: string, health: Record<string, EngineHe
     const dir = path.dirname(healthPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const tmpPath = healthPath + '.tmp.' + process.pid;
-    fs.writeFileSync(tmpPath, JSON.stringify(health, null, 2), 'utf8');
-    fs.renameSync(tmpPath, healthPath);
+    try {
+        fs.writeFileSync(tmpPath, JSON.stringify(health, null, 2), 'utf8');
+        // Windows-safe atomic replace: unlink target first, then rename
+        try { fs.unlinkSync(healthPath); } catch (e: any) { if (e.code !== 'ENOENT') throw e; }
+        fs.renameSync(tmpPath, healthPath);
+    } catch (err: any) {
+        // Clean up temp file on failure
+        try { fs.unlinkSync(tmpPath); } catch (_) {}
+        throw err;
+    }
 }
 
 function computeHealthStatus(consecutiveFailures: number): 'healthy' | 'degraded' | 'unhealthy' {
@@ -200,7 +208,9 @@ function trackEngineHealth(workspacePath: string, engine: string, model: string,
             console.error(`[EngineHealth] ${engine}/${model} status transition: ${oldStatus} → ${entry.status} (consecutive_failures=${entry.consecutive_failures})`);
         }
         saveEngineHealth(workspacePath, health);
-    }).catch(() => {});
+    }).catch((err: any) => {
+        console.error(`[EngineHealth] Failed to update engine health for ${engine}:${model}: ${err.message}`);
+    });
 }
 
 function resolveHealthyModel(workspacePath: string, engine: string, model: string): { engine: string; model: string } {
