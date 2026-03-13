@@ -55,7 +55,7 @@ module.exports = function init() {
   // Most agents are auto-generated at runtime via the T3→T2→T1 Cascade.
   // Only the PM (Master Agent) is pre-installed — it bootstraps the entire
   // workflow and cannot be dynamically generated since it's the entry point.
-  const dirs = ['config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state'];
+  const dirs = ['config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state', 'system'];
   for (const dir of dirs) {
     const dirPath = path.join(optimusDir, dir);
     if (!fs.existsSync(dirPath)) {

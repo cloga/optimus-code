@@ -112,6 +112,24 @@ module.exports = function upgrade() {
     roleCount = copyDirForceOverwrite(rolesSrc, path.join(optimusDir, 'roles'));
   }
 
+  // 3.5. System files: preserve user crontab
+  const systemSrc = path.join(scaffoldDir, 'system');
+  if (fs.existsSync(systemSrc)) {
+    console.log('\n\u23f0 Upgrading system scheduler files...');
+    const systemDest = path.join(optimusDir, 'system');
+    if (!fs.existsSync(systemDest)) fs.mkdirSync(systemDest, { recursive: true });
+    const crontabDest = path.join(systemDest, 'meta-crontab.json');
+    const crontabSrc = path.join(systemSrc, 'meta-crontab.json');
+    if (!fs.existsSync(crontabDest) && fs.existsSync(crontabSrc)) {
+      fs.copyFileSync(crontabSrc, crontabDest);
+      console.log('  Updated meta-crontab.json');
+    } else {
+      console.log('  Preserved meta-crontab.json (user schedules)');
+    }
+    const locksDir = path.join(systemDest, 'cron-locks');
+    if (!fs.existsSync(locksDir)) fs.mkdirSync(locksDir, { recursive: true });
+  }
+
   // 3. Config: MERGE (preserve user values in JSON files)
   const configSrc = path.join(scaffoldDir, 'config');
   if (fs.existsSync(configSrc)) {

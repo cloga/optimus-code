@@ -1,0 +1,21 @@
+{
+  "max_concurrent": 3,
+  "crons": [
+    {
+      "id": "night-steward",
+      "cron_expression": "0 2 * * *",
+      "role": "system-steward",
+      "required_skills": ["daily-ops"],
+      "capability_tier": "maintain",
+      "concurrency_policy": "Forbid",
+      "max_actions": 5,
+      "dry_run_remaining": 3,
+      "enabled": true,
+      "last_run": null,
+      "last_status": null,
+      "run_count": 0,
+      "fail_count": 0,
+      "created_at": "2026-03-13T00:00:00.000Z"
+    }
+  ]
+}

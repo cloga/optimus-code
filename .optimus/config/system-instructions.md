@@ -54,7 +54,7 @@ The system uses a three-tier agent hierarchy that evolves automatically:
 When delegating a task, the Master Agent should follow this sequence:
 
 1. **`roster_check`** — See available T1 agents, T2 roles, T3 engines, and skills
-2. **Select role** — Choose existing or invent new role name (use `agent-creator` meta-skill for guidance)
+2. **Select role** — Choose existing or invent new role name (use `role-creator` meta-skill for guidance)
 3. **Provide structured role info** — Pass `role_description`, `role_engine`, `role_model` in `delegate_task`
 4. **Check skills** — Specify `required_skills`. Missing skills → create them first via `skill-creator`
 5. **Delegate** — Use `delegate_task_async` (preferred) or `delegate_task`
@@ -77,7 +77,7 @@ Two meta-skills are pre-installed to enable self-evolution:
 
 | Skill | Purpose |
 |-------|--------|
-| 🧬 `agent-creator` | Teaches Master how to build & evolve the team (T3→T2→T1 lifecycle, engine selection) |
+| 🧬 `role-creator` | Teaches Master how to build & evolve the team (T3→T2→T1 lifecycle, engine selection) |
 | 🧬 `skill-creator` | Teaches agents how to create new SKILL.md files |
 
 ### Creating a Missing Skill
@@ -166,7 +166,7 @@ Agents MAY include a `## Self-Assessment` section at the end of their output rep
 - Self-assessment is ADVISORY, not mandatory — agents should include it when they identify meaningful gaps or lessons, not for routine tasks
 - Agents MUST NOT autonomously modify their own Role templates (`.optimus/roles/`)
 - Agents MUST NOT autonomously write retrospective entries to project memory via `append_memory` — the PM/Master decides what merits promotion
-- The PM or Master reads Self-Assessment sections during review phases and decides whether to invoke `agent-creator` or `skill-creator` to evolve the team
+- The PM or Master reads Self-Assessment sections during review phases and decides whether to invoke `role-creator` or `skill-creator` to evolve the team
 - Self-assessment proposals feed into the existing T3→T2→T1 evolution mechanisms, not a parallel path
 
 ---

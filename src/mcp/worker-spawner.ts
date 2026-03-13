@@ -287,13 +287,13 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
             `[T2 Guard] Refused to create T2 for '${safeRole}': no role_description provided by Master. ` +
             `Role will run as T3 zero-shot. To create a proper T2, the delegating agent should either: ` +
             `(1) provide a detailed role_description in delegate_task, or ` +
-            `(2) use agent-creator to pre-create the role before delegation.`
+            `(2) use role-creator to pre-create the role before delegation.`
         );
         return null; // No T2 created — agent proceeds as T3
     }
 
-    // No plugin template found — use agent-creator for rich T2 generation
-    const META_ROLES = ['agent-creator', 'skill-creator'];
+    // No plugin template found — use role-creator for rich T2 generation
+    const META_ROLES = ['role-creator', 'skill-creator', 'agent-creator']; // agent-creator kept as alias for backward compat
     const safeRoleCheck = sanitizeRoleName(role);
     const currentDepthLocal = delegationDepth ?? 0;
 
@@ -332,20 +332,20 @@ ${desc}
         return t2Path;
     }
 
-    // Normal path: use agent-creator for rich role generation
+    // Normal path: use role-creator for rich role generation
     try {
         await generateRichT2Role(workspacePath, role, validatedEng, validatedMod || undefined, desc, t2Path, currentDepthLocal);
-        console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via agent-creator) at ${t2Path}`);
+        console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (rich, via role-creator) at ${t2Path}`);
         return t2Path;
     } catch (err: any) {
         // Do NOT write a thin fallback — let the role remain T3 and retry next invocation
-        console.error(`[Precipitation] agent-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
+        console.error(`[Precipitation] role-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
         return null;
     }
 }
 
 /**
- * Synchronously invoke agent-creator to produce a rich T2 role definition.
+ * Synchronously invoke role-creator to produce a rich T2 role definition.
  * Used by ensureT2Role() when no plugin template exists and anti-recursion guards pass.
  */
 async function generateRichT2Role(
@@ -359,11 +359,11 @@ async function generateRichT2Role(
 ): Promise<void> {
     const safeRole = sanitizeRoleName(role);
 
-    // 1. Read the agent-creator skill (optional — degrade gracefully if missing)
-    const skillPath = path.join(workspacePath, '.optimus', 'skills', 'agent-creator', 'SKILL.md');
-    let agentCreatorSkillContent = '';
+    // 1. Read the role-creator skill (optional — degrade gracefully if missing)
+    const skillPath = path.join(workspacePath, '.optimus', 'skills', 'role-creator', 'SKILL.md');
+    let roleCreatorSkillContent = '';
     if (fs.existsSync(skillPath)) {
-        agentCreatorSkillContent = fs.readFileSync(skillPath, 'utf8');
+        roleCreatorSkillContent = fs.readFileSync(skillPath, 'utf8');
     }
 
     const formattedRole = safeRole
@@ -380,7 +380,7 @@ Role description: ${description}
 Engine: ${engine}
 Model: ${model || 'default'}
 
-Using the agent-creator skill guidance below, produce a COMPLETE role definition file.
+Using the role-creator skill guidance below, produce a COMPLETE role definition file.
 
 The output MUST be a valid markdown file with YAML frontmatter. Output ONLY the file content — no explanations, no code fences around it.
 
@@ -405,7 +405,7 @@ Required body sections:
 ## Constraints
 - <2-3 behavioral boundaries>
 
-${agentCreatorSkillContent ? `=== SKILL REFERENCE ===\n${agentCreatorSkillContent}\n=== END SKILL REFERENCE ===` : ''}`;
+${roleCreatorSkillContent ? `=== SKILL REFERENCE ===\n${roleCreatorSkillContent}\n=== END SKILL REFERENCE ===` : ''}`;
 
     // 3. Get adapter and invoke
     const adapter = getAdapterForEngine(engine, undefined, model);
@@ -418,7 +418,7 @@ ${agentCreatorSkillContent ? `=== SKILL REFERENCE ===\n${agentCreatorSkillConten
     // 4. Parse the response — look for frontmatter start
     const fmStart = response.indexOf('---');
     if (fmStart === -1) {
-        throw new Error('agent-creator response did not contain valid frontmatter (no --- found)');
+        throw new Error('role-creator response did not contain valid frontmatter (no --- found)');
     }
     const content = response.slice(fmStart).trim();
 
