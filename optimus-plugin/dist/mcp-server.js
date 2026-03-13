@@ -5493,6 +5493,44 @@ Memory appended to: ${memoryFile}`
     const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const vcsConfigPath = import_path3.default.join(workspace_path, ".optimus", "config", "vcs.json");
+      if (import_fs3.default.existsSync(vcsConfigPath)) {
+        try {
+          const vcsConfig = JSON.parse(import_fs3.default.readFileSync(vcsConfigPath, "utf8"));
+          const buildGate = vcsConfig.pre_merge_build;
+          if (buildGate?.enabled) {
+            const buildCmd = buildGate.command || "npm run build";
+            const buildCwd = buildGate.cwd ? import_path3.default.resolve(workspace_path, buildGate.cwd) : workspace_path;
+            const normalizedCwd = import_path3.default.normalize(buildCwd);
+            const normalizedWorkspace = import_path3.default.normalize(workspace_path);
+            if (!normalizedCwd.startsWith(normalizedWorkspace + import_path3.default.sep) && normalizedCwd !== normalizedWorkspace) {
+              throw new import_types2.McpError(
+                import_types2.ErrorCode.InvalidParams,
+                `Pre-Merge Build Gate: configured cwd '${buildGate.cwd}' resolves outside workspace boundary. Aborting.`
+              );
+            }
+            console.error(`[Pre-Merge Gate] Running build verification: ${buildCmd} in ${buildCwd}`);
+            (0, import_child_process3.execSync)(buildCmd, {
+              cwd: buildCwd,
+              encoding: "utf8",
+              timeout: 12e4
+              // 2 minute timeout
+            });
+            console.error("[Pre-Merge Gate] Build passed");
+          }
+        } catch (buildErr) {
+          if (buildErr instanceof import_types2.McpError) throw buildErr;
+          throw new import_types2.McpError(
+            import_types2.ErrorCode.InternalError,
+            `Pre-Merge Build Failed: Cannot merge PR #${pull_request_id} \u2014 build verification failed.
+
+Build output:
+${buildErr.stderr || buildErr.stdout || buildErr.message}
+
+Fix the build errors and try again.`
+          );
+        }
+      }
       const result = await vcsProvider.mergePullRequest(pull_request_id, commit_title, merge_method);
       if (!result.merged) {
         return {

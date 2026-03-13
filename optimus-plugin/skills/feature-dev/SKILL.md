@@ -193,6 +193,15 @@ delegate_task(
 Dev creates a branch, implements, builds, verifies, and **creates a PR but does
 NOT merge**. The PR stays open for review in Phase 5.
 
+### Test Results Format (MANDATORY)
+Every Dev agent's output report MUST include a `## Test Results` section with:
+- Build status: `npm run build` exit code and output
+- Files changed: `git diff --stat`
+- Any test commands run and their results
+- Pass/Fail verdict
+
+If this section is missing, the PM MUST reject the PR and send it back.
+
 ---
 
 ## Phase 5: Quality Review + Merge
@@ -218,6 +227,14 @@ PM reads all reviews and ranks issues by severity:
 - **Critical issues found** → PM delegates back to dev for fixes, then re-reviews
 - **Clean** → PM merges the PR via `vcs_merge_pr`
 
+
+### Pre-Merge Checklist (MANDATORY — do NOT skip)
+Before calling `vcs_merge_pr`, you MUST verify:
+1. Dev's report contains `## Test Results` section
+2. Build status shows success
+3. No unresolved errors in the test output
+If ANY of these fail, reject the PR with specific feedback and re-delegate to Dev.
+
 **Self-Assessment Review**: When reading agent outputs (implementation reports, review reports), PM should look for `## Self-Assessment` sections. If an agent identifies meaningful role/skill gaps, PM decides whether to:
 - Invoke `role-creator` to update the Role template
 - Invoke `skill-creator` to create a missing Skill
@@ -226,6 +243,13 @@ PM reads all reviews and ranks issues by severity:
 
 **IMPORTANT**: The ONLY way to merge code to master is via `vcs_merge_pr`.
 Never use `git merge` locally and push. The PR merge triggers GitHub auto-close for `fixes #N`.
+
+### Pre-Merge Checklist (MANDATORY — do NOT skip)
+Before calling `vcs_merge_pr`, you MUST verify:
+1. Dev's report contains `## Test Results` section
+2. Build status shows success
+3. No unresolved errors in the test output
+If ANY of these fail, reject the PR with specific feedback and re-delegate to Dev.
 
 ### Destructive Edge Case Testing (MANDATORY for file operations)
 Any feature that involves file overwrite, delete, migrate, or upgrade MUST include edge case tests with:
