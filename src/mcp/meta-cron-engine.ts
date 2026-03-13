@@ -242,18 +242,22 @@ export class MetaCronEngine {
             delegation_depth: 0,
         });
 
-        // __filename resolves to the bundled mcp-server.js at runtime (same file that hosts this code).
-        // Previous code used path.join(__dirname, '..', '..', 'dist', 'mcp-server.js') which resolved
-        // incorrectly in the esbuild bundle (pointed to workspace-root/dist/ instead of optimus-plugin/dist/).
+        // Capture child stdout/stderr to a log file for diagnostics (was stdio:'ignore' — Issue #326).
+        const logDir = path.join(this.workspacePath, '.optimus', 'system', 'cron-logs');
+        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+        const logFile = path.join(logDir, `${entry.id}_${new Date().toISOString().slice(0, 10)}.log`);
+        const logFd = fs.openSync(logFile, 'a');
+
         const child = spawn(process.execPath, [
             __filename,
             '--run-task', taskId, this.workspacePath
         ], {
-            detached: true, stdio: 'ignore', windowsHide: true,
+            detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true,
             cwd: this.workspacePath,
             env: { ...process.env, OPTIMUS_DELEGATION_DEPTH: '0', OPTIMUS_CRON_TRIGGERED: 'true' }
         });
         child.unref();
+        fs.closeSync(logFd);
 
         const entryId = entry.id;
         const ws = this.workspacePath;

@@ -1,7 +1,7 @@
 node_modules/
 out/
 .vscode-test/
-.vscode/settings.json
+.vscode/
 .env
 *.vsix
 /releases/
@@ -13,13 +13,10 @@ temp_debug/
 *.log
 [LOG]
 
-!.github/copilot-instructions.md
-
 # Env Files
 .env
 .env.*
 
 /temp_scripts/
-/.optimus/reports/
-/.optimus/reviews/
+.optimus/
 temp_data/

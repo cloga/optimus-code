@@ -134,6 +134,7 @@ a:hover{color:var(--accent)}
 .term-agent--architect{color:#8b5cf6}
 .term-agent--developer{color:#10b981}
 .term-agent--qa{color:#f59e0b}
+.term-agent--blue{color:#3b82f6}
 .term-agent .term-check{opacity:0;transition:opacity .3s;color:#10b981;margin-left:6px}
 .term-agent .term-check.visible{opacity:1}
 .term-result{color:#10b981;margin-top:4px;font-weight:600;opacity:0;transition:opacity .3s}
@@ -500,17 +501,17 @@ footer{
         <div class="term-line term-prompt-line visible" id="termPromptLine">
           <span class="term-prompt-prefix">$ </span><span id="termTyped"></span><span class="term-cursor" id="termCursor"></span>
         </div>
-        <div class="term-line term-agent term-agent--architect" id="termArch">
-          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_architect">Architect &#8594; designing schema</span><span class="term-check" id="termArchCheck">&#10003;</span>
+        <div class="term-line term-agent term-agent--architect" id="termAgent1">
+          <span class="term-agent-icon">&#9670;</span> <span id="termAgent1Text" data-i18n="term_architect">Architect &#8594; designing schema</span><span class="term-check" id="termCheck1">&#10003;</span>
         </div>
-        <div class="term-line term-agent term-agent--developer" id="termDev">
-          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_developer">Developer &#8594; writing code</span><span class="term-check" id="termDevCheck">&#10003;</span>
+        <div class="term-line term-agent term-agent--developer" id="termAgent2">
+          <span class="term-agent-icon">&#9670;</span> <span id="termAgent2Text" data-i18n="term_developer">Developer &#8594; writing code</span><span class="term-check" id="termCheck2">&#10003;</span>
         </div>
-        <div class="term-line term-agent term-agent--qa" id="termQa">
-          <span class="term-agent-icon">&#9670;</span> <span data-i18n="term_qa">QA &#8594; running tests</span><span class="term-check" id="termQaCheck">&#10003;</span>
+        <div class="term-line term-agent term-agent--qa" id="termAgent3">
+          <span class="term-agent-icon">&#9670;</span> <span id="termAgent3Text" data-i18n="term_qa">QA &#8594; running tests</span><span class="term-check" id="termCheck3">&#10003;</span>
         </div>
         <div class="term-line term-result" id="termResult">
-          <span data-i18n="term_result">PR #42 merged</span> &#10003;
+          <span id="termResultText" data-i18n="term_result">PR #42 merged</span> &#10003;
         </div>
       </div>
       <div style="padding:0 20px 16px;text-align:center">
@@ -943,7 +944,17 @@ var i18n={
     term_qa:"QA \u2192 running tests",
     term_result:"PR #42 merged",
     term_copy:"Copy prompt",
-    term_sr_prompt:"Sample prompt: Add a login page with OAuth"
+    term_sr_prompt:"Sample prompt: Add a login page with OAuth",
+    term_prompt_2:"Run roster_check, then delegate a security audit",
+    term_agent_2a:"PM \u2192 creating Issue #89",
+    term_agent_2b:"Security Expert \u2192 scanning code",
+    term_agent_2c:"Architect \u2192 reviewing findings",
+    term_result_2:"Audit report posted to #89",
+    term_prompt_3:"dispatch_council to review the auth refactor",
+    term_agent_3a:"Security Reviewer \u2192 analyzing",
+    term_agent_3b:"Performance Reviewer \u2192 profiling",
+    term_agent_3c:"Code Architect \u2192 evaluating",
+    term_result_3:"Council: APPROVED \u2714"
   },
   zh:{
     hero_title:"\u4F60\u7684 AI \u7F16\u7801\u5DE5\u5177\u7684\u64CD\u4F5C\u7CFB\u7EDF",
@@ -1041,7 +1052,17 @@ var i18n={
     term_qa:"QA \u2192 \u8FD0\u884C\u6D4B\u8BD5",
     term_result:"PR #42 \u5DF2\u5408\u5E76",
     term_copy:"\u590D\u5236\u63D0\u793A\u8BCD",
-    term_sr_prompt:"\u793A\u4F8B\u63D0\u793A\u8BCD\uFF1A\u6DFB\u52A0\u4E00\u4E2A\u5E26 OAuth \u7684\u767B\u5F55\u9875\u9762"
+    term_sr_prompt:"\u793A\u4F8B\u63D0\u793A\u8BCD\uFF1A\u6DFB\u52A0\u4E00\u4E2A\u5E26 OAuth \u7684\u767B\u5F55\u9875\u9762",
+    term_prompt_2:"\u8FD0\u884C roster_check\uFF0C\u7136\u540E\u59D4\u6D3E\u5B89\u5168\u5BA1\u8BA1",
+    term_agent_2a:"PM \u2192 \u521B\u5EFA Issue #89",
+    term_agent_2b:"\u5B89\u5168\u4E13\u5BB6 \u2192 \u626B\u63CF\u4EE3\u7801",
+    term_agent_2c:"\u67B6\u6784\u5E08 \u2192 \u5BA1\u67E5\u53D1\u73B0",
+    term_result_2:"\u5BA1\u8BA1\u62A5\u544A\u5DF2\u53D1\u5E03\u5230 #89",
+    term_prompt_3:"dispatch_council \u5BA1\u67E5\u8BA4\u8BC1\u91CD\u6784\u65B9\u6848",
+    term_agent_3a:"\u5B89\u5168\u5BA1\u67E5\u5458 \u2192 \u5206\u6790\u4E2D",
+    term_agent_3b:"\u6027\u80FD\u5BA1\u67E5\u5458 \u2192 \u6027\u80FD\u5206\u6790",
+    term_agent_3c:"\u4EE3\u7801\u67B6\u6784\u5E08 \u2192 \u8BC4\u4F30\u4E2D",
+    term_result_3:"Council: \u5DF2\u6279\u51C6 \u2714"
   }
 };
 
@@ -1142,30 +1163,64 @@ function setLang(lang){
   });
 })();
 
-/* ========== Terminal Hero Animation ========== */
+/* ========== Terminal Hero Animation (Multi-Scenario) ========== */
 var _termAnimId=0;
+var _termScenarioIdx=0;
+
+/* Each scenario: prompt key, 3 agent lines (text key + color class), result key */
+var _termScenarios=[
+  {prompt:'term_prompt', agents:[
+    {text:'term_architect', color:'term-agent--architect'},
+    {text:'term_developer', color:'term-agent--developer'},
+    {text:'term_qa',        color:'term-agent--qa'}
+  ], result:'term_result'},
+  {prompt:'term_prompt_2', agents:[
+    {text:'term_agent_2a', color:'term-agent--blue'},
+    {text:'term_agent_2b', color:'term-agent--architect'},
+    {text:'term_agent_2c', color:'term-agent--developer'}
+  ], result:'term_result_2'},
+  {prompt:'term_prompt_3', agents:[
+    {text:'term_agent_3a', color:'term-agent--architect'},
+    {text:'term_agent_3b', color:'term-agent--qa'},
+    {text:'term_agent_3c', color:'term-agent--blue'}
+  ], result:'term_result_3'}
+];
+
 function cancelTerminalAnimation(){_termAnimId++}
 function restartTerminalAnimation(){cancelTerminalAnimation();runTerminalAnimation()}
 function runTerminalAnimation(){
   var myId=_termAnimId;
+  var scenario=_termScenarios[_termScenarioIdx % _termScenarios.length];
+  _termScenarioIdx++;
+
   var typed=document.getElementById('termTyped');
   var cursor=document.getElementById('termCursor');
-  var arch=document.getElementById('termArch');
-  var dev=document.getElementById('termDev');
-  var qa=document.getElementById('termQa');
-  var archCheck=document.getElementById('termArchCheck');
-  var devCheck=document.getElementById('termDevCheck');
-  var qaCheck=document.getElementById('termQaCheck');
-  var result=document.getElementById('termResult');
+  var agents=[document.getElementById('termAgent1'),document.getElementById('termAgent2'),document.getElementById('termAgent3')];
+  var agentTexts=[document.getElementById('termAgent1Text'),document.getElementById('termAgent2Text'),document.getElementById('termAgent3Text')];
+  var checks=[document.getElementById('termCheck1'),document.getElementById('termCheck2'),document.getElementById('termCheck3')];
+  var resultEl=document.getElementById('termResult');
+  var resultText=document.getElementById('termResultText');
   if(!typed)return;
 
+  /* Reset */
   typed.textContent='';
   cursor.style.display='';
-  [arch,dev,qa].forEach(function(el){el.classList.remove('visible')});
-  [archCheck,devCheck,qaCheck].forEach(function(el){el.classList.remove('visible')});
-  result.classList.remove('visible');
+  agents.forEach(function(el,i){
+    el.classList.remove('visible');
+    /* Update color class */
+    el.className='term-line term-agent '+scenario.agents[i].color;
+  });
+  checks.forEach(function(el){el.classList.remove('visible')});
+  resultEl.classList.remove('visible');
 
-  var prompt=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+  /* Set text for this scenario */
+  var dict=i18n[currentLang]||i18n.en;
+  scenario.agents.forEach(function(a,i){
+    agentTexts[i].textContent=dict[a.text]||i18n.en[a.text]||'';
+  });
+  resultText.textContent=dict[scenario.result]||i18n.en[scenario.result]||'';
+
+  var prompt=dict[scenario.prompt]||i18n.en[scenario.prompt]||'';
   var idx=0;
   var cancelled=function(){return _termAnimId!==myId};
 
@@ -1178,46 +1233,46 @@ function runTerminalAnimation(){
     if(idx<prompt.length){
       typed.textContent+=prompt.charAt(idx);
       idx++;
-      return delay(60).then(typeNext);
+      return delay(50).then(typeNext);
     }
     return Promise.resolve();
   }
 
-  delay(500).then(function(){
+  delay(600).then(function(){
     if(cancelled())return;
     return typeNext();
   }).then(function(){
     if(cancelled())return;
     cursor.style.display='none';
-    return delay(300);
+    return delay(400);
   }).then(function(){
     if(cancelled())return;
-    arch.classList.add('visible');
-    return delay(200);
+    agents[0].classList.add('visible');
+    return delay(250);
   }).then(function(){
     if(cancelled())return;
-    dev.classList.add('visible');
-    return delay(200);
+    agents[1].classList.add('visible');
+    return delay(250);
   }).then(function(){
     if(cancelled())return;
-    qa.classList.add('visible');
-    return delay(800);
+    agents[2].classList.add('visible');
+    return delay(900);
   }).then(function(){
     if(cancelled())return;
-    archCheck.classList.add('visible');
-    return delay(200);
+    checks[0].classList.add('visible');
+    return delay(250);
   }).then(function(){
     if(cancelled())return;
-    devCheck.classList.add('visible');
-    return delay(200);
+    checks[1].classList.add('visible');
+    return delay(250);
   }).then(function(){
     if(cancelled())return;
-    qaCheck.classList.add('visible');
+    checks[2].classList.add('visible');
     return delay(500);
   }).then(function(){
     if(cancelled())return;
-    result.classList.add('visible');
-    return delay(2000);
+    resultEl.classList.add('visible');
+    return delay(2500);
   }).then(function(){
     if(cancelled())return;
     runTerminalAnimation();
@@ -1232,10 +1287,10 @@ if(!window.matchMedia||!window.matchMedia('(prefers-reduced-motion: reduce)').ma
     if(!typed)return;
     typed.textContent=i18n[currentLang].term_prompt||i18n.en.term_prompt;
     document.getElementById('termCursor').style.display='none';
-    ['termArch','termDev','termQa'].forEach(function(id){
+    ['termAgent1','termAgent2','termAgent3'].forEach(function(id){
       document.getElementById(id).classList.add('visible');
     });
-    ['termArchCheck','termDevCheck','termQaCheck'].forEach(function(id){
+    ['termCheck1','termCheck2','termCheck3'].forEach(function(id){
       document.getElementById(id).classList.add('visible');
     });
     document.getElementById('termResult').classList.add('visible');
@@ -1248,7 +1303,11 @@ if(!window.matchMedia||!window.matchMedia('(prefers-reduced-motion: reduce)').ma
   var tip=document.getElementById('termCopyTooltip');
   if(!btn||!tip)return;
   function doCopy(){
-    var prompt=i18n[currentLang].term_prompt||i18n.en.term_prompt;
+    /* Copy the currently visible scenario's prompt */
+    var scIdx=(_termScenarioIdx-1+_termScenarios.length)%_termScenarios.length;
+    var scKey=_termScenarios[scIdx>=0?scIdx:0].prompt;
+    var dict=i18n[currentLang]||i18n.en;
+    var prompt=dict[scKey]||i18n.en[scKey]||'';
     if(navigator.clipboard&&navigator.clipboard.writeText){
       navigator.clipboard.writeText(prompt).then(function(){showTip()}).catch(function(){});
     }else{

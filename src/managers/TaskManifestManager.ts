@@ -90,12 +90,13 @@ export class TaskManifestManager {
             startTime: Date.now(),
             heartbeatTime: Date.now()
         };
-        // Fire-and-forget locked write — record is returned immediately
-        withManifestLock(() => {
-            const manifest = this.loadManifest(workspacePath);
-            manifest[record.taskId] = fullRecord;
-            this.saveManifest(workspacePath, manifest);
-        });
+        // Synchronous write — callers (meta-cron, delegate_task) spawn child processes
+        // immediately after createTask returns, so the manifest MUST be on disk before
+        // this function returns. The async withManifestLock caused a race condition where
+        // child processes couldn't find their task entry (Issue #326).
+        const manifest = this.loadManifest(workspacePath);
+        manifest[record.taskId] = fullRecord;
+        this.saveManifest(workspacePath, manifest);
         return fullRecord;
     }
 
