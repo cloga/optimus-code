@@ -95,7 +95,8 @@ function isLocked(workspacePath: string, id: string): boolean {
         const stat = fs.statSync(lockPath);
         const ageMs = Date.now() - stat.mtimeMs;
         return ageMs < 60 * 60 * 1000;
-    } catch {
+    } catch (e: any) {
+        console.error(`[Meta-Cron] Warning: failed to check lock for '${id}': ${e.message}. Treating as unlocked.`);
         return false;
     }
 }
@@ -109,7 +110,8 @@ function createLock(workspacePath: string, id: string): boolean {
             locked_at: new Date().toISOString()
         }), 'utf8');
         return true;
-    } catch {
+    } catch (e: any) {
+        console.error(`[Meta-Cron] Warning: failed to create lock for '${id}': ${e.message}. Entry will run unguarded.`);
         return false;
     }
 }
@@ -118,8 +120,8 @@ export function deleteLock(workspacePath: string, id: string): void {
     try {
         const lockPath = getLockPath(workspacePath, id);
         if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
-    } catch {
-        // Best effort
+    } catch (e: any) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') console.error(`[Meta-Cron] Warning: failed to delete lock for '${id}': ${e.message}. Stale lock may prevent next run.`);
     }
 }
 
@@ -207,13 +209,13 @@ export class MetaCronEngine {
             }
             if (mutated) saveCrontab(this.workspacePath, crontab);
         } catch (e: any) {
-            console.error(`[Meta-Cron] Tick error: ${e.message}`);
+            console.error(`[Meta-Cron] Tick error during crontab evaluation: ${e.message}. Check .optimus/system/meta-crontab.json for syntax errors.`);
         }
     }
 
     private static fire(entry: CronEntry, _crontab: CrontabData): void {
         if (!createLock(this.workspacePath, entry.id)) {
-            console.error(`[Meta-Cron] Failed to create lock for '${entry.id}'`);
+            console.error(`[Meta-Cron] Failed to create lock for '${entry.id}'. Check permissions on .optimus/system/cron-locks/ directory.`);
             return;
         }
         entry.last_run = new Date().toISOString();
@@ -270,7 +272,7 @@ export class MetaCronEngine {
                         }
                     }
                 }
-            } catch { /* best effort */ }
+            } catch (e: any) { console.error(`[Meta-Cron] Warning: task poll failed for cron '${entryId}': ${e.message}`); }
         }, 30_000);
         if (typeof checkInterval.unref === 'function') checkInterval.unref();
 

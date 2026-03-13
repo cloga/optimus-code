@@ -89,7 +89,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
         throw new McpError(ErrorCode.InvalidRequest, `The system-instructions.md file does not exist at ${instructionsPath}`);
       }
     } catch (e: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to read instructions: ${e.message}`);
+      throw new McpError(ErrorCode.InternalError, `Failed to read system instructions from '${instructionsPath}': ${e.message}. Ensure .optimus/config/system-instructions.md exists (run 'optimus init' or 'optimus upgrade').`);
     }
   }
   throw new McpError(ErrorCode.InvalidRequest, `Resource not found: ${request.params.uri}`);

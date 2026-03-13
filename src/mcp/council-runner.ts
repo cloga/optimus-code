@@ -38,7 +38,8 @@ function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial
             return files.length > 0 ? 'verified' : 'partial';
         }
         return 'partial';
-    } catch {
+    } catch (e: any) {
+        console.error(`[Verification] Warning: failed to verify output at '${outputPath}': ${e.message}. Marking as partial.`);
         return 'partial';
     }
 }
@@ -135,7 +136,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 } else {
                     synthesisFailedRoles.push(role);
                     synthesisContent += `## ${i + 1}. Review from ${role}\n\n`;
-                    synthesisContent += `*Worker failed to produce a valid review artifact (Status: ${status}).*\n\n---\n\n`;
+                    synthesisContent += `*Worker `${role}` failed to produce a valid review artifact (Status: ${status}). Check .optimus/agents/ for the worker's T1 instance file — it may contain error context in its frontmatter.*\n\n---\n\n`;
                 }
             }
 
@@ -188,7 +189,7 @@ Here is the synthesis report:\n\n${synthesisContent}`;
                 );
                 console.error(`[Runner] PM verdict generated at ${verdictPath}`);
             } catch (reduceErr: any) {
-                console.error(`[Runner] PM reduce phase failed (non-fatal): ${reduceErr.message}`);
+                console.error(`[Runner] PM reduce phase failed: ${reduceErr.message}. Council reviews are still available but unified VERDICT.md was not generated. Read individual review files in the reviews directory instead.`);
             }
         }
 
@@ -264,7 +265,7 @@ async function updateTaskGitHubIssue(
         await commentOnGitHubIssue(remote.owner, remote.repo, task.github_issue_number, comment);
 
         // DO NOT automatically close the issue here, pending PM review or further work.
-    } catch {
-        // Best-effort — never block task completion
+    } catch (e: any) {
+        console.error(`[Runner] Warning: failed to update GitHub issue for task ${taskId}: ${e.message}. Task completion not affected.`);
     }
 }

@@ -57,7 +57,8 @@ export class TaskManifestManager {
         }
         try {
             return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-        } catch {
+        } catch (e: any) {
+            console.error(`[TaskManifest] Warning: failed to parse task manifest at ${manifestPath}: ${e.message}. Returning empty manifest — existing tasks may appear missing.`);
             return {};
         }
     }

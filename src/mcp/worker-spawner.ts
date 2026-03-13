@@ -342,7 +342,7 @@ ${desc}
         return t2Path;
     } catch (err: any) {
         // Do NOT write a thin fallback — let the role remain T3 and retry next invocation
-        console.error(`[Precipitation] role-creator failed for '${safeRole}': ${err.message}. Role will remain T3.`);
+        console.error(`[Precipitation] role-creator failed for '${safeRole}': ${err.message}. Role will remain T3 (zero-shot). To fix: (1) check role-creator skill at .optimus/skills/role-creator/SKILL.md, (2) ensure engine CLI is authenticated, (3) retry delegation with explicit role_description.`);
         return null;
     }
 }
@@ -479,16 +479,16 @@ export class AgentLockManager {
                 fs.mkdirSync(this.lockDir, { recursive: true });
             }
             fs.writeFileSync(this.lockFilePath(role), JSON.stringify({ pid: process.pid, timestamp: Date.now() }), 'utf8');
-        } catch {
-            // Best-effort; in-memory lock is the primary mechanism
+        } catch (e: any) {
+            console.error(`[AgentLockManager] Warning: failed to write lock file for '${role}': ${e.message}. In-memory lock still active.`);
         }
     }
 
     private deleteLockFile(role: string): void {
         try {
             fs.unlinkSync(this.lockFilePath(role));
-        } catch {
-            // File may already be gone
+        } catch (e: any) {
+            if (e.code !== 'ENOENT') console.error(`[AgentLockManager] Warning: failed to delete lock file for '${role}': ${e.message}`);
         }
     }
 
@@ -505,13 +505,13 @@ export class AgentLockManager {
                         fs.unlinkSync(filePath);
                         console.error(`[AgentLockManager] Cleaned stale lock for ${file} (PID ${content.pid} no longer running)`);
                     }
-                } catch {
-                    // Malformed lock file — remove it
-                    try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+                } catch (e: any) {
+                    console.error(`[AgentLockManager] Removing malformed lock file ${file}: ${e.message}`);
+                    try { fs.unlinkSync(filePath); } catch (e2: any) { console.error(`[AgentLockManager] Warning: cleanup failed for ${file}: ${e2.message}`); }
                 }
             }
-        } catch {
-            // Best-effort cleanup
+        } catch (e: any) {
+            console.error(`[AgentLockManager] Warning: stale lock cleanup failed: ${e.message}`);
         }
     }
 }
@@ -697,10 +697,12 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     if (t1Content) {
         const qfm = parseFrontmatter(t1Content);
         if (qfm.frontmatter.status === 'quarantined') {
+            const usageLog = loadT3UsageLog(workspacePath);
+            const usageEntry = usageLog[role];
             throw new Error(
-                `⚠️ **Role Quarantined**: Role '${role}' is quarantined due to repeated failures ` +
+                `⚠️ **Role Quarantined**: Role '${role}' is quarantined due to ${usageEntry?.consecutive_failures || '3+'} consecutive failures ` +
                 `(quarantined at: ${qfm.frontmatter.quarantined_at || 'unknown'}). ` +
-                `Fix the role template at '.optimus/roles/${role}.md' or delete it to allow T3 re-creation.`
+                `**Recovery**: (1) Fix the role template at '.optimus/roles/${role}.md', or (2) delete it to allow T3 re-creation, or (3) use the quarantine_role tool to unquarantine it.`
             );
         }
     }
@@ -708,10 +710,12 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     if (fs.existsSync(t2Path)) {
         const t2Fm = parseFrontmatter(fs.readFileSync(t2Path, 'utf8'));
         if (t2Fm.frontmatter.status === 'quarantined') {
+            const usageLog2 = loadT3UsageLog(workspacePath);
+            const usageEntry2 = usageLog2[role];
             throw new Error(
-                `⚠️ **Role Quarantined**: Role '${role}' is quarantined due to repeated failures ` +
+                `⚠️ **Role Quarantined**: Role '${role}' is quarantined due to ${usageEntry2?.consecutive_failures || '3+'} consecutive failures ` +
                 `(quarantined at: ${t2Fm.frontmatter.quarantined_at || 'unknown'}). ` +
-                `Fix the role template at '.optimus/roles/${role}.md' or delete it to allow T3 re-creation.`
+                `**Recovery**: (1) Fix the role template at '.optimus/roles/${role}.md', or (2) delete it to allow T3 re-creation, or (3) use the quarantine_role tool to unquarantine it.`
             );
         }
     }
@@ -1006,7 +1010,7 @@ Please provide your complete execution result below.`;
                 console.error(`[Meta-Immune] Role '${role}' quarantined after ${entry.consecutive_failures} consecutive failures with 0 successes`);
             }
         }
-        throw new Error(`Worker execution failed: ${e.message}`);
+        throw new Error(`Worker execution failed for role '${role}' on engine '${activeEngine}': ${e.message}`);
     } finally {
         ConcurrencyGovernor.release();
         lockManager.releaseLock(role);
