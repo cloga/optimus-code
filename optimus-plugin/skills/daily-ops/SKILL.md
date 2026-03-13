@@ -1,6 +1,6 @@
 ---
 name: daily-ops
-description: Autonomous patrol and maintenance decision framework for system stewards. Provides a structured inspection protocol across 6 areas (task health, agent hygiene, VCS hygiene, memory hygiene, role health, release readiness) with a decision matrix mapping findings to actions. Use when awakened by Meta-Cron for routine system maintenance.
+description: Autonomous patrol and maintenance decision framework for system stewards. Provides a structured inspection protocol across 7 areas (task health, agent hygiene, VCS hygiene, memory hygiene, role health, release readiness, issue triage) with a decision matrix mapping findings to actions. Use when awakened by Meta-Cron for routine system maintenance.
 ---
 
 # Daily Operations — Patrol Protocol
@@ -50,6 +50,25 @@ Read the following blackboard locations and note anything anomalous:
    5. Write findings to `.optimus/reports/release-readiness-<date>.md`
    6. DO NOT trigger a release. Only report. Release decision belongs to PM.
 
+7. **Issue Triage & Hygiene** — Use `github_update_issue` and `github_sync_board` MCP tools
+   The steward scans open Issues and performs automated triage:
+   1. Fetch all open Issues via `github_sync_board` or equivalent VCS tool
+   2. For any Issue **without** a priority label (`P0`, `P1`, `P2`, `P3`):
+      - Read the Issue title and body
+      - Assess priority using this matrix:
+        - **P0**: System is broken, data loss, security vulnerability
+        - **P1**: Major feature broken, significant user impact, blocks other work
+        - **P2**: Minor feature issue, workaround exists, non-blocking
+        - **P3**: Enhancement, cosmetic, nice-to-have
+      - Apply the appropriate priority label via `github_update_issue`
+   3. For any Issue **already implemented** (check `git log --oneline --all` for `fixes #N`, `closes #N`, `resolves #N`, or `closed #N` references):
+      - Close the Issue via `github_update_issue` with `state: "closed"`
+      - Add a comment referencing the implementing commit
+   4. For every Issue the steward processes → add the `system-maintained` label
+   5. For every comment the steward adds → include `[system-maintained]` tag in the comment body
+
+   **Resilience**: If `github_update_issue` or `github_sync_board` returns an error (e.g., `MethodNotFound`), log the failure in the patrol report and skip Issue Triage. Do NOT fail the entire patrol.
+
 ### Phase 2: Decide
 Apply this decision matrix:
 
@@ -63,6 +82,9 @@ Apply this decision matrix:
 | Stale PR (> 7 days, no activity) | Report only (do not auto-close) | Info |
 | Unreleased P0 fix on master | Report as URGENT — flag for PM | High |
 | Commits since last tag (features) | Report release readiness | Info |
+| Issue without priority label | Assess and add P0/P1/P2/P3 label via `github_update_issue` | Medium |
+| Issue already implemented (commit ref exists) | Close via `github_update_issue` with commit reference | Low |
+| Issue processed by steward | Add `system-maintained` label via `github_update_issue` | Low |
 
 ### Phase 3: Act
 - Execute actions from the decision matrix, up to your `max_actions` budget (default: 5)
