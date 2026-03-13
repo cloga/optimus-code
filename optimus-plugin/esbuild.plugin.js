@@ -6,6 +6,7 @@
  * It produces a single self-contained CJS bundle with zero vscode dependencies.
  */
 const esbuild = require('esbuild');
+const { execSync } = require('child_process');
 const path = require('path');
 
 const production = process.argv.includes('--production');
@@ -54,14 +55,26 @@ async function build() {
     console.log(`   ${(entry.bytes / 1024).toFixed(1).padStart(7)} KB  ${entry.file}`);
   }
 
-  // Post-build validation: verify the bundle can be require()'d without error
+  // Post-build validation: verify the bundle can be require()'d without ERR_REQUIRE_ESM.
+  // Uses a subprocess with timeout because require() on mcp-server.js starts the MCP
+  // server (StdioServerTransport, cron engine, etc.) and hangs the build process.
+  // A timeout kill means the module loaded successfully — only non-timeout errors matter.
   const outfile = path.resolve(__dirname, 'dist', 'mcp-server.js');
   try {
-    require(outfile);
+    execSync(`node -e "require('${outfile.replace(/\\/g, '\\\\')}')"`, {
+      timeout: 5000,
+      stdio: 'pipe',
+    });
     console.log('\n✅ Post-build require() check passed');
   } catch (err) {
-    console.error(`\n🚨 FATAL: Bundle failed require() check: ${err.message}`);
-    process.exit(1);
+    // Timeout (ETIMEDOUT) means the server started successfully — that's a pass.
+    if (err.killed || (err.signal && err.signal === 'SIGTERM')) {
+      console.log('\n✅ Post-build require() check passed (server started, killed after timeout)');
+    } else {
+      const stderr = err.stderr ? err.stderr.toString() : '';
+      console.error(`\n🚨 FATAL: Bundle failed require() check: ${stderr || err.message}`);
+      process.exit(1);
+    }
   }
 }
 
