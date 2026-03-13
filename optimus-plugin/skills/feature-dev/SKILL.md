@@ -244,13 +244,6 @@ If ANY of these fail, reject the PR with specific feedback and re-delegate to De
 **IMPORTANT**: The ONLY way to merge code to master is via `vcs_merge_pr`.
 Never use `git merge` locally and push. The PR merge triggers GitHub auto-close for `fixes #N`.
 
-### Pre-Merge Checklist (MANDATORY — do NOT skip)
-Before calling `vcs_merge_pr`, you MUST verify:
-1. Dev's report contains `## Test Results` section
-2. Build status shows success
-3. No unresolved errors in the test output
-If ANY of these fail, reject the PR with specific feedback and re-delegate to Dev.
-
 ### Destructive Edge Case Testing (MANDATORY for file operations)
 Any feature that involves file overwrite, delete, migrate, or upgrade MUST include edge case tests with:
 - A target directory containing user-customized config files (not empty defaults)
