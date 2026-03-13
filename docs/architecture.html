@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Optimus Code — Architecture Whitepaper</title>
+<meta name="description" content="Architecture Whitepaper for Optimus Code: a self-evolving multi-agent orchestration engine built on the Model Context Protocol.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0b;
+  --surface:#141416;
+  --surface-hover:#1c1c20;
+  --border:#2a2a2e;
+  --text:#e4e4e7;
+  --text-secondary:#a1a1aa;
+  --text-tertiary:#71717a;
+  --accent:#3b82f6;
+  --accent-hover:#60a5fa;
+  --accent-secondary:#10b981;
+  --accent-tertiary:#8b5cf6;
+  --code-bg:#18181b;
+  --code-text:#4ade80;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  line-height:1.7;
+  overflow-x:hidden;
+}
+a{color:var(--accent-hover);text-decoration:none;transition:color .2s}
+a:hover{color:var(--accent)}
+
+/* ========== LAYOUT ========== */
+.container{max-width:860px;margin:0 auto;padding:0 24px}
+
+/* ========== NAV BAR ========== */
+.topnav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,10,11,.85);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:14px 24px;
+}
+.topnav-inner{
+  max-width:860px;margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.topnav-logo{font-weight:700;font-size:1rem;color:var(--text)}
+.topnav-logo:hover{color:var(--accent-hover)}
+.topnav-links{display:flex;gap:16px;align-items:center}
+.topnav-links a{font-size:.85rem;color:var(--text-tertiary);transition:color .2s}
+.topnav-links a:hover{color:var(--text)}
+
+/* ========== HERO HEADER ========== */
+.page-hero{
+  padding:80px 24px 48px;text-align:center;position:relative;
+}
+.page-hero::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:600px;height:400px;
+  background:radial-gradient(circle,rgba(139,92,246,.06),transparent 70%);
+  pointer-events:none;
+}
+.page-hero h1{
+  font-size:clamp(1.8rem,4vw,2.5rem);font-weight:800;
+  line-height:1.15;margin-bottom:16px;position:relative;
+}
+.page-hero .lead{
+  font-size:1.1rem;color:var(--text-secondary);
+  max-width:600px;margin:0 auto 24px;line-height:1.6;font-style:italic;
+}
+
+/* ========== TABLE OF CONTENTS ========== */
+.toc{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px 32px;margin:0 auto 64px;max-width:540px;
+}
+.toc h2{font-size:1rem;font-weight:700;margin-bottom:14px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em}
+.toc ol{padding-left:20px}
+.toc li{margin-bottom:6px}
+.toc a{font-size:.95rem;color:var(--accent-hover)}
+.toc a:hover{color:var(--text)}
+
+/* ========== CONTENT ========== */
+.content{padding-bottom:100px}
+.content h2{
+  font-size:clamp(1.3rem,3vw,1.75rem);font-weight:700;
+  margin:64px 0 20px;padding-top:24px;
+  border-top:1px solid var(--border);
+  color:var(--text);
+}
+.content h2:first-child{border-top:none;margin-top:0}
+.content h3{
+  font-size:1.15rem;font-weight:600;margin:32px 0 12px;
+  color:var(--text);
+}
+.content p{
+  font-size:1rem;color:var(--text-secondary);line-height:1.7;
+  margin-bottom:16px;
+}
+.content ul,.content ol{
+  padding-left:24px;margin-bottom:16px;
+}
+.content li{
+  font-size:1rem;color:var(--text-secondary);line-height:1.7;
+  margin-bottom:6px;
+}
+.content strong{color:var(--text);font-weight:600}
+
+/* Code blocks */
+.content pre{
+  background:var(--code-bg);border:1px solid var(--border);
+  border-radius:8px;padding:18px 22px;margin-bottom:20px;
+  overflow-x:auto;line-height:1.5;
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.85rem;color:var(--code-text);
+}
+.content code{
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.875em;color:var(--accent-hover);
+  background:var(--code-bg);padding:2px 6px;border-radius:4px;
+}
+.content pre code{
+  background:transparent;padding:0;color:var(--code-text);font-size:inherit;
+}
+
+/* Tables */
+.content table{
+  width:100%;border-collapse:collapse;margin-bottom:20px;
+  font-size:.9rem;
+}
+.content th,.content td{
+  padding:10px 14px;text-align:left;
+  border:1px solid var(--border);
+}
+.content th{
+  background:var(--surface);color:var(--text);font-weight:600;
+  font-size:.85rem;text-transform:uppercase;letter-spacing:.03em;
+}
+.content td{color:var(--text-secondary)}
+
+/* Blockquote */
+.content blockquote{
+  border-left:3px solid var(--accent-tertiary);
+  padding:12px 20px;margin-bottom:20px;
+  background:rgba(139,92,246,.04);border-radius:0 8px 8px 0;
+}
+.content blockquote p{color:var(--text-secondary);margin-bottom:0;font-style:italic}
+
+/* Horizontal rule */
+.content hr{border:none;border-top:1px solid var(--border);margin:48px 0}
+
+/* ========== BACK TO TOP ========== */
+.back-to-top{
+  position:fixed;bottom:24px;right:24px;z-index:100;
+  width:40px;height:40px;border-radius:8px;
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text-tertiary);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color .2s,color .2s,opacity .3s;
+  opacity:0;pointer-events:none;
+}
+.back-to-top.visible{opacity:1;pointer-events:auto}
+.back-to-top:hover{border-color:var(--accent);color:var(--text)}
+
+/* ========== FOOTER ========== */
+footer{
+  border-top:1px solid var(--border);padding:36px 0;text-align:center;
+}
+.footer-links{
+  display:flex;justify-content:center;gap:24px;flex-wrap:wrap;margin-bottom:12px;
+}
+.footer-links a{color:var(--text-tertiary);font-size:.85rem;transition:color .2s}
+.footer-links a:hover{color:var(--accent)}
+.footer-tagline{color:var(--text-tertiary);font-size:.85rem;font-style:italic}
+
+/* ========== RESPONSIVE ========== */
+@media(max-width:767px){
+  .page-hero{padding:60px 16px 32px}
+  .toc{padding:20px 22px}
+  .content h2{margin-top:48px}
+  .content pre{padding:14px 16px;font-size:.8rem}
+  .content table{font-size:.82rem}
+  .content th,.content td{padding:8px 10px}
+}
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">Optimus Code</a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener">Docs</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Page Hero -->
+<header class="page-hero">
+  <h1>Architecture Whitepaper</h1>
+  <p class="lead">A self-evolving multi-agent orchestration engine built on the Model Context Protocol.</p>
+</header>
+
+<!-- Table of Contents -->
+<div class="container">
+  <nav class="toc">
+    <h2>Table of Contents</h2>
+    <ol>
+      <li><a href="#executive-summary">Executive Summary</a></li>
+      <li><a href="#the-great-unification">The Great Unification</a></li>
+      <li><a href="#self-evolving-agent-lifecycle">Self-Evolving Agent Lifecycle (T3&rarr;T2&rarr;T1)</a></li>
+      <li><a href="#the-spartan-swarm-protocol">The Spartan Swarm Protocol</a></li>
+      <li><a href="#council-pattern">Council Pattern (Map-Reduce)</a></li>
+      <li><a href="#skills-system">Skills System</a></li>
+      <li><a href="#plan-mode">Plan Mode &amp; Separation of Concerns</a></li>
+      <li><a href="#issue-first-sdlc">Issue-First SDLC</a></li>
+      <li><a href="#memory-reflection">Memory &amp; Reflection</a></li>
+      <li><a href="#autonomous-operations">Autonomous Operations</a></li>
+      <li><a href="#security-architecture">Security Architecture</a></li>
+    </ol>
+  </nav>
+</div>
+
+<!-- Content -->
+<article class="container content">
+
+<!-- Section 1 -->
+<h2 id="executive-summary">1. Executive Summary</h2>
+
+<p>Optimus Code is a <strong>multi-agent orchestration engine</strong> that transforms any MCP-compatible AI coding tool into a coordinated development team. It works with VS Code (GitHub Copilot), Cursor, Windsurf, Claude Code, Goose, Roo Cline, and any other client that speaks the <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>.</p>
+
+<p>Rather than relying on a single AI assistant to handle every task &mdash; planning, coding, reviewing, testing &mdash; Optimus decomposes work across specialized agent roles: Product Manager, Architect, Developer, QA Engineer, and more. These agents are not preconfigured. They emerge dynamically as the system encounters new task types, evolve their role definitions through use, and accumulate project memory across sessions.</p>
+
+<p>The result is a system where:</p>
+<ul>
+  <li><strong>One natural-language prompt</strong> triggers a complete software development lifecycle (Issue &rarr; Branch &rarr; PR &rarr; Merge).</li>
+  <li><strong>Agents self-organize</strong> via a three-tier lifecycle: ephemeral workers precipitate into role templates, then freeze as reusable instances.</li>
+  <li><strong>Parallel expert councils</strong> debate architectural decisions using a map-reduce pattern before any code is written.</li>
+  <li><strong>Project memory</strong> ensures past mistakes and decisions persist, so the team improves with every task.</li>
+</ul>
+
+<p>Optimus is 100% editor-agnostic &mdash; a pure Node.js MCP daemon with no VS Code extension dependency.</p>
+
+<!-- Section 2 -->
+<h2 id="the-great-unification">2. The Great Unification</h2>
+
+<h3>The Problem with Extension-Only Approaches</h3>
+
+<p>Traditional AI coding assistants are tightly coupled to a specific editor. Their orchestration logic lives inside VS Code extensions, Cursor plugins, or proprietary backends. This creates fragmentation: if you switch editors, you lose your agent infrastructure.</p>
+
+<h3>Architecture Decision: Pure Node.js MCP Daemon</h3>
+
+<p>Optimus Code follows a <strong>&ldquo;Great Unification&rdquo; architecture</strong>. The MCP Server (<code>optimus-plugin/dist/mcp-server.js</code>) is a standalone Node.js daemon that communicates via stdio transport. It has zero dependency on any editor&rsquo;s extension API.</p>
+
+<pre><code>&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502; Any MCP Client (VS Code, Cursor, Claude, ..) &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;
+                       &#x2502; stdio (JSON-RPC)
+&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x25BC;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502;           Optimus MCP Server                 &#x2502;
+&#x2502;  &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;  &#x2502;
+&#x2502;  &#x2502; Managers &#x2502; Adapters &#x2502; MCP Tool Handlers &#x2502;  &#x2502;
+&#x2502;  &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;  &#x2502;
+&#x2502;        Pure Node.js &#x2014; No vscode namespace    &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</code></pre>
+
+<p><strong>Key constraints enforced in the codebase:</strong></p>
+<ul>
+  <li>The <code>src/adapters/</code>, <code>src/mcp/</code>, and <code>src/managers/</code> directories must remain 100% environment-agnostic. No <code>vscode</code> namespace imports are permitted.</li>
+  <li>All agent artifacts (reports, tasks, memory, reviews) are stored in the <code>.optimus/</code> directory &mdash; never as loose files in the repository root.</li>
+  <li>The server is started with <code>npx -y github:cloga/optimus-code serve</code> and configured once &mdash; every MCP client connects to the same daemon.</li>
+</ul>
+
+<h3>Dual-Codebase Structure</h3>
+
+<p>The repository itself contains two intertwined codebases:</p>
+
+<table>
+  <thead>
+    <tr><th>Layer</th><th>Path</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Host project</strong></td><td>Root (<code>src/</code>, <code>docs/</code>, <code>.optimus/</code>)</td><td>Optimus&rsquo;s own development workspace</td></tr>
+    <tr><td><strong>Plugin package</strong></td><td><code>optimus-plugin/</code></td><td>The npm-publishable MCP server that ships to end-users</td></tr>
+  </tbody>
+</table>
+
+<p>Changes to system instructions, skills, or config must be evaluated for propagation to the plugin scaffold. T1 agent instances, state files, and reports never ship in the plugin.</p>
+
+<!-- Section 3 -->
+<h2 id="self-evolving-agent-lifecycle">3. Self-Evolving Agent Lifecycle (T3&rarr;T2&rarr;T1)</h2>
+
+<p>Optimus uses a three-tier agent hierarchy that evolves automatically. No roles are pre-installed &mdash; the system starts empty and grows organically through use.</p>
+
+<h3>The Three Tiers</h3>
+
+<table>
+  <thead>
+    <tr><th>Tier</th><th>Storage</th><th>Description</th><th>Created By</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>T3</strong> (Ephemeral)</td>
+      <td>In-memory only</td>
+      <td>Zero-shot dynamic worker with no persistent file. The Master Agent invents a descriptive role name (e.g., <code>security-auditor</code>) and the engine generates a worker on the fly.</td>
+      <td>Master Agent names it at delegation time</td>
+    </tr>
+    <tr>
+      <td><strong>T2</strong> (Template)</td>
+      <td><code>.optimus/roles/&lt;name&gt;.md</code></td>
+      <td>Role template with persona instructions, engine/model binding, and behavioral constraints. Created automatically on first T3 use &mdash; &ldquo;precipitation&rdquo;.</td>
+      <td>Auto-precipitated from T3; Master Agent evolves it</td>
+    </tr>
+    <tr>
+      <td><strong>T1</strong> (Instance)</td>
+      <td><code>.optimus/agents/&lt;name&gt;_&lt;hash&gt;.md</code></td>
+      <td>Frozen snapshot of a T2 role after a completed task, including the session ID for context continuity.</td>
+      <td>Auto-created when a task completes with a session_id</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Lifecycle Flow</h3>
+
+<pre><code>First delegation (T3):
+  Master invents role name &rarr; worker-spawner creates ephemeral agent
+      &darr;
+  Task completes &rarr; T2 role template auto-created in .optimus/roles/
+      &darr;
+  Session ID captured &rarr; T1 instance created in .optimus/agents/
+      &darr;
+Next delegation (T1 reuse):
+  Master provides agent_id &rarr; system resumes the T1 session</code></pre>
+
+<h3>Key Invariants</h3>
+
+<ul>
+  <li><strong>T2 &ge; T1</strong>: Every T1 agent instance must have a corresponding T2 role template. Orphaned T1s are invalid.</li>
+  <li><strong>T1 is frozen</strong>: Once created, the body content of a T1 file is never modified. Only the <code>session_id</code> field updates when the agent is reused.</li>
+  <li><strong>T2 is alive</strong>: The Master Agent can update T2 templates with new descriptions, engine bindings, and model settings to evolve the team over time.</li>
+  <li><strong>Precipitation is immediate</strong>: Unlike threshold-based approaches (which required 3 invocations + 80% success rate), T3&rarr;T2 precipitation happens on the very first delegation. This was a deliberate simplification after the earlier threshold model proved fragile.</li>
+</ul>
+
+<h3>Agent Retirement &amp; Quarantine</h3>
+
+<p>Agents that consistently fail are not deleted &mdash; they are <strong>quarantined</strong>. The <code>quarantine_role</code> MCP tool marks a role as unavailable for dispatch. This prevents cascading failures while preserving the agent&rsquo;s history for debugging. Quarantined agents can be unquarantined after fixes.</p>
+
+<p>T1 garbage collection removes stale instance files that haven&rsquo;t been referenced in configurable time windows, preventing unbounded disk growth.</p>
+
+<!-- Section 4 -->
+<h2 id="the-spartan-swarm-protocol">4. The Spartan Swarm Protocol</h2>
+
+<p>The Spartan Swarm Protocol defines how the Master Agent discovers, selects, and dispatches work to specialized agents.</p>
+
+<h3>The Delegation Pipeline</h3>
+
+<p>Every task delegation follows a strict 3-step pipeline:</p>
+
+<p><strong>Step 1 &mdash; Camp Inspection (<code>roster_check</code>)</strong></p>
+
+<p>The Master Agent calls <code>roster_check</code> to retrieve the current workforce:</p>
+<ul>
+  <li>T1 local instances (stateful, session-resumable)</li>
+  <li>T2 project role templates (shared, evolvable)</li>
+  <li>Available engines and models from <code>available-agents.json</code></li>
+  <li>Registered skills</li>
+</ul>
+
+<p>This step is <strong>never skipped</strong> &mdash; it prevents the Master from hallucinating roles that don&rsquo;t exist.</p>
+
+<p><strong>Step 2 &mdash; Manpower Assessment (Role Selection)</strong></p>
+
+<p>The Master matches the task to the roster:</p>
+<ul>
+  <li><strong>Prefer T1</strong> if a matching instance exists with relevant session context.</li>
+  <li><strong>Fall back to T2</strong> if a role template exists but no instance.</li>
+  <li><strong>Invent T3</strong> for niche tasks &mdash; just name a role (e.g., <code>webgl-shader-guru</code>) and the engine auto-generates a zero-shot worker.</li>
+</ul>
+
+<p><strong>Step 3 &mdash; Deployment (<code>delegate_task</code> / <code>delegate_task_async</code>)</strong></p>
+
+<p>The Master dispatches with structured parameters:</p>
+
+<table>
+  <thead>
+    <tr><th>Parameter</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>role</code></td><td>Which agent to invoke</td></tr>
+    <tr><td><code>role_description</code></td><td>What this role does (used for T2 template generation)</td></tr>
+    <tr><td><code>role_engine</code></td><td>Which engine (e.g., <code>claude-code</code>, <code>copilot-cli</code>)</td></tr>
+    <tr><td><code>role_model</code></td><td>Which model (e.g., <code>claude-opus-4.6-1m</code>)</td></tr>
+    <tr><td><code>task_description</code></td><td>Detailed instructions</td></tr>
+    <tr><td><code>context_files</code></td><td>Files the agent must read before starting</td></tr>
+    <tr><td><code>required_skills</code></td><td>Skills the agent needs (pre-flight checked)</td></tr>
+    <tr><td><code>parent_issue_number</code></td><td>For issue lineage tracking</td></tr>
+    <tr><td><code>output_path</code></td><td>Where to write results</td></tr>
+  </tbody>
+</table>
+
+<h3>Engine/Model Resolution</h3>
+
+<p>When the Master doesn&rsquo;t specify an engine or model, the system resolves them in priority order:</p>
+<ol>
+  <li>Master-provided <code>role_engine</code> / <code>role_model</code> (highest priority)</li>
+  <li>T2 role frontmatter <code>engine</code> / <code>model</code></li>
+  <li><code>available-agents.json</code> (first non-demo engine + first model)</li>
+  <li>Hardcoded fallback: <code>claude-code</code></li>
+</ol>
+
+<p>Invalid engine or model names are rejected at the gateway with an actionable error listing valid options from <code>available-agents.json</code>.</p>
+
+<h3>Anti-Simulation Rule</h3>
+
+<p>The Master Agent must <strong>physically invoke</strong> the <code>delegate_task</code> MCP tool when delegating. It is strictly prohibited from simulating a worker&rsquo;s response in plain text or writing ad-hoc scripts to play the role of a subordinate. This is the <strong>Strict Delegation Protocol</strong>.</p>
+
+<!-- Section 5 -->
+<h2 id="council-pattern">5. Council Pattern (Map-Reduce)</h2>
+
+<p>When a decision requires multiple expert perspectives &mdash; architectural reviews, security audits, design evaluations &mdash; Optimus uses the <strong>Council Pattern</strong>.</p>
+
+<h3>How It Works</h3>
+
+<ol>
+  <li><strong>Proposal</strong>: The orchestrator writes a proposal document to <code>.optimus/proposals/PROPOSAL_&lt;topic&gt;.md</code>.</li>
+  <li><strong>Dispatch</strong>: <code>dispatch_council</code> (or <code>dispatch_council_async</code>) spawns multiple expert agents in parallel, each reviewing the same proposal from their specialized perspective.</li>
+  <li><strong>Map phase</strong>: Each council member writes an independent review to <code>.optimus/reviews/&lt;council_id&gt;/&lt;role&gt;.md</code>.</li>
+  <li><strong>Reduce phase</strong>: The system generates a <code>COUNCIL_SYNTHESIS.md</code> that aggregates findings, identifies consensus, and surfaces conflicts.</li>
+  <li><strong>Arbitration</strong>: The orchestrator reads the synthesis. If no blockers exist, implementation proceeds. If fatal conflicts exist, a <code>.optimus/CONFLICTS.md</code> is created for resolution.</li>
+</ol>
+
+<h3>Example: Architecture Review Council</h3>
+
+<pre><code>dispatch_council({
+  proposal_path: ".optimus/proposals/PROPOSAL_auth_refactor.md",
+  roles: ["security-expert", "performance-expert", "code-architect"]
+})</code></pre>
+
+<p>This spawns three agents simultaneously. Each reads the proposal through their domain lens. The security expert focuses on authentication vulnerabilities, the performance expert evaluates query patterns, and the architect assesses structural impact.</p>
+
+<h3>Async-First Design</h3>
+
+<p>Councils are inherently async. <code>dispatch_council_async</code> returns immediately with a task ID. The orchestrator polls status via <code>check_task_status</code> and reads results when all members have completed.</p>
+
+<!-- Section 6 -->
+<h2 id="skills-system">6. Skills System</h2>
+
+<h3>Role vs. Skill Architecture</h3>
+
+<p>Optimus decouples <strong>identity</strong> from <strong>capability</strong>:</p>
+<ul>
+  <li><strong>Role</strong> = WHO does the work (identity, constraints, permissions) &mdash; stored in <code>.optimus/roles/</code></li>
+  <li><strong>Skill</strong> = HOW to do the work (operational SOP, workflow steps, tool usage) &mdash; stored in <code>.optimus/skills/</code></li>
+</ul>
+
+<p>Roles and Skills have a <strong>many-to-many relationship</strong>, bound at runtime via the <code>required_skills</code> parameter in <code>delegate_task</code>. A single role (e.g., <code>senior-full-stack-builder</code>) can be equipped with different skill combinations for different tasks.</p>
+
+<p><strong>Naming convention</strong>: Roles use identity names (e.g., <code>product-manager</code>). Skills use capability names (e.g., <code>feature-dev</code>, <code>git-workflow</code>, <code>council-review</code>). A skill is never named after a role.</p>
+
+<h3>Skill Pre-Flight</h3>
+
+<p>When <code>required_skills</code> is specified in a delegation, the system verifies that every skill file exists at <code>.optimus/skills/&lt;name&gt;/SKILL.md</code> before the agent process is spawned. Missing skills cause an immediate rejection with an actionable error &mdash; the Master must create them first.</p>
+
+<p>This pre-flight prevents agents from receiving tasks they aren&rsquo;t equipped to handle.</p>
+
+<h3>Bootstrap Meta-Skills</h3>
+
+<p>The system ships with two <strong>meta-skills</strong> that enable self-evolution:</p>
+
+<table>
+  <thead>
+    <tr><th>Skill</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>role-creator</code></td><td>Teaches the Master Agent how to build and evolve the team (T3&rarr;T2&rarr;T1 lifecycle, engine selection, role definition best practices)</td></tr>
+    <tr><td><code>skill-creator</code></td><td>Teaches agents how to write new <code>SKILL.md</code> files following the correct format</td></tr>
+  </tbody>
+</table>
+
+<p>Three <strong>core skills</strong> handle operational workflows:</p>
+
+<table>
+  <thead>
+    <tr><th>Skill</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>delegate-task</code></td><td>Async-first task delegation protocol</td></tr>
+    <tr><td><code>council-review</code></td><td>Parallel expert review (Map-Reduce)</td></tr>
+    <tr><td><code>git-workflow</code></td><td>Issue-First SDLC with branch, PR, and merge</td></tr>
+  </tbody>
+</table>
+
+<h3>Creating New Skills</h3>
+
+<p>When a skill doesn&rsquo;t exist, the Master delegates to any agent with <code>required_skills: ["skill-creator"]</code>, describing what the new skill should teach. The agent reads the <code>skill-creator</code> SKILL.md, learns the format, and writes the new skill. The original delegation can then be retried.</p>
+
+<!-- Section 7 -->
+<h2 id="plan-mode">7. Plan Mode &amp; Separation of Concerns</h2>
+
+<h3>The Problem</h3>
+
+<p>Without guardrails, orchestrator agents (PM, Architect) tend to write code themselves instead of delegating. This violates separation of concerns &mdash; the same agent that defines requirements shouldn&rsquo;t implement them.</p>
+
+<h3>Plan Mode</h3>
+
+<p>Orchestrator roles run with <strong><code>mode: plan</code></strong> in their role definition. In plan mode:</p>
+<ul>
+  <li>The agent <strong>cannot write to source code files</strong>. File write operations are restricted to the <code>.optimus/</code> directory via the <code>write_blackboard_artifact</code> MCP tool.</li>
+  <li>The agent <strong>must delegate</strong> implementation work to developer roles (e.g., <code>senior-full-stack-builder</code>).</li>
+  <li>The agent can create proposals, requirements documents, task breakdowns, and review reports &mdash; but not code.</li>
+</ul>
+
+<h3>write_blackboard_artifact</h3>
+
+<p>This MCP tool allows plan-mode agents to write files exclusively to <code>.optimus/</code>. It enforces two layers of path validation:</p>
+<ol>
+  <li><strong>Lexical check</strong>: <code>startsWith(optimusRoot + path.sep)</code> prevents <code>..</code> traversal and sibling directory escapes.</li>
+  <li><strong>Symlink check</strong>: <code>fs.realpathSync()</code> on the resolved path prefix prevents symlink-based escapes to directories outside <code>.optimus/</code>.</li>
+</ol>
+
+<p>Content validation uses <code>=== undefined || === null</code> (not <code>!content</code>) to allow legitimate empty-string writes.</p>
+
+<h3>Enforcement</h3>
+
+<p>Plan mode is a behavioral constraint enforced through the role template and skill instructions. The orchestrator&rsquo;s prompt explicitly states it cannot write code and must use delegation tools. This is reinforced by the skill system &mdash; orchestrators are equipped with planning skills (<code>council-review</code>, <code>feature-dev</code>) that guide them through the delegation workflow.</p>
+
+<!-- Section 8 -->
+<h2 id="issue-first-sdlc">8. Issue-First SDLC</h2>
+
+<p>All code changes in Optimus follow the <strong>&ldquo;Issue First&rdquo; protocol</strong>. No code is written without a tracked work item.</p>
+
+<h3>The Complete Workflow</h3>
+
+<pre><code>1. Create Issue    &rarr; vcs_create_work_item (GitHub Issue or ADO Work Item)
+2. Branch          &rarr; git checkout -b feature/issue-&lt;ID&gt;-&lt;desc&gt;
+3. Implement       &rarr; Agent writes code, runs build, runs tests
+4. PR              &rarr; vcs_create_pr with "Fixes #&lt;ID&gt;" in body
+5. Merge           &rarr; vcs_merge_pr (squash merge for clean history)
+6. Cleanup         &rarr; Auto-delete source branch, sync local master</code></pre>
+
+<h3>Issue Lineage Tracking</h3>
+
+<p>When an agent creates a GitHub Issue and then delegates sub-tasks, it passes its own Issue number as <code>parent_issue_number</code> to all subsequent <code>delegate_task</code> and <code>dispatch_council</code> calls. The system automatically injects <code>OPTIMUS_PARENT_ISSUE</code> into child agent processes, maintaining a parent-child tree across all Issues in a workflow.</p>
+
+<p>This enables full traceability: from a high-level epic down to individual sub-task PRs.</p>
+
+<h3>Auto-Tagging</h3>
+
+<p>All Issues and PRs created via MCP tools are automatically tagged with:</p>
+<ul>
+  <li><code>[Optimus]</code> prefix in the title</li>
+  <li><code>optimus-bot</code> label for filtering</li>
+</ul>
+
+<h3>Protected Branch Rule</h3>
+
+<p>Direct <code>git push</code> to master/main is prohibited. All changes must go through PR merge via <code>vcs_merge_pr</code>. This ensures:</p>
+<ul>
+  <li>GitHub&rsquo;s <code>fixes #N</code> auto-close works (only triggered by PR merge events)</li>
+  <li>Code review happens before merge</li>
+  <li>Issue-First SDLC traceability is maintained</li>
+</ul>
+
+<h3>VCS Abstraction</h3>
+
+<p>The <code>vcs_*</code> MCP tools provide a unified abstraction over GitHub and Azure DevOps. The same workflow works regardless of which platform hosts the repository. Configuration is stored in <code>.optimus/config/vcs.json</code>.</p>
+
+<!-- Section 9 -->
+<h2 id="memory-reflection">9. Memory &amp; Reflection</h2>
+
+<h3>Continuous Memory</h3>
+
+<p>Optimus maintains a <strong>project memory</strong> at <code>.optimus/memory/continuous-memory.md</code>. This is a structured append-only log of verified lessons, architectural decisions, bug postmortems, and workflow improvements.</p>
+
+<p>Memory entries are created via the <code>append_memory</code> MCP tool with categorized metadata:</p>
+
+<pre><code>{
+  category: "bug-postmortem",
+  tags: ["upgrade", "config-wipe", "vcs.json"],
+  content: "optimus upgrade force-overwrote vcs.json..."
+}</code></pre>
+
+<p>At agent spawn time, project memory is <strong>automatically injected</strong> into the agent&rsquo;s prompt. This means every agent &mdash; regardless of when it was created &mdash; starts with the accumulated knowledge of all past sessions.</p>
+
+<h3>Agent Self-Reflection Protocol</h3>
+
+<p>Agents may include a <strong>Self-Assessment</strong> section in their output reports containing:</p>
+<ul>
+  <li><strong>What Worked</strong>: Where the role and skills aligned well with the task</li>
+  <li><strong>What Was Missing</strong>: Gaps that required improvisation</li>
+  <li><strong>Proposed Updates</strong>: Specific suggestions for role or skill improvements</li>
+</ul>
+
+<p>Self-assessment is advisory, not mandatory. Agents cannot autonomously modify their own role templates or write to project memory &mdash; the PM or Master Agent decides what merits promotion. This prevents runaway self-modification while still capturing improvement signals.</p>
+
+<h3>Three Levels of Reflection</h3>
+
+<ol>
+  <li><strong>Instruction-Level</strong> (implemented): Post-delegation checklists and pre-delegation self-checks embedded in instruction files (<code>.claude/CLAUDE.md</code>, <code>.github/copilot-instructions.md</code>).</li>
+  <li><strong>Memory-Powered</strong> (implemented): Agents read project memory at conversation start. Past mistakes are automatically in context.</li>
+  <li><strong>Root Master Self-Delegation</strong> (future): The Root Master delegates to a <code>master-orchestrator</code> role, making itself subject to the same prompt injection and reflection protocols as worker agents.</li>
+</ol>
+
+<!-- Section 10 -->
+<h2 id="autonomous-operations">10. Autonomous Operations</h2>
+
+<h3>Meta-Cron Engine</h3>
+
+<p>Optimus includes a <strong>Meta-Cron</strong> system for scheduled autonomous agent operations. Cron entries are registered via <code>register_meta_cron</code> with standard 5-field cron expressions.</p>
+
+<p>Each cron entry specifies:</p>
+<ul>
+  <li>A <strong>role</strong> to invoke</li>
+  <li><strong>Required skills</strong> for the task</li>
+  <li>A <strong>capability tier</strong> (<code>maintain</code>, <code>develop</code>, <code>review</code>) that bounds what the triggered agent can do</li>
+  <li>A <strong>concurrency policy</strong> (<code>Forbid</code> or <code>Allow</code>)</li>
+  <li><strong>Max actions per trigger</strong> (default: 5)</li>
+  <li><strong>Dry-run period</strong> (default: 3 ticks before live execution)</li>
+</ul>
+
+<p>Example use cases:</p>
+<ul>
+  <li>Daily dependency audit scans</li>
+  <li>Stale issue cleanup</li>
+  <li>Health monitoring and system checks</li>
+</ul>
+
+<h3>Async Task Architecture</h3>
+
+<p>All delegation in Optimus is async-first. <code>delegate_task_async</code> and <code>dispatch_council_async</code> return immediately with a task ID. The <code>check_task_status</code> tool polls for completion. This prevents the Master Agent from blocking while workers execute.</p>
+
+<h3>Async Feedback Channel (Proposed)</h3>
+
+<p>When an agent encounters an ambiguous situation and cannot continue autonomously, the proposed workflow is:</p>
+<ol>
+  <li>Agent posts a question via <code>vcs_add_comment</code> on its tracking Issue</li>
+  <li>Agent adds a <code>needs-human-input</code> label and writes a checkpoint to <code>.optimus/reports/</code></li>
+  <li>Agent exits (fire-and-forget &mdash; no process hanging)</li>
+  <li>Human responds on their own schedule via GitHub comment</li>
+  <li>A Meta-Cron patrol detects the response and spawns a continuation task with the same <code>agent_id</code> for context continuity</li>
+</ol>
+
+<p>This creates a fully async human-in-the-loop mechanism without any real-time channels.</p>
+
+<!-- Section 11 -->
+<h2 id="security-architecture">11. Security Architecture</h2>
+
+<h3>Input Validation at the Gateway</h3>
+
+<p>All MCP tool handlers validate inputs before any task creation, file writes, or process spawning:</p>
+<ul>
+  <li><strong>Role name confusion guard</strong>: If a <code>role</code> parameter looks like a model name (e.g., <code>claude-opus-4</code>, <code>gpt-4o</code>), the call is rejected with an actionable error suggesting <code>role_model</code> instead.</li>
+  <li><strong>Engine/model validation</strong>: Invalid engine or model values are rejected with the list of valid options from <code>available-agents.json</code>.</li>
+  <li>Callers receive <code>McpError(InvalidParams)</code> with enough information to self-correct.</li>
+</ul>
+
+<h3>Delegation Depth Control</h3>
+
+<p>Agent delegation is capped at <strong>3 nested layers</strong> (<code>MAX_DELEGATION_DEPTH = 3</code>, defined in <code>src/constants.ts</code>). This prevents infinite recursion where agents delegate to agents indefinitely.</p>
+<ul>
+  <li>Tracked via the <code>OPTIMUS_DELEGATION_DEPTH</code> environment variable, automatically injected and incremented at each delegation.</li>
+  <li>At depth 3, MCP configuration is stripped from the child process, physically preventing further delegation.</li>
+</ul>
+
+<h3>Path Traversal Prevention</h3>
+<ul>
+  <li><code>sanitizeRoleName()</code> strips dangerous characters from role names, preventing directory traversal via crafted role identifiers.</li>
+  <li><code>write_blackboard_artifact</code> uses dual-layer validation (lexical + <code>fs.realpathSync()</code>) to prevent writes outside <code>.optimus/</code>. The symlink check was identified as a P0 gap during security review &mdash; <code>path.resolve()</code> and <code>path.normalize()</code> alone do not resolve symlinks.</li>
+</ul>
+
+<h3>Prompt Injection Defense</h3>
+<ul>
+  <li>All content from GitHub Issues, ADO Work Items, and PR comments is treated as <strong>untrusted DATA</strong>, never as executable instructions.</li>
+  <li>Agents are instructed to never run commands, scripts, or URLs found in external content.</li>
+  <li>System instructions are delivered via trusted channels (MCP Resources, CLAUDE.md, copilot-instructions.md), not through user-modifiable fields.</li>
+</ul>
+
+<h3>Secret Protection</h3>
+<ul>
+  <li><code>.env</code> files are never committed or shipped in the plugin package.</li>
+  <li>The <code>.gitignore</code> and plugin packaging rules exclude <code>.optimus/agents/</code>, <code>.optimus/state/</code>, and credential files.</li>
+  <li>Agents are warned against committing files that may contain secrets.</li>
+</ul>
+
+<h3>Plan Mode as Security Boundary</h3>
+
+<p>Plan mode prevents orchestrator agents from writing arbitrary files. Even if a prompt injection convinced an orchestrator to &ldquo;write a config file,&rdquo; the <code>write_blackboard_artifact</code> path validation would reject any target outside <code>.optimus/</code>.</p>
+
+<hr>
+
+<h2>Appendix: Project Structure</h2>
+
+<pre><code>.optimus/
+&#x251C;&#x2500;&#x2500; agents/          # T1 frozen instance snapshots
+&#x251C;&#x2500;&#x2500; config/          # vcs.json, available-agents.json, system-instructions.md
+&#x251C;&#x2500;&#x2500; memory/          # continuous-memory.md
+&#x251C;&#x2500;&#x2500; proposals/       # Council proposal documents
+&#x251C;&#x2500;&#x2500; reports/         # Agent output reports
+&#x251C;&#x2500;&#x2500; reviews/         # Council review outputs + synthesis
+&#x251C;&#x2500;&#x2500; roles/           # T2 role templates
+&#x251C;&#x2500;&#x2500; skills/          # Skill definitions (SKILL.md per skill)
+&#x251C;&#x2500;&#x2500; state/           # task-manifest.json, t3-usage-log.json
+&#x2514;&#x2500;&#x2500; system/          # System-level config
+
+optimus-plugin/
+&#x251C;&#x2500;&#x2500; bin/             # CLI entry points (init, serve, upgrade)
+&#x251C;&#x2500;&#x2500; dist/            # Compiled MCP server
+&#x251C;&#x2500;&#x2500; scaffold/        # Template files shipped to end-users
+&#x2514;&#x2500;&#x2500; skills/          # Universal bootstrap skills</code></pre>
+
+<hr>
+
+<p><em>This document describes Optimus Code v0.4.0. For the latest updates, see the <a href="https://github.com/cloga/optimus-code/blob/master/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG</a>.</em></p>
+
+</article>
+
+<!-- Back to Top -->
+<button class="back-to-top" id="backToTop" aria-label="Back to top">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+</button>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="index.html">Home</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener">Documentation</a>
+      <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener">MIT License</a>
+    </div>
+    <div class="footer-tagline">Stop prompting. Start orchestrating.</div>
+  </div>
+</footer>
+
+<script>
+/* Back to top button */
+(function(){
+  var btn=document.getElementById('backToTop');
+  if(!btn)return;
+  window.addEventListener('scroll',function(){
+    btn.classList.toggle('visible',window.scrollY>400);
+  });
+  btn.addEventListener('click',function(){
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+})();
+</script>
+</body>
+</html>
