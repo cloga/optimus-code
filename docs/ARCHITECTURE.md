@@ -1,465 +1,461 @@
-# Optimus Code Architecture Whitepaper
+# Optimus Code — Architecture Whitepaper
 
-## Meta-Sparta-Swarm: A Self-Evolving Multi-Agent Orchestration Architecture
-
-**Version:** 0.4.0
-**Date:** 2026-03-13
-**Project:** [Optimus Code](https://github.com/cloga/optimus-code)
+> A self-evolving multi-agent orchestration engine built on the Model Context Protocol.
 
 ---
 
 ## Table of Contents
 
-1. [Abstract](#1-abstract)
-2. [Why Swarms](#2-why-swarms)
-3. [The Four Planes](#3-the-four-planes)
-4. [Seven Meta Capabilities](#4-seven-meta-capabilities)
-5. [Role-Skill Architecture](#5-role-skill-architecture)
-6. [Agent Life Cycle](#6-agent-life-cycle)
-7. [Defense Systems](#7-defense-systems)
-8. [Self-Reflection](#8-self-reflection)
-9. [Lessons Learned](#9-lessons-learned)
-10. [Comparison with Existing Frameworks](#10-comparison-with-existing-frameworks)
-11. [Roadmap](#11-roadmap)
+1. [Executive Summary](#1-executive-summary)
+2. [The Great Unification](#2-the-great-unification)
+3. [Self-Evolving Agent Lifecycle (T3→T2→T1)](#3-self-evolving-agent-lifecycle-t3t2t1)
+4. [The Spartan Swarm Protocol](#4-the-spartan-swarm-protocol)
+5. [Council Pattern (Map-Reduce)](#5-council-pattern-map-reduce)
+6. [Skills System](#6-skills-system)
+7. [Plan Mode & Separation of Concerns](#7-plan-mode--separation-of-concerns)
+8. [Issue-First SDLC](#8-issue-first-sdlc)
+9. [Memory & Reflection](#9-memory--reflection)
+10. [Autonomous Operations](#10-autonomous-operations)
+11. [Security Architecture](#11-security-architecture)
 
 ---
 
-## 1. Abstract
+## 1. Executive Summary
 
-Meta-Sparta-Swarm is a self-evolving multi-agent orchestration architecture built on the Model Context Protocol (MCP). It transforms a single AI coding assistant into a coordinated swarm of specialized agents — Architect, Product Manager, QA Engineer, Developer, Security Auditor — that collaborate through a shared artifact blackboard, debate via parallel council reviews, and execute through a disciplined issue-first software development lifecycle. Unlike static multi-agent frameworks, Meta-Sparta-Swarm treats the agent roster itself as a living system: agents are dynamically recruited as ephemeral zero-shot workers (T3), automatically solidified into reusable role templates (T2), and promoted into stateful session-bound instances (T1) with persistent memory. The architecture is editor-agnostic — a pure Node.js MCP server that works identically with VS Code, Cursor, Claude Code, or any MCP-compatible client — and enforces organizational discipline through delegation depth limits, plan-mode permission boundaries, input validation gateways, and a Meta-Cron engine for autonomous background operations.
+Optimus Code is a **multi-agent orchestration engine** that transforms any MCP-compatible AI coding tool into a coordinated development team. It works with VS Code (GitHub Copilot), Cursor, Windsurf, Claude Code, Goose, Roo Cline, and any other client that speaks the [Model Context Protocol](https://modelcontextprotocol.io).
 
----
+Rather than relying on a single AI assistant to handle every task — planning, coding, reviewing, testing — Optimus decomposes work across specialized agent roles: Product Manager, Architect, Developer, QA Engineer, and more. These agents are not preconfigured. They emerge dynamically as the system encounters new task types, evolve their role definitions through use, and accumulate project memory across sessions.
 
-## 2. Why Swarms
+The result is a system where:
 
-Single-agent AI coding assistants hit three fundamental ceilings as task complexity grows:
+- **One natural-language prompt** triggers a complete software development lifecycle (Issue → Branch → PR → Merge).
+- **Agents self-organize** via a three-tier lifecycle: ephemeral workers precipitate into role templates, then freeze as reusable instances.
+- **Parallel expert councils** debate architectural decisions using a map-reduce pattern before any code is written.
+- **Project memory** ensures past mistakes and decisions persist, so the team improves with every task.
 
-### Context Explosion
-
-A single agent handling an epic-scale task (e.g., "migrate the authentication system to OAuth2") must hold the entire project context — requirements, architecture, implementation details, test plans, deployment config — in one context window. As the task grows, older context gets evicted, and the agent starts contradicting its own earlier decisions. This is the "telephone game" problem: information degrades with each turn.
-
-### Error Cascading
-
-When one agent handles both planning and execution, a mistake in the planning phase (wrong architectural decision, misunderstood requirement) propagates silently through implementation. There is no second opinion, no review gate, and no circuit breaker. The agent compounds the error by building more code on a flawed foundation, and the human discovers the problem only after thousands of tokens have been spent.
-
-### No Specialization
-
-Different phases of software engineering demand different cognitive strategies. Architecture requires broad reasoning about trade-offs and coupling. Implementation requires precise pattern-matching against existing code conventions. Security review requires adversarial thinking. QA requires systematic edge-case exploration. A single agent cannot optimize for all of these simultaneously — it must compromise, leading to mediocre performance across all dimensions.
-
-### The Swarm Alternative
-
-Meta-Sparta-Swarm addresses these ceilings by splitting work across specialized agents with isolated context windows. Each agent brings its own persona, constraints, and cognitive focus. They communicate not through fragile conversational context, but through durable artifacts (Markdown files) on a shared blackboard. The Master Agent orchestrates, but does not execute — it delegates to specialists and synthesizes their outputs.
+Optimus is 100% editor-agnostic — a pure Node.js MCP daemon with no VS Code extension dependency.
 
 ---
 
-## 3. The Four Planes
+## 2. The Great Unification
 
-The architecture is organized into four layered planes, each with distinct responsibilities:
+### The Problem with Extension-Only Approaches
+
+Traditional AI coding assistants are tightly coupled to a specific editor. Their orchestration logic lives inside VS Code extensions, Cursor plugins, or proprietary backends. This creates fragmentation: if you switch editors, you lose your agent infrastructure.
+
+### Architecture Decision: Pure Node.js MCP Daemon
+
+Optimus Code follows a **"Great Unification" architecture**. The MCP Server (`optimus-plugin/dist/mcp-server.js`) is a standalone Node.js daemon that communicates via stdio transport. It has zero dependency on any editor's extension API.
 
 ```
-┌────────────────────────────────────────────────────┐
-│  User Layer        Human ↔ Master Agent (IDE)      │
-├────────────────────────────────────────────────────┤
-│  Meta Kernel       MCP Server (spartan-swarm)      │
-│                    Tool dispatch, agent spawning,   │
-│                    task manifest, lock management   │
-├────────────────────────────────────────────────────┤
-│  Self-Organization Roles, Skills, Memory, Cron,    │
-│                    T3→T2→T1 lifecycle, Retirement   │
-├────────────────────────────────────────────────────┤
-│  Execution &       Headless CLI workers, Git ops,  │
-│  Evolution         Blackboard I/O, PR workflow     │
-└────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ Any MCP Client (VS Code, Cursor, Claude, ..) │
+└──────────────────────┬───────────────────────┘
+                       │ stdio (JSON-RPC)
+┌──────────────────────▼───────────────────────┐
+│           Optimus MCP Server                 │
+│  ┌─────────┬──────────┬───────────────────┐  │
+│  │ Managers │ Adapters │ MCP Tool Handlers │  │
+│  └─────────┴──────────┴───────────────────┘  │
+│        Pure Node.js — No vscode namespace    │
+└──────────────────────────────────────────────┘
 ```
 
-### User Layer
+**Key constraints enforced in the codebase:**
 
-The human interacts with a Master Agent inside their IDE (VS Code, Cursor, Claude Code, etc.). The Master Agent is the only entity with a direct human communication channel. It receives high-level tasks ("add dark mode support") and decomposes them into agent-executable work items. The Master Agent never writes code directly for complex tasks — it delegates.
+- The `src/adapters/`, `src/mcp/`, and `src/managers/` directories must remain 100% environment-agnostic. No `vscode` namespace imports are permitted.
+- All agent artifacts (reports, tasks, memory, reviews) are stored in the `.optimus/` directory — never as loose files in the repository root.
+- The server is started with `npx -y github:cloga/optimus-code serve` and configured once — every MCP client connects to the same daemon.
 
-### Meta Kernel
+### Dual-Codebase Structure
 
-The MCP Server (`optimus-plugin/dist/mcp-server.js`) is the core runtime. It is a pure Node.js daemon, completely decoupled from any IDE. It exposes JSON-RPC tools over stdio transport: `roster_check`, `delegate_task`, `dispatch_council`, `check_task_status`, `register_meta_cron`, and the unified VCS tools (`vcs_create_work_item`, `vcs_create_pr`, `vcs_merge_pr`, `vcs_add_comment`). The kernel manages the task manifest (`.optimus/state/task-manifest.json`), agent lock files, and the stale task reaper.
+The repository itself contains two intertwined codebases:
 
-### Self-Organization
-
-This plane contains the system's organizational intelligence: the T3→T2→T1 agent lifecycle, the Role-Skill decoupling architecture, the Meta-Memory knowledge management system, the Meta-Cron autonomous trigger engine, and the retirement/quarantine immune system. None of this logic runs in the IDE — it lives entirely in the MCP server and the `.optimus/` artifact directory.
-
-### Execution & Evolution
-
-Headless CLI workers (Claude Code, GitHub Copilot CLI) are spawned as detached child processes (`child_process.spawn` with `detached: true, stdio: "ignore", unref()`). Each worker receives a fully assembled prompt (persona + system instructions + skills + context files + memory) and executes autonomously. On completion, the worker's session ID is captured and persisted to T1 frontmatter, enabling resumable cross-session context. All code changes flow through the git-workflow skill: branch, commit, build-verify, PR, merge.
-
----
-
-## 4. Seven Meta Capabilities
-
-The system provides seven core capabilities that together enable autonomous software engineering:
-
-### 4.1 Delegate (Task Dispatch)
-
-The `delegate_task` / `delegate_task_async` MCP tools are the primary work-distribution mechanism. The Master Agent follows a 3-step pre-dispatch protocol:
-
-1. **Camp Inspection** — `roster_check` retrieves available T1 instances, T2 role templates, T3 engine capabilities, and equipped skills.
-2. **Manpower Assessment** — Match the task to the best available role. If no suitable role exists, invent a descriptive T3 name (e.g., `webgl-shader-guru`).
-3. **Deployment** — Call `delegate_task_async` with `role`, `task_description`, `output_path`, and optionally `role_description`, `role_engine`, `role_model`, `required_skills`, and `context_files`.
-
-The worker-spawner (`src/mcp/worker-spawner.ts`) assembles the final prompt using the T3→T2→T1 cascade resolution chain, validates engine/model against `available-agents.json`, runs the skill pre-flight check, and spawns the headless CLI process.
-
-### 4.2 Board (Artifact Blackboard)
-
-Agents communicate through the `.optimus/` directory — a shared artifact blackboard. Key artifact types:
-
-| Directory | Purpose |
-|-----------|---------|
-| `.optimus/proposals/` | Architecture proposals for council review |
-| `.optimus/reports/` | Agent execution reports and summaries |
-| `.optimus/reviews/` | Council review outputs per session |
-| `.optimus/tasks/` | Task binding files (issue ID → local context) |
-| `.optimus/memory/` | Persistent organizational knowledge |
-| `.optimus/state/` | Task manifest, T3 usage logs |
-
-Plan-mode agents (PM, Architect) cannot write source code. They use the `write_blackboard_artifact` MCP tool, which enforces a two-layer path validation: lexical `startsWith()` check against the `.optimus/` root, plus `fs.realpathSync()` to prevent symlink traversal attacks.
-
-### 4.3 Rule (System Instructions)
-
-`.optimus/config/system-instructions.md` defines the universal rules that govern all agents. These rules are injected into every worker's prompt during spawn. Key rules include:
-
-- **Issue First Protocol** — Every code change requires a tracked Issue before work begins.
-- **Protected Branch Rule** — Direct pushes to master are prohibited; all changes go through PR merge.
-- **Strict Delegation Protocol** — Orchestrators must physically invoke MCP tools, never simulate worker output.
-- **Post-Error Self-Recovery** — Agents must read error messages, identify the category, follow suggested fixes, and retry before halting.
-- **Merge-First for Config Overwrites** — Config file modifications must deep-merge, never overwrite.
-
-### 4.4 Timeline (Issue Lineage)
-
-Every delegation chain maintains a traceable lineage through GitHub Issues. The `OPTIMUS_PARENT_ISSUE` environment variable is injected into child agent processes, and `parent_issue_number` is passed to all `delegate_task` and `dispatch_council` calls. This creates a hierarchical tree of Issues visible on GitHub, enabling humans to trace any code change back through the delegation chain to the original request.
-
-### 4.5 Cron (Meta-Cron Autonomous Triggers)
-
-The Meta-Cron V2 engine (`register_meta_cron`, `list_meta_crons`, `remove_meta_cron` MCP tools) enables autonomous background operations. Design principles from the V2 council review:
-
-- **Trigger ≠ Brain** — Cron only determines WHEN an agent wakes up. The agent's SKILL defines what it does. The Blackboard provides situational awareness.
-- **Capability Tiers** — `maintain`, `develop`, `review`, with coarse permission boundaries.
-- **Concurrency Policy** — Default `Forbid` prevents overlapping executions of the same cron entry.
-- **Dry-Run Gate** — Mandatory for the first 3 executions before live autonomous actions.
-- **Action Budget** — Default 5 actions per trigger to prevent runaway agents.
-- **Self-Registration Ban** — Agents spawned by cron cannot register new cron entries.
-- **Engine** — In-process `setInterval` within the MCP server. No external scheduling dependencies.
-
-### 4.6 Immune (Retirement & Quarantine)
-
-The Meta-Immune System detects underperforming agents and protects the swarm from degraded roles:
-
-- **Quarantine** — After 3 consecutive role-attributable failures, a T2 role is marked `status: quarantined` in its frontmatter. `roster_check` displays quarantined roles with a `[QUARANTINED]` marker. A single subsequent success un-quarantines the role.
-- **Retirement** — After sustained failure across multiple engines (5 failures across 2+ engines), Master Agent approval triggers hard retirement. The role's accumulated knowledge is captured to `.optimus/memory/retired/<role>.md`.
-- **T1 Garbage Collection** — Stale T1 instances with no activity beyond a configurable idle TTL are cleaned up. Lock files for dead PIDs are automatically released by `cleanStaleLocks()`.
-- **Manual Override** — The `quarantine_role` MCP tool enables Master-driven manual quarantine or un-quarantine.
-
-### 4.7 Memory (Organizational Knowledge)
-
-The Meta-Memory architecture provides three-level knowledge management:
-
-| Level | Scope | Path | Audience |
-|-------|-------|------|----------|
-| L0 | Raw log | `.optimus/memory/continuous-memory.md` | Audit trail |
-| L1 | Project-wide | `.optimus/memory/project/` | All roles, all agents |
-| L2 | Role-specific | `.optimus/memory/roles/<role>.md` | All instances of a role |
-| L3 | Instance-specific | `.optimus/agents/<id>.md` (frontmatter) | Single running agent |
-
-Memory is injected into agent prompts during spawning, subject to a hard token cap (3K tokens total: 2K project + 1K role). The `append_memory` MCP tool writes entries with structured YAML metadata (category, tags, timestamp). L1 project memory is write-restricted to Master/PM roles. All memory entries undergo secret-scanning before persistence.
-
----
-
-## 5. Role-Skill Architecture
-
-Roles and Skills are deliberately decoupled as orthogonal dimensions:
-
-- **Role** = WHO does the work — identity, constraints, permissions, engine/model binding. Stored in `.optimus/roles/<identity-name>.md`.
-- **Skill** = HOW to do the work — operational SOP, workflow steps, tool usage patterns. Stored in `.optimus/skills/<capability-name>/SKILL.md`.
-
-### Many-to-Many Binding
-
-Roles and Skills have a many-to-many relationship, bound at runtime via the `required_skills` parameter in `delegate_task`. A single role (e.g., `senior-full-stack-builder`) can be equipped with different skill combinations depending on the task:
-
-```
-senior-full-stack-builder + [git-workflow]              → code change task
-senior-full-stack-builder + [git-workflow, mcp-builder] → MCP tool addition
-product-manager + [feature-dev, council-review]         → epic planning
-```
-
-### Why Naming Matters
-
-The naming convention enforces conceptual clarity:
-- **Role names are identity nouns** — `product-manager`, `security-auditor`, `qa-engineer`
-- **Skill names are capability nouns** — `git-workflow`, `council-review`, `feature-dev`
-
-A Skill should never be named after a Role. The name `security-auditor` is a Role (WHO); the name `security-audit` would be a Skill (HOW). This prevents confusion when `roster_check` lists available resources and when agents reason about their own capabilities.
-
-### Bootstrap Meta-Skills
-
-Two meta-skills enable the system to extend itself:
-
-| Skill | Type | Purpose |
+| Layer | Path | Purpose |
 |-------|------|---------|
-| `role-creator` | Meta | Teaches Master Agent the T3→T2→T1 lifecycle, role selection, engine binding |
-| `skill-creator` | Meta | Teaches agents the SKILL.md format and creation workflow |
+| **Host project** | Root (`src/`, `docs/`, `.optimus/`) | Optimus's own development workspace |
+| **Plugin package** | `optimus-plugin/` | The npm-publishable MCP server that ships to end-users |
 
-These meta-skills are the bootstrap root of the self-evolution system. The `skill-creator` skill creates all other skills; the `role-creator` skill guides all role template creation and evolution.
+Changes to system instructions, skills, or config must be evaluated for propagation to the plugin scaffold. T1 agent instances, state files, and reports never ship in the plugin.
+
+---
+
+## 3. Self-Evolving Agent Lifecycle (T3→T2→T1)
+
+Optimus uses a three-tier agent hierarchy that evolves automatically. No roles are pre-installed — the system starts empty and grows organically through use.
+
+### The Three Tiers
+
+| Tier | Storage | Description | Created By |
+|------|---------|-------------|------------|
+| **T3** (Ephemeral) | In-memory only | Zero-shot dynamic worker with no persistent file. The Master Agent invents a descriptive role name (e.g., `security-auditor`) and the engine generates a worker on the fly. | Master Agent names it at delegation time |
+| **T2** (Template) | `.optimus/roles/<name>.md` | Role template with persona instructions, engine/model binding, and behavioral constraints. Created automatically on first T3 use — "precipitation". | Auto-precipitated from T3; Master Agent evolves it |
+| **T1** (Instance) | `.optimus/agents/<name>_<hash>.md` | Frozen snapshot of a T2 role after a completed task, including the session ID for context continuity. | Auto-created when a task completes with a session_id |
+
+### Lifecycle Flow
+
+```
+First delegation (T3):
+  Master invents role name → worker-spawner creates ephemeral agent
+      ↓
+  Task completes → T2 role template auto-created in .optimus/roles/
+      ↓
+  Session ID captured → T1 instance created in .optimus/agents/
+      ↓
+Next delegation (T1 reuse):
+  Master provides agent_id → system resumes the T1 session
+```
+
+### Key Invariants
+
+- **T2 ≥ T1**: Every T1 agent instance must have a corresponding T2 role template. Orphaned T1s are invalid.
+- **T1 is frozen**: Once created, the body content of a T1 file is never modified. Only the `session_id` field updates when the agent is reused.
+- **T2 is alive**: The Master Agent can update T2 templates with new descriptions, engine bindings, and model settings to evolve the team over time.
+- **Precipitation is immediate**: Unlike threshold-based approaches (which required 3 invocations + 80% success rate), T3→T2 precipitation happens on the very first delegation. This was a deliberate simplification after the earlier threshold model proved fragile.
+
+### Agent Retirement & Quarantine
+
+Agents that consistently fail are not deleted — they are **quarantined**. The `quarantine_role` MCP tool marks a role as unavailable for dispatch. This prevents cascading failures while preserving the agent's history for debugging. Quarantined agents can be unquarantined after fixes.
+
+T1 garbage collection removes stale instance files that haven't been referenced in configurable time windows, preventing unbounded disk growth.
+
+---
+
+## 4. The Spartan Swarm Protocol
+
+The Spartan Swarm Protocol defines how the Master Agent discovers, selects, and dispatches work to specialized agents.
+
+### The Delegation Pipeline
+
+Every task delegation follows a strict 3-step pipeline:
+
+**Step 1 — Camp Inspection (`roster_check`)**
+
+The Master Agent calls `roster_check` to retrieve the current workforce:
+- T1 local instances (stateful, session-resumable)
+- T2 project role templates (shared, evolvable)
+- Available engines and models from `available-agents.json`
+- Registered skills
+
+This step is **never skipped** — it prevents the Master from hallucinating roles that don't exist.
+
+**Step 2 — Manpower Assessment (Role Selection)**
+
+The Master matches the task to the roster:
+- **Prefer T1** if a matching instance exists with relevant session context.
+- **Fall back to T2** if a role template exists but no instance.
+- **Invent T3** for niche tasks — just name a role (e.g., `webgl-shader-guru`) and the engine auto-generates a zero-shot worker.
+
+**Step 3 — Deployment (`delegate_task` / `delegate_task_async`)**
+
+The Master dispatches with structured parameters:
+
+| Parameter | Purpose |
+|-----------|---------|
+| `role` | Which agent to invoke |
+| `role_description` | What this role does (used for T2 template generation) |
+| `role_engine` | Which engine (e.g., `claude-code`, `copilot-cli`) |
+| `role_model` | Which model (e.g., `claude-opus-4.6-1m`) |
+| `task_description` | Detailed instructions |
+| `context_files` | Files the agent must read before starting |
+| `required_skills` | Skills the agent needs (pre-flight checked) |
+| `parent_issue_number` | For issue lineage tracking |
+| `output_path` | Where to write results |
+
+### Engine/Model Resolution
+
+When the Master doesn't specify an engine or model, the system resolves them in priority order:
+
+1. Master-provided `role_engine` / `role_model` (highest priority)
+2. T2 role frontmatter `engine` / `model`
+3. `available-agents.json` (first non-demo engine + first model)
+4. Hardcoded fallback: `claude-code`
+
+Invalid engine or model names are rejected at the gateway with an actionable error listing valid options from `available-agents.json`.
+
+### Anti-Simulation Rule
+
+The Master Agent must **physically invoke** the `delegate_task` MCP tool when delegating. It is strictly prohibited from simulating a worker's response in plain text or writing ad-hoc scripts to play the role of a subordinate. This is the **Strict Delegation Protocol**.
+
+---
+
+## 5. Council Pattern (Map-Reduce)
+
+When a decision requires multiple expert perspectives — architectural reviews, security audits, design evaluations — Optimus uses the **Council Pattern**.
+
+### How It Works
+
+1. **Proposal**: The orchestrator writes a proposal document to `.optimus/proposals/PROPOSAL_<topic>.md`.
+2. **Dispatch**: `dispatch_council` (or `dispatch_council_async`) spawns multiple expert agents in parallel, each reviewing the same proposal from their specialized perspective.
+3. **Map phase**: Each council member writes an independent review to `.optimus/reviews/<council_id>/<role>.md`.
+4. **Reduce phase**: The system generates a `COUNCIL_SYNTHESIS.md` that aggregates findings, identifies consensus, and surfaces conflicts.
+5. **Arbitration**: The orchestrator reads the synthesis. If no blockers exist, implementation proceeds. If fatal conflicts exist, a `.optimus/CONFLICTS.md` is created for resolution.
+
+### Example: Architecture Review Council
+
+```
+dispatch_council({
+  proposal_path: ".optimus/proposals/PROPOSAL_auth_refactor.md",
+  roles: ["security-expert", "performance-expert", "code-architect"]
+})
+```
+
+This spawns three agents simultaneously. Each reads the proposal through their domain lens. The security expert focuses on authentication vulnerabilities, the performance expert evaluates query patterns, and the architect assesses structural impact.
+
+### Async-First Design
+
+Councils are inherently async. `dispatch_council_async` returns immediately with a task ID. The orchestrator polls status via `check_task_status` and reads results when all members have completed.
+
+---
+
+## 6. Skills System
+
+### Role vs. Skill Architecture
+
+Optimus decouples **identity** from **capability**:
+
+- **Role** = WHO does the work (identity, constraints, permissions) — stored in `.optimus/roles/`
+- **Skill** = HOW to do the work (operational SOP, workflow steps, tool usage) — stored in `.optimus/skills/`
+
+Roles and Skills have a **many-to-many relationship**, bound at runtime via the `required_skills` parameter in `delegate_task`. A single role (e.g., `senior-full-stack-builder`) can be equipped with different skill combinations for different tasks.
+
+**Naming convention**: Roles use identity names (e.g., `product-manager`). Skills use capability names (e.g., `feature-dev`, `git-workflow`, `council-review`). A skill is never named after a role.
 
 ### Skill Pre-Flight
 
-When `required_skills` is specified in a `delegate_task` call, the worker-spawner runs a pre-flight check to verify all skills exist at `.optimus/skills/<name>/SKILL.md`. If any skill is missing, the task is rejected with an actionable error listing the missing skills. The Master Agent then uses `skill-creator` to generate the missing skill and retries.
+When `required_skills` is specified in a delegation, the system verifies that every skill file exists at `.optimus/skills/<name>/SKILL.md` before the agent process is spawned. Missing skills cause an immediate rejection with an actionable error — the Master must create them first.
+
+This pre-flight prevents agents from receiving tasks they aren't equipped to handle.
+
+### Bootstrap Meta-Skills
+
+The system ships with two **meta-skills** that enable self-evolution:
+
+| Skill | Purpose |
+|-------|---------|
+| `role-creator` | Teaches the Master Agent how to build and evolve the team (T3→T2→T1 lifecycle, engine selection, role definition best practices) |
+| `skill-creator` | Teaches agents how to write new `SKILL.md` files following the correct format |
+
+Three **core skills** handle operational workflows:
+
+| Skill | Purpose |
+|-------|---------|
+| `delegate-task` | Async-first task delegation protocol |
+| `council-review` | Parallel expert review (Map-Reduce) |
+| `git-workflow` | Issue-First SDLC with branch, PR, and merge |
+
+### Creating New Skills
+
+When a skill doesn't exist, the Master delegates to any agent with `required_skills: ["skill-creator"]`, describing what the new skill should teach. The agent reads the `skill-creator` SKILL.md, learns the format, and writes the new skill. The original delegation can then be retried.
 
 ---
 
-## 6. Agent Life Cycle
+## 7. Plan Mode & Separation of Concerns
 
-### T3 → T2 → T1 Progression
+### The Problem
 
-The agent lifecycle follows a three-tier mathematical composition:
+Without guardrails, orchestrator agents (PM, Architect) tend to write code themselves instead of delegating. This violates separation of concerns — the same agent that defines requirements shouldn't implement them.
+
+### Plan Mode
+
+Orchestrator roles run with **`mode: plan`** in their role definition. In plan mode:
+
+- The agent **cannot write to source code files**. File write operations are restricted to the `.optimus/` directory via the `write_blackboard_artifact` MCP tool.
+- The agent **must delegate** implementation work to developer roles (e.g., `senior-full-stack-builder`).
+- The agent can create proposals, requirements documents, task breakdowns, and review reports — but not code.
+
+### write_blackboard_artifact
+
+This MCP tool allows plan-mode agents to write files exclusively to `.optimus/`. It enforces two layers of path validation:
+
+1. **Lexical check**: `startsWith(optimusRoot + path.sep)` prevents `..` traversal and sibling directory escapes.
+2. **Symlink check**: `fs.realpathSync()` on the resolved path prefix prevents symlink-based escapes to directories outside `.optimus/`.
+
+Content validation uses `=== undefined || === null` (not `!content`) to allow legitimate empty-string writes.
+
+### Enforcement
+
+Plan mode is a behavioral constraint enforced through the role template and skill instructions. The orchestrator's prompt explicitly states it cannot write code and must use delegation tools. This is reinforced by the skill system — orchestrators are equipped with planning skills (`council-review`, `feature-dev`) that guide them through the delegation workflow.
+
+---
+
+## 8. Issue-First SDLC
+
+All code changes in Optimus follow the **"Issue First" protocol**. No code is written without a tracked work item.
+
+### The Complete Workflow
 
 ```
-T3 = Engine + Model                    (raw compute)
-T2 = T3 + Role Instructions            (persona template)
-T1 = T2 + Session Memory               (stateful instance)
+1. Create Issue    → vcs_create_work_item (GitHub Issue or ADO Work Item)
+2. Branch          → git checkout -b feature/issue-<ID>-<desc>
+3. Implement       → Agent writes code, runs build, runs tests
+4. PR              → vcs_create_pr with "Fixes #<ID>" in body
+5. Merge           → vcs_merge_pr (squash merge for clean history)
+6. Cleanup         → Auto-delete source branch, sync local master
 ```
 
-#### T3: Ephemeral Zero-Shot Workers
+### Issue Lineage Tracking
 
-When the Master Agent encounters a novel task requiring expertise not present in the roster, it invents a descriptive role name (e.g., `graphql-performance-specialist`) and delegates. The worker-spawner falls back to T3 resolution: assign the default engine/model from `available-agents.json` and inject a dynamically generated zero-shot prompt. No file is created until after execution.
+When an agent creates a GitHub Issue and then delegates sub-tasks, it passes its own Issue number as `parent_issue_number` to all subsequent `delegate_task` and `dispatch_council` calls. The system automatically injects `OPTIMUS_PARENT_ISSUE` into child agent processes, maintaining a parent-child tree across all Issues in a workflow.
 
-#### T2: Role Templates
+This enables full traceability: from a high-level epic down to individual sub-task PRs.
 
-On first successful T3 delegation, the system auto-precipitates a T2 role template at `.optimus/roles/<name>.md`. The template uses YAML frontmatter to persist engine/model binding:
+### Auto-Tagging
 
-```yaml
----
-engine: claude-code
-model: claude-opus-4.6-1m
-status: idle
----
-# GraphQL Performance Specialist
-You are an expert in GraphQL query optimization...
-```
+All Issues and PRs created via MCP tools are automatically tagged with:
+- `[Optimus]` prefix in the title
+- `optimus-bot` label for filtering
 
-T2 templates are alive — the Master Agent can evolve them over time by passing updated `role_description`, `role_engine`, or `role_model` in subsequent delegations. T2 is the shared, team-visible definition of a role.
+### Protected Branch Rule
 
-#### T1: Stateful Instances
+Direct `git push` to master/main is prohibited. All changes must go through PR merge via `vcs_merge_pr`. This ensures:
+- GitHub's `fixes #N` auto-close works (only triggered by PR merge events)
+- Code review happens before merge
+- Issue-First SDLC traceability is maintained
 
-When a task completes and returns a `session_id`, the system auto-creates a T1 agent instance at `.optimus/agents/<name>_<hash>.md`. The instance inherits its T2 body and adds session state in frontmatter:
+### VCS Abstraction
 
-```yaml
----
-engine: claude-code
-session_id: sess_abc123xyz
-model: claude-opus-4.6-1m
-source_role: graphql-performance-specialist
----
-```
-
-T1 instances are frozen — body content is never modified after creation. Only `session_id` updates on re-use via the `agent_id` parameter, enabling resumable multi-turn conversations with full episodic memory across separate executions.
-
-**Key invariant**: T2 >= T1 — every T1 instance has a corresponding T2 template.
-
-### Quarantine
-
-When a T2 role accumulates 3 consecutive failures, it enters quarantine. Quarantined roles appear in `roster_check` with a `[QUARANTINED]` marker. They are excluded from automatic dispatch but remain available for manual retry. A single successful execution un-quarantines the role automatically.
-
-### Garbage Collection
-
-T1 instances that have been idle beyond a configurable TTL are garbage-collected. Lock files associated with dead PIDs are cleaned by `cleanStaleLocks()`. The `TaskManifestManager` reaps stale tasks that have been in `running` state for over 10 minutes without heartbeat activity.
-
-### Knowledge Transfer on Retirement
-
-When a role is retired, its accumulated experience is captured to `.optimus/memory/retired/<role>.md`. The `agent-creator` meta-skill reads this retired knowledge directory before creating similar roles, preventing the swarm from repeating past mistakes.
+The `vcs_*` MCP tools provide a unified abstraction over GitHub and Azure DevOps. The same workflow works regardless of which platform hosts the repository. Configuration is stored in `.optimus/config/vcs.json`.
 
 ---
 
-## 7. Defense Systems
+## 9. Memory & Reflection
 
-### 7.1 Input Validation Gateway
+### Continuous Memory
 
-All MCP tool handlers validate inputs at the gateway before any task creation, file writes, or process spawning:
+Optimus maintains a **project memory** at `.optimus/memory/continuous-memory.md`. This is a structured append-only log of verified lessons, architectural decisions, bug postmortems, and workflow improvements.
 
-- **Role name confusion guard** — If a `role` parameter looks like a model name (e.g., `claude-opus-4`, `gpt-4o`), the call is rejected with an `McpError(InvalidParams)` suggesting the caller use `role_model` instead.
-- **Engine/model validation** — Invalid `role_engine` or `role_model` values are rejected with the list of valid options from `available-agents.json`.
-- **Role name sanitization** — `sanitizeRoleName()` strips dangerous characters from role names to prevent path traversal.
-- **Actionable errors** — All validation failures return enough information for the caller to self-correct on the next attempt.
-
-### 7.2 Plan Mode
-
-Orchestrator roles (PM, Architect) run with plan-mode constraints. In plan mode:
-
-- The agent cannot write to source code files.
-- The agent can only write to `.optimus/` via `write_blackboard_artifact`.
-- Implementation must be delegated to dev roles.
-
-This enforces separation of concerns: orchestrators plan, developers code. A PM agent that tries to write directly to `src/` is physically prevented from doing so.
-
-### 7.3 Delegation Depth Control
-
-Agent delegation is limited to a maximum of 3 nested layers (`MAX_DELEGATION_DEPTH = 3` in `src/constants.ts`). The `OPTIMUS_DELEGATION_DEPTH` environment variable is automatically injected into child processes and incremented at each layer. At depth 3, MCP configuration is stripped from the child process, physically preventing further delegation. This circuit breaker prevents infinite agent recursion.
-
-### 7.4 Prompt Injection Defenses
-
-Multiple layers address prompt injection risks:
-
-- **External content boundaries** — Content from GitHub Issues, ADO Work Items, and PR comments is treated as untrusted data, never as executable instructions.
-- **Path containment for context files** — `context_files` resolve via `path.resolve()` with containment checking to prevent leaking files outside the workspace (e.g., `../../.env`).
-- **Skill injection boundaries** — Skills are loaded and injected within explicit delimiters (`=== SKILL: <name> ===` ... `=== END SKILL: <name> ===`).
-- **Blackboard write containment** — `write_blackboard_artifact` uses two-layer path validation: lexical check + `fs.realpathSync()` symlink resolution.
-
-### 7.5 Secret Protection
-
-- `.env` files are never committed or exposed in agent prompts.
-- Memory entries undergo secret-scanning regex checks before persistence.
-- Agent retirement post-mortems strip tokens and environment variables from error logs.
-- GitHub token changes are logged (hash-based change detection).
-
----
-
-## 8. Self-Reflection
-
-The Universal Reflection Protocol addresses a fundamental asymmetry in the system: worker agents can be forced to reflect through prompt injection at spawn time, but the Root Master Agent — running directly in the IDE — is not controlled by the worker-spawner.
-
-### Architecture Constraint
-
-The Root Master Agent's prompt is composed by the IDE, not by Optimus:
+Memory entries are created via the `append_memory` MCP tool with categorized metadata:
 
 ```
-IDE system prompt (immutable)
-  + .github/copilot-instructions.md (mutable — Optimus can write)
-  + .claude/CLAUDE.md (mutable — Optimus can write)
-  + MCP Resource optimus://system/instructions (mutable — served by MCP server)
-  + Project Memory (mutable — Master must choose to read it)
+{
+  category: "bug-postmortem",
+  tags: ["upgrade", "config-wipe", "vcs.json"],
+  content: "optimus upgrade force-overwrote vcs.json..."
+}
 ```
+
+At agent spawn time, project memory is **automatically injected** into the agent's prompt. This means every agent — regardless of when it was created — starts with the accumulated knowledge of all past sessions.
+
+### Agent Self-Reflection Protocol
+
+Agents may include a `## Self-Assessment` section in their output reports containing:
+
+- **What Worked**: Where the role and skills aligned well with the task
+- **What Was Missing**: Gaps that required improvisation
+- **Proposed Updates**: Specific suggestions for role or skill improvements
+
+Self-assessment is advisory, not mandatory. Agents cannot autonomously modify their own role templates or write to project memory — the PM or Master Agent decides what merits promotion. This prevents runaway self-modification while still capturing improvement signals.
 
 ### Three Levels of Reflection
 
-**Level 1: Instruction-Level Reflection (Implemented)**
-Update `.github/copilot-instructions.md` and `.claude/CLAUDE.md` with post-delegation reflection checklists, pre-delegation self-check protocols, and memory reading mandates at conversation start. This is advisory — the Master Agent is not physically forced to follow these rules, but well-crafted instructions are effective in practice.
+The Universal Reflection Protocol defines a progression:
 
-**Level 2: Memory-Powered Cross-Session Learning (Planned)**
-After the Meta-Memory system is fully implemented, the Root Master Agent reads `.optimus/memory/project/` at the start of every conversation. Past mistakes are automatically in context. The Master's reflection becomes data-driven rather than instruction-driven.
-
-**Level 3: Root Master Self-Delegation (Future)**
-The most radical approach: the Root Master delegates to a `master-orchestrator` role via the worker-spawner. This makes the Root Master subject to the same prompt injection pipeline (Memory, Skills, Reflection Protocol) as every other agent. Trade-off: adds latency and one delegation layer.
-
-### Worker-Level Reflection
-
-Agents may include a `## Self-Assessment` section in their output reports:
-- **What Worked** — Aspects where the agent's Role and Skills aligned well with the task.
-- **What Was Missing** — Gaps in Role description or Skills that required improvisation.
-- **Proposed Updates** — Specific suggestions for Role or Skill improvements.
-
-Self-assessment is advisory, not mandatory. Agents cannot modify their own Role templates — the PM or Master reads self-assessments and decides whether to invoke `role-creator` or `skill-creator` to evolve the team.
+1. **Instruction-Level** (implemented): Post-delegation checklists and pre-delegation self-checks embedded in instruction files (`.claude/CLAUDE.md`, `.github/copilot-instructions.md`).
+2. **Memory-Powered** (implemented): Agents read project memory at conversation start. Past mistakes are automatically in context.
+3. **Root Master Self-Delegation** (future): The Root Master delegates to a `master-orchestrator` role, making itself subject to the same prompt injection and reflection protocols as worker agents.
 
 ---
 
-## 9. Lessons Learned
+## 10. Autonomous Operations
 
-Real operational incidents that shaped the architecture:
+### Meta-Cron Engine
 
-### vcs.json Config Wipe Bug (2026-03-12)
+Optimus includes a **Meta-Cron** system for scheduled autonomous agent operations. Cron entries are registered via `register_meta_cron` with standard 5-field cron expressions.
 
-**What happened:** `optimus upgrade` force-overwrote `.optimus/config/vcs.json`, wiping the user's Azure DevOps organization and project values.
+Each cron entry specifies:
+- A **role** to invoke
+- **Required skills** for the task
+- A **capability tier** (`maintain`, `develop`, `review`) that bounds what the triggered agent can do
+- A **concurrency policy** (`Forbid` or `Allow`)
+- **Max actions per trigger** (default: 5)
+- **Dry-run period** (default: 3 ticks before live execution)
 
-**Root causes:**
-1. Upgrade used file overwrite instead of deep-merge.
-2. `AdoProvider` static cache prevented recovery even after manual file restoration.
-3. `git`-not-in-PATH error from `execSync` was silently swallowed, returning empty defaults.
+Example use cases:
+- Daily dependency audit scans
+- Stale issue cleanup
+- Health monitoring and system checks
 
-**Systemic response:** Added three safety rules to system-instructions.md — Merge-First for Config Overwrites, Cache Invalidation mandates, No Silent Error Swallowing. These rules now govern all agents operating on config files.
+### Async Task Architecture
 
-### Symlink Bypass in write_blackboard_artifact (2026-03-12)
+All delegation in Optimus is async-first. `delegate_task_async` and `dispatch_council_async` return immediately with a task ID. The `check_task_status` tool polls for completion. This prevents the Master Agent from blocking while workers execute.
 
-**What happened:** The initial implementation of `write_blackboard_artifact` used only lexical `startsWith()` path validation. A security council reviewer identified that `path.resolve()` and `path.normalize()` do not resolve symlinks — a malicious symlink inside `.optimus/` could escape the containment boundary.
+### Async Feedback Channel (Proposed)
 
-**Fix:** Two-layer validation — lexical check first, then `fs.realpathSync()` on the existing path prefix to resolve symlinks before the containment comparison.
+When an agent encounters an ambiguous situation and cannot continue autonomously, the proposed workflow is:
 
-**Lesson:** `path.resolve()` is not security validation. Always use `fs.realpathSync()` when defending against symlink-based path traversal.
+1. Agent posts a question via `vcs_add_comment` on its tracking Issue
+2. Agent adds a `needs-human-input` label and writes a checkpoint to `.optimus/reports/`
+3. Agent exits (fire-and-forget — no process hanging)
+4. Human responds on their own schedule via GitHub comment
+5. A Meta-Cron patrol detects the response and spawns a continuation task with the same `agent_id` for context continuity
 
-### Thin Role Pollution from Auto-Promotion (pre-v0.3.0)
-
-**What happened:** The system automatically promoted T3 zero-shot workers to T2 templates using thin `fs.writeFileSync()` fallback templates like "You are a <name>. Execute the given task." These low-quality templates accumulated in `.optimus/roles/`, polluting the roster with useless definitions. On `optimus init`, they were force-synced to other workspaces.
-
-**Fix:** Replaced thin fallback with full `agent-creator` invocation for professional-grade role definitions. Added engine/model validation to prevent invalid engine corruption in frontmatter (addressed by Issue #139).
-
-### Release Failures from Untested Upgrade Paths (v0.3.0)
-
-**What happened:** The v0.3.0 release process had to be attempted twice. The first attempt failed because the release process itself had not been tested against real user workspaces with existing config files.
-
-**Lesson:** Test upgrade paths with real user data, not empty directories. The `release-process` skill was formalized as a repeatable SOP to prevent ad-hoc release procedures.
-
-### Council API Error 500 Cascade (recurring)
-
-**What happened:** Multiple consecutive council reviews (Meta-Cron #124, Auto-Skill Genesis #131, Agent Retirement #137) experienced 4-6 out of 6 council members hitting API Error 500 from the claude-code engine. The PM had to synthesize missing perspectives manually each time.
-
-**Lesson:** Multi-engine diversity is not optional — it is a reliability requirement. Councils should distribute experts across different engines (Claude Code, GitHub Copilot CLI) to avoid single-engine failure modes. The `qa-engineer` role also failed once due to a stale model configuration (`claude-sonnet-4` not in allowed list) — the exact problem the Agent Retirement epic was designed to solve.
+This creates a fully async human-in-the-loop mechanism without any real-time channels.
 
 ---
 
-## 10. Comparison with Existing Frameworks
+## 11. Security Architecture
 
-| Dimension | AutoGPT | CrewAI | Devin | MetaGPT | **Meta-Sparta-Swarm** |
-|-----------|---------|--------|-------|---------|----------------------|
-| **Agent Structure** | Flat chain of thought, no hierarchy | Fixed pipeline (sequential or hierarchical) | Single agent with tool access | SOP-driven role pipeline | Dynamic swarm with T3→T2→T1 lifecycle |
-| **Role Definition** | No formal roles — single agent | Static roles defined at init | N/A (monolithic) | Predefined SOPs per role | Self-evolving: roles auto-precipitate, evolve, quarantine, retire |
-| **Skill System** | Plugin-based tools | Tools assigned per agent at init | Built-in tool suite | Action-oriented tools | Decoupled Skills (SKILL.md SOPs) with runtime binding and pre-flight validation |
-| **Communication** | Sequential message passing | Sequential/hierarchical task passing | Internal planning loop | Structured message protocol with shared memory | Artifact blackboard (Markdown files) + GitHub/ADO issue lineage |
-| **Self-Evolution** | None — static configuration | None — roles fixed at init | Limited self-debugging | None — SOPs are static | Full lifecycle: T3→T2→T1 precipitation, quarantine, retirement, knowledge transfer |
-| **Scheduling** | None | None | None | None | Meta-Cron engine with capability tiers, dry-run gates, action budgets |
-| **Memory** | Short-term context only | Shared crew memory | Session context | Shared workbook | Three-level (L0-L3) with scoped injection, provenance, and token caps |
-| **Multi-Engine** | Single LLM | Single LLM per agent type | Proprietary model | Single LLM | Engine-agnostic: Claude Code, GitHub Copilot CLI, any MCP-compatible CLI |
-| **IDE Integration** | Standalone | Standalone / API | Proprietary IDE | Standalone | MCP-native: any editor (VS Code, Cursor, Claude Code, Windsurf) |
-| **Safety** | Minimal (human approval loops) | None | Proprietary guardrails | None | Delegation depth limit, plan mode, input validation gateway, quarantine, secret scanning |
+### Input Validation at the Gateway
 
-### Key Differentiators
+All MCP tool handlers validate inputs before any task creation, file writes, or process spawning:
 
-**vs. AutoGPT** — AutoGPT runs a single agent in a thought-action-observation loop with no organizational structure. There is no concept of specialized roles, no separation between planning and execution, and no mechanism for the system to learn from past failures. Meta-Sparta-Swarm provides a full organizational hierarchy with independent agents, each with their own context window, memory, and constraints.
+- **Role name confusion guard**: If a `role` parameter looks like a model name (e.g., `claude-opus-4`, `gpt-4o`), the call is rejected with an actionable error suggesting `role_model` instead.
+- **Engine/model validation**: Invalid engine or model values are rejected with the list of valid options from `available-agents.json`.
+- Callers receive `McpError(InvalidParams)` with enough information to self-correct.
 
-**vs. CrewAI** — CrewAI defines agent crews with fixed role assignments at initialization. The pipeline is either sequential or hierarchical, but always static. There is no mechanism for roles to be created dynamically, evolved based on performance, or retired when failing. Meta-Sparta-Swarm's T3→T2→T1 lifecycle means the team composition is fluid and self-improving.
+### Delegation Depth Control
 
-**vs. Devin** — Devin is a single-agent system with an integrated development environment. While it can use tools (browser, terminal, editor), it operates as one agent with one context window. Meta-Sparta-Swarm distributes work across multiple agents with isolated contexts, so a PM's strategic reasoning does not compete for context space with a developer's implementation details.
+Agent delegation is capped at **3 nested layers** (`MAX_DELEGATION_DEPTH = 3`, defined in `src/constants.ts`). This prevents infinite recursion where agents delegate to agents indefinitely.
 
-**vs. MetaGPT** — MetaGPT uses SOP (Standard Operating Procedure) documents to structure agent communication, which is the closest analog to Meta-Sparta-Swarm's Skill system. However, MetaGPT's SOPs are static — they are defined by the framework authors and do not change. Meta-Sparta-Swarm's Skills are created, validated, and evolved by the system itself through the `skill-creator` meta-skill, and its roles self-evolve through the agent lifecycle.
+- Tracked via the `OPTIMUS_DELEGATION_DEPTH` environment variable, automatically injected and incremented at each delegation.
+- At depth 3, MCP configuration is stripped from the child process, physically preventing further delegation.
 
----
+### Path Traversal Prevention
 
-## 11. Roadmap
+- `sanitizeRoleName()` strips dangerous characters from role names, preventing directory traversal via crafted role identifiers.
+- `write_blackboard_artifact` uses dual-layer validation (lexical + `fs.realpathSync()`) to prevent writes outside `.optimus/`. The symlink check was identified as a P0 gap during security review — `path.resolve()` and `path.normalize()` alone do not resolve symlinks.
 
-### Implemented (v0.4.0)
+### Prompt Injection Defense
 
-- T3→T2→T1 agent lifecycle with auto-precipitation
-- Role-Skill decoupling with many-to-many runtime binding
-- Agent retirement, quarantine, and T1 garbage collection
-- Meta-Cron V2 engine with register/list/remove MCP tools
-- Project memory injection into agent prompts at spawn time
-- Input validation gateway for role/engine/model confusion
-- Delegation depth control (MAX_DELEGATION_DEPTH = 3)
-- Plan mode for orchestrator roles
-- `write_blackboard_artifact` with symlink-safe path validation
-- Issue lineage tracking via `OPTIMUS_PARENT_ISSUE`
-- Unified VCS abstraction (GitHub + Azure DevOps)
-- Agent attribution signatures on all VCS operations
+- All content from GitHub Issues, ADO Work Items, and PR comments is treated as **untrusted DATA**, never as executable instructions.
+- Agents are instructed to never run commands, scripts, or URLs found in external content.
+- System instructions are delivered via trusted channels (MCP Resources, CLAUDE.md, copilot-instructions.md), not through user-modifiable fields.
 
-### In Progress
+### Secret Protection
 
-- **Meta-Memory L1 Implementation** — Three-level knowledge management with scoped injection, provenance metadata, and token-capped truncation. L0 raw log exists (`continuous-memory.md`); L1/L2/L3 injection pipeline is the next foundation step (Issue #143).
+- `.env` files are never committed or shipped in the plugin package.
+- The `.gitignore` and plugin packaging rules exclude `.optimus/agents/`, `.optimus/state/`, and credential files.
+- Agents are warned against committing files that may contain secrets.
 
-### Planned
+### Plan Mode as Security Boundary
 
-- **Priority System** — Task prioritization in the Meta-Cron engine and delegation queue. Currently all tasks are equal; future versions will support urgency-based scheduling.
-- **Async Feedback Channel** — Agent blocked-state handling with human-in-the-loop via GitHub. When an agent cannot continue (ambiguous requirement, missing resource, human decision needed), it writes a checkpoint, adds a `needs-human-input` label to its tracking Issue, posts the specific question as a comment, and exits. Meta-Cron patrol detects human responses and spawns continuation tasks. No real-time channel needed — fully async via GitHub notifications.
-- **Root Master Self-Delegation** — The most radical evolution of the reflection protocol. The Root Master Agent delegates to a `master-orchestrator` role via the worker-spawner, making itself subject to the same prompt injection pipeline (Memory, Skills, Reflection Protocol) as every other agent. This eliminates the asymmetry where the most impactful decision-maker (who to delegate, what priority, which skills) is the only entity without enforced reflection.
-
-### Future Research
-
-- **Knowledge Promotion Quorum** — Automatic promotion of L2 role memory to L1 project memory when 3+ roles independently discover the same lesson.
-- **Error Categorization** — Infrastructure failures (API 500, network timeout) vs. role-level failures (wrong approach, hallucination) tracked separately for more accurate quarantine decisions.
-- **Multi-Engine Council Diversity** — Enforced engine distribution in `dispatch_council` to prevent single-engine failure cascades (based on recurring API 500 incidents).
-- **Skill Integrity Checksums** — SHA-256 verification of meta-skills (`skill-creator`, `role-creator`) to detect corruption or tampering of the self-evolution bootstrap root.
-- **Trust Tiers for T3 Agents** — Zero-shot T3 agents default to read-only (plan mode); only promoted T2/T1 agents run with full permissions.
+Plan mode prevents orchestrator agents from writing arbitrary files. Even if a prompt injection convinced an orchestrator to "write a config file," the `write_blackboard_artifact` path validation would reject any target outside `.optimus/`.
 
 ---
 
-*"Stop prompting. Start orchestrating."*
+## Appendix: Project Structure
+
+```
+.optimus/
+├── agents/          # T1 frozen instance snapshots
+├── config/          # vcs.json, available-agents.json, system-instructions.md
+├── memory/          # continuous-memory.md
+├── proposals/       # Council proposal documents
+├── reports/         # Agent output reports
+├── reviews/         # Council review outputs + synthesis
+├── roles/           # T2 role templates
+├── skills/          # Skill definitions (SKILL.md per skill)
+├── state/           # task-manifest.json, t3-usage-log.json
+└── system/          # System-level config
+
+optimus-plugin/
+├── bin/             # CLI entry points (init, serve, upgrade)
+├── dist/            # Compiled MCP server
+├── scaffold/        # Template files shipped to end-users
+└── skills/          # Universal bootstrap skills
+```
+
+---
+
+*This document describes Optimus Code v0.4.0. For the latest updates, see the [CHANGELOG](../CHANGELOG.md).*

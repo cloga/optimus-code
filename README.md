@@ -4,6 +4,8 @@
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Framework: Model Context Protocol](https://img.shields.io/badge/MCP-Native-brightgreen.svg)](#)
+
+  [Landing Page](https://cloga.github.io/optimus-code/) · [Architecture Whitepaper](docs/ARCHITECTURE.md)
 </div>
 
 ---

@@ -3,543 +3,772 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Optimus Code — Multi-Agent Orchestrator</title>
+<title>Optimus Code — Your AI coding tool's operating system</title>
+<meta name="description" content="Turn one AI assistant into a coordinated dev team. Multi-agent orchestration for Cursor, Claude Code, Copilot, Windsurf, and any MCP client.">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0a0a0f;
-  --surface:#12121a;
-  --surface-2:#1a1a28;
-  --border:#2a2a3a;
-  --text:#e4e4ef;
-  --text-dim:#8888a0;
-  --accent:#6c5ce7;
-  --accent-light:#a29bfe;
-  --green:#00e676;
-  --cyan:#00e5ff;
-  --orange:#ff9100;
-  --pink:#ff4081;
-  --yellow:#ffd740;
-  --radius:12px;
-  --radius-sm:8px;
+  --bg:#0a0a0b;
+  --surface:#141416;
+  --surface-hover:#1c1c20;
+  --border:#2a2a2e;
+  --text:#e4e4e7;
+  --text-secondary:#a1a1aa;
+  --text-tertiary:#71717a;
+  --accent:#3b82f6;
+  --accent-hover:#60a5fa;
+  --accent-secondary:#10b981;
+  --accent-tertiary:#8b5cf6;
+  --code-bg:#18181b;
+  --code-text:#4ade80;
 }
 html{scroll-behavior:smooth;font-size:16px}
 body{
   background:var(--bg);
   color:var(--text);
-  font-family:'Segoe UI','Inter','SF Pro Display',-apple-system,BlinkMacSystemFont,sans-serif;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   line-height:1.6;
   overflow-x:hidden;
 }
-a{color:var(--accent-light);text-decoration:none;transition:color .2s}
-a:hover{color:var(--cyan)}
+a{color:var(--accent-hover);text-decoration:none;transition:color .2s}
+a:hover{color:var(--accent)}
 
-/* Background grid */
-body::before{
-  content:'';position:fixed;inset:0;
-  background-image:
-    linear-gradient(rgba(108,92,231,.04) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(108,92,231,.04) 1px,transparent 1px);
-  background-size:60px 60px;
-  pointer-events:none;z-index:0;
-}
-
-.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
 
 /* ========== HERO ========== */
 .hero{
   min-height:100vh;display:flex;align-items:center;justify-content:center;
-  text-align:center;padding:80px 24px;position:relative;
+  text-align:center;padding:80px 24px 60px;position:relative;overflow:hidden;
 }
-.hero::after{
-  content:'';position:absolute;top:10%;left:50%;transform:translateX(-50%);
-  width:600px;height:600px;
-  background:radial-gradient(circle,rgba(108,92,231,.15),transparent 70%);
+.hero::before{
+  content:'';position:absolute;top:20%;left:50%;transform:translateX(-50%);
+  width:800px;height:800px;
+  background:radial-gradient(circle,rgba(59,130,246,.08),transparent 70%);
   pointer-events:none;
 }
-.hero-content{position:relative;z-index:1}
-.hero-badge{
-  display:inline-block;padding:6px 16px;border:1px solid var(--border);
-  border-radius:20px;font-size:.8rem;color:var(--text-dim);
-  margin-bottom:24px;letter-spacing:.05em;text-transform:uppercase;
-}
+.hero-inner{position:relative;z-index:1;max-width:800px;margin:0 auto}
 .hero h1{
-  font-size:clamp(2.4rem,6vw,4.2rem);font-weight:800;
-  line-height:1.1;margin-bottom:20px;
-  background:linear-gradient(135deg,#fff 0%,var(--accent-light) 50%,var(--cyan) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text;
+  font-size:clamp(2.2rem,5.5vw,3.5rem);font-weight:800;
+  line-height:1.1;margin-bottom:20px;color:var(--text);
 }
-.hero p{
-  font-size:clamp(1rem,2vw,1.25rem);color:var(--text-dim);
-  max-width:560px;margin:0 auto 40px;
+.hero .subtitle{
+  font-size:clamp(1rem,2vw,1.125rem);color:var(--text-secondary);
+  max-width:580px;margin:0 auto 32px;line-height:1.6;
 }
-.cta-btn{
+
+/* Tool logos */
+.tool-logos{
+  display:flex;justify-content:center;gap:24px;flex-wrap:wrap;
+  margin-bottom:40px;opacity:0;animation:fadeIn .5s ease forwards .2s;
+}
+.tool-logos span{
+  font-size:.8rem;color:var(--text-tertiary);letter-spacing:.03em;
+  padding:6px 12px;border:1px solid var(--border);border-radius:6px;
+  transition:border-color .2s;
+}
+.tool-logos span:nth-child(1){animation-delay:.3s}
+.tool-logos span:nth-child(2){animation-delay:.4s}
+.tool-logos span:nth-child(3){animation-delay:.5s}
+.tool-logos span:nth-child(4){animation-delay:.6s}
+.tool-logos span:nth-child(5){animation-delay:.7s}
+.tool-logos span:nth-child(6){animation-delay:.8s}
+.tool-logos span{opacity:0;animation:fadeIn .5s ease forwards}
+.tool-logos span:hover{border-color:var(--accent)}
+
+/* Hero animation */
+.hero-animation{
+  width:100%;max-width:500px;height:300px;margin:0 auto 40px;position:relative;
+}
+.hero-animation svg{width:100%;height:100%}
+
+/* Master node */
+.master-node{
+  animation:pulse 3s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%,100%{filter:drop-shadow(0 0 8px rgba(59,130,246,.3))}
+  50%{filter:drop-shadow(0 0 20px rgba(59,130,246,.6))}
+}
+
+/* Connection lines */
+.conn-line{
+  stroke-dasharray:200;
+  stroke-dashoffset:200;
+  animation:drawLine 2s ease forwards;
+}
+.conn-line:nth-child(1){animation-delay:0s}
+.conn-line:nth-child(2){animation-delay:.3s}
+.conn-line:nth-child(3){animation-delay:.6s}
+@keyframes drawLine{
+  to{stroke-dashoffset:0}
+}
+
+/* Agent nodes */
+.agent-node{
+  opacity:0;
+  animation:nodeAppear .6s ease forwards;
+}
+.agent-node:nth-of-type(1){animation-delay:1.5s}
+.agent-node:nth-of-type(2){animation-delay:1.8s}
+.agent-node:nth-of-type(3){animation-delay:2.1s}
+@keyframes nodeAppear{
+  from{opacity:0;transform:scale(.8)}
+  to{opacity:1;transform:scale(1)}
+}
+
+/* Data particles */
+.particle{
+  r:3;fill:var(--accent);opacity:0;
+}
+.particle-out{
+  animation:particleOut 4s ease-in-out infinite;
+}
+.particle-in{
+  animation:particleIn 4s ease-in-out infinite;
+}
+@keyframes particleOut{
+  0%{opacity:0;offset-distance:0%}
+  10%{opacity:1}
+  50%{opacity:1;offset-distance:100%}
+  51%{opacity:0}
+  100%{opacity:0}
+}
+@keyframes particleIn{
+  0%,50%{opacity:0;offset-distance:100%}
+  60%{opacity:1}
+  90%{opacity:1;offset-distance:0%}
+  91%{opacity:0}
+  100%{opacity:0}
+}
+
+/* Checkmark */
+.check-mark{
+  opacity:0;
+  animation:showCheck .5s ease forwards 12s;
+}
+@keyframes showCheck{
+  from{opacity:0;transform:scale(.5)}
+  to{opacity:1;transform:scale(1)}
+}
+
+/* Looping wrapper */
+.hero-animation{
+  animation:heroLoop 15s linear infinite;
+}
+@keyframes heroLoop{
+  0%,95%{opacity:1}
+  97%{opacity:0}
+  100%{opacity:1}
+}
+
+/* CTA buttons */
+.cta-group{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:24px}
+.btn-primary{
   display:inline-flex;align-items:center;gap:8px;
-  padding:14px 32px;border-radius:var(--radius);
-  background:var(--accent);color:#fff;font-weight:600;font-size:1rem;
-  border:none;cursor:pointer;transition:transform .2s,box-shadow .2s;
+  padding:14px 28px;border-radius:8px;font-weight:600;font-size:1rem;
+  background:linear-gradient(135deg,var(--accent),var(--accent-tertiary));
+  color:#fff;border:none;cursor:pointer;
+  transition:transform .2s,box-shadow .2s;
 }
-.cta-btn:hover{
+.btn-primary:hover{
   transform:translateY(-2px);
-  box-shadow:0 8px 30px rgba(108,92,231,.4);
+  box-shadow:0 8px 30px rgba(59,130,246,.3);
   color:#fff;
 }
-.cta-btn svg{width:20px;height:20px}
-
-/* ========== SECTION COMMON ========== */
-section{padding:100px 0}
-.section-label{
-  font-size:.75rem;text-transform:uppercase;letter-spacing:.12em;
-  color:var(--accent-light);margin-bottom:12px;font-weight:600;
+.btn-secondary{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:14px 28px;border-radius:8px;font-weight:600;font-size:1rem;
+  background:transparent;color:var(--text);
+  border:1px solid var(--border);cursor:pointer;
+  transition:border-color .2s,transform .2s;
 }
-.section-title{
-  font-size:clamp(1.6rem,4vw,2.4rem);font-weight:700;margin-bottom:16px;
-}
-.section-sub{
-  color:var(--text-dim);max-width:600px;margin-bottom:48px;font-size:1.05rem;
+.btn-secondary:hover{
+  border-color:var(--accent);transform:translateY(-2px);
+  color:var(--text);
 }
 
-/* ========== BEFORE/AFTER ========== */
-.compare-grid{
-  display:grid;grid-template-columns:1fr 1fr;gap:32px;
+/* Install code block */
+.install-block{
+  display:inline-flex;align-items:center;gap:12px;
+  background:var(--code-bg);border:1px solid var(--border);
+  border-radius:8px;padding:12px 20px;margin-top:8px;
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.875rem;color:var(--code-text);
+  cursor:pointer;transition:box-shadow .3s;position:relative;
 }
-.compare-col{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:32px;
+.install-block:hover{box-shadow:0 0 12px rgba(59,130,246,.15)}
+.install-block .copy-icon{
+  color:var(--text-tertiary);transition:color .2s;flex-shrink:0;
 }
-.compare-col h3{font-size:1.15rem;margin-bottom:20px;display:flex;align-items:center;gap:8px}
-.compare-col.old h3{color:var(--pink)}
-.compare-col.new h3{color:var(--green)}
-.compare-col ul{list-style:none}
-.compare-col li{
-  padding:10px 0;border-bottom:1px solid var(--border);
-  color:var(--text-dim);font-size:.95rem;display:flex;align-items:flex-start;gap:10px;
+.install-block:hover .copy-icon{color:var(--accent)}
+.copy-tooltip{
+  position:absolute;top:-32px;left:50%;transform:translateX(-50%);
+  background:var(--accent-secondary);color:#fff;padding:4px 12px;
+  border-radius:4px;font-size:.75rem;font-family:'Inter',sans-serif;
+  opacity:0;pointer-events:none;transition:opacity .3s;
 }
-.compare-col li:last-child{border-bottom:none}
-.compare-col li span.icon{flex-shrink:0;font-size:1.1rem}
+.copy-tooltip.show{opacity:1}
 
-/* ========== ARCHITECTURE ========== */
-.arch-container{
+/* ========== SECTIONS COMMON ========== */
+section{padding:120px 0}
+.section-header{text-align:center;margin-bottom:64px}
+.section-header h2{
+  font-size:clamp(1.5rem,3.5vw,2.25rem);font-weight:700;line-height:1.2;
+  margin-bottom:16px;
+}
+.section-header p{
+  color:var(--text-secondary);max-width:560px;margin:0 auto;
+  font-size:1.125rem;line-height:1.6;
+}
+
+/* ========== HOW IT WORKS ========== */
+.how-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:32px;margin-bottom:64px;
+}
+.how-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:32px;text-align:center;
+  transition:border-color .2s,transform .3s;
+}
+.how-card:hover{border-color:var(--accent);transform:translateY(-4px)}
+.how-icon{font-size:2.5rem;margin-bottom:16px;display:block}
+.how-card h3{font-size:1.25rem;font-weight:600;margin-bottom:8px;line-height:1.3}
+.how-card p{font-size:.95rem;color:var(--text-secondary);line-height:1.6}
+
+/* T3-T2-T1 flow */
+.tier-flow{
+  display:flex;align-items:center;justify-content:center;gap:0;
+  flex-wrap:wrap;
+}
+.tier-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:16px 24px;text-align:center;min-width:140px;
+}
+.tier-box .tier-label{
+  font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  margin-bottom:4px;
+}
+.tier-box:nth-child(1) .tier-label{color:var(--text-tertiary)}
+.tier-box:nth-child(3) .tier-label{color:var(--accent)}
+.tier-box:nth-child(5) .tier-label{color:var(--accent-secondary)}
+.tier-box .tier-name{font-size:.875rem;color:var(--text-secondary)}
+.tier-arrow{
+  font-size:1.2rem;color:var(--text-tertiary);padding:0 12px;
+}
+
+/* ========== SEE IT IN ACTION ========== */
+.usecase-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.usecase-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px;transition:border-color .2s;
+}
+.usecase-card:hover{border-color:var(--accent-tertiary)}
+.usecase-card h3{font-size:1.1rem;font-weight:600;margin-bottom:16px}
+.usecase-before,.usecase-after{font-size:.9rem;line-height:1.5;margin-bottom:12px}
+.usecase-before{color:var(--text-tertiary)}
+.usecase-after{color:var(--accent-secondary)}
+.usecase-label{
+  display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;padding:2px 8px;border-radius:4px;margin-bottom:6px;
+}
+.label-before{background:rgba(113,113,122,.15);color:var(--text-tertiary)}
+.label-after{background:rgba(16,185,129,.1);color:var(--accent-secondary)}
+
+/* ========== ARCHITECTURE SECTION ========== */
+.arch-split{
+  display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;
+}
+.arch-text p{font-size:1.05rem;color:var(--text-secondary);line-height:1.7;margin-bottom:24px}
+.arch-stats{
+  display:flex;gap:24px;flex-wrap:wrap;margin-bottom:28px;
+}
+.arch-stat{
+  font-size:.875rem;color:var(--text-tertiary);
+  padding:6px 14px;border:1px solid var(--border);border-radius:6px;
+}
+.arch-graphic{
   display:flex;flex-direction:column;align-items:center;gap:0;
-  max-width:600px;margin:0 auto;
 }
-.arch-plane{
-  width:100%;padding:24px 28px;border-radius:var(--radius);
-  border:1px solid var(--border);background:var(--surface);
-  position:relative;text-align:center;
-  animation:planeFloat 4s ease-in-out infinite;
+.arch-layer{
+  width:100%;max-width:320px;padding:18px 24px;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  text-align:center;
 }
-.arch-plane:nth-child(1){animation-delay:0s;border-color:var(--cyan)}
-.arch-plane:nth-child(2){animation-delay:.5s;border-color:var(--accent-light)}
-.arch-plane:nth-child(3){animation-delay:1s;border-color:var(--orange)}
-.arch-plane:nth-child(4){animation-delay:1.5s;border-color:var(--green)}
-@keyframes planeFloat{
-  0%,100%{transform:translateY(0)}
-  50%{transform:translateY(-6px)}
-}
-.arch-plane .plane-icon{font-size:1.6rem;display:block;margin-bottom:6px}
-.arch-plane .plane-title{font-weight:700;font-size:1rem}
-.arch-plane .plane-desc{color:var(--text-dim);font-size:.85rem}
-.arch-arrow{
-  width:2px;height:36px;background:var(--border);position:relative;
-}
-.arch-arrow::after{
-  content:'';position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);
-  border-left:6px solid transparent;border-right:6px solid transparent;
-  border-top:8px solid var(--border);
-}
-
-/* ========== DEMO SIMULATION ========== */
-.demo-track{
-  display:flex;gap:20px;overflow-x:auto;padding:8px 0 16px;
-  scroll-snap-type:x mandatory;
-}
-.demo-card{
-  min-width:240px;flex-shrink:0;scroll-snap-align:start;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:24px;position:relative;
-  opacity:0;animation:cardAppear .5s ease forwards;
-}
-.demo-card:nth-child(1){animation-delay:.2s}
-.demo-card:nth-child(2){animation-delay:1.4s}
-.demo-card:nth-child(3){animation-delay:2.6s}
-.demo-card:nth-child(4){animation-delay:3.8s}
-.demo-card:nth-child(5){animation-delay:5s}
-@keyframes cardAppear{
-  from{opacity:0;transform:translateY(16px)}
-  to{opacity:1;transform:translateY(0)}
-}
-.demo-card .step-num{
-  position:absolute;top:-12px;left:20px;
-  background:var(--accent);color:#fff;font-size:.75rem;font-weight:700;
-  padding:2px 10px;border-radius:10px;
-}
-.demo-card .step-icon{font-size:1.8rem;margin-bottom:8px;display:block}
-.demo-card h4{font-size:.95rem;font-weight:600;margin-bottom:6px}
-.demo-card p{font-size:.85rem;color:var(--text-dim)}
-.demo-line{display:flex;align-items:center}
-.demo-line .connector{
-  width:20px;height:2px;background:var(--border);flex-shrink:0;
-}
+.arch-layer .al-title{font-weight:600;font-size:.95rem}
+.arch-layer .al-desc{font-size:.8rem;color:var(--text-tertiary)}
+.arch-connector{width:2px;height:24px;background:var(--border)}
 
 /* ========== FEATURES GRID ========== */
 .features-grid{
   display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
 }
 .feature-card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
   padding:28px;transition:border-color .2s,transform .2s;
 }
 .feature-card:hover{border-color:var(--accent);transform:translateY(-4px)}
-.feature-card .feat-icon{font-size:2rem;margin-bottom:12px;display:block}
-.feature-card h3{font-size:1rem;font-weight:600;margin-bottom:8px}
-.feature-card p{font-size:.88rem;color:var(--text-dim)}
-
-/* ========== BIOLOGY METAPHOR ========== */
-.bio-grid{
-  display:grid;grid-template-columns:repeat(2,1fr);gap:24px;
-}
-.bio-card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:28px;display:flex;align-items:flex-start;gap:16px;
-  transition:border-color .2s;
-}
-.bio-card:hover{border-color:var(--green)}
-.bio-card .bio-icon{font-size:2.2rem;flex-shrink:0}
-.bio-card h3{font-size:1rem;font-weight:600;margin-bottom:4px}
-.bio-card .bio-map{
-  font-size:.8rem;color:var(--green);margin-bottom:6px;font-weight:600;
-}
-.bio-card p{font-size:.88rem;color:var(--text-dim)}
+.feat-icon{font-size:2rem;margin-bottom:12px;display:block}
+.feature-card h3{font-size:1.25rem;font-weight:600;margin-bottom:8px;line-height:1.3}
+.feature-card p{font-size:.9rem;color:var(--text-secondary);line-height:1.6}
 
 /* ========== QUICK START ========== */
-.quickstart-block{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:32px;max-width:700px;font-family:'Cascadia Code','Fira Code','SF Mono',monospace;
-  font-size:.9rem;line-height:1.8;overflow-x:auto;
+.quickstart{max-width:700px;margin:0 auto}
+.qs-step{margin-bottom:32px}
+.qs-step-num{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:.8rem;font-weight:700;
+  margin-bottom:12px;
 }
-.quickstart-block .comment{color:var(--text-dim)}
-.quickstart-block .cmd{color:var(--green)}
-.quickstart-block .prompt{color:var(--accent-light);user-select:none}
+.qs-step h3{font-size:1.1rem;font-weight:600;margin-bottom:8px}
+.qs-step p{font-size:.95rem;color:var(--text-secondary);margin-bottom:12px}
+.code-block{
+  background:var(--code-bg);border:1px solid var(--border);
+  border-radius:8px;padding:14px 20px;
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.875rem;color:var(--code-text);overflow-x:auto;
+  transition:box-shadow .3s;line-height:1.5;
+}
+.code-block:hover{box-shadow:0 0 12px rgba(59,130,246,.1)}
+
+/* ========== ECOSYSTEM ========== */
+.eco-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:20px;
+  max-width:600px;margin:0 auto 32px;
+}
+.eco-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:20px;text-align:center;font-size:.95rem;font-weight:500;
+  transition:border-color .2s;
+}
+.eco-item:hover{border-color:var(--accent)}
+.eco-badge{
+  text-align:center;color:var(--text-tertiary);font-size:.875rem;
+  padding:10px 20px;border:1px solid var(--border);border-radius:6px;
+  display:inline-block;
+}
 
 /* ========== FOOTER ========== */
 footer{
-  border-top:1px solid var(--border);padding:40px 0;text-align:center;
-  color:var(--text-dim);font-size:.88rem;
+  border-top:1px solid var(--border);padding:48px 0;text-align:center;
 }
-footer .footer-links{
-  display:flex;justify-content:center;gap:24px;margin-bottom:16px;flex-wrap:wrap;
+.footer-logo{font-size:1.1rem;font-weight:700;margin-bottom:16px}
+.footer-links{
+  display:flex;justify-content:center;gap:24px;flex-wrap:wrap;margin-bottom:20px;
 }
-footer .footer-links a{color:var(--text-dim);transition:color .2s}
-footer .footer-links a:hover{color:var(--accent-light)}
-footer .built-by{
-  margin-top:12px;font-size:.8rem;color:var(--text-dim);opacity:.7;
+.footer-links a{color:var(--text-tertiary);font-size:.875rem;transition:color .2s}
+.footer-links a:hover{color:var(--accent)}
+.footer-tagline{color:var(--text-tertiary);font-size:.875rem;font-style:italic}
+
+/* ========== ANIMATIONS ========== */
+@keyframes fadeIn{
+  from{opacity:0}to{opacity:1}
 }
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(24px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.animate-on-scroll{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
+.stagger-1{transition-delay:.1s}
+.stagger-2{transition-delay:.2s}
+.stagger-3{transition-delay:.3s}
+.stagger-4{transition-delay:.4s}
+.stagger-5{transition-delay:.5s}
+.stagger-6{transition-delay:.6s}
 
 /* ========== RESPONSIVE ========== */
-@media(max-width:768px){
-  .compare-grid,.features-grid,.bio-grid{grid-template-columns:1fr}
-  .demo-track{flex-direction:column}
-  .demo-card{min-width:auto}
-  .demo-line .connector{display:none}
-  section{padding:60px 0}
+@media(max-width:1023px){
+  .arch-split{grid-template-columns:1fr;text-align:center}
+  .arch-stats{justify-content:center}
 }
-@media(max-width:480px){
-  .hero{padding:60px 16px}
-  .container{padding:0 16px}
+@media(max-width:767px){
+  .how-grid,.usecase-grid,.features-grid{grid-template-columns:1fr}
+  .eco-grid{grid-template-columns:repeat(2,1fr)}
+  section{padding:80px 0}
+  .hero{padding:60px 16px 40px}
+  .hero-animation{height:220px}
+  .cta-group{flex-direction:column;align-items:center}
+  .btn-primary,.btn-secondary{width:100%;max-width:280px;justify-content:center}
+  .tier-flow{flex-direction:column;gap:0}
+  .tier-arrow{transform:rotate(90deg);padding:8px 0}
+}
+@media(max-width:374px){
+  .container{padding:0 12px}
 }
 </style>
 </head>
 <body>
 
-<!-- ==================== HERO ==================== -->
-<section class="hero">
-  <div class="hero-content">
-    <div class="hero-badge">MCP-Native Multi-Agent Orchestrator</div>
-    <h1>Stop prompting.<br>Start orchestrating.</h1>
-    <p>Turn one AI into a self-evolving development team. Delegate, review, and ship&mdash;with agents that learn, specialize, and collaborate.</p>
-    <a href="https://github.com/cloga/optimus-code" class="cta-btn" target="_blank" rel="noopener">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-      View on GitHub
-    </a>
+<!-- ==================== SECTION 1: HERO ==================== -->
+<section class="hero" id="hero">
+  <div class="hero-inner">
+    <h1>Your AI coding tool's operating system</h1>
+    <p class="subtitle">Turn one AI assistant into a coordinated dev team. Works with Cursor, Claude Code, Copilot, Windsurf, and any MCP client.</p>
+
+    <div class="tool-logos" aria-label="Compatible tools">
+      <span>Cursor</span>
+      <span>Claude Code</span>
+      <span>GitHub Copilot</span>
+      <span>Windsurf</span>
+      <span>Goose</span>
+      <span>Roo Cline</span>
+    </div>
+
+    <!-- Hero SVG Animation: Master Agent delegates to 3 specialists -->
+    <div class="hero-animation" role="img" aria-label="Animation showing Master Agent delegating tasks to Architect, Developer, and QA specialists">
+      <svg viewBox="0 0 500 300" xmlns="http://www.w3.org/2000/svg">
+        <!-- Connection lines (drawn first, appear behind nodes) -->
+        <line class="conn-line" x1="250" y1="110" x2="100" y2="230" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
+        <line class="conn-line" x1="250" y1="110" x2="250" y2="240" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
+        <line class="conn-line" x1="250" y1="110" x2="400" y2="230" stroke="#3b82f6" stroke-width="1.5" stroke-opacity=".4"/>
+
+        <!-- Master Agent node (center top) -->
+        <g class="master-node">
+          <circle cx="250" cy="90" r="36" fill="#141416" stroke="#3b82f6" stroke-width="2"/>
+          <text x="250" y="85" text-anchor="middle" fill="#e4e4e7" font-size="11" font-weight="600" font-family="Inter,sans-serif">Master</text>
+          <text x="250" y="99" text-anchor="middle" fill="#a1a1aa" font-size="9" font-family="Inter,sans-serif">Agent</text>
+        </g>
+
+        <!-- Architect node -->
+        <g class="agent-node" style="animation-delay:1.5s">
+          <circle cx="100" cy="240" r="30" fill="#141416" stroke="#8b5cf6" stroke-width="2"/>
+          <text x="100" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">Architect</text>
+          <text x="100" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif">design</text>
+        </g>
+
+        <!-- Developer node -->
+        <g class="agent-node" style="animation-delay:1.8s">
+          <circle cx="250" cy="250" r="30" fill="#141416" stroke="#10b981" stroke-width="2"/>
+          <text x="250" y="247" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">Developer</text>
+          <text x="250" y="260" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif">build</text>
+        </g>
+
+        <!-- QA node -->
+        <g class="agent-node" style="animation-delay:2.1s">
+          <circle cx="400" cy="240" r="30" fill="#141416" stroke="#f59e0b" stroke-width="2"/>
+          <text x="400" y="237" text-anchor="middle" fill="#e4e4e7" font-size="10" font-weight="600" font-family="Inter,sans-serif">QA</text>
+          <text x="400" y="250" text-anchor="middle" fill="#a1a1aa" font-size="8" font-family="Inter,sans-serif">verify</text>
+        </g>
+
+        <!-- Outbound particles (data flowing to agents) -->
+        <circle class="particle particle-out" style="offset-path:path('M250,110 L100,230');animation-delay:3s;fill:#8b5cf6"/>
+        <circle class="particle particle-out" style="offset-path:path('M250,110 L250,240');animation-delay:3.3s;fill:#10b981"/>
+        <circle class="particle particle-out" style="offset-path:path('M250,110 L400,230');animation-delay:3.6s;fill:#f59e0b"/>
+
+        <!-- Return particles (results flowing back) -->
+        <circle class="particle particle-in" style="offset-path:path('M250,110 L100,230');animation-delay:4s;fill:#8b5cf6"/>
+        <circle class="particle particle-in" style="offset-path:path('M250,110 L250,240');animation-delay:4.3s;fill:#10b981"/>
+        <circle class="particle particle-in" style="offset-path:path('M250,110 L400,230');animation-delay:4.6s;fill:#f59e0b"/>
+
+        <!-- Success checkmark -->
+        <g class="check-mark" transform="translate(250,90)">
+          <circle r="14" fill="#10b981" opacity=".2"/>
+          <path d="M-5,0 L-1,4 L6,-4" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="cta-group">
+      <a href="#quickstart" class="btn-primary">Get Started</a>
+      <a href="https://github.com/cloga/optimus-code" class="btn-secondary" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+
+    <div class="install-block" id="installCmd" role="button" tabindex="0" aria-label="Copy install command to clipboard">
+      <code>npx -y github:cloga/optimus-code init</code>
+      <svg class="copy-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+      <span class="copy-tooltip" id="copyTooltip">Copied!</span>
+    </div>
   </div>
 </section>
 
-<!-- ==================== BEFORE / AFTER ==================== -->
-<section id="compare">
+<!-- ==================== SECTION 2: HOW IT WORKS ==================== -->
+<section id="how-it-works">
   <div class="container">
-    <div class="section-label">Why Optimus</div>
-    <h2 class="section-title">Traditional AI vs. Optimus</h2>
-    <p class="section-sub">Single-agent coding hits a wall. Optimus breaks through it.</p>
-    <div class="compare-grid">
-      <div class="compare-col old">
-        <h3><span>&#x2717;</span> Traditional AI Coding</h3>
-        <ul>
-          <li><span class="icon">&#128165;</span> Context explosion &mdash; one model juggles everything until it forgets</li>
-          <li><span class="icon">&#9888;&#65039;</span> Single point of failure &mdash; one bad response derails the whole task</li>
-          <li><span class="icon">&#128683;</span> No memory &mdash; every session starts from zero, lessons lost</li>
-        </ul>
+    <div class="section-header">
+      <h2>How It Works</h2>
+      <p>A self-evolving agent lifecycle</p>
+    </div>
+
+    <div class="how-grid">
+      <div class="how-card animate-on-scroll">
+        <span class="how-icon" aria-hidden="true">&#9881;&#65039;</span>
+        <h3>Orchestrate</h3>
+        <p>Your AI assistant becomes a Master Agent that analyzes tasks and selects the right specialists.</p>
       </div>
-      <div class="compare-col new">
-        <h3><span>&#x2713;</span> Optimus Multi-Agent Swarm</h3>
-        <ul>
-          <li><span class="icon">&#129520;</span> Distributed agents &mdash; each specialist owns a bounded context</li>
-          <li><span class="icon">&#128737;&#65039;</span> Immune system &mdash; quarantine failing agents, auto-recover</li>
-          <li><span class="icon">&#129504;</span> Cross-session learning &mdash; memory persists and evolves the team</li>
-        </ul>
+      <div class="how-card animate-on-scroll stagger-1">
+        <span class="how-icon" aria-hidden="true">&#128640;</span>
+        <h3>Delegate</h3>
+        <p>Tasks are dispatched to specialized roles — Architect, PM, QA, Dev — that work in parallel via the Council pattern.</p>
+      </div>
+      <div class="how-card animate-on-scroll stagger-2">
+        <span class="how-icon" aria-hidden="true">&#129516;</span>
+        <h3>Evolve</h3>
+        <p>Agents start ephemeral (T3), precipitate into templates (T2), and freeze as reusable instances (T1). Your team grows with every task.</p>
+      </div>
+    </div>
+
+    <!-- T3 → T2 → T1 flow diagram -->
+    <div class="tier-flow animate-on-scroll stagger-3">
+      <div class="tier-box">
+        <div class="tier-label">T3</div>
+        <div class="tier-name">Ephemeral</div>
+      </div>
+      <div class="tier-arrow" aria-hidden="true">&#8594;</div>
+      <div class="tier-box">
+        <div class="tier-label">T2</div>
+        <div class="tier-name">Template</div>
+      </div>
+      <div class="tier-arrow" aria-hidden="true">&#8594;</div>
+      <div class="tier-box">
+        <div class="tier-label">T1</div>
+        <div class="tier-name">Instance</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== ARCHITECTURE ==================== -->
+<!-- ==================== SECTION 3: SEE IT IN ACTION ==================== -->
+<section id="see-it-in-action">
+  <div class="container">
+    <div class="section-header">
+      <h2>See It In Action</h2>
+      <p>Real workflows, not demos</p>
+    </div>
+
+    <div class="usecase-grid">
+      <div class="usecase-card animate-on-scroll">
+        <h3>Bug Fix</h3>
+        <div>
+          <span class="usecase-label label-before">Before</span>
+          <p class="usecase-before">You debug alone, context scattered across files and tabs.</p>
+        </div>
+        <div>
+          <span class="usecase-label label-after">After</span>
+          <p class="usecase-after">PM creates issue, Architect designs fix, Dev implements, QA verifies — all tracked.</p>
+        </div>
+      </div>
+      <div class="usecase-card animate-on-scroll stagger-1">
+        <h3>New Feature</h3>
+        <div>
+          <span class="usecase-label label-before">Before</span>
+          <p class="usecase-before">Solo agent guesses at architecture and writes everything in one pass.</p>
+        </div>
+        <div>
+          <span class="usecase-label label-after">After</span>
+          <p class="usecase-after">Council debates architecture, then Dev builds with full context and reviewed design.</p>
+        </div>
+      </div>
+      <div class="usecase-card animate-on-scroll stagger-2">
+        <h3>Code Review</h3>
+        <div>
+          <span class="usecase-label label-before">Before</span>
+          <p class="usecase-before">One reviewer, one perspective, blind spots everywhere.</p>
+        </div>
+        <div>
+          <span class="usecase-label label-after">After</span>
+          <p class="usecase-after">3 expert reviewers in parallel with synthesis report — security, performance, and architecture.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 4: ARCHITECTURE ==================== -->
 <section id="architecture">
   <div class="container">
-    <div class="section-label">Architecture</div>
-    <h2 class="section-title">Four-Plane Execution Stack</h2>
-    <p class="section-sub">From user intent to merged code &mdash; four layers, fully autonomous.</p>
-    <div class="arch-container">
-      <div class="arch-plane" style="border-color:var(--cyan)">
-        <span class="plane-icon">&#128100;</span>
-        <span class="plane-title">User Plane</span>
-        <span class="plane-desc">Natural language intent via any MCP client</span>
+    <div class="section-header">
+      <h2>The Architecture</h2>
+    </div>
+
+    <div class="arch-split">
+      <div class="arch-text">
+        <p>Optimus Code is built on a Great Unification architecture — a pure Node.js MCP daemon with self-evolving agents, map-reduce councils, and issue-first SDLC. Read the full technical deep-dive.</p>
+        <div class="arch-stats">
+          <span class="arch-stat">3 Agent Tiers</span>
+          <span class="arch-stat">5 Core Skills</span>
+          <span class="arch-stat">Unlimited Roles</span>
+          <span class="arch-stat">Zero Config</span>
+        </div>
+        <a href="ARCHITECTURE.md" class="btn-primary">Read Architecture Whitepaper &rarr;</a>
       </div>
-      <div class="arch-arrow"></div>
-      <div class="arch-plane" style="border-color:var(--accent-light)">
-        <span class="plane-icon">&#129504;</span>
-        <span class="plane-title">Meta Kernel</span>
-        <span class="plane-desc">Memory, cron, reflection, self-evolution</span>
-      </div>
-      <div class="arch-arrow"></div>
-      <div class="arch-plane" style="border-color:var(--orange)">
-        <span class="plane-icon">&#127963;&#65039;</span>
-        <span class="plane-title">Organization Plane</span>
-        <span class="plane-desc">PM, Architect &mdash; plan, review, delegate</span>
-      </div>
-      <div class="arch-arrow"></div>
-      <div class="arch-plane" style="border-color:var(--green)">
-        <span class="plane-icon">&#9881;&#65039;</span>
-        <span class="plane-title">Execution Plane</span>
-        <span class="plane-desc">Dev, QA &mdash; build, test, merge</span>
+      <div class="arch-graphic animate-on-scroll" aria-label="Architecture layers diagram">
+        <div class="arch-layer" style="border-color:var(--accent)">
+          <div class="al-title">User Layer</div>
+          <div class="al-desc">Any MCP client</div>
+        </div>
+        <div class="arch-connector"></div>
+        <div class="arch-layer" style="border-color:var(--accent-tertiary)">
+          <div class="al-title">Meta Kernel</div>
+          <div class="al-desc">Memory, cron, reflection</div>
+        </div>
+        <div class="arch-connector"></div>
+        <div class="arch-layer" style="border-color:#f59e0b">
+          <div class="al-title">Organization</div>
+          <div class="al-desc">PM, Architect — plan &amp; review</div>
+        </div>
+        <div class="arch-connector"></div>
+        <div class="arch-layer" style="border-color:var(--accent-secondary)">
+          <div class="al-title">Execution</div>
+          <div class="al-desc">Dev, QA — build &amp; test</div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== DEMO SIMULATION ==================== -->
-<section id="demo">
-  <div class="container">
-    <div class="section-label">Live Workflow</div>
-    <h2 class="section-title">Watch the Swarm Work</h2>
-    <p class="section-sub">One command triggers a full software development lifecycle.</p>
-    <div class="demo-track" id="demoTrack">
-      <div class="demo-card">
-        <span class="step-num">1</span>
-        <span class="step-icon">&#128172;</span>
-        <h4>User Request</h4>
-        <p>"Build a login page with OAuth"</p>
-      </div>
-      <div class="demo-card">
-        <span class="step-num">2</span>
-        <span class="step-icon">&#128203;</span>
-        <h4>PM Creates Issue</h4>
-        <p>Requirements doc, architecture design, GitHub Issue #42</p>
-      </div>
-      <div class="demo-card">
-        <span class="step-num">3</span>
-        <span class="step-icon">&#128187;</span>
-        <h4>Dev Writes Code</h4>
-        <p>Feature branch, focused commits, build verified</p>
-      </div>
-      <div class="demo-card">
-        <span class="step-num">4</span>
-        <span class="step-icon">&#128270;</span>
-        <h4>QA Tests</h4>
-        <p>Automated verification, edge cases covered</p>
-      </div>
-      <div class="demo-card">
-        <span class="step-num">5</span>
-        <span class="step-icon">&#127881;</span>
-        <h4>PR Merged</h4>
-        <p>Squash merged, issue auto-closed, branch cleaned</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== FEATURES GRID ==================== -->
+<!-- ==================== SECTION 5: FEATURES ==================== -->
 <section id="features">
   <div class="container">
-    <div class="section-label">Capabilities</div>
-    <h2 class="section-title">Meta-Intelligence Features</h2>
-    <p class="section-sub">Not just agents &mdash; a self-improving organism.</p>
+    <div class="section-header">
+      <h2>Features</h2>
+    </div>
+
     <div class="features-grid">
-      <div class="feature-card">
-        <span class="feat-icon">&#128640;</span>
-        <h3>Delegate</h3>
-        <p>Async-first task dispatch to specialized agents. T3 dynamic roles auto-precipitate into permanent team members.</p>
+      <div class="feature-card animate-on-scroll">
+        <span class="feat-icon" aria-hidden="true">&#128209;</span>
+        <h3>Plan Mode</h3>
+        <p>Orchestrators plan, developers code. Separation of concerns enforced by the system.</p>
       </div>
-      <div class="feature-card">
-        <span class="feat-icon">&#128203;</span>
-        <h3>Board</h3>
-        <p>GitHub &amp; ADO work items synced to a local blackboard. Issue-First SDLC with full traceability.</p>
+      <div class="feature-card animate-on-scroll stagger-1">
+        <span class="feat-icon" aria-hidden="true">&#128101;</span>
+        <h3>Council Pattern</h3>
+        <p>Spawn parallel expert reviews. Map-reduce consensus from multiple perspectives.</p>
       </div>
-      <div class="feature-card">
-        <span class="feat-icon">&#9200;</span>
-        <h3>Cron</h3>
-        <p>Scheduled autonomous maintenance. Dependency audits, stale issue cleanup, health checks &mdash; on autopilot.</p>
+      <div class="feature-card animate-on-scroll stagger-2">
+        <span class="feat-icon" aria-hidden="true">&#128295;</span>
+        <h3>Skills System</h3>
+        <p>Roles define WHO. Skills define HOW. Many-to-many binding at runtime.</p>
       </div>
-      <div class="feature-card">
-        <span class="feat-icon">&#128737;&#65039;</span>
-        <h3>Immune System</h3>
-        <p>Failing agents are auto-quarantined. The system self-heals by routing around broken roles.</p>
+      <div class="feature-card animate-on-scroll stagger-3">
+        <span class="feat-icon" aria-hidden="true">&#128279;</span>
+        <h3>Issue Lineage</h3>
+        <p>Parent-child traceability across all GitHub Issues. Every delegation tracked.</p>
       </div>
-      <div class="feature-card">
-        <span class="feat-icon">&#129504;</span>
-        <h3>Memory</h3>
-        <p>Cross-session learning via project memory. Past mistakes and architectural decisions persist forever.</p>
+      <div class="feature-card animate-on-scroll stagger-4">
+        <span class="feat-icon" aria-hidden="true">&#129504;</span>
+        <h3>Memory System</h3>
+        <p>Continuous learning from project history. Past mistakes never repeated.</p>
       </div>
-      <div class="feature-card">
-        <span class="feat-icon">&#128257;</span>
-        <h3>Reflection</h3>
-        <p>Agents self-assess after tasks. Gaps feed back into role and skill evolution automatically.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== BIOLOGY METAPHOR ==================== -->
-<section id="biology">
-  <div class="container">
-    <div class="section-label">Design Philosophy</div>
-    <h2 class="section-title">Engineered Like Biology</h2>
-    <p class="section-sub">Optimus mirrors the mechanisms that make living systems resilient.</p>
-    <div class="bio-grid">
-      <div class="bio-card">
-        <span class="bio-icon">&#129516;</span>
-        <div>
-          <h3>Cell Division</h3>
-          <div class="bio-map">&#8594; delegate_task</div>
-          <p>One agent splits into many specialized workers. Each carries the right context for its job.</p>
-        </div>
-      </div>
-      <div class="bio-card">
-        <span class="bio-icon">&#129516;</span>
-        <div>
-          <h3>DNA</h3>
-          <div class="bio-map">&#8594; Role + Skill Templates</div>
-          <p>Roles define identity; skills define capability. Inherited, evolved, and recombined over time.</p>
-        </div>
-      </div>
-      <div class="bio-card">
-        <span class="bio-icon">&#128737;&#65039;</span>
-        <div>
-          <h3>Immune System</h3>
-          <div class="bio-map">&#8594; Quarantine + Auto-Recovery</div>
-          <p>Failing agents are isolated before they spread damage. Healthy replacements are spawned automatically.</p>
-        </div>
-      </div>
-      <div class="bio-card">
-        <span class="bio-icon">&#128293;</span>
-        <div>
-          <h3>Metabolism</h3>
-          <div class="bio-map">&#8594; Meta-Cron Engine</div>
-          <p>Background processes keep the system alive: scheduled audits, cleanup, and health monitoring.</p>
-        </div>
+      <div class="feature-card animate-on-scroll stagger-5">
+        <span class="feat-icon" aria-hidden="true">&#129516;</span>
+        <h3>Self-Evolving Agents</h3>
+        <p>Ephemeral &rarr; Template &rarr; Instance. Your team grows with every task.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== QUICK START ==================== -->
+<!-- ==================== SECTION 6: QUICK START ==================== -->
 <section id="quickstart">
   <div class="container">
-    <div class="section-label">Get Started</div>
-    <h2 class="section-title">Three Commands to Orchestrate</h2>
-    <p class="section-sub">Works with Claude Code, VS Code Copilot, Cursor, Windsurf, and any MCP client.</p>
-    <div class="quickstart-block">
-      <div><span class="comment"># 1. Initialize your workspace</span></div>
-      <div><span class="prompt">$ </span><span class="cmd">npx -y github:cloga/optimus-code init</span></div>
-      <br>
-      <div><span class="comment"># 2. Configure your MCP client (auto-done for VS Code)</span></div>
-      <div><span class="prompt">$ </span><span class="cmd">claude mcp add optimus-swarm -- npx -y github:cloga/optimus-code serve</span></div>
-      <br>
-      <div><span class="comment"># 3. Start orchestrating</span></div>
-      <div><span class="prompt">$ </span><span class="cmd">"Delegate to the PM to build a user auth system"</span></div>
+    <div class="section-header">
+      <h2>Get Started in 60 Seconds</h2>
+    </div>
+
+    <div class="quickstart">
+      <div class="qs-step animate-on-scroll">
+        <div class="qs-step-num">1</div>
+        <h3>Initialize</h3>
+        <div class="code-block">npx -y github:cloga/optimus-code init</div>
+      </div>
+      <div class="qs-step animate-on-scroll stagger-1">
+        <div class="qs-step-num">2</div>
+        <h3>Configure (optional)</h3>
+        <p>VS Code users are auto-configured. Others: add to your MCP client config.</p>
+      </div>
+      <div class="qs-step animate-on-scroll stagger-2">
+        <div class="qs-step-num">3</div>
+        <h3>Orchestrate</h3>
+        <div class="code-block">"Use dispatch_council to review our design with Chief Architect and QA Engineer"</div>
+      </div>
+      <div class="animate-on-scroll stagger-3" style="text-align:center;margin-top:40px">
+        <a href="https://github.com/cloga/optimus-code#readme" class="btn-secondary" target="_blank" rel="noopener">Full Documentation &rarr;</a>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== FOOTER ==================== -->
+<!-- ==================== SECTION 7: ECOSYSTEM ==================== -->
+<section id="ecosystem">
+  <div class="container">
+    <div class="section-header">
+      <h2>Works With Everything</h2>
+      <p>Any MCP-compatible AI coding tool. No lock-in.</p>
+    </div>
+
+    <div class="eco-grid">
+      <div class="eco-item animate-on-scroll">VS Code / Copilot</div>
+      <div class="eco-item animate-on-scroll stagger-1">Cursor</div>
+      <div class="eco-item animate-on-scroll stagger-2">Windsurf</div>
+      <div class="eco-item animate-on-scroll stagger-3">Claude Code</div>
+      <div class="eco-item animate-on-scroll stagger-4">Goose</div>
+      <div class="eco-item animate-on-scroll stagger-5">Roo Cline</div>
+    </div>
+
+    <div style="text-align:center">
+      <span class="eco-badge">Built on Model Context Protocol</span>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECTION 8: FOOTER ==================== -->
 <footer>
   <div class="container">
+    <div class="footer-logo">Optimus Code</div>
     <div class="footer-links">
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/cloga/optimus-code/issues" target="_blank" rel="noopener">Issues</a>
-      <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Protocol</a>
+      <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener">Documentation</a>
+      <a href="ARCHITECTURE.md">Architecture</a>
+      <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener">MIT License</a>
     </div>
-    <div>MIT License &middot; v0.4.0</div>
-    <div class="built-by">Built by AI agents using Optimus</div>
+    <div class="footer-tagline">Stop prompting. Start orchestrating.</div>
   </div>
 </footer>
 
 <script>
-/* Intersection Observer for scroll-triggered animations */
+/* IntersectionObserver for scroll-triggered animations */
 (function(){
-  var observer = new IntersectionObserver(function(entries){
-    entries.forEach(function(entry){
-      if(entry.isIntersecting){
-        entry.target.classList.add('visible');
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('visible');
       }
     });
   },{threshold:0.15});
-
-  document.querySelectorAll('section').forEach(function(s){
-    s.style.opacity='0';
-    s.style.transform='translateY(30px)';
-    s.style.transition='opacity .6s ease, transform .6s ease';
-    observer.observe(s);
+  document.querySelectorAll('.animate-on-scroll').forEach(function(el){
+    io.observe(el);
   });
+})();
 
-  /* Make hero visible immediately */
-  var hero = document.querySelector('.hero');
-  if(hero){hero.style.opacity='1';hero.style.transform='none';}
-
-  /* CSS class for visible */
-  var style = document.createElement('style');
-  style.textContent = 'section.visible{opacity:1!important;transform:translateY(0)!important}';
-  document.head.appendChild(style);
-
-  /* Demo auto-scroll on mobile */
-  var track = document.getElementById('demoTrack');
-  if(track && window.innerWidth <= 768){
-    var idx = 0;
-    var cards = track.querySelectorAll('.demo-card');
-    setInterval(function(){
-      idx = (idx + 1) % cards.length;
-      cards[idx].scrollIntoView({behavior:'smooth',block:'nearest',inline:'start'});
-    }, 2500);
+/* Copy-to-clipboard for install command */
+(function(){
+  var btn=document.getElementById('installCmd');
+  var tip=document.getElementById('copyTooltip');
+  if(!btn||!tip)return;
+  function doCopy(){
+    var cmd='npx -y github:cloga/optimus-code init';
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(cmd).then(showTip);
+    }else{
+      var ta=document.createElement('textarea');
+      ta.value=cmd;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');showTip();}catch(e){}
+      document.body.removeChild(ta);
+    }
   }
-
-  /* Restart demo card animation when visible */
-  var demoSection = document.getElementById('demo');
-  if(demoSection){
-    var demoObs = new IntersectionObserver(function(entries){
-      entries.forEach(function(entry){
-        if(entry.isIntersecting){
-          var cards = entry.target.querySelectorAll('.demo-card');
-          cards.forEach(function(c){
-            c.style.animation='none';
-            c.offsetHeight; /* trigger reflow */
-            c.style.animation='';
-          });
-          demoObs.unobserve(entry.target);
-        }
-      });
-    },{threshold:0.2});
-    demoObs.observe(demoSection);
+  function showTip(){
+    tip.classList.add('show');
+    setTimeout(function(){tip.classList.remove('show');},1500);
   }
+  btn.addEventListener('click',doCopy);
+  btn.addEventListener('keydown',function(e){
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();doCopy();}
+  });
 })();
 </script>
 </body>
