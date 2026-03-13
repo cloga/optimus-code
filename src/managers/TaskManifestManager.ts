@@ -128,7 +128,7 @@ export class TaskManifestManager {
                                 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                                 fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
                             }
-                        } catch(e) {}
+                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`); }
                     }
                 }
             }

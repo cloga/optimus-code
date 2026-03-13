@@ -1520,7 +1520,7 @@ var init_AdoProvider = __esm({
             }
           );
           if (!response.ok) {
-            throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+            throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
           }
           const data = await response.json();
           return {
@@ -1578,7 +1578,7 @@ var init_AdoProvider = __esm({
             }
           );
           if (!response.ok) {
-            throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+            throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
           }
           const data = await response.json();
           return {
@@ -1686,7 +1686,7 @@ var init_AdoProvider = __esm({
               }
             );
             if (!response.ok) {
-              throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+              throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
             }
             const data = await response.json();
             return {
@@ -1730,7 +1730,7 @@ var init_AdoProvider = __esm({
               }
             );
             if (!response.ok) {
-              throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+              throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
             }
             const data = await response.json();
             return {
@@ -3075,7 +3075,8 @@ function loadT3UsageLog(workspacePath) {
     if (import_fs.default.existsSync(logPath)) {
       return JSON.parse(import_fs.default.readFileSync(logPath, "utf8"));
     }
-  } catch {
+  } catch (e) {
+    console.error(`[T3UsageLog] Warning: failed to read usage log: ${e.message}`);
   }
   return {};
 }
@@ -3136,7 +3137,8 @@ function loadValidEnginesAndModels(workspacePath) {
       }
       return { engines, models };
     }
-  } catch {
+  } catch (e) {
+    console.error(`[EngineValidation] Warning: failed to read available-agents.json: ${e.message}`);
   }
   return { engines: [], models: {} };
 }
@@ -3231,7 +3233,8 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 from plugin template at ${t2Path}`);
         return t2Path;
       }
-    } catch {
+    } catch (e) {
+      console.error(`[Precipitation] Warning: failed to process plugin template: ${e.message}`);
     }
   }
   const hasExplicitDescription = !!masterInfo?.description && masterInfo.description.trim().length > 0;
@@ -3508,6 +3511,7 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     try {
       import_fs.default.renameSync(legacyT1Dir, t1Dir);
     } catch (e) {
+      console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
     }
   }
   const t2Dir = import_path.default.join(workspacePath, ".optimus", "roles");
@@ -3585,7 +3589,8 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
           }
         }
       }
-    } catch {
+    } catch (e) {
+      console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
     }
   }
   if (!activeEngine) {
@@ -3663,6 +3668,7 @@ As a dynamically provisioned "T3" agent, apply industry best practices, solve co
 ${systemInstructions.trim()}
 --- END WORKSPACE SYSTEM INSTRUCTIONS ---`;
       } catch (e) {
+        console.error(`[Orchestrator] Warning: failed to read system-instructions.md: ${e.message}`);
       }
     }
   }
@@ -3783,7 +3789,8 @@ role: ${role}
       if (import_fs.default.existsSync(tempFile) && tempFile.includes("pending_")) {
         try {
           import_fs.default.unlinkSync(tempFile);
-        } catch {
+        } catch (e) {
+          console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
         }
       }
       throw new Error(
@@ -3818,7 +3825,8 @@ ${firstLines.trim()}
       if (currentT1 !== finalT1Path && import_fs.default.existsSync(currentT1)) {
         try {
           import_fs.default.unlinkSync(currentT1);
-        } catch {
+        } catch (e) {
+          console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
         }
       }
       console.error(`[Orchestrator] T1 finalized: '${role}' \u2192 ${import_path.default.basename(finalT1Path)}, session=${newSessionId || "none"}, status=idle`);
@@ -4031,6 +4039,7 @@ var TaskManifestManager = class {
 `, "utf8");
               }
             } catch (e) {
+              console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
             }
           }
         }
@@ -4970,6 +4979,35 @@ server.setRequestHandler(import_types2.ListToolsRequestSchema, async () => {
           },
           required: ["role", "action", "workspace_path"]
         }
+      },
+      {
+        name: "register_meta_cron",
+        description: "Register a new scheduled cron entry in the Meta-Cron engine. Self-registration by cron-triggered agents is forbidden.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Unique cron entry ID" },
+            cron_expression: { type: "string", description: "Standard 5-field cron expression" },
+            role: { type: "string", description: "The agent role to invoke" },
+            required_skills: { type: "array", items: { type: "string" }, description: "Skills the agent needs" },
+            capability_tier: { type: "string", enum: ["maintain", "develop", "review"], description: "Capability tier" },
+            concurrency_policy: { type: "string", enum: ["Forbid", "Allow"], description: "Concurrent run policy (default: Forbid)" },
+            max_actions: { type: "number", description: "Max actions per trigger (default: 5)" },
+            dry_run_remaining: { type: "number", description: "Dry-run ticks before live (default: 3)" },
+            workspace_path: { type: "string", description: "Absolute path to workspace root." }
+          },
+          required: ["id", "cron_expression", "role", "required_skills", "capability_tier", "workspace_path"]
+        }
+      },
+      {
+        name: "list_meta_crons",
+        description: "List all registered Meta-Cron entries with their status.",
+        inputSchema: { type: "object", properties: { workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["workspace_path"] }
+      },
+      {
+        name: "remove_meta_cron",
+        description: "Remove a Meta-Cron entry by ID.",
+        inputSchema: { type: "object", properties: { id: { type: "string", description: "The cron entry ID to remove" }, workspace_path: { type: "string", description: "Absolute path to workspace root." } }, required: ["id", "workspace_path"] }
       }
     ]
   };
@@ -5007,7 +5045,8 @@ PM Verdict available at: ${verdictPath}`;
         try {
           const stat = import_fs3.default.statSync(task.output_path);
           outputExists = stat.isFile() ? stat.size > 0 : import_fs3.default.readdirSync(task.output_path).length > 0;
-        } catch {
+        } catch (e) {
+          console.error(`[TaskStatus] Warning: failed to stat output path: ${e.message}`);
         }
       }
       effectiveStatus = outputExists ? "verified" : "partial";
@@ -5036,7 +5075,7 @@ Error: ${task.error_message}`;
   if (request.params.name === "delegate_task_async") {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments;
     if (!role || !task_description || !output_path || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path, workspace_path");
     }
     validateRoleNotModelName(role);
     validateEngineAndModel(role_engine, role_model, workspace_path);
@@ -5103,7 +5142,7 @@ Use check_task_status tool periodically with this task ID to check its completio
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path, role_descriptions: role_descriptions2 } = request.params.arguments;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
-      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments");
+      throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path, roles (array), workspace_path");
     }
     const modelAsRole = roles.find((r) => looksLikeModelName(r));
     if (modelAsRole) {
@@ -5288,6 +5327,7 @@ Memory appended to: ${memoryFile}`
         });
         roster += "*Note: Append these engine and model combinations to role names to spawn customized variants. Examples: `chief-architect_claude-code_claude-3-opus`, `security-auditor_copilot-cli_o1-preview`.*\n\n";
       } catch (e) {
+        console.error(`[RosterCheck] Warning: failed to read available-agents.json: ${e.message}`);
       }
     }
     roster += "\n## \u{1F465} Roles \u2014 WHO does the work\n";
@@ -5343,7 +5383,8 @@ Memory appended to: ${memoryFile}`
 `;
           }
         }
-      } catch {
+      } catch (e) {
+        console.error(`[RosterCheck] Warning: failed to read T3 usage log: ${e.message}`);
       }
     }
     roster += "\n### \u2699\uFE0F Fallback Behavior\n";
@@ -5672,6 +5713,69 @@ Fix the build errors and try again.`
       throw new import_types2.McpError(import_types2.ErrorCode.InvalidParams, `Invalid action '${action}'. Must be 'quarantine' or 'unquarantine'.`);
     }
   }
+  if (request.params.name === "register_meta_cron") {
+    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments;
+    if (!id || !cron_expression || !role || !workspace_path) throw new Error("Missing required fields: id, cron_expression, role, workspace_path");
+    if (process.env.OPTIMUS_CRON_TRIGGERED === "true") {
+      return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
+    }
+    const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
+    if (crontab.crons.find((cr) => cr.id === id)) {
+      return { content: [{ type: "text", text: `Cron entry '${id}' already exists. Remove it first.` }] };
+    }
+    crontab.crons.push({
+      id,
+      cron_expression,
+      role,
+      required_skills: required_skills || [],
+      capability_tier: capability_tier || "maintain",
+      concurrency_policy: concurrency_policy || "Forbid",
+      max_actions: max_actions || 5,
+      dry_run_remaining: dry_run_remaining ?? 3,
+      enabled: true,
+      last_run: null,
+      last_status: null,
+      run_count: 0,
+      fail_count: 0,
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    saveCrontab(workspace_path, crontab);
+    return { content: [{ type: "text", text: `Registered Meta-Cron '${id}' (cron: ${cron_expression}) -> role '${role}'. Dry-run for ${dry_run_remaining ?? 3} ticks.` }] };
+  }
+  if (request.params.name === "list_meta_crons") {
+    const { workspace_path } = request.params.arguments;
+    if (!workspace_path) throw new Error("Missing workspace_path");
+    const crontab = loadCrontab(workspace_path);
+    if (!crontab || crontab.crons.length === 0) {
+      return { content: [{ type: "text", text: "No Meta-Cron entries registered." }] };
+    }
+    const lines = crontab.crons.map(
+      (e) => `| ${e.id} | ${e.cron_expression} | ${e.role} | ${e.enabled ? "yes" : "no"} | ${e.last_status || "never"} | ${e.run_count} | ${e.fail_count} | ${e.dry_run_remaining} |`
+    );
+    const table = `| ID | Cron | Role | Enabled | Last Status | Runs | Fails | Dry-Run |
+|---|---|---|---|---|---|---|---|
+${lines.join("\n")}
+
+Max concurrent: ${crontab.max_concurrent}`;
+    return { content: [{ type: "text", text: table }] };
+  }
+  if (request.params.name === "remove_meta_cron") {
+    const { id, workspace_path } = request.params.arguments;
+    if (!id || !workspace_path) throw new Error("Missing required fields: id, workspace_path");
+    const crontab = loadCrontab(workspace_path);
+    if (!crontab) return { content: [{ type: "text", text: "No crontab found." }] };
+    const idx = crontab.crons.findIndex((cr) => cr.id === id);
+    if (idx === -1) return { content: [{ type: "text", text: `Cron entry '${id}' not found.` }] };
+    crontab.crons.splice(idx, 1);
+    saveCrontab(workspace_path, crontab);
+    const lockPath = import_path3.default.join(workspace_path, ".optimus", "system", "cron-locks", id + ".lock");
+    try {
+      if (import_fs3.default.existsSync(lockPath)) import_fs3.default.unlinkSync(lockPath);
+    } catch (e) {
+      console.error(`[MCP] Warning: operation failed: ${e.message}`);
+    }
+    return { content: [{ type: "text", text: `Removed Meta-Cron entry '${id}' and cleaned up lock file.` }] };
+  }
   throw new import_types2.McpError(import_types2.ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
 if (process.argv.includes("--run-task")) {
@@ -5715,6 +5819,13 @@ if (process.argv.includes("--run-task")) {
     } catch (e) {
       console.error(`[Thin Scanner] Warning: ${e.message}`);
     }
+    try {
+      MetaCronEngine.init(workspaceRoot);
+    } catch (e) {
+      console.error(`[Meta-Cron] Init failed: ${e.message}`);
+    }
+    process.on("SIGTERM", () => MetaCronEngine.shutdown());
+    process.on("SIGINT", () => MetaCronEngine.shutdown());
   }
   main().catch((error) => {
     console.error("Server error:", error);

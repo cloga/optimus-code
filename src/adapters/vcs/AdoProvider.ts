@@ -109,7 +109,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!response.ok) {
-                throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
             }
 
             const data = await response.json() as any;
@@ -184,7 +184,7 @@ export class AdoProvider implements IVcsProvider {
             );
 
             if (!response.ok) {
-                throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
             }
 
             const data = await response.json() as any;
@@ -321,7 +321,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
                 }
 
                 const data = await response.json() as any;
@@ -372,7 +372,7 @@ export class AdoProvider implements IVcsProvider {
                 );
 
                 if (!response.ok) {
-                    throw new Error(`ADO API error: ${response.status} ${await response.text()}`);
+                    throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery: check ADO_PAT env var, verify organization/project in .optimus/config/vcs.json`);
                 }
 
                 const data = await response.json() as any;

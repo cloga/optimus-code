@@ -512,7 +512,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           const stat = fs.statSync(task.output_path);
           outputExists = stat.isFile() ? stat.size > 0 : fs.readdirSync(task.output_path).length > 0;
-        } catch {}
+        } catch (e: any) { console.error(`[TaskStatus] Warning: failed to stat output path: ${e.message}`); }
       }
       effectiveStatus = outputExists ? 'verified' : 'partial';
       if (effectiveStatus === 'verified') {
@@ -534,7 +534,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "delegate_task_async") {
     let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills } = request.params.arguments as any;
     if (!role || !task_description || !output_path || !workspace_path) {
-        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
+        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires role, task_description, output_path, workspace_path");
     }
 
     // Input validation gateway — hard rejection with actionable messages
@@ -585,7 +585,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path, role_descriptions } = request.params.arguments as any;
     if (!proposal_path || !Array.isArray(roles) || !workspace_path) {
-        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments");
+        throw new McpError(ErrorCode.InvalidParams, "Invalid arguments: requires proposal_path, roles (array), workspace_path");
     }
 
     // Input validation gateway — reject model names passed as council roles
@@ -791,7 +791,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           roster += `- [Engine: ${engine}] Models: [${config.engines[engine].available_models.join(', ')}]${statusMatch}\n`;
         });
           roster += "*Note: Append these engine and model combinations to role names to spawn customized variants. Examples: `chief-architect_claude-code_claude-3-opus`, `security-auditor_copilot-cli_o1-preview`.*\n\n";
-        } catch (e) {}
+        } catch (e: any) { console.error(`[RosterCheck] Warning: failed to read available-agents.json: ${e.message}`); }
     }
 
     roster += "\n## 👥 Roles — WHO does the work\n";
@@ -846,7 +846,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             roster += `- \`${e.role}\`: ${e.invocations} invocations (${rate}% success)\n`;
           }
         }
-      } catch {}
+      } catch (e: any) { console.error(`[RosterCheck] Warning: failed to read T3 usage log: ${e.message}`); }
     }
 
     roster += "\n### ⚙️ Fallback Behavior\n";
@@ -1260,7 +1260,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     crontab.crons.splice(idx, 1);
     saveCrontab(workspace_path, crontab);
     const lockPath = path.join(workspace_path, '.optimus', 'system', 'cron-locks', id + '.lock');
-    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch {}
+    try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch (e: any) { console.error(`[MCP] Warning: operation failed: ${e.message}`); }
     return { content: [{ type: "text", text: `Removed Meta-Cron entry '${id}' and cleaned up lock file.` }] };
   }
 
