@@ -1,6 +1,6 @@
 ---
 name: daily-ops
-description: Autonomous patrol and maintenance decision framework for system stewards. Provides a structured inspection protocol across 7 areas (task health, agent hygiene, VCS hygiene, memory hygiene, role health, release readiness, issue triage) with a decision matrix mapping findings to actions. Use when awakened by Meta-Cron for routine system maintenance.
+description: Autonomous patrol and maintenance decision framework for system stewards. Provides a structured inspection protocol across 8 areas (task health, agent hygiene, VCS hygiene, memory hygiene, role health, release readiness, issue triage, failed task analysis) with a decision matrix mapping findings to actions. Use when awakened by Meta-Cron for routine system maintenance.
 ---
 
 # Daily Operations — Patrol Protocol
@@ -8,6 +8,17 @@ description: Autonomous patrol and maintenance decision framework for system ste
 You have been triggered by Meta-Cron for a routine system patrol. Your job: inspect the system, decide what (if anything) needs fixing, take limited action, and write a report.
 
 ## Decision Framework
+
+### Phase 0: Previous Patrol Context
+Before inspecting the system, check for a previous patrol report to maintain cross-patrol awareness:
+
+1. List files matching `.optimus/reports/daily-ops-*.md` and find the most recent one by filename date
+2. If a previous report exists, read it and note:
+   - Outstanding recommendations from last patrol
+   - Items that were "report-only" last time — have they been addressed?
+   - Any action items that were deferred due to budget limits
+3. If no previous report exists (first patrol), skip this phase
+4. Do NOT let previous findings bias your current observations — complete Phase 1 independently, then cross-reference in Phase 2
 
 ### Phase 1: Observe
 Read the following blackboard locations and note anything anomalous:
@@ -69,6 +80,20 @@ Read the following blackboard locations and note anything anomalous:
 
    **Resilience**: If `github_update_issue` or `github_sync_board` returns an error (e.g., `MethodNotFound`), log the failure in the patrol report and skip Issue Triage. Do NOT fail the entire patrol.
 
+8. **Failed Task Analysis** — `.optimus/state/task-manifest.json`
+   Scan for tasks with `"status": "failed"` to identify systemic issues:
+   1. Read `task-manifest.json` and filter for tasks where `status` is `"failed"`
+   2. Only consider tasks that failed within the last 7 days (compare `startTime` epoch ms to current time)
+   3. Group failures by root cause category:
+      - **Model Error**: `error_message` contains "model" and ("invalid" or "not in the allowed list")
+      - **Auth Error**: `error_message` contains "authentication" or "No authentication" or "401" or "403"
+      - **Timeout**: `error_message` contains "timed out" or "Watchdog"
+      - **Output Error**: `error_message` contains "ENOENT" or "no such file"
+      - **Unknown**: `error_message` is missing or doesn't match above categories
+   4. For each category, report: count, affected roles, and a representative error snippet (first 100 chars)
+   5. If a specific role has 3+ failures in the last 7 days, flag it as a quarantine candidate (cross-reference with Area 5 Role Health — do NOT double-count)
+   6. This is a **report-only** inspection — do NOT retry, fix, or delete failed tasks
+
 ### Phase 2: Decide
 Apply this decision matrix:
 
@@ -85,6 +110,7 @@ Apply this decision matrix:
 | Issue without priority label | Assess and add P0/P1/P2/P3 label via `github_update_issue` | Medium |
 | Issue already implemented (commit ref exists) | Close via `github_update_issue` with commit reference | Low |
 | Issue processed by steward | Add `system-maintained` label via `github_update_issue` | Low |
+| Failed tasks in last 7 days | Report failure summary by category | Info |
 
 ### Phase 3: Act
 - Execute actions from the decision matrix, up to your `max_actions` budget (default: 5)
