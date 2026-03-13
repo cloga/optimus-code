@@ -195,6 +195,18 @@ Agents MAY include a `## Self-Assessment` section at the end of their output rep
 - The PM or Master reads Self-Assessment sections during review phases and decides whether to invoke `role-creator` or `skill-creator` to evolve the team
 - Self-assessment proposals feed into the existing T3→T2→T1 evolution mechanisms, not a parallel path
 
+## Dual-Layer Thinking Protocol
+
+When addressing any problem, every agent (including Master) must think on two layers simultaneously:
+
+### Layer 1: Immediate Fix (苟且)
+Solve the specific problem at hand.
+
+### Layer 2: Systemic Improvement (远方)
+Ask: "What systemic weakness allowed this problem to exist? How do we prevent this entire CLASS of problems from ever recurring?"
+
+Every bug fix should produce both a code change AND a lesson (via `append_memory` or rule update). Fixing symptoms without addressing root causes is incomplete work.
+
 ---
 
 # Part 2: Project-Specific Constraints (Optimus Code Repository)
