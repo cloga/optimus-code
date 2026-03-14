@@ -130,6 +130,20 @@ export interface IVcsProvider {
     ): Promise<VcsComment[]>;
 
     /**
+     * Add labels to a work item or pull request
+     *
+     * @param itemType - Type of item ('workitem' or 'pullrequest')
+     * @param itemId - Work item or PR ID/number
+     * @param labels - Array of label strings to add
+     * @returns Promise resolving when labels are added
+     */
+    addLabels(
+        itemType: 'workitem' | 'pullrequest',
+        itemId: string | number,
+        labels: string[]
+    ): Promise<void>;
+
+    /**
      * Get provider name for diagnostics
      */
     getProviderName(): string;

@@ -306,6 +306,39 @@ export class GitHubProvider implements IVcsProvider {
         }
     }
 
+    async addLabels(
+        itemType: 'workitem' | 'pullrequest',
+        itemId: string | number,
+        labels: string[]
+    ): Promise<void> {
+        if (!labels || labels.length === 0) return;
+        const token = this.getToken();
+        if (!token) {
+            throw new Error('GitHub token not found in environment variables');
+        }
+
+        const id = typeof itemId === 'string' ? parseInt(itemId) : itemId;
+
+        try {
+            const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/labels`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Optimus-Agent'
+                },
+                body: JSON.stringify({ labels })
+            });
+
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            }
+        } catch (error: any) {
+            throw new Error(`Failed to add GitHub labels: ${error.message}`);
+        }
+    }
+
     getProviderName(): string {
         return 'github';
     }

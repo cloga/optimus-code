@@ -11034,6 +11034,31 @@ var init_GitHubProvider = __esm({
           throw new Error(`Failed to get GitHub comments: ${error2.message}`);
         }
       }
+      async addLabels(itemType, itemId, labels) {
+        if (!labels || labels.length === 0) return;
+        const token = this.getToken();
+        if (!token) {
+          throw new Error("GitHub token not found in environment variables");
+        }
+        const id = typeof itemId === "string" ? parseInt(itemId) : itemId;
+        try {
+          const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/labels`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+              "User-Agent": "Optimus-Agent"
+            },
+            body: JSON.stringify({ labels })
+          });
+          if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+          }
+        } catch (error2) {
+          throw new Error(`Failed to add GitHub labels: ${error2.message}`);
+        }
+      }
       getProviderName() {
         return "github";
       }
@@ -12572,6 +12597,10 @@ var init_AdoProvider = __esm({
       async getComments(_itemType, _itemId, _since) {
         console.error("[AdoProvider] getComments() is not yet implemented for Azure DevOps. Returning empty array.");
         return [];
+      }
+      async addLabels(_itemType, _itemId, _labels) {
+        console.error("[AdoProvider] addLabels() is not yet implemented for Azure DevOps.");
+        return Promise.resolve();
       }
       getProviderName() {
         return "azure-devops";
@@ -31459,6 +31488,11 @@ ${options.map((o) => `- ${o}`).join("\n")}`;
         }
         const result = await vcsProvider.addComment("workitem", task.github_issue_number, commentBody);
         commentId = result.id;
+        try {
+          await vcsProvider.addLabels("workitem", task.github_issue_number, ["question", "help wanted"]);
+        } catch (labelError) {
+          console.error(`[request_human_input] Failed to add labels to issue #${task.github_issue_number}: ${labelError.message}`);
+        }
       } catch (e) {
         console.error(`[request_human_input] Failed to post comment on issue #${task.github_issue_number}: ${e.message}`);
       }

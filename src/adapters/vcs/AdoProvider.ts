@@ -410,6 +410,15 @@ export class AdoProvider implements IVcsProvider {
         return [];
     }
 
+    async addLabels(
+        _itemType: 'workitem' | 'pullrequest',
+        _itemId: string | number,
+        _labels: string[]
+    ): Promise<void> {
+        console.error('[AdoProvider] addLabels() is not yet implemented for Azure DevOps.');
+        return Promise.resolve();
+    }
+
     getProviderName(): string {
         return 'azure-devops';
     }

@@ -1374,6 +1374,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const result = await vcsProvider.addComment('workitem', task.github_issue_number, commentBody);
         commentId = result.id;
+        
+        // Add visible labels so humans know it needs attention
+        try {
+            await vcsProvider.addLabels('workitem', task.github_issue_number, ['question', 'help wanted']);
+        } catch (labelError: any) {
+            console.error(`[request_human_input] Failed to add labels to issue #${task.github_issue_number}: ${labelError.message}`);
+        }
       } catch (e: any) {
         console.error(`[request_human_input] Failed to post comment on issue #${task.github_issue_number}: ${e.message}`);
       }
