@@ -21,6 +21,7 @@ import crypto from "crypto";
 import { AgentAdapter } from "../adapters/AgentAdapter";
 import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
+import { AcpAdapter } from "../adapters/AcpAdapter";
 import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
@@ -747,7 +748,7 @@ export class ConcurrencyGovernor {
 
 function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?: string } {
     const segments = path.basename(roleArg).split('_').filter(Boolean);
-    const engineIndex = segments.findIndex(segment => segment === 'claude-code' || segment === 'copilot-cli' || segment === 'github-copilot');
+    const engineIndex = segments.findIndex(segment => segment === 'claude-code' || segment === 'copilot-cli' || segment === 'github-copilot' || segment === 'acp');
 
     if (engineIndex === -1) {
         return { role: path.basename(roleArg) };
@@ -759,9 +760,32 @@ function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?
     return { role, engine, model };
 }
 
-function getAdapterForEngine(engine: string, sessionId?: string, model?: string): AgentAdapter {
+function getAdapterForEngine(engine: string, sessionId?: string, model?: string, workspacePath?: string): AgentAdapter {
     if (engine === 'copilot-cli' || engine === 'github-copilot') {
         return new GitHubCopilotAdapter(undefined, '🛸 GitHub Copilot', model || '');
+    }
+    if (engine === 'acp' || engine.startsWith('acp-')) {
+        // Resolve ACP executable and args from available-agents.json
+        let executable = 'copilot';
+        let args = ['--acp'];
+        if (workspacePath) {
+            try {
+                const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+                if (fs.existsSync(configPath)) {
+                    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                    const acpConfig = config.engines?.[engine] || config.engines?.['acp'];
+                    if (acpConfig) {
+                        const parts = acpConfig.path.split(/\s+/);
+                        executable = parts[0];
+                        args = parts.slice(1);
+                        if (acpConfig.cli_flags && model) {
+                            args.push(acpConfig.cli_flags, model);
+                        }
+                    }
+                }
+            } catch { /* use defaults */ }
+        }
+        return new AcpAdapter(`acp-${engine}`, '🚀 ACP Agent', executable, args);
     }
     return new ClaudeCodeAdapter(undefined, '🦖 Claude Code', model || '');
 }
@@ -993,7 +1017,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         console.error(`[Orchestrator] Loaded ${found.size} skill(s) for ${role}: ${[...found.keys()].join(', ')}`);
     }
 
-    const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel);
+    const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel, workspacePath);
 
     console.error(`[Orchestrator] Resolving Identity for ${role}...`);
     console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);

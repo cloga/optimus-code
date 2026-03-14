@@ -27894,6 +27894,238 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
   }
 };
 
+// ../src/adapters/AcpAdapter.ts
+var cp2 = __toESM(require("child_process"));
+function encodeMessage(msg) {
+  const body = Buffer.from(JSON.stringify(msg), "utf8");
+  const header = Buffer.from(`Content-Length: ${body.length}\r
+\r
+`, "ascii");
+  return Buffer.concat([header, body]);
+}
+var MessageParser = class {
+  buffer = Buffer.alloc(0);
+  onMessage;
+  constructor(onMessage) {
+    this.onMessage = onMessage;
+  }
+  feed(chunk) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    while (this.tryParse()) {
+    }
+  }
+  tryParse() {
+    const headerEnd = this.buffer.indexOf("\r\n\r\n");
+    if (headerEnd === -1) return false;
+    const headerStr = this.buffer.subarray(0, headerEnd).toString("ascii");
+    const match = headerStr.match(/Content-Length:\s*(\d+)/i);
+    if (!match) {
+      this.buffer = this.buffer.subarray(headerEnd + 4);
+      return true;
+    }
+    const contentLength = parseInt(match[1], 10);
+    const totalLength = headerEnd + 4 + contentLength;
+    if (this.buffer.length < totalLength) return false;
+    const bodyBuf = this.buffer.subarray(headerEnd + 4, totalLength);
+    this.buffer = this.buffer.subarray(totalLength);
+    try {
+      const msg = JSON.parse(bodyBuf.toString("utf8"));
+      this.onMessage(msg);
+    } catch (e) {
+      debugLog("[AcpAdapter]", `Malformed JSON-RPC body, skipping: ${e.message}`);
+    }
+    return true;
+  }
+};
+var AcpAdapter = class {
+  id;
+  name;
+  isEnabled = true;
+  modes = ["plan", "agent", "chat"];
+  // Protocol state
+  lastSessionId;
+  lastDebugInfo = {};
+  lastUsageLog;
+  process;
+  executable;
+  defaultArgs;
+  nextRequestId = 1;
+  pendingRequests = /* @__PURE__ */ new Map();
+  notificationHandlers = /* @__PURE__ */ new Map();
+  constructor(id, name, executable, defaultArgs = []) {
+    this.id = id;
+    this.name = name;
+    this.executable = executable;
+    this.defaultArgs = defaultArgs;
+  }
+  // ─── Low-level transport ───
+  sendRequest(method, params) {
+    if (!this.process?.stdin?.writable) {
+      return Promise.reject(new Error("[AcpAdapter] Process stdin not writable"));
+    }
+    const id = this.nextRequestId++;
+    const msg = { jsonrpc: "2.0", id, method, params };
+    debugLog("[AcpAdapter]", `\u2192 ${method} (id=${id})`);
+    this.process.stdin.write(encodeMessage(msg));
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+    });
+  }
+  sendNotification(method, params) {
+    if (!this.process?.stdin?.writable) return;
+    const msg = { jsonrpc: "2.0", method, params };
+    debugLog("[AcpAdapter]", `\u2192 notification ${method}`);
+    this.process.stdin.write(encodeMessage(msg));
+  }
+  handleIncoming(msg) {
+    if ("id" in msg && msg.id != null && (msg.result !== void 0 || msg.error !== void 0)) {
+      const pending = this.pendingRequests.get(msg.id);
+      if (pending) {
+        this.pendingRequests.delete(msg.id);
+        if (msg.error) {
+          pending.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`));
+        } else {
+          pending.resolve(msg.result);
+        }
+      }
+      return;
+    }
+    if ("method" in msg && !("id" in msg && msg.id != null)) {
+      const handler = this.notificationHandlers.get(msg.method);
+      if (handler) {
+        handler(msg.params);
+      } else {
+        debugLog("[AcpAdapter]", `Unhandled notification: ${msg.method}`);
+      }
+    }
+  }
+  // ─── Process lifecycle ───
+  spawnProcess(extraEnv) {
+    const env = { ...process.env, ...extraEnv };
+    const args = [...this.defaultArgs];
+    debugLog("[AcpAdapter]", `Spawning: ${this.executable} ${args.join(" ")}`);
+    this.process = cp2.spawn(this.executable, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env,
+      windowsHide: true
+    });
+    const parser = new MessageParser((msg) => this.handleIncoming(msg));
+    this.process.stdout.on("data", (chunk) => parser.feed(chunk));
+    this.process.stderr.on("data", (chunk) => {
+      debugLog("[AcpAdapter][stderr]", chunk.toString("utf8").trimEnd());
+    });
+    this.process.on("error", (err) => {
+      debugLog("[AcpAdapter]", `Process error: ${err.message}`);
+      this.rejectAllPending(err);
+    });
+    this.process.on("exit", (code, signal) => {
+      debugLog("[AcpAdapter]", `Process exited: code=${code} signal=${signal}`);
+      this.rejectAllPending(new Error(`ACP process exited unexpectedly (code=${code}, signal=${signal})`));
+      this.process = void 0;
+    });
+    this.lastDebugInfo = {
+      command: `${this.executable} ${args.join(" ")}`,
+      cwd: process.cwd(),
+      pid: this.process.pid,
+      startTime: Date.now()
+    };
+  }
+  rejectAllPending(err) {
+    for (const [id, pending] of this.pendingRequests) {
+      pending.reject(err);
+    }
+    this.pendingRequests.clear();
+  }
+  cleanup() {
+    this.notificationHandlers.clear();
+    this.pendingRequests.clear();
+    if (this.process) {
+      this.process.kill("SIGTERM");
+      this.process = void 0;
+    }
+  }
+  // ─── Core ACP Invocation flow ───
+  async invoke(prompt, mode, sessionId, onUpdate, extraEnv) {
+    debugLog("[AcpAdapter]", `Invoking for ${this.name} (mode=${mode}, resume=${!!sessionId})`);
+    this.spawnProcess(extraEnv);
+    try {
+      const initResult = await this.sendRequest("initialize", {
+        capabilities: {},
+        clientInfo: { name: "optimus", version: "0.4.0" }
+      });
+      debugLog("[AcpAdapter]", `Initialize response: ${JSON.stringify(initResult)?.substring(0, 200)}`);
+      let currentSessionId;
+      if (sessionId) {
+        const loadResult = await this.sendRequest("session/load", { sessionId });
+        currentSessionId = loadResult?.sessionId || sessionId;
+        debugLog("[AcpAdapter]", `Session loaded: ${currentSessionId}`);
+      } else {
+        const newParams = { cwd: process.cwd() };
+        const newResult = await this.sendRequest("session/new", newParams);
+        currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
+        debugLog("[AcpAdapter]", `New session created: ${currentSessionId}`);
+      }
+      this.lastSessionId = currentSessionId;
+      const outputChunks = [];
+      this.notificationHandlers.set("session/update", (params) => {
+        const text = params?.text || params?.content || "";
+        if (text) {
+          outputChunks.push(text);
+          if (onUpdate) onUpdate(text);
+        }
+      });
+      const promptResult = await this.sendRequest("session/prompt", {
+        sessionId: currentSessionId,
+        prompt
+      });
+      const resultText = promptResult?.text || promptResult?.content || promptResult?.result || "";
+      const fullOutput = outputChunks.length > 0 ? outputChunks.join("") : typeof resultText === "string" ? resultText : JSON.stringify(resultText);
+      this.lastDebugInfo.endTime = Date.now();
+      return fullOutput;
+    } catch (err) {
+      debugLog("[AcpAdapter]", `Error during ACP flow: ${err.message}`);
+      throw err;
+    } finally {
+      this.cleanup();
+    }
+  }
+  /**
+   * Terminate the ACP session gracefully: send cancel, then kill.
+   */
+  stop() {
+    debugLog("[AcpAdapter]", `Stopping session for ${this.name}...`);
+    if (this.process?.stdin?.writable) {
+      try {
+        const cancelMsg = {
+          jsonrpc: "2.0",
+          id: this.nextRequestId++,
+          method: "session/cancel",
+          params: { sessionId: this.lastSessionId }
+        };
+        this.process.stdin.write(encodeMessage(cancelMsg));
+      } catch {
+      }
+    }
+    setTimeout(() => {
+      if (this.process) {
+        this.process.kill("SIGTERM");
+        this.process = void 0;
+      }
+    }, 500);
+  }
+  /**
+   * With ACP, structured output comes natively via session/update events.
+   * No regex parsing needed.
+   */
+  extractThinking(rawText) {
+    return {
+      thinking: "",
+      output: rawText,
+      usageLog: this.lastUsageLog
+    };
+  }
+};
+
 // ../src/utils/sanitizeExternalContent.ts
 var PATTERNS = [
   {
@@ -28592,7 +28824,7 @@ var ConcurrencyGovernor = class {
 };
 function parseRoleSpec(roleArg) {
   const segments = import_path2.default.basename(roleArg).split("_").filter(Boolean);
-  const engineIndex = segments.findIndex((segment) => segment === "claude-code" || segment === "copilot-cli" || segment === "github-copilot");
+  const engineIndex = segments.findIndex((segment) => segment === "claude-code" || segment === "copilot-cli" || segment === "github-copilot" || segment === "acp");
   if (engineIndex === -1) {
     return { role: import_path2.default.basename(roleArg) };
   }
@@ -28601,9 +28833,32 @@ function parseRoleSpec(roleArg) {
   const model = segments.slice(engineIndex + 1).join("_");
   return { role, engine, model };
 }
-function getAdapterForEngine(engine, sessionId, model) {
+function getAdapterForEngine(engine, sessionId, model, workspacePath) {
   if (engine === "copilot-cli" || engine === "github-copilot") {
     return new GitHubCopilotAdapter(void 0, "\u{1F6F8} GitHub Copilot", model || "");
+  }
+  if (engine === "acp" || engine.startsWith("acp-")) {
+    let executable = "copilot";
+    let args = ["--acp"];
+    if (workspacePath) {
+      try {
+        const configPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+        if (import_fs2.default.existsSync(configPath)) {
+          const config2 = JSON.parse(import_fs2.default.readFileSync(configPath, "utf8"));
+          const acpConfig = config2.engines?.[engine] || config2.engines?.["acp"];
+          if (acpConfig) {
+            const parts = acpConfig.path.split(/\s+/);
+            executable = parts[0];
+            args = parts.slice(1);
+            if (acpConfig.cli_flags && model) {
+              args.push(acpConfig.cli_flags, model);
+            }
+          }
+        }
+      } catch {
+      }
+    }
+    return new AcpAdapter(`acp-${engine}`, "\u{1F680} ACP Agent", executable, args);
   }
   return new ClaudeCodeAdapter(void 0, "\u{1F996} Claude Code", model || "");
 }
@@ -28788,7 +29043,7 @@ ${content}
     }
     console.error(`[Orchestrator] Loaded ${found.size} skill(s) for ${role}: ${[...found.keys()].join(", ")}`);
   }
-  const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel);
+  const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel, workspacePath);
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
   console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
