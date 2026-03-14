@@ -28,6 +28,24 @@ Direct `git push` to master/main is PROHIBITED. All changes must go through PR m
 
 **Exception**: Release process (`git push origin master --tags`) is the only allowed direct push.
 
+## Mandatory Council Review for High-Impact Changes
+
+Before implementing any change that meets **one or more** of the following criteria, the Master Agent **MUST** first draft a proposal to `.optimus/proposals/PROPOSAL_<topic>.md` and submit it to `dispatch_council` for expert review:
+
+- **Schema / Config format changes** — modifications to `available-agents.json`, `vcs.json`, `system-instructions.md`, or any file whose format is consumed by multiple components
+- **Multi-file architectural refactors** — changes spanning 3+ source files that alter control flow, data models, or module boundaries
+- **New protocol / adapter integrations** — adding support for a new communication protocol, engine type, or external service
+- **Security-sensitive changes** — authentication flows, permission models, token handling, or input validation logic
+- **Breaking changes** — any modification that could cause existing user configs, roles, or workflows to stop working
+
+**Rationale**: A single agent's perspective has blind spots. Council review catches extensibility issues, backward compatibility risks, and design flaws before they are baked into code.
+
+**Process**:
+1. Write `PROPOSAL_<topic>.md` with Problem, Proposed Solution, Questions for Reviewers, and Impact sections
+2. Call `dispatch_council_async` with at minimum 2 expert roles (e.g., `architect` + domain expert)
+3. Wait for `COUNCIL_SYNTHESIS.md` — implement only if no fatal blockers
+4. For minor changes (single-file bug fixes, typo corrections, config value updates), skip the council and proceed directly
+
 ## Strict Delegation Protocol (Anti-Simulation)
 Roles are strictly bounded within the Spartan Swarm to prevent hallucinations:
 - **Orchestrator (Master)**: MUST physically invoke the `delegate_task` or `dispatch_council` MCP tool when delegating. **NEVER** simulate a worker's response in plain text, and **NEVER** write ad-hoc scripts to play the role of a subordinate.
@@ -289,3 +307,65 @@ After pushing a feature branch, **always `git checkout` back to the user's origi
 - **Minimize user intervention** while keeping the user informed via GitHub tracking.
 - Use GitHub Issues as the human-readable "Blackboard".
 - Acknowledge constraints silently. Output final results and loop in pm for GitHub updates.
+
+---
+
+# Part 2: Project-Specific Constraints (Optimus Code Repository)
+
+> These rules are specific to the `optimus-code` repository itself. They do NOT ship to end-users via `optimus init`.
+
+## Optimus Architecture
+
+Optimus uses a "Great Unification" architecture. The MCP Server (`optimus-plugin/dist/mcp-server.js`) is a pure Node.js daemon compiled separately from the VS Code UI extension.
+- **Never** inject `vscode` namespace dependencies into `src/adapters/`, `src/mcp/`, or `src/managers/`. These must remain 100% environment-agnostic Node.js modules.
+- Operations must remain 100% environment-agnostic. Execution routing operates via child processes hooking into background orchestration instances.
+
+## Tool Failure & Autonomous Self-Healing
+
+- **Self-Heal First**: If an MCP tool or command fails (e.g. MCP error -32602), DO NOT just halt and report the error. You MUST investigate the source code (e.g., `src/mcp/mcp-server.ts`), find the bug, fix it via file edits, rebuild (`cd optimus-plugin && npm run build`), and retry the failed step.
+- **No Premature Reporting**: Only halt and ask the user for help if you fail to fix the issue after 3 distinct attempts.
+- Never simulate or infer results from a failed tool call.
+- If ultimately failing, quote exact failure messages and state which step failed clearly.
+
+## Dual-Codebase Architecture
+
+This repository contains **two intertwined codebases**:
+
+| Layer | Path | Purpose |
+|-------|------|---------|
+| **Host project** | Root (`src/`, `docs/`, `.optimus/`) | The Optimus orchestrator's own development workspace |
+| **Plugin package** | `optimus-plugin/` | The npm-publishable MCP server plugin that ships to end-users |
+
+## Development & Reload Constraints (Hard Rule)
+When making any code modifications to the Optimus project itself (e.g., `src/`, `optimus-plugin/`, or MCP server logic):
+1. **Agent MUST Build**: The agent must automatically run the build command (`cd optimus-plugin && npm run build`) after modifications.
+2. **Prompt User to Reload**: After a successful build, the agent **MUST explicitly and clearly prompt the user** to execute the "Developer: Reload Window" command in VS Code, as this is strictly required for the new MCP server binary to be loaded.
+
+## MCP Tool Development Standard
+When adding or modifying MCP tools in `src/mcp/mcp-server.ts`, agents MUST use the `mcp-builder` skill (`required_skills: ["mcp-builder"]`). This ensures they follow the "Extending an Existing MCP Server" guide — matching existing schema patterns, handler structure, `requireParams` validation, and actionable error messages.
+
+### Impact Rule: When making changes, ALWAYS evaluate whether the change should propagate to the plugin.
+
+| Change Type | Apply to `.optimus/` (host) | Also apply to `optimus-plugin/` (packaging) |
+|---|---|---|
+| System instructions update | ✅ `.optimus/config/system-instructions.md` | ✅ `optimus-plugin/scaffold/config/system-instructions.md` |
+| New/updated skill | ✅ `.optimus/skills/<name>/SKILL.md` | ✅ `optimus-plugin/skills/<name>/SKILL.md` |
+| Config change (`available-agents.json`) | ✅ `.optimus/config/` | ✅ `optimus-plugin/scaffold/config/` |
+| New T2 role (project-specific, e.g., `marketing`) | ✅ `.optimus/roles/` | ❌ NOT packaged — project-specific |
+| T1 agent instance | ✅ `.optimus/agents/` | ❌ NEVER packaged — instance state |
+| MCP server code change | N/A | ✅ `src/mcp/` → `optimus-plugin/dist/` (rebuild required) |
+| init.js / CLI change | N/A | ✅ `optimus-plugin/bin/` |
+
+### Build & Publish Checklist
+After modifying plugin-relevant files:
+1. `cd optimus-plugin && npm run build` — rebuild `dist/mcp-server.js`
+2. Verify `optimus-plugin/scaffold/` contains the latest config and instructions
+3. Verify `optimus-plugin/skills/` contains only universal bootstrap skills (not project-specific ones)
+4. `git push origin master` — end-users pull via `npx -y github:cloga/optimus-code`
+
+### What MUST NOT Ship in the Plugin
+- `.optimus/roles/` — Project-specific T2 role templates (auto-generated at runtime)
+- `.optimus/agents/` — T1 instance snapshots (workspace-local)
+- `.optimus/state/` — Task manifests, T3 usage logs
+- `.optimus/reports/`, `.optimus/reviews/` — Generated artifacts
+- `.env` — Contains secrets
