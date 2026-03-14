@@ -229,6 +229,16 @@ When delegating a task, the Master Agent should follow this sequence:
    - T3 first use → creates T2 role template (with Master's description/engine/model)
    - Task completes with session_id → creates T1 instance from T2
 
+### Self-Execution Pre-Flight (Skill Check)
+
+Before executing ANY multi-step workflow yourself (release, refactor, migration, etc.) — not just delegation:
+
+1. **Skill scan** — Call `list_knowledge(category="all", topic="<what you're about to do>")` or check `.optimus/skills/` for a matching Skill
+2. **If a Skill exists → READ IT FIRST**, follow its steps exactly. Do not improvise or skip steps.
+3. **If no Skill exists** → proceed with best judgment, but consider creating a Skill afterward for future consistency.
+
+**Why this matters**: You are an LLM — you have no memory between sessions. "I'll remember next time" is never true. Skills are your persistent process memory. Ignoring them means repeating past mistakes.
+
 ### Role Creation Decision Rules
 
 Before creating a new role, the Master Agent MUST verify:
