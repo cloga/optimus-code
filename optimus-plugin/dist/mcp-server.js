@@ -31698,7 +31698,20 @@ Use check_task_status tool periodically with this task ID to check its completio
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);
     if (remote) {
-      const proposalName = require("path").basename(proposal_path, ".md").replace(/^PROPOSAL_/i, "").replace(/[_-]/g, " ");
+      let proposalName = require("path").basename(proposal_path, ".md").replace(/^PROPOSAL_/i, "").replace(/[_-]/g, " ");
+      try {
+        const proposalContent = import_fs6.default.readFileSync(import_path7.default.resolve(workspace_path, proposal_path), "utf8");
+        const headingMatch = proposalContent.match(/^#\s+(?:PROBLEM|PROPOSAL|SOLUTION|REVIEW):\s*(.+)$/m);
+        if (headingMatch) {
+          proposalName = headingMatch[1].trim().substring(0, 100);
+        } else {
+          const h1Match = proposalContent.match(/^#\s+(.+)$/m);
+          if (h1Match) {
+            proposalName = h1Match[1].trim().substring(0, 100);
+          }
+        }
+      } catch {
+      }
       const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}
 
 ` : "";

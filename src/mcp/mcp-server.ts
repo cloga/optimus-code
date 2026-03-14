@@ -706,7 +706,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let issueInfo = '';
     const remote = parseGitRemote(workspace_path);
     if (remote) {
-        const proposalName = require('path').basename(proposal_path, '.md').replace(/^PROPOSAL_/i, '').replace(/[_-]/g, ' ');
+        // Extract topic from proposal content heading (e.g., "# PROBLEM: Agent-driven automation")
+        // Falls back to cleaned filename if no heading found
+        let proposalName = require('path').basename(proposal_path, '.md').replace(/^PROPOSAL_/i, '').replace(/[_-]/g, ' ');
+        try {
+            const proposalContent = fs.readFileSync(path.resolve(workspace_path, proposal_path), 'utf8');
+            const headingMatch = proposalContent.match(/^#\s+(?:PROBLEM|PROPOSAL|SOLUTION|REVIEW):\s*(.+)$/m);
+            if (headingMatch) {
+                proposalName = headingMatch[1].trim().substring(0, 100);
+            } else {
+                // Try any H1 heading
+                const h1Match = proposalContent.match(/^#\s+(.+)$/m);
+                if (h1Match) {
+                    proposalName = h1Match[1].trim().substring(0, 100);
+                }
+            }
+        } catch { /* best-effort — use filename fallback */ }
         const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}\n\n` : '';
         const issue = await createGitHubIssue(remote.owner, remote.repo,
             `[Council] ${proposalName} (Review)`,
