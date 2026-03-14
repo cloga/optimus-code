@@ -10511,7 +10511,7 @@ var require_main = __commonJS({
     "use strict";
     var fs11 = require("fs");
     var path12 = require("path");
-    var os = require("os");
+    var os2 = require("os");
     var crypto4 = require("crypto");
     var packageJson = require_package();
     var version2 = packageJson.version;
@@ -10634,7 +10634,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path12.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path12.join(os2.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -28242,6 +28242,7 @@ function registerRole(workspacePath, roleName, description) {
 // ../src/managers/MemoryManager.ts
 var import_fs2 = __toESM(require("fs"));
 var import_path2 = __toESM(require("path"));
+var import_os = __toESM(require("os"));
 function sanitizeRoleName(role) {
   return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
 }
@@ -28601,6 +28602,128 @@ function getMemoryFilePath(workspacePath, level, role) {
     if (e.message && e.message.includes("traversal")) throw e;
   }
   return targetFile;
+}
+var ALLOWED_USER_MEMORY_CATEGORIES = ["Preferences", "Toolchain", "Lessons", "Team Conventions", "Uncategorized"];
+var DANGEROUS_PATTERNS = [
+  { name: "shell-command", regex: /(\$\(|`[^`]+`|exec\(|eval\(|system\(|rm\s+-rf|sudo\s|chmod\s|>\s*\/dev\/null)/ },
+  { name: "pipe-execution", regex: /\|\s*(sh|bash|zsh|node|python|ruby)/ },
+  { name: "secrets", regex: /(password\s*=|api_key\s*=|token\s*=|secret\s*=|aws_[a-z_]+\s*=)/i },
+  { name: "base64-block", regex: /[A-Za-z0-9+\/=]{40,}/ },
+  { name: "prompt-injection", regex: /(ignore previous|ignore all|you are now|system:|<\||\[INST\]|IMPORTANT:\s*override)/i },
+  { name: "file-path", regex: /(\/[a-z_-]+){2,}\.(ts|js|py|rb|go|rs|java|cs)|\\[a-z_-]+\\[a-z_-]+\.(ts|js)/i }
+];
+function getUserMemoryPath() {
+  return process.env.OPTIMUS_USER_MEMORY_PATH || import_path2.default.join(import_os.default.homedir(), ".optimus", "memory", "user-memory.md");
+}
+function validateUserMemoryContent(content) {
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.regex.test(content)) {
+      return { valid: false, reason: `Rejected: content matches '${pattern.name}' safety pattern. User memory should contain generic preferences, not code, secrets, or commands.` };
+    }
+  }
+  return { valid: true };
+}
+function loadUserMemory(maxChars = 2e3) {
+  try {
+    if (process.env.CI === "true" || process.env.CODESPACES === "true") return "";
+    const memPath = getUserMemoryPath();
+    if (!import_fs2.default.existsSync(memPath)) return "";
+    let content = import_fs2.default.readFileSync(memPath, "utf8");
+    const { sanitized } = sanitizeExternalContent(content, "user-memory");
+    content = sanitized;
+    content = content.replace(/```[\s\S]*?```/g, "");
+    if (content.length > maxChars) {
+      const truncated = content.substring(0, maxChars);
+      const lastNewline = truncated.lastIndexOf("\n");
+      content = lastNewline > 0 ? truncated.substring(0, lastNewline) : truncated;
+    }
+    return content.trim();
+  } catch {
+    return "";
+  }
+}
+function parseUserMemoryEntries(content) {
+  const entries = [];
+  const lines = content.split("\n");
+  let currentSection = "Uncategorized";
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const sectionMatch = line.match(/^##\s+(.+)/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1].trim();
+      continue;
+    }
+    const entryMatch = line.match(/^-\s+(.+)/);
+    if (entryMatch) {
+      entries.push({
+        section: currentSection,
+        text: entryMatch[1].trim(),
+        lineNumber: i + 1
+      });
+    }
+  }
+  return entries;
+}
+function resolveCategory(category) {
+  const capitalized = category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+  const match = ALLOWED_USER_MEMORY_CATEGORIES.find((c) => c.toLowerCase() === category.toLowerCase());
+  return match || "Uncategorized";
+}
+function appendToUserMemory(category, content) {
+  const memPath = getUserMemoryPath();
+  let fileContent = import_fs2.default.readFileSync(memPath, "utf8");
+  const resolvedCategory = resolveCategory(category);
+  const sectionHeader = `## ${resolvedCategory}`;
+  const lines = fileContent.split("\n");
+  let sectionIdx = -1;
+  let nextSectionIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().toLowerCase() === sectionHeader.toLowerCase()) {
+      sectionIdx = i;
+      for (let j2 = i + 1; j2 < lines.length; j2++) {
+        if (lines[j2].match(/^##\s+/)) {
+          nextSectionIdx = j2;
+          break;
+        }
+      }
+      break;
+    }
+  }
+  if (sectionIdx === -1) {
+    let lastSectionIdx = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].match(/^##\s+/)) {
+        lastSectionIdx = i;
+        break;
+      }
+    }
+    if (lastSectionIdx >= 0) {
+      lines.splice(lastSectionIdx, 0, sectionHeader, `- ${content}`, "");
+    } else {
+      lines.push("", sectionHeader, `- ${content}`, "");
+    }
+  } else {
+    const insertIdx = nextSectionIdx !== -1 ? nextSectionIdx : lines.length;
+    lines.splice(insertIdx, 0, `- ${content}`);
+  }
+  const newContent = lines.join("\n");
+  const updatedContent = updateUserMemoryHeader(newContent);
+  const tmpPath = memPath + ".tmp";
+  import_fs2.default.writeFileSync(tmpPath, updatedContent, "utf8");
+  import_fs2.default.renameSync(tmpPath, memPath);
+}
+function updateUserMemoryHeader(content) {
+  const lines = content.split("\n");
+  const entryCount = parseUserMemoryEntries(content).length;
+  for (let i = 0; i < Math.min(lines.length, 10); i++) {
+    if (lines[i].startsWith("# Last updated:")) {
+      lines[i] = `# Last updated: ${(/* @__PURE__ */ new Date()).toISOString()}`;
+    }
+    if (lines[i].startsWith("# Entries:")) {
+      lines[i] = `# Entries: ${entryCount}`;
+    }
+  }
+  return lines.join("\n");
 }
 
 // ../src/mcp/worker-spawner.ts
@@ -29479,6 +29602,15 @@ Apply them to avoid repeating past mistakes.
 
 ${memoryContent}
 --- END PROJECT MEMORY ---` : "";
+  const userMemoryContent = loadUserMemory(2e3);
+  const userMemorySection = userMemoryContent ? `
+
+--- START USER MEMORY (REFERENCE ONLY) ---
+The following are personal preferences from this user.
+These apply across projects but may be overridden by project-specific conventions.
+
+${userMemoryContent}
+--- END USER MEMORY ---` : "";
   let contextContent = "";
   if (contextFiles && contextFiles.length > 0) {
     contextContent = "\n\n=== CONTEXT FILES ===\n\nThe following files are provided as required context for, and must be strictly adhered to during this task:\n\n";
@@ -29518,7 +29650,7 @@ Identity: ${resolvedTier}
 ${personaContext ? `--- START PERSONA INSTRUCTIONS ---
 ${personaContext}
 --- END PERSONA INSTRUCTIONS ---` : ""}
-${memorySection}
+${memorySection}${userMemorySection}
 Goal: Execute the following task.
 System Note: ${personaProof}
 ${trackingIssueHeader}
@@ -30970,7 +31102,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
             tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
             content: { type: "string", description: "The actual memory content to solidify" },
-            level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific. Defaults to project.", enum: ["project", "role"] }
+            level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific, 'user' for cross-project personal memory. Defaults to project.", enum: ["project", "role", "user"] }
           },
           required: ["category", "tags", "content"]
         }
@@ -31654,6 +31786,28 @@ Please read these review files to continue.`
   } else if (request.params.name === "append_memory") {
     let { category, tags, content, level } = request.params.arguments;
     requireParams("append_memory", request.params.arguments, ["category", "content"]);
+    if (level === "user") {
+      const userMemPath = getUserMemoryPath();
+      if (!import_fs6.default.existsSync(userMemPath)) {
+        return {
+          content: [{ type: "text", text: "User memory not initialized. Run `optimus memory init` first." }],
+          isError: true
+        };
+      }
+      const validation = validateUserMemoryContent(content);
+      if (!validation.valid) {
+        return {
+          content: [{ type: "text", text: `Content rejected: ${validation.reason}` }],
+          isError: true
+        };
+      }
+      const resolvedCategory = category || "uncategorized";
+      appendToUserMemory(resolvedCategory, content);
+      const displayCategory = resolvedCategory.charAt(0).toUpperCase() + resolvedCategory.slice(1).toLowerCase();
+      return {
+        content: [{ type: "text", text: `\u2705 Memory saved to user memory under ## ${displayCategory}` }]
+      };
+    }
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     const memoryLevel = level === "role" ? "role" : "project";
     const author = process.env.OPTIMUS_CURRENT_ROLE || "unknown";

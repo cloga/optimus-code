@@ -25,7 +25,7 @@ import { AcpAdapter } from "../adapters/AcpAdapter";
 import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
-import { loadFilteredMemory, migrateMemoryFile } from "../managers/MemoryManager";
+import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -1157,6 +1157,12 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
         ? `\n\n--- START PROJECT MEMORY ---\nThe following are verified lessons and decisions from this project's history.\nApply them to avoid repeating past mistakes.\n\n${memoryContent}\n--- END PROJECT MEMORY ---`
         : '';
 
+    // Load user memory for injection (after project memory)
+    const userMemoryContent = loadUserMemory(2000);
+    const userMemorySection = userMemoryContent
+        ? `\n\n--- START USER MEMORY (REFERENCE ONLY) ---\nThe following are personal preferences from this user.\nThese apply across projects but may be overridden by project-specific conventions.\n\n${userMemoryContent}\n--- END USER MEMORY ---`
+        : '';
+
 let contextContent = "";
     if (contextFiles && contextFiles.length > 0) {
         contextContent = "\n\n=== CONTEXT FILES ===\n\nThe following files are provided as required context for, and must be strictly adhered to during this task:\n\n";
@@ -1185,7 +1191,7 @@ Your Role: ${role}
 Identity: ${resolvedTier}
 
 ${personaContext ? `--- START PERSONA INSTRUCTIONS ---\n${personaContext}\n--- END PERSONA INSTRUCTIONS ---` : ''}
-${memorySection}
+${memorySection}${userMemorySection}
 Goal: Execute the following task.
 System Note: ${personaProof}
 ${trackingIssueHeader}

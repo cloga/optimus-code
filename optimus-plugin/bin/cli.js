@@ -7,6 +7,7 @@
  *   optimus init       - Bootstrap a .optimus/ workspace in current directory
  *   optimus upgrade    - Upgrade skills, roles, and config from plugin source
  *   optimus serve      - Start the MCP server (stdio transport)
+ *   optimus memory     - Manage user-level cross-project memory
  *   optimus version    - Print version
  */
 
@@ -22,6 +23,10 @@ switch (command) {
 
   case 'upgrade':
     require('./commands/upgrade')();
+    break;
+
+  case 'memory':
+    require('./commands/memory')();
     break;
 
   case 'serve':
@@ -73,6 +78,7 @@ Optimus Swarm CLI — Universal Multi-Agent Orchestrator (MCP)
 Usage:
   optimus init        Bootstrap .optimus/ workspace in current directory
   optimus upgrade     Upgrade skills, roles, and config from plugin source
+  optimus memory      Manage user-level cross-project memory
   optimus serve       Start MCP server (stdio transport)
   optimus version     Print version
 
