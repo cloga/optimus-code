@@ -28275,6 +28275,28 @@ function updateFrontmatter(content, updates) {
 function sanitizeRoleName(role) {
   return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
 }
+function stripTraceLines(output) {
+  const lines = output.split("\n");
+  const tracePattern = /^[•✓✗↳] |^↳ /;
+  if (lines.length === 0 || !tracePattern.test(lines[0].trim())) {
+    return output;
+  }
+  let lastTraceIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (tracePattern.test(trimmed) || trimmed === "" && lastTraceIdx === i - 1) {
+      lastTraceIdx = i;
+    }
+  }
+  if (lastTraceIdx === -1) {
+    return output;
+  }
+  const cleanContent = lines.slice(lastTraceIdx + 1).join("\n").trim();
+  if (cleanContent.length > 50) {
+    return cleanContent;
+  }
+  return output;
+}
 function normalizePathForAgent(p) {
   return p.replace(/\\/g, "/");
 }
@@ -29222,7 +29244,8 @@ ${firstLines.trim()}
     }
     const dir = import_path2.default.dirname(outputPath);
     if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
-    import_fs2.default.writeFileSync(outputPath, response, "utf8");
+    const cleanResponse = stripTraceLines(response);
+    import_fs2.default.writeFileSync(outputPath, cleanResponse, "utf8");
     if (isT3) {
       trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
     }

@@ -69,6 +69,51 @@ function sanitizeRoleName(role: string): string {
     return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
 }
 
+// ─── Output Trace Stripping ───
+
+/**
+ * Strip tool-call trace lines from adapter output before writing to artifact files.
+ * PersistentAgentAdapter's structured output includes process traces like:
+ *   • powershell  / • view  / • report_intent  / ✓ result  / ✗ error
+ * These are useful for debugging but pollute artifact files consumed by other agents.
+ * 
+ * Strategy: detect trace-heavy output and extract the clean content after the trace block.
+ * If output has no traces, return as-is.
+ */
+function stripTraceLines(output: string): string {
+    const lines = output.split('\n');
+
+    // Quick check: if the output doesn't start with trace patterns, return as-is
+    const tracePattern = /^[•✓✗↳] |^↳ /;
+    if (lines.length === 0 || !tracePattern.test(lines[0].trim())) {
+        return output;
+    }
+
+    // Find the last trace line, then take everything after it
+    let lastTraceIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (tracePattern.test(trimmed) || trimmed === '' && lastTraceIdx === i - 1) {
+            lastTraceIdx = i;
+        }
+    }
+
+    if (lastTraceIdx === -1) {
+        return output;
+    }
+
+    // Everything after the last trace block is the agent's actual summary/response
+    const cleanContent = lines.slice(lastTraceIdx + 1).join('\n').trim();
+
+    // If clean content is substantial, use it; otherwise fall back to full output
+    // (some agents might only produce traces with no clean section)
+    if (cleanContent.length > 50) {
+        return cleanContent;
+    }
+
+    return output;
+}
+
 /**
  * Normalize a Windows path to use forward slashes for safe embedding in agent prompts.
  * Backslashes in JSON strings must be escaped (\\), and LLMs sometimes fail to do this
@@ -1231,7 +1276,12 @@ Please provide your complete execution result below.`;
         const dir = path.dirname(outputPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        fs.writeFileSync(outputPath, response, 'utf8');
+        // Strip tool-call traces from output before writing to artifact file.
+        // PersistentAgentAdapter.combineStructuredDisplay() merges processText (traces)
+        // with assistantText (content). For artifact files consumed by other agents,
+        // only the clean content should be persisted.
+        const cleanResponse = stripTraceLines(response);
+        fs.writeFileSync(outputPath, cleanResponse, 'utf8');
 
         // Track T3 success AFTER we know execution succeeded
         if (isT3) {
