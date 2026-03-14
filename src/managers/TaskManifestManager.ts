@@ -124,23 +124,41 @@ export class TaskManifestManager {
         withManifestLock(() => {
             const manifest = this.loadManifest(workspacePath);
             const now = Date.now();
-            const TIMEOUT_MS = 1000 * 60 * 3; // 3 minutes timeout
+            const TIMEOUT_MS = 1000 * 60 * 10; // 10 minutes timeout
             let changed = false;
 
             for (const taskId in manifest) {
                 const task = manifest[taskId];
                 if (task.status === 'running') {
                     if (now - task.heartbeatTime > TIMEOUT_MS) {
-                        task.status = 'failed';
-                        task.error_message = 'Task timed out or runner process died (reaped by Watchdog).';
+                        // Check if agent already wrote output before dying
+                        let hasExistingOutput = false;
+                        if (task.output_path) {
+                            try {
+                                if (fs.existsSync(task.output_path)) {
+                                    const stats = fs.statSync(task.output_path);
+                                    hasExistingOutput = stats.size > 100;
+                                }
+                            } catch (e: any) { /* stat failure — treat as no output */ }
+                        }
+
+                        if (hasExistingOutput) {
+                            // Agent produced output before timeout — mark as partial, preserve the file
+                            task.status = 'partial';
+                            task.error_message = 'Task timed out but agent had already written output. Marked as partial.';
+                        } else {
+                            // No output — mark as failed and write error marker
+                            task.status = 'failed';
+                            task.error_message = 'Task timed out or runner process died (reaped by Watchdog).';
+                            try {
+                                if (task.output_path) {
+                                    const dir = path.dirname(task.output_path);
+                                    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                                    fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
+                                }
+                            } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`); }
+                        }
                         changed = true;
-                        try {
-                            if (task.output_path) {
-                                const dir = path.dirname(task.output_path);
-                                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                                fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
-                            }
-                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`); }
                     }
                 }
             }

@@ -1212,7 +1212,12 @@ let contextContent = "";
         ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
         : '';
 
-    const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
+    const normalizedOutputPath = normalizePathForAgent(outputPath);
+    const basePrompt = `CRITICAL: Your output MUST be written to this EXACT file: ${normalizedOutputPath}
+Do NOT create files with different names. Do NOT use write_blackboard_artifact to write elsewhere.
+This is your ONLY output destination — any content written to other paths will be lost.
+
+You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
 

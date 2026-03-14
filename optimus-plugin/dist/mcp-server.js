@@ -29165,7 +29165,12 @@ A GitHub Issue #${autoIssueNumber} has already been created to track this task.
 DO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.
 Pass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.
 ` : "";
-  const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
+  const normalizedOutputPath = normalizePathForAgent(outputPath);
+  const basePrompt = `CRITICAL: Your output MUST be written to this EXACT file: ${normalizedOutputPath}
+Do NOT create files with different names. Do NOT use write_blackboard_artifact to write elsewhere.
+This is your ONLY output destination \u2014 any content written to other paths will be lost.
+
+You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
 
@@ -29529,25 +29534,40 @@ var TaskManifestManager = class {
     withManifestLock(() => {
       const manifest = this.loadManifest(workspacePath);
       const now = Date.now();
-      const TIMEOUT_MS = 1e3 * 60 * 3;
+      const TIMEOUT_MS = 1e3 * 60 * 10;
       let changed = false;
       for (const taskId in manifest) {
         const task = manifest[taskId];
         if (task.status === "running") {
           if (now - task.heartbeatTime > TIMEOUT_MS) {
-            task.status = "failed";
-            task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
-            changed = true;
-            try {
-              if (task.output_path) {
-                const dir = path5.dirname(task.output_path);
-                if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
-                fs5.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
+            let hasExistingOutput = false;
+            if (task.output_path) {
+              try {
+                if (fs5.existsSync(task.output_path)) {
+                  const stats = fs5.statSync(task.output_path);
+                  hasExistingOutput = stats.size > 100;
+                }
+              } catch (e) {
               }
-            } catch (e) {
-              console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
             }
+            if (hasExistingOutput) {
+              task.status = "partial";
+              task.error_message = "Task timed out but agent had already written output. Marked as partial.";
+            } else {
+              task.status = "failed";
+              task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
+              try {
+                if (task.output_path) {
+                  const dir = path5.dirname(task.output_path);
+                  if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
+                  fs5.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
+`, "utf8");
+                }
+              } catch (e) {
+                console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
+              }
+            }
+            changed = true;
           }
         }
       }
