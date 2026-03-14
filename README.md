@@ -210,6 +210,36 @@ The system ships with 5 pre-installed skills. Two are **meta-skills** that enabl
 | `council-review` | Core | Parallel expert review (Map-Reduce) |
 | `git-workflow` | Core | Issue First + PR workflow |
 
+### Supported Adapters
+
+| Adapter | Protocol | Compatible Agents |
+|---------|----------|-------------------|
+| `github-copilot` | Copilot CLI text parsing | GitHub Copilot |
+| `claude-code` | Claude Code CLI text parsing | Claude Code |
+| `acp` | ACP (Agent Client Protocol) — JSON-RPC over stdio | Claude Code, GitHub Copilot (`copilot --acp`), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent |
+
+The **ACP adapter** is the universal protocol layer that standardizes communication with any agent supporting the [Agent Client Protocol](https://github.com/cloga/optimus-code/issues/319). It uses JSON-RPC over stdio with LSP-style `Content-Length` framing, replacing legacy CLI text parsing with structured session lifecycle messages (`initialize` → `session/new` → `session/prompt` → `session/update` → response).
+
+To configure an ACP-based agent, add an entry to `.optimus/config/available-agents.json`:
+
+```json
+{
+  "id": "qwen-acp",
+  "name": "Qwen Code (ACP)",
+  "adapter": "acp",
+  "executable": "qwen",
+  "args": ["--acp"],
+  "enabled": true
+}
+```
+
+Other examples:
+
+```json
+{ "id": "copilot-acp", "name": "Copilot (ACP)", "adapter": "acp", "executable": "copilot", "args": ["--acp"], "enabled": true }
+{ "id": "gemini-acp", "name": "Gemini CLI (ACP)", "adapter": "acp", "executable": "gemini", "args": ["--acp"], "enabled": true }
+```
+
 ### Engine/Model Resolution
 
 When delegating a task, engine and model are resolved in priority order:

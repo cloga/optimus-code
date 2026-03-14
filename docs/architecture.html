@@ -337,6 +337,23 @@ footer{
 
 <p data-i18n="arch_s2_p5">Changes to system instructions, skills, or config must be evaluated for propagation to the plugin scaffold. T1 agent instances, state files, and reports never ship in the plugin.</p>
 
+<h3>Adapters / Engine Layer</h3>
+
+<p>Optimus communicates with external AI coding agents through <strong>adapters</strong> &mdash; pluggable implementations of the <code>AgentAdapter</code> interface in <code>src/adapters/</code>. Each adapter translates Optimus orchestration commands into the wire protocol understood by a specific agent engine.</p>
+
+<table>
+  <thead>
+    <tr><th>Adapter</th><th>Protocol</th><th>Compatible Agents</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>github-copilot</code></td><td>Copilot CLI text parsing</td><td>GitHub Copilot</td></tr>
+    <tr><td><code>claude-code</code></td><td>Claude Code CLI text parsing</td><td>Claude Code</td></tr>
+    <tr><td><code>acp</code></td><td><strong>ACP (Agent Client Protocol)</strong> &mdash; JSON-RPC over stdio</td><td>Claude Code, GitHub Copilot (<code>copilot --acp</code>), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent</td></tr>
+  </tbody>
+</table>
+
+<p>The <strong>ACP adapter</strong> (<code>src/adapters/AcpAdapter.ts</code>) implements the Agent Client Protocol &mdash; a universal JSON-RPC protocol over stdio using LSP-style <code>Content-Length</code> framing. Session lifecycle: <code>initialize</code> &rarr; <code>session/new</code> &rarr; <code>session/prompt</code> &rarr; <code>session/update</code> (streaming) &rarr; response. See <a href="https://github.com/cloga/optimus-code/issues/319" target="_blank" rel="noopener">Epic #319</a> for the full migration roadmap.</p>
+
 <!-- Section 3 -->
 <h2 id="self-evolving-agent-lifecycle" data-i18n-html="arch_s3_title">3. Self-Evolving Agent Lifecycle (T3&rarr;T2&rarr;T1)</h2>
 

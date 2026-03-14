@@ -78,6 +78,36 @@ The repository itself contains two intertwined codebases:
 
 Changes to system instructions, skills, or config must be evaluated for propagation to the plugin scaffold. T1 agent instances, state files, and reports never ship in the plugin.
 
+### Adapters / Engine Layer
+
+Optimus communicates with external AI coding agents through **adapters** — pluggable implementations of the `AgentAdapter` interface in `src/adapters/`. Each adapter translates Optimus orchestration commands into the wire protocol understood by a specific agent engine.
+
+| Adapter | Class | Protocol | Agents |
+|---------|-------|----------|--------|
+| `github-copilot` | `GitHubCopilotAdapter` | Copilot CLI text parsing | GitHub Copilot |
+| `claude-code` | `ClaudeCodeAdapter` | Claude Code CLI text parsing | Claude Code |
+| `acp` | `AcpAdapter` | **ACP (Agent Client Protocol)** — JSON-RPC over stdio | Claude Code, GitHub Copilot (`copilot --acp`), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent |
+
+#### ACP Adapter (Epic [#319](https://github.com/cloga/optimus-code/issues/319))
+
+The `AcpAdapter` (`src/adapters/AcpAdapter.ts`) implements the **Agent Client Protocol (ACP)** — a universal JSON-RPC protocol over stdio that uses the same framing as LSP (`Content-Length` header). ACP replaces legacy CLI text parsing with structured message exchange.
+
+**Session lifecycle:**
+
+```
+initialize → session/new → session/prompt → session/update (streaming) → response
+```
+
+- `initialize`: JSON-RPC handshake to negotiate capabilities.
+- `session/new` (or `session/load` for resumption): Creates or resumes a session.
+- `session/prompt`: Sends the user prompt to the agent.
+- `session/update`: Streaming notifications for incremental output (maps to `onUpdate` callbacks).
+- Final response: The agent's completed output.
+
+ACP coexists with the existing `ClaudeCodeAdapter` and `GitHubCopilotAdapter` through the factory pattern in `src/adapters/index.ts`. The `AdapterKind` union type (`'github-copilot' | 'claude-code' | 'acp'`) drives adapter selection via `available-agents.json` configuration.
+
+> **Status**: The AcpAdapter is scaffolded with the full interface contract. Transport and JSON-RPC message handling are pending implementation. See Epic #319 for the migration roadmap.
+
 ---
 
 ## 3. Self-Evolving Agent Lifecycle (T3→T2→T1)
