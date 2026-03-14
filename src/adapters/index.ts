@@ -5,6 +5,8 @@ import { AcpAdapter } from './AcpAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import { debugLog } from '../debugLogger';
 
+// AdapterKind determines which adapter class to instantiate.
+// For ACP-protocol engines (qwen-code, kimi, cursor, etc.), use 'acp'.
 type AdapterKind = 'github-copilot' | 'claude-code' | 'acp';
 
 export interface AgentConfig {

@@ -761,31 +761,43 @@ function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?
 }
 
 function getAdapterForEngine(engine: string, sessionId?: string, model?: string, workspacePath?: string): AgentAdapter {
+    // Read engine config to determine protocol
+    let engineConfig: any = null;
+    if (workspacePath) {
+        try {
+            const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+            if (fs.existsSync(configPath)) {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                engineConfig = config.engines?.[engine];
+            }
+        } catch { /* use heuristic fallback */ }
+    }
+
+    // Determine protocol: explicit field > engine name heuristic > default 'cli'
+    const protocol = engineConfig?.protocol
+        || (engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli');
+
+    if (protocol === 'acp') {
+        // Resolve executable and args from config
+        let executable = engineConfig?.path || 'copilot';
+        let args: string[] = engineConfig?.args || ['--acp'];
+
+        // Legacy compat: if no 'args' field, split 'path' on whitespace
+        if (!engineConfig?.args && engineConfig?.path) {
+            const parts = engineConfig.path.split(/\s+/);
+            executable = parts[0];
+            args = parts.slice(1);
+        }
+
+        if (engineConfig?.cli_flags && model) {
+            args.push(engineConfig.cli_flags, model);
+        }
+        return new AcpAdapter(`acp-${engine}`, `🚀 ${engine}`, executable, args);
+    }
+
+    // CLI protocol: route by engine name
     if (engine === 'copilot-cli' || engine === 'github-copilot') {
         return new GitHubCopilotAdapter(undefined, '🛸 GitHub Copilot', model || '');
-    }
-    if (engine === 'acp' || engine.startsWith('acp-')) {
-        // Resolve ACP executable and args from available-agents.json
-        let executable = 'copilot';
-        let args = ['--acp'];
-        if (workspacePath) {
-            try {
-                const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
-                if (fs.existsSync(configPath)) {
-                    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                    const acpConfig = config.engines?.[engine] || config.engines?.['acp'];
-                    if (acpConfig) {
-                        const parts = acpConfig.path.split(/\s+/);
-                        executable = parts[0];
-                        args = parts.slice(1);
-                        if (acpConfig.cli_flags && model) {
-                            args.push(acpConfig.cli_flags, model);
-                        }
-                    }
-                }
-            } catch { /* use defaults */ }
-        }
-        return new AcpAdapter(`acp-${engine}`, '🚀 ACP Agent', executable, args);
     }
     return new ClaudeCodeAdapter(undefined, '🦖 Claude Code', model || '');
 }

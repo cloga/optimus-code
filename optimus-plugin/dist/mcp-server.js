@@ -28815,31 +28815,33 @@ function parseRoleSpec(roleArg) {
   return { role, engine, model };
 }
 function getAdapterForEngine(engine, sessionId, model, workspacePath) {
+  let engineConfig = null;
+  if (workspacePath) {
+    try {
+      const configPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+      if (import_fs2.default.existsSync(configPath)) {
+        const config2 = JSON.parse(import_fs2.default.readFileSync(configPath, "utf8"));
+        engineConfig = config2.engines?.[engine];
+      }
+    } catch {
+    }
+  }
+  const protocol = engineConfig?.protocol || (engine === "acp" || engine.startsWith("acp-") ? "acp" : "cli");
+  if (protocol === "acp") {
+    let executable = engineConfig?.path || "copilot";
+    let args = engineConfig?.args || ["--acp"];
+    if (!engineConfig?.args && engineConfig?.path) {
+      const parts = engineConfig.path.split(/\s+/);
+      executable = parts[0];
+      args = parts.slice(1);
+    }
+    if (engineConfig?.cli_flags && model) {
+      args.push(engineConfig.cli_flags, model);
+    }
+    return new AcpAdapter(`acp-${engine}`, `\u{1F680} ${engine}`, executable, args);
+  }
   if (engine === "copilot-cli" || engine === "github-copilot") {
     return new GitHubCopilotAdapter(void 0, "\u{1F6F8} GitHub Copilot", model || "");
-  }
-  if (engine === "acp" || engine.startsWith("acp-")) {
-    let executable = "copilot";
-    let args = ["--acp"];
-    if (workspacePath) {
-      try {
-        const configPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
-        if (import_fs2.default.existsSync(configPath)) {
-          const config2 = JSON.parse(import_fs2.default.readFileSync(configPath, "utf8"));
-          const acpConfig = config2.engines?.[engine] || config2.engines?.["acp"];
-          if (acpConfig) {
-            const parts = acpConfig.path.split(/\s+/);
-            executable = parts[0];
-            args = parts.slice(1);
-            if (acpConfig.cli_flags && model) {
-              args.push(acpConfig.cli_flags, model);
-            }
-          }
-        }
-      } catch {
-      }
-    }
-    return new AcpAdapter(`acp-${engine}`, "\u{1F680} ACP Agent", executable, args);
   }
   return new ClaudeCodeAdapter(void 0, "\u{1F996} Claude Code", model || "");
 }
@@ -31212,8 +31214,10 @@ Memory appended to: ${memoryFile}`
         roster += "\n### \u2699\uFE0F Engine & Model Spec (T3 configuration)\n";
         roster += "**Available Execution Engines (Toolchains & Supported Models)**:\n";
         Object.keys(config2.engines).forEach((engine) => {
-          const statusMatch = config2.engines[engine].status ? ` *[Status: ${config2.engines[engine].status}]*` : "";
-          roster += `- [Engine: ${engine}] Models: [${config2.engines[engine].available_models.join(", ")}]${statusMatch}
+          const eng = config2.engines[engine];
+          const protocol = eng.protocol || "cli";
+          const statusMatch = eng.status ? ` *[Status: ${eng.status}]*` : "";
+          roster += `- [Engine: ${engine}] Protocol: ${protocol} | Models: [${eng.available_models.join(", ")}]${statusMatch}
 `;
         });
         roster += "*Note: Append these engine and model combinations to role names to spawn customized variants. Examples: `chief-architect_claude-code_claude-3-opus`, `security-auditor_copilot-cli_o1-preview`.*\n\n";

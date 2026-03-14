@@ -842,8 +842,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         roster += "\n### ⚙️ Engine & Model Spec (T3 configuration)\n";
         roster += "**Available Execution Engines (Toolchains & Supported Models)**:\n";
         Object.keys(config.engines).forEach(engine => {
-          const statusMatch = config.engines[engine].status ? ` *[Status: ${config.engines[engine].status}]*` : '';
-          roster += `- [Engine: ${engine}] Models: [${config.engines[engine].available_models.join(', ')}]${statusMatch}\n`;
+          const eng = config.engines[engine];
+          const protocol = eng.protocol || 'cli';
+          const statusMatch = eng.status ? ` *[Status: ${eng.status}]*` : '';
+          roster += `- [Engine: ${engine}] Protocol: ${protocol} | Models: [${eng.available_models.join(', ')}]${statusMatch}\n`;
         });
           roster += "*Note: Append these engine and model combinations to role names to spawn customized variants. Examples: `chief-architect_claude-code_claude-3-opus`, `security-auditor_copilot-cli_o1-preview`.*\n\n";
         } catch (e: any) { console.error(`[RosterCheck] Warning: failed to read available-agents.json: ${e.message}`); }

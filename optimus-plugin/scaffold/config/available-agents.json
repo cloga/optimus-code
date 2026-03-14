@@ -1,12 +1,14 @@
 {
-  "_comment": "This file simply defines the T3 Engine & Model resource pool. Master Agent uses this menu to inject backend compute power when dynamically spawning T2 personas.",
+  "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli' (default) or 'acp' (JSON-RPC over NDJSON). Add new ACP vendors by adding entries with protocol: 'acp'.",
   "engines": {
     "claude-code": {
+      "protocol": "cli",
       "path": "npx @anthropic-ai/claude-code",
-      "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
+      "available_models": ["claude-opus-4.6-1m"],
       "cli_flags": "--model"
     },
     "github-copilot": {
+      "protocol": "cli",
       "path": "copilot",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
       "cli_flags": "-m"
