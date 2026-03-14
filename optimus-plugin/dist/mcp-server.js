@@ -31279,6 +31279,11 @@ Fix the build errors and try again.`
       } catch (syncErr) {
         console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);
       }
+      try {
+        await vcsProvider.addLabels("pullrequest", pull_request_id, ["agent-merged"]);
+      } catch (labelError) {
+        console.error(`[Post-Merge Labeling] Warning: failed to add 'agent-merged' label to PR #${pull_request_id}: ${labelError.message}`);
+      }
       return {
         content: [{
           type: "text",

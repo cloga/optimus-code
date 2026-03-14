@@ -1158,6 +1158,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);
       }
 
+      // Add 'agent-merged' label so humans know this PR was closed automatically by the agent
+      try {
+          await vcsProvider.addLabels('pullrequest', pull_request_id, ['agent-merged']);
+      } catch (labelError: any) {
+          console.error(`[Post-Merge Labeling] Warning: failed to add 'agent-merged' label to PR #${pull_request_id}: ${labelError.message}`);
+      }
+
       return {
         content: [{
           type: "text",
