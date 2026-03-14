@@ -325,11 +325,13 @@ footer{
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <div class="topnav-links" id="navLinks">
+      <a href="index.html" data-i18n="nav_home">Home</a>
       <a href="architecture.html" data-i18n="nav_architecture">Architecture</a>
+      <a href="pitch.html" data-i18n="nav_pitch">Pitch</a>
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
       <div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
-        <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
-        <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
+        <a href="guide.html" class="lang-btn active" style="text-decoration:none">EN</a>
+        <a href="guide-zh.html" class="lang-btn" style="text-decoration:none">中文</a>
       </div>
     </div>
   </div>
@@ -745,7 +747,10 @@ ${content}
     <div class="footer-links">
       <a href="index.html" data-i18n="footer_home">Home</a>
       <a href="architecture.html" data-i18n="footer_arch">Architecture</a>
+      <a href="guide.html" data-i18n="footer_tutorial">Tutorial</a>
+      <a href="pitch.html" data-i18n="footer_pitch">Pitch</a>
       <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
     <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
   </div>
@@ -852,21 +857,6 @@ ${content}
   });
 })();
 
-/* Language toggle */
-(function(){
-  var toggle=document.getElementById('langToggle');
-  if(!toggle)return;
-  var buttons=toggle.querySelectorAll('.lang-btn');
-  buttons.forEach(function(btn){
-    btn.addEventListener('click',function(){
-      buttons.forEach(function(b){b.classList.remove('active');b.setAttribute('aria-checked','false')});
-      btn.classList.add('active');
-      btn.setAttribute('aria-checked','true');
-      var lang=btn.getAttribute('data-lang');
-      if(typeof setLang==='function')setLang(lang);
-    });
-  });
-})();
 </script>
 </body>
 </html>
