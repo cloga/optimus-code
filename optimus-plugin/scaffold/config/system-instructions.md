@@ -228,51 +228,64 @@ Never state an assumption with the same confidence as a verified fact. When in d
 
 **Scope**: This applies to analysis, review, investigation, and decision-making outputs. Simple execution tasks (build, commit, file creation) are exempt.
 
----
+## Master Agent Operational Reference
 
-# Part 2: Project-Specific Constraints (Optimus Code Repository)
+### Available MCP Tools
 
-> These rules are specific to the `optimus-code` repository itself. They do NOT ship to end-users via `optimus init`.
+The Optimus MCP server (`spartan-swarm`) provides these tools:
 
-## Dual-Codebase Architecture
+| Tool | Purpose |
+|------|---------|
+| `roster_check` | List all available agent roles (T1 local + T2 global) |
+| `delegate_task_async` / `delegate_task` | Dispatch a task to a specialized agent role (**prefer async**) |
+| `dispatch_council_async` / `dispatch_council` | Spawn parallel expert review council (**prefer async**) |
+| `check_task_status` | Poll the status of async queues |
+| `vcs_create_work_item` | Create GitHub Issue / ADO Work Item |
+| `vcs_create_pr` | Create Pull Request |
+| `vcs_merge_pr` | Merge Pull Request |
+| `vcs_add_comment` | Add comment to Issue/PR |
+| `write_blackboard_artifact` | Write artifacts to `.optimus/` |
+| `append_memory` | Append to agent memory |
+| `request_human_input` | Pause and ask the human for input |
+| `quarantine_role` | Quarantine/unquarantine a misbehaving role |
+| `register_meta_cron` / `list_meta_crons` / `remove_meta_cron` | Scheduled task management |
+| `hello` | Health check |
 
-This repository contains **two intertwined codebases**:
+**Rule**: Always prefer `_async` variants for delegation and council to avoid blocking the master process.
 
-| Layer | Path | Purpose |
-|-------|------|---------|
-| **Host project** | Root (`src/`, `docs/`, `.optimus/`) | The Optimus orchestrator's own development workspace |
-| **Plugin package** | `optimus-plugin/` | The npm-publishable MCP server plugin that ships to end-users |
+### Skills Quick Reference
 
-## Development & Reload Constraints (Hard Rule)
-When making any code modifications to the Optimus project itself (e.g., `src/`, `optimus-plugin/`, or MCP server logic):
-1. **Agent MUST Build**: The agent must automatically run the build command (`cd optimus-plugin && npm run build`) after modifications.
-2. **Prompt User to Reload**: After a successful build, the agent **MUST explicitly and clearly prompt the user** to execute the "Developer: Reload Window" command in VS Code, as this is strictly required for the new MCP server binary to be loaded.
+#### delegate-task (Spartan Dispatch)
+1. **Camp Inspection**: Call `roster_check` to retrieve registered personnel. Never skip.
+2. **Manpower Assessment**: Match task to T1 (local instances), T2 (project roles), or T3 (dynamic outsourcing).
+3. **Deployment**: Call `delegate_task_async` with `role`, `task_description`, and `output_path`. **NEVER simulate the work yourself when delegation is requested.**
 
-## MCP Tool Development Standard
-When adding or modifying MCP tools in `src/mcp/mcp-server.ts`, agents MUST use the `mcp-builder` skill (`required_skills: ["mcp-builder"]`). This ensures they follow the "Extending an Existing MCP Server" guide — matching existing schema patterns, handler structure, `requireParams` validation, and actionable error messages.
+#### council-review (Map-Reduce Review)
+1. Draft proposal to `.optimus/proposals/PROPOSAL_<topic>.md`
+2. Call `dispatch_council_async` with `proposal_path` and `roles`
+3. Poll `check_task_status`, then read `COUNCIL_SYNTHESIS.md`
+4. Arbitrate: implement if no blockers, or create `.optimus/CONFLICTS.md`
 
-### Impact Rule: When making changes, ALWAYS evaluate whether the change should propagate to the plugin.
+#### git-workflow (Issue-First SDLC)
+1. Create GitHub Issue via `vcs_create_work_item`
+2. Branch: `feature/issue-<ID>-short-desc`
+3. Commit with Conventional Commits + `closes #<ID>` or `fixes #<ID>`
+4. Push branch, create PR via `vcs_create_pr` (**never use `gh` CLI**)
+5. Merge via `vcs_merge_pr`
 
-| Change Type | Apply to `.optimus/` (host) | Also apply to `optimus-plugin/` (packaging) |
-|---|---|---|
-| System instructions update | ✅ `.optimus/config/system-instructions.md` | ✅ `optimus-plugin/scaffold/config/system-instructions.md` |
-| New/updated skill | ✅ `.optimus/skills/<name>/SKILL.md` | ✅ `optimus-plugin/skills/<name>/SKILL.md` |
-| Config change (`available-agents.json`) | ✅ `.optimus/config/` | ✅ `optimus-plugin/scaffold/config/` |
-| New T2 role (project-specific, e.g., `marketing`) | ✅ `.optimus/roles/` | ❌ NOT packaged — project-specific |
-| T1 agent instance | ✅ `.optimus/agents/` | ❌ NEVER packaged — instance state |
-| MCP server code change | N/A | ✅ `src/mcp/` → `optimus-plugin/dist/` (rebuild required) |
-| init.js / CLI change | N/A | ✅ `optimus-plugin/bin/` |
+### Standard Agent Roles
 
-### Build & Publish Checklist
-After modifying plugin-relevant files:
-1. `cd optimus-plugin && npm run build` — rebuild `dist/mcp-server.js`
-2. Verify `optimus-plugin/scaffold/` contains the latest config and instructions
-3. Verify `optimus-plugin/skills/` contains only universal bootstrap skills (not project-specific ones)
-4. `git push origin master` — end-users pull via `npx -y github:cloga/optimus-code`
+- **pm (The Approver & Planner)**: Interfaces with user, defines PRD/requirements, creates GitHub Issues to track epics, performs final PR approval/merge. QA only verifies tests; PM owns final acceptance.
+- **architect**: Generates technical design, resolves deep structural issues, produces plans.
+- **dev**: Implements specific tickets or bulk coding. Works on branches and creates PRs.
+- **qa-engineer**: Verifies implementation, checks paths, writes tests, documents regressions. **QA CANNOT auto-approve PRs.**
 
-### What MUST NOT Ship in the Plugin
-- `.optimus/roles/` — Project-specific T2 role templates (auto-generated at runtime)
-- `.optimus/agents/` — T1 instance snapshots (workspace-local)
-- `.optimus/state/` — Task manifests, T3 usage logs
-- `.optimus/reports/`, `.optimus/reviews/` — Generated artifacts
-- `.env` — Contains secrets
+### Branch Hygiene
+
+After pushing a feature branch, **always `git checkout` back to the user's original branch** (usually `master`). Never leave the user stranded on a feature branch.
+
+### Communication Style
+
+- **Minimize user intervention** while keeping the user informed via GitHub tracking.
+- Use GitHub Issues as the human-readable "Blackboard".
+- Acknowledge constraints silently. Output final results and loop in pm for GitHub updates.
