@@ -418,9 +418,15 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 ### Skills Quick Reference
 
 #### delegate-task (Spartan Dispatch)
-1. **Camp Inspection**: Call `roster_check` to retrieve registered personnel. Never skip.
+1. **Camp Inspection**: Call `roster_check` to retrieve registered personnel. **Never skip.**
 2. **Manpower Assessment**: Match task to T1 (local instances), T2 (project roles), or T3 (dynamic outsourcing).
 3. **Deployment**: Call `delegate_task_async` with `role`, `task_description`, and `output_path`. **NEVER simulate the work yourself when delegation is requested.**
+
+**Critical constraints:**
+- **Always use `_async` variants** (`delegate_task_async`, not `delegate_task`) to avoid blocking the master process
+- **Always call `roster_check` first** — even if you think you know the available roles
+- **Always provide `output_path`** inside `.optimus/` (check the Artifact Directory Routing Table above)
+- **Never busy-poll** `check_task_status` — wait at least 30 seconds between polls
 
 #### council-review (Map-Reduce Review)
 1. Draft problem statement to `.optimus/specs/{date}-{topic}/00-PROBLEM.md`
@@ -429,12 +435,23 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 4. For architectural reviews, use `dispatch_council_async` with `proposal_path` and `roles`
 5. Poll `check_task_status`, then read `COUNCIL_SYNTHESIS.md` and `VERDICT.md`
 
+**Critical constraints:**
+- **Always use `dispatch_council_async`** (not the sync `dispatch_council`) — sync blocks the master for minutes
+- **Use diverse engine/model combos** for council participants when possible (system auto-assigns via round-robin)
+- **Provide `role_descriptions`** for council roles to ensure high-quality T2 templates
+- **Read both `COUNCIL_SYNTHESIS.md` AND `VERDICT.md`** before acting on council results
+
 #### git-workflow (Issue-First SDLC)
 1. Create GitHub Issue via `vcs_create_work_item`
 2. Branch: `feature/issue-<ID>-short-desc`
 3. Commit with Conventional Commits + `closes #<ID>` or `fixes #<ID>`
 4. Push branch, create PR via `vcs_create_pr` (**never use `gh` CLI**)
 5. Merge via `vcs_merge_pr`
+
+**Critical constraints:**
+- **Never push directly to master** — always go through PR
+- **Always pass `parent_issue_number`** when delegating sub-tasks under an epic
+- **Always checkout back to master** after pushing a feature branch
 
 ### Standard Agent Roles
 

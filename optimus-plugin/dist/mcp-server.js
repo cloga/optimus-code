@@ -31249,7 +31249,9 @@ Use check_task_status tool periodically with this Council ID to check completion
       content: [
         {
           type: "text",
-          text: `\u2696\uFE0F **Council Map-Reduce Review Completed**
+          text: `\u26A0\uFE0F **Warning: You used the synchronous \`dispatch_council\`. This blocked your process for the entire council duration. Prefer \`dispatch_council_async\` + \`check_task_status\` for non-blocking execution.**
+
+\u2696\uFE0F **Council Map-Reduce Review Completed**
 All expert workers executed parallelly adhering to the Singleton Worker Rule.
 
 Reviews are saved in isolated path: \`${reviewsPath}\`
