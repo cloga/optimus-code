@@ -564,15 +564,14 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const hasExplicitDescription = !!masterInfo?.description && masterInfo.description.trim().length > 0;
 
     if (!hasExplicitDescription) {
-        // Master didn't provide role_description — refuse to create garbage T2.
-        // The role will operate as T3 (zero-shot) this time without polluting the filesystem.
-        console.error(
-            `[T2 Guard] Refused to create T2 for '${safeRole}': no role_description provided by Master. ` +
-            `Role will run as T3 zero-shot. To create a proper T2, the delegating agent should either: ` +
-            `(1) provide a detailed role_description in delegate_task, or ` +
-            `(2) use role-creator to pre-create the role before delegation.`
+        // Master didn't provide role_description and no T2 exists — reject the delegation.
+        // This forces the calling agent to self-correct by providing a role_description.
+        throw new Error(
+            `Missing role_description for new role '${safeRole}'. ` +
+            `No existing T2 role template found at .optimus/roles/${safeRole}.md. ` +
+            `Please re-call delegate_task with a role_description parameter describing this role's expertise, ` +
+            `or use role-creator to pre-create the role before delegation.`
         );
-        return null; // No T2 created — agent proceeds as T3
     }
 
     // No plugin template found — use role-creator for rich T2 generation
@@ -1227,11 +1226,10 @@ Please provide your complete execution result below.`;
 
         const tempId = Math.random().toString(36).slice(2, 10);
         const t1TempPath = t1Path || path.join(agentsDir, `${role}_pending_${tempId}.md`);
-        if (!t1Path) {
-            // No existing T1 instance found — create a new placeholder
-            const t1Template = fs.existsSync(t2Path)
-                ? fs.readFileSync(t2Path, 'utf8')
-                : `---\nrole: ${role}\n---\n\n# ${role}\n`;
+        const t2Exists = fs.existsSync(t2Path);
+        if (!t1Path && t2Exists) {
+            // T2 exists — create T1 instance from T2 template
+            const t1Template = fs.readFileSync(t2Path, 'utf8');
             const t1Instance = updateFrontmatter(t1Template, {
                 role: role,
                 base_tier: 'T1',
@@ -1243,6 +1241,9 @@ Please provide your complete execution result below.`;
             });
             fs.writeFileSync(t1TempPath, t1Instance, 'utf8');
             console.error(`[Orchestrator] T2→T1: Created temp agent placeholder '${role}' at ${path.basename(t1TempPath)}`);
+        } else if (!t1Path) {
+            // No T2 — running as T3 zero-shot, skip T1 creation
+            console.error(`[Orchestrator] No T2 for '${role}' — running as T3 zero-shot, no T1 instance created.`);
         }
 
         const extraEnv: Record<string, string> = {

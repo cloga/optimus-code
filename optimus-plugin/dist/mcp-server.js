@@ -29116,10 +29116,9 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
   }
   const hasExplicitDescription = !!masterInfo?.description && masterInfo.description.trim().length > 0;
   if (!hasExplicitDescription) {
-    console.error(
-      `[T2 Guard] Refused to create T2 for '${safeRole}': no role_description provided by Master. Role will run as T3 zero-shot. To create a proper T2, the delegating agent should either: (1) provide a detailed role_description in delegate_task, or (2) use role-creator to pre-create the role before delegation.`
+    throw new Error(
+      `Missing role_description for new role '${safeRole}'. No existing T2 role template found at .optimus/roles/${safeRole}.md. Please re-call delegate_task with a role_description parameter describing this role's expertise, or use role-creator to pre-create the role before delegation.`
     );
-    return null;
   }
   const META_ROLES = ["role-creator", "skill-creator", "agent-creator"];
   const safeRoleCheck = sanitizeRoleName2(role);
@@ -29679,13 +29678,9 @@ Please provide your complete execution result below.`;
     if (!import_fs3.default.existsSync(agentsDir)) import_fs3.default.mkdirSync(agentsDir, { recursive: true });
     const tempId = Math.random().toString(36).slice(2, 10);
     const t1TempPath = t1Path || import_path3.default.join(agentsDir, `${role}_pending_${tempId}.md`);
-    if (!t1Path) {
-      const t1Template = import_fs3.default.existsSync(t2Path) ? import_fs3.default.readFileSync(t2Path, "utf8") : `---
-role: ${role}
----
-
-# ${role}
-`;
+    const t2Exists = import_fs3.default.existsSync(t2Path);
+    if (!t1Path && t2Exists) {
+      const t1Template = import_fs3.default.readFileSync(t2Path, "utf8");
       const t1Instance = updateFrontmatter(t1Template, {
         role,
         base_tier: "T1",
@@ -29697,6 +29692,8 @@ role: ${role}
       });
       import_fs3.default.writeFileSync(t1TempPath, t1Instance, "utf8");
       console.error(`[Orchestrator] T2\u2192T1: Created temp agent placeholder '${role}' at ${import_path3.default.basename(t1TempPath)}`);
+    } else if (!t1Path) {
+      console.error(`[Orchestrator] No T2 for '${role}' \u2014 running as T3 zero-shot, no T1 instance created.`);
     }
     const extraEnv = {
       OPTIMUS_DELEGATION_DEPTH: String(childDepth),
