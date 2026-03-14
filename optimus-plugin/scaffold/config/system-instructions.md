@@ -12,6 +12,148 @@ Before any work begins, a GitHub Issue must be created to acquire an `#ID`. All 
 ## Artifact Isolation
 ALL generated reports, tasks, and memory artifacts MUST be saved inside `.optimus/` subdirectories. Never write loose files to the repository root.
 
+### Artifact Directory Routing Table
+
+Every artifact type has a designated directory. Agents MUST write to the correct directory.
+
+| Directory | Purpose | File Naming | Written By |
+|-----------|---------|-------------|------------|
+| `specs/{date}-{topic}/` | Problem-First lifecycle (PROBLEM → PROPOSAL → SOLUTION) | `00-PROBLEM.md`, `01-PROPOSAL_{role}.md`, `02-SOLUTION.md` | Master / Experts via `write_blackboard_artifact` |
+| `results/` | Default output for `delegate_task` | `{role}_{taskId}.md` or custom name | `delegate_task` output_path (auto-scoped) |
+| `reviews/{timestamp}/` | Council per-role reviews + synthesis + verdict | `{role}_review.md`, `COUNCIL_SYNTHESIS.md`, `VERDICT.md` | `dispatch_council` (auto-generated) |
+| `reports/` | Cron patrol, analysis, and ad-hoc reports | `cron-{id}-{date}.md`, `{topic}_report.md` | `meta_cron` / `write_blackboard_artifact` |
+| `tasks/` | Issue-bound task descriptions | `task_issue_{id}.md` | Master via `write_blackboard_artifact` |
+| `roles/` | T2 role templates | `{role-name}.md` | Worker Spawner (auto-precipitated) |
+| `agents/` | T1 instance snapshots | `{role}_{session_id}.md` | Worker Spawner (auto-created) |
+| `skills/` | Tool/workflow instruction manuals | `{skill-name}/SKILL.md` | Skill Creator |
+| `state/` | Runtime state (manifests, health, usage) | `*.json` | System (internal) |
+| `memory/` | Project context and lessons | `*.md` | `append_memory` |
+| `config/` | System config files | `*.md`, `*.json` | `optimus init` / Master |
+| `proposals/` | **[FROZEN]** Legacy proposals archive | `PROPOSAL_*.md` | No new writes — use `specs/` instead |
+
+**Key rules:**
+- New Problem-First work goes to `specs/`, NOT `proposals/`
+- `results/` is the fallback when `delegate_task` has no explicit `output_path`
+- `reviews/` directories are auto-created by `dispatch_council` — do not write directly
+- `proposals/` is frozen — existing files are kept for reference, no new files should be added
+
+### Artifact Format Templates
+
+All artifacts MUST start with YAML frontmatter. Use flat values only (no nested objects) for cross-model compatibility.
+
+#### Frontmatter (Required for all artifact types)
+```yaml
+---
+type: problem | proposal | solution | review | verdict | report | task | memory
+status: open | draft | in-review | approved | rejected | completed | failed
+author: {role-name or "human"}
+date: YYYY-MM-DD
+tracking_issue: {number or omit}
+---
+```
+
+#### 00-PROBLEM.md
+```markdown
+---
+type: problem
+status: open
+author: master-agent
+date: 2026-03-14
+related_issues: [123, 456]
+---
+# PROBLEM: {Title}
+## Background
+## Problem Domains
+## Constraints
+## Open Questions
+## Success Criteria
+```
+
+#### 01-PROPOSAL_{role}.md
+```markdown
+---
+type: proposal
+status: draft
+author: {role-name}
+date: 2026-03-14
+parent_problem: specs/{topic}/00-PROBLEM.md
+tracking_issue: 123
+---
+# PROPOSAL: {Title}
+## Executive Summary
+## Detailed Design
+## Trade-off Analysis
+## Implementation Plan
+## Answers to Open Questions
+```
+
+#### 02-SOLUTION.md
+```markdown
+---
+type: solution
+status: approved
+author: master-agent
+date: 2026-03-14
+source_proposals: [01-PROPOSAL_architect.md, 01-PROPOSAL_devex.md]
+tracking_issue: 123
+---
+# SOLUTION: {Title}
+## Decision Summary
+## Unified Design
+## Implementation Phases
+## Validation Criteria
+```
+
+#### VERDICT.md (Council output)
+```markdown
+---
+type: verdict
+status: completed
+author: pm
+date: 2026-03-14
+council_id: {timestamp}
+---
+# Unified Council Verdict
+**Decision**: APPROVED | REJECTED | APPROVED_WITH_CONDITIONS
+**Consensus Level**: UNANIMOUS | MAJORITY | SPLIT
+## Key Agreements
+## Conditions
+## Conflicts
+## Implementation Priority
+```
+
+#### delegate_task Result Files
+```markdown
+---
+type: task
+status: completed
+author: {role-name}
+date: 2026-03-14
+tracking_issue: 123
+---
+# Task Result: {Brief Title}
+## What Was Done
+## Files Modified
+## Test Results
+## Self-Assessment (optional)
+```
+
+#### Report Files
+```markdown
+---
+type: report
+status: completed
+author: {role-name or "cron"}
+date: 2026-03-14
+---
+# Report: {Title}
+## Summary
+## Findings
+## Recommendations
+```
+
+**Template enforcement is advisory** — agents should follow templates but the system will not reject non-conforming output. A post-hoc lint cron may report compliance rates.
+
 ## Workflow
 1. **Issue First** — Create a GitHub Issue via MCP
 2. **Analyze & Bind** — Create `.optimus/tasks/task_issue_<ID>.md`
@@ -30,7 +172,7 @@ Direct `git push` to master/main is PROHIBITED. All changes must go through PR m
 
 ## Mandatory Council Review for High-Impact Changes
 
-Before implementing any change that meets **one or more** of the following criteria, the Master Agent **MUST** first draft a proposal to `.optimus/proposals/PROPOSAL_<topic>.md` and submit it to `dispatch_council` for expert review:
+Before implementing any change that meets **one or more** of the following criteria, the Master Agent **MUST** first draft a problem statement to `.optimus/specs/{date}-{topic}/00-PROBLEM.md`, solicit expert proposals, and synthesize into `02-SOLUTION.md` before implementation. For quick reviews, submit to `dispatch_council` directly:
 
 - **Schema / Config format changes** — modifications to `available-agents.json`, `vcs.json`, `system-instructions.md`, or any file whose format is consumed by multiple components
 - **Multi-file architectural refactors** — changes spanning 3+ source files that alter control flow, data models, or module boundaries
@@ -40,11 +182,13 @@ Before implementing any change that meets **one or more** of the following crite
 
 **Rationale**: A single agent's perspective has blind spots. Council review catches extensibility issues, backward compatibility risks, and design flaws before they are baked into code.
 
-**Process**:
-1. Write `PROPOSAL_<topic>.md` with Problem, Proposed Solution, Questions for Reviewers, and Impact sections
-2. Call `dispatch_council_async` with at minimum 2 expert roles (e.g., `architect` + domain expert)
-3. Wait for `COUNCIL_SYNTHESIS.md` — implement only if no fatal blockers
-4. For minor changes (single-file bug fixes, typo corrections, config value updates), skip the council and proceed directly
+**Process (Problem-First SDLC)**:
+1. Write `00-PROBLEM.md` in `.optimus/specs/{date}-{topic}/` — frame the problem, constraints, and open questions without prescribing solutions
+2. Delegate experts to write `01-PROPOSAL_{role}.md` in the same directory (use diverse engine/model backends)
+3. Synthesize proposals into `02-SOLUTION.md`, then implement
+4. For quick architectural reviews, use `dispatch_council_async` with a proposal/problem file and expert roles
+5. Wait for `COUNCIL_SYNTHESIS.md` and `VERDICT.md` — implement only if no fatal blockers
+6. For minor changes (single-file bug fixes, typo corrections, config value updates), skip the council and proceed directly
 
 ## Strict Delegation Protocol (Anti-Simulation)
 Roles are strictly bounded within the Spartan Swarm to prevent hallucinations:
@@ -279,10 +423,11 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 3. **Deployment**: Call `delegate_task_async` with `role`, `task_description`, and `output_path`. **NEVER simulate the work yourself when delegation is requested.**
 
 #### council-review (Map-Reduce Review)
-1. Draft proposal to `.optimus/proposals/PROPOSAL_<topic>.md`
-2. Call `dispatch_council_async` with `proposal_path` and `roles`
-3. Poll `check_task_status`, then read `COUNCIL_SYNTHESIS.md`
-4. Arbitrate: implement if no blockers, or create `.optimus/CONFLICTS.md`
+1. Draft problem statement to `.optimus/specs/{date}-{topic}/00-PROBLEM.md`
+2. Delegate experts to write `01-PROPOSAL_{role}.md` in the same `specs/` directory
+3. Synthesize proposals into `02-SOLUTION.md`
+4. For architectural reviews, use `dispatch_council_async` with `proposal_path` and `roles`
+5. Poll `check_task_status`, then read `COUNCIL_SYNTHESIS.md` and `VERDICT.md`
 
 #### git-workflow (Issue-First SDLC)
 1. Create GitHub Issue via `vcs_create_work_item`

@@ -30685,7 +30685,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "dispatch_council_async",
-        description: "Trigger an async map-reduce multi-expert review for an architectural proposal.",
+        description: "Trigger an async map-reduce multi-expert review for a problem statement or architectural proposal. The proposal_path can point to a 00-PROBLEM.md or PROPOSAL file in .optimus/specs/.",
         inputSchema: {
           type: "object",
           properties: {
@@ -30735,11 +30735,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "write_blackboard_artifact",
-        description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this to create proposals, requirements docs, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix).",
+        description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this for specs (problem/proposal/solution), task descriptions, reports, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix). Routing: specs/{date}-{topic}/ for Problem-First lifecycle, tasks/ for issue bindings, reports/ for analysis, results/ for task output.",
         inputSchema: {
           type: "object",
           properties: {
-            artifact_path: { type: "string", description: "Relative path within .optimus/ directory (e.g. 'proposals/PROPOSAL_xxx.md', 'tasks/requirements_xxx.md'). Do NOT include the '.optimus/' prefix." },
+            artifact_path: { type: "string", description: "Relative path within .optimus/ directory (e.g. 'specs/2026-03-14-my-topic/00-PROBLEM.md', 'tasks/task_issue_123.md', 'reports/analysis_report.md'). Do NOT include the '.optimus/' prefix. Do NOT write new files to 'proposals/' \u2014 use 'specs/' instead." },
             content: { type: "string", description: "The content to write to the file.", maxLength: 1048576 },
             workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
           },
