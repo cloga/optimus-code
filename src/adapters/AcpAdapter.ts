@@ -34,7 +34,7 @@ export class AcpAdapter implements AgentAdapter {
     public id: string;
     public name: string;
     public isEnabled: boolean = true;
-    public modes: AgentMode[] = ['plan', 'agent', 'chat'];
+    public modes: AgentMode[] = ['plan', 'agent'];
 
     // Protocol state
     public lastSessionId?: string;
@@ -269,7 +269,7 @@ export class AcpAdapter implements AgentAdapter {
                     method: 'session/cancel',
                     params: { sessionId: this.lastSessionId }
                 };
-                this.process.stdin.write(encodeMessage(cancelMsg));
+                this.process.stdin.write(JSON.stringify(cancelMsg) + '\n');
             } catch { /* ignore write errors during shutdown */ }
         }
         // Give a short grace period, then force kill

@@ -27901,7 +27901,7 @@ var AcpAdapter = class {
   id;
   name;
   isEnabled = true;
-  modes = ["plan", "agent", "chat"];
+  modes = ["plan", "agent"];
   // Protocol state
   lastSessionId;
   lastDebugInfo = {};
@@ -28083,7 +28083,7 @@ var AcpAdapter = class {
           method: "session/cancel",
           params: { sessionId: this.lastSessionId }
         };
-        this.process.stdin.write(encodeMessage(cancelMsg));
+        this.process.stdin.write(JSON.stringify(cancelMsg) + "\n");
       } catch {
       }
     }
