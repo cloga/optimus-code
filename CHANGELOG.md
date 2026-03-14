@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.0.0] - 2026-03-14
+
+### Features
+- **ACP Protocol Support**: Implement AcpAdapter with NDJSON-based JSON-RPC transport, verified with Qwen Code CLI
+- **Multi-ACP Vendor Architecture**: Engine config uses `protocol` field to route adapters — add new ACP vendors (Kimi, Cursor, etc.) with zero code changes
+- **Problem-First SDLC Workflow**: New lifecycle: PROBLEM → PROPOSAL → SOLUTION → EXECUTE, replacing the old proposal-first approach
+- **Artifact Directory Routing Table**: Centralized routing rules in system-instructions.md — every agent knows what goes where
+- **YAML Frontmatter Format Templates**: 7 artifact types with standardized templates (PROBLEM, PROPOSAL, SOLUTION, VERDICT, task result, report, review)
+- **Cross-Model Council Diversity**: Automatic greedy round-robin assignment of engine:model combos to council participants
+- **VERDICT Template Externalization**: Council verdict format loaded from `.optimus/config/verdict-template.md` (customizable)
+- **Mandatory Council Review Rule**: High-impact changes require expert council review before implementation
+- **Engine Health Tracking & Fallback**: Per engine:model health tracking with automatic fallback on failures
+- **Agent Pause/Resume**: Human-in-the-loop input mechanism via `request_human_input`
+- **Patrol Manager System**: `project-patrol` skill with automated cron-based project monitoring
+- **Docs Site Enhancements**: Interactive tutorial guide, investor pitch page, bilingual EN/ZH support, terminal hero animation
+- **Init/Upgrade**: Scaffold now includes `specs/` and `results/` directories, `verdict-template.md`, protocol field in config
+
+### Fixes
+- **Strip Tool-Call Traces from Output**: Artifact files no longer contain adapter process traces (GPT-5.4/Claude Opus outputs now clean)
+- **ESM/CJS Bundling**: Bundle all deps via esbuild to eliminate runtime crashes
+- **Windows Path Mangling**: Prevent backslash issues in agent delegations
+- **Meta-Cron Race Condition**: Fix concurrent cron execution and add log capture
+- **strip-ansi CJS Compatibility**: Downgrade to v6 for CommonJS support
+
+### Improvements
+- **Consolidated System Prompt**: Single Source of Truth at `.optimus/config/system-instructions.md`
+- **Frozen `proposals/` Directory**: New work goes to `specs/`, legacy proposals preserved
+- **Replaced `protocol.md`**: Obsolete blackboard protocol replaced with redirect stub
+- **Release Process Skill v1.1**: Fixed scaffold sync rules, added validation warnings
+
 ## [0.4.0] - 2026-03-12
 
 ### Features

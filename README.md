@@ -130,12 +130,18 @@ Once the server is running, your AI assistant gains these tools:
 | `dispatch_council_async` | Same as above, non-blocking (preferred) |
 | `check_task_status` | Poll async task/council completion |
 | `append_memory` | Save learnings to persistent agent memory |
+| `write_blackboard_artifact` | Write artifacts to `.optimus/` (specs, tasks, reports). See routing table in system-instructions |
 | `vcs_create_work_item` | Create a work item (GitHub Issue / ADO Work Item) via unified VCS abstraction |
 | `vcs_create_pr` | Create a Pull Request via unified VCS abstraction |
 | `vcs_merge_pr` | Merge a Pull Request via unified VCS abstraction |
 | `vcs_add_comment` | Add a comment to a work item or PR (requires `item_type`) |
 | `github_update_issue` | Update an existing GitHub Issue |
 | `github_sync_board` | Sync open issues to local TODO board |
+| `request_human_input` | Pause execution and ask the human for input |
+| `quarantine_role` | Quarantine/unquarantine a misbehaving role |
+| `register_meta_cron` | Register a scheduled recurring task |
+| `list_meta_crons` | List all registered scheduled tasks |
+| `remove_meta_cron` | Remove a scheduled task |
 
 ### delegate_task Extended Parameters
 
@@ -143,8 +149,8 @@ Once the server is running, your AI assistant gains these tools:
 |---|---|---|
 | `role` | ✅ | Role name (e.g., `security-auditor`) |
 | `role_description` | | What this role does — used to generate T2 template |
-| `role_engine` | | Which engine (e.g., `claude-code`, `copilot-cli`) |
-| `role_model` | | Which model (e.g., `claude-opus-4.6-1m`) |
+| `role_engine` | | Which engine (e.g., `claude-code`, `github-copilot`, `qwen-code`) |
+| `role_model` | | Which model (e.g., `claude-opus-4.6-1m`, `qwen3-coder`) |
 | `task_description` | ✅ | Detailed task instructions |
 | `output_path` | ✅ | Where to write results |
 | `workspace_path` | ✅ | Project root path |
@@ -154,6 +160,24 @@ Once the server is running, your AI assistant gains these tools:
 ---
 
 ## Features
+
+### v1.0.0 Highlights
+
+- **ACP Protocol Support** — Universal [Agent Client Protocol](https://github.com/anthropics/agent-protocol) adapter enables integration with domestic AI coding agents (Qwen Code, Kimi, Cursor, etc.) via JSON-RPC over NDJSON.
+- **Multi-Vendor Engine Architecture** — Engine config uses `protocol` field (`cli` | `acp`) to route adapters. Add new ACP vendors with zero code changes — just a JSON config entry.
+- **Problem-First SDLC Workflow** — New lifecycle: PROBLEM → PROPOSAL → SOLUTION → EXECUTE replaces the old proposal-first approach. Experts propose independently before synthesis.
+- **Artifact Directory Routing** — Centralized routing table in system-instructions defines where every artifact type goes (`specs/`, `results/`, `reviews/`, `reports/`, `tasks/`).
+- **Format Templates** — 7 artifact types with standardized YAML frontmatter and required sections for cross-agent consistency.
+- **Cross-Model Council Diversity** — Automatic round-robin assignment of engine:model combinations to council participants, maximizing model diversity by default.
+- **Customizable VERDICT Template** — Council verdict format loaded from `.optimus/config/verdict-template.md` instead of hardcoded in code.
+- **Clean Artifact Output** — Tool-call traces stripped from output files, ensuring downstream agents receive clean content.
+- **Engine Health Tracking** — Per engine:model health monitoring with automatic fallback on consecutive failures.
+
+### v0.4.0 Highlights
+
+- **Agent Pause/Resume** — Human-in-the-loop input via `request_human_input` tool.
+- **Project Patrol** — Automated cron-based project monitoring with `project-patrol` skill.
+- **Mandatory Council Review** — High-impact changes require expert council review before implementation.
 
 ### v0.3.0 Highlights
 
@@ -217,6 +241,41 @@ When delegating a task, engine and model are resolved in priority order:
 2. T2 role frontmatter `engine` / `model`
 3. `available-agents.json` (first non-demo engine)
 4. Hardcoded fallback: `claude-code`
+
+### Multi-Engine Configuration
+
+Engines are defined in `.optimus/config/available-agents.json`. The `protocol` field determines which adapter handles the engine:
+
+```json
+{
+  "engines": {
+    "claude-code": {
+      "protocol": "cli",
+      "path": "npx @anthropic-ai/claude-code",
+      "available_models": ["claude-opus-4.6-1m"],
+      "cli_flags": "--model"
+    },
+    "github-copilot": {
+      "protocol": "cli",
+      "path": "copilot",
+      "available_models": ["gemini-3-pro-preview", "gpt-5.4"],
+      "cli_flags": "-m"
+    },
+    "qwen-code": {
+      "protocol": "acp",
+      "path": "node",
+      "args": ["/path/to/qwen-cli/cli.js", "--acp"],
+      "available_models": ["qwen3-coder"],
+      "cli_flags": "--model"
+    }
+  }
+}
+```
+
+- **`cli`** (default) — Text-based structured output via CLI (Claude Code, GitHub Copilot)
+- **`acp`** — JSON-RPC 2.0 over NDJSON stdio (Qwen Code, and any future ACP-compliant agent)
+
+To add a new ACP vendor, just add an entry with `"protocol": "acp"` — zero code changes required.
 
 ### Skill Pre-Flight
 
