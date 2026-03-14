@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.3] - 2026-03-14
+
+### Features
+- **Master Onboarding Skill** — New `master-onboarding` skill teaches Master Agent the first-run protocol (read system-instructions, roster_check, Problem-First SDLC)
+- **Inject Template v2** — IDE configs now prompt "First action: read master-onboarding SKILL.md" on every session
+- **Role Creation Decision Rules** — Master must roster_check before creating roles, no near-duplicates, require role_description
+
+### Fixes
+- **Auto-label all VCS items** — `vcs_create_work_item` and `vcs_create_pr` now auto-append `optimus-bot` label
+
 ## [1.0.2] - 2026-03-14
 
 ### Features
