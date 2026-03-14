@@ -1189,6 +1189,11 @@ ${memorySection}
 Goal: Execute the following task.
 System Note: ${personaProof}
 ${trackingIssueHeader}
+If you need additional project context beyond what was provided:
+1. Call \`list_knowledge\` to discover available specs, proposals, and memory entries
+2. Read only the artifacts directly relevant to your task
+3. Do not read everything — prioritize by topic match and recency
+
 Task Description:
 ${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe following skills have been loaded for you to reference and follow:\n${skillContent}\n=== END SKILLS ===` : ''}
 
