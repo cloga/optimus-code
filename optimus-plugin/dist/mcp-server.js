@@ -27896,47 +27896,7 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
 
 // ../src/adapters/AcpAdapter.ts
 var cp2 = __toESM(require("child_process"));
-function encodeMessage(msg) {
-  const body = Buffer.from(JSON.stringify(msg), "utf8");
-  const header = Buffer.from(`Content-Length: ${body.length}\r
-\r
-`, "ascii");
-  return Buffer.concat([header, body]);
-}
-var MessageParser = class {
-  buffer = Buffer.alloc(0);
-  onMessage;
-  constructor(onMessage) {
-    this.onMessage = onMessage;
-  }
-  feed(chunk) {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    while (this.tryParse()) {
-    }
-  }
-  tryParse() {
-    const headerEnd = this.buffer.indexOf("\r\n\r\n");
-    if (headerEnd === -1) return false;
-    const headerStr = this.buffer.subarray(0, headerEnd).toString("ascii");
-    const match = headerStr.match(/Content-Length:\s*(\d+)/i);
-    if (!match) {
-      this.buffer = this.buffer.subarray(headerEnd + 4);
-      return true;
-    }
-    const contentLength = parseInt(match[1], 10);
-    const totalLength = headerEnd + 4 + contentLength;
-    if (this.buffer.length < totalLength) return false;
-    const bodyBuf = this.buffer.subarray(headerEnd + 4, totalLength);
-    this.buffer = this.buffer.subarray(totalLength);
-    try {
-      const msg = JSON.parse(bodyBuf.toString("utf8"));
-      this.onMessage(msg);
-    } catch (e) {
-      debugLog("[AcpAdapter]", `Malformed JSON-RPC body, skipping: ${e.message}`);
-    }
-    return true;
-  }
-};
+var readline = __toESM(require("readline"));
 var AcpAdapter = class {
   id;
   name;
@@ -27959,6 +27919,10 @@ var AcpAdapter = class {
     this.defaultArgs = defaultArgs;
   }
   // ─── Low-level transport ───
+  sendMessage(msg) {
+    if (!this.process?.stdin?.writable) return;
+    this.process.stdin.write(JSON.stringify(msg) + "\n");
+  }
   sendRequest(method, params) {
     if (!this.process?.stdin?.writable) {
       return Promise.reject(new Error("[AcpAdapter] Process stdin not writable"));
@@ -27966,16 +27930,10 @@ var AcpAdapter = class {
     const id = this.nextRequestId++;
     const msg = { jsonrpc: "2.0", id, method, params };
     debugLog("[AcpAdapter]", `\u2192 ${method} (id=${id})`);
-    this.process.stdin.write(encodeMessage(msg));
+    this.sendMessage(msg);
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
     });
-  }
-  sendNotification(method, params) {
-    if (!this.process?.stdin?.writable) return;
-    const msg = { jsonrpc: "2.0", method, params };
-    debugLog("[AcpAdapter]", `\u2192 notification ${method}`);
-    this.process.stdin.write(encodeMessage(msg));
   }
   handleIncoming(msg) {
     if ("id" in msg && msg.id != null && (msg.result !== void 0 || msg.error !== void 0)) {
@@ -28009,8 +27967,16 @@ var AcpAdapter = class {
       env,
       windowsHide: true
     });
-    const parser = new MessageParser((msg) => this.handleIncoming(msg));
-    this.process.stdout.on("data", (chunk) => parser.feed(chunk));
+    const rl = readline.createInterface({ input: this.process.stdout });
+    rl.on("line", (line) => {
+      if (!line.trim()) return;
+      try {
+        const msg = JSON.parse(line);
+        this.handleIncoming(msg);
+      } catch (e) {
+        debugLog("[AcpAdapter]", `Non-JSON stdout line, skipping: ${line.substring(0, 100)}`);
+      }
+    });
     this.process.stderr.on("data", (chunk) => {
       debugLog("[AcpAdapter][stderr]", chunk.toString("utf8").trimEnd());
     });
@@ -28031,7 +27997,7 @@ var AcpAdapter = class {
     };
   }
   rejectAllPending(err) {
-    for (const [id, pending] of this.pendingRequests) {
+    for (const [, pending] of this.pendingRequests) {
       pending.reject(err);
     }
     this.pendingRequests.clear();
@@ -28050,37 +28016,52 @@ var AcpAdapter = class {
     this.spawnProcess(extraEnv);
     try {
       const initResult = await this.sendRequest("initialize", {
+        protocolVersion: 1,
         capabilities: {},
         clientInfo: { name: "optimus", version: "0.4.0" }
       });
-      debugLog("[AcpAdapter]", `Initialize response: ${JSON.stringify(initResult)?.substring(0, 200)}`);
+      debugLog("[AcpAdapter]", `Initialize OK: ${JSON.stringify(initResult)?.substring(0, 200)}`);
       let currentSessionId;
       if (sessionId) {
         const loadResult = await this.sendRequest("session/load", { sessionId });
         currentSessionId = loadResult?.sessionId || sessionId;
         debugLog("[AcpAdapter]", `Session loaded: ${currentSessionId}`);
       } else {
-        const newParams = { cwd: process.cwd() };
-        const newResult = await this.sendRequest("session/new", newParams);
+        const newResult = await this.sendRequest("session/new", {
+          cwd: process.cwd(),
+          mcpServers: []
+        });
         currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
         debugLog("[AcpAdapter]", `New session created: ${currentSessionId}`);
       }
       this.lastSessionId = currentSessionId;
       const outputChunks = [];
       this.notificationHandlers.set("session/update", (params) => {
-        const text = params?.text || params?.content || "";
-        if (text) {
-          outputChunks.push(text);
-          if (onUpdate) onUpdate(text);
+        const update = params?.update;
+        if (!update) return;
+        if (update.sessionUpdate === "agent_message_chunk") {
+          const text = update.content?.text || "";
+          if (text) {
+            outputChunks.push(text);
+            if (onUpdate) onUpdate(text);
+          }
+          if (update._meta?.usage) {
+            this.lastUsageLog = JSON.stringify(update._meta.usage);
+          }
+        } else if (update.sessionUpdate === "agent_thought_chunk") {
+          const text = update.content?.text || "";
+          if (text && onUpdate) {
+            onUpdate(`[thinking] ${text}`);
+          }
         }
       });
       const promptResult = await this.sendRequest("session/prompt", {
         sessionId: currentSessionId,
-        prompt
+        prompt: [{ type: "text", text: prompt }]
       });
-      const resultText = promptResult?.text || promptResult?.content || promptResult?.result || "";
-      const fullOutput = outputChunks.length > 0 ? outputChunks.join("") : typeof resultText === "string" ? resultText : JSON.stringify(resultText);
+      const fullOutput = outputChunks.join("");
       this.lastDebugInfo.endTime = Date.now();
+      debugLog("[AcpAdapter]", `Done. Output length: ${fullOutput.length}, stop: ${promptResult?.stopReason}`);
       return fullOutput;
     } catch (err) {
       debugLog("[AcpAdapter]", `Error during ACP flow: ${err.message}`);

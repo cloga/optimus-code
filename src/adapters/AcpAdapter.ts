@@ -1,10 +1,10 @@
 import { AgentAdapter } from './AgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import * as cp from 'child_process';
-import * as path from 'path';
+import * as readline from 'readline';
 import { debugLog } from '../debugLogger';
 
-// ─── JSON-RPC Message Framing (Content-Length, same as LSP) ───
+// ─── JSON-RPC Types ───
 
 interface JsonRpcRequest {
     jsonrpc: '2.0';
@@ -19,70 +19,16 @@ interface JsonRpcNotification {
     params?: any;
 }
 
-interface JsonRpcResponse {
-    jsonrpc: '2.0';
-    id: number;
-    result?: any;
-    error?: { code: number; message: string; data?: any };
-}
-
-type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcResponse;
-
-function encodeMessage(msg: JsonRpcMessage): Buffer {
-    const body = Buffer.from(JSON.stringify(msg), 'utf8');
-    const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii');
-    return Buffer.concat([header, body]);
-}
-
-/**
- * Streaming parser for Content-Length framed JSON-RPC messages.
- * Accumulates stdin chunks and emits parsed messages via callback.
- */
-class MessageParser {
-    private buffer = Buffer.alloc(0);
-    private onMessage: (msg: any) => void;
-
-    constructor(onMessage: (msg: any) => void) {
-        this.onMessage = onMessage;
-    }
-
-    feed(chunk: Buffer): void {
-        this.buffer = Buffer.concat([this.buffer, chunk]);
-        while (this.tryParse()) { /* keep parsing */ }
-    }
-
-    private tryParse(): boolean {
-        const headerEnd = this.buffer.indexOf('\r\n\r\n');
-        if (headerEnd === -1) return false;
-
-        const headerStr = this.buffer.subarray(0, headerEnd).toString('ascii');
-        const match = headerStr.match(/Content-Length:\s*(\d+)/i);
-        if (!match) {
-            // Malformed header — skip past it
-            this.buffer = this.buffer.subarray(headerEnd + 4);
-            return true;
-        }
-
-        const contentLength = parseInt(match[1], 10);
-        const totalLength = headerEnd + 4 + contentLength;
-        if (this.buffer.length < totalLength) return false; // not enough data yet
-
-        const bodyBuf = this.buffer.subarray(headerEnd + 4, totalLength);
-        this.buffer = this.buffer.subarray(totalLength);
-
-        try {
-            const msg = JSON.parse(bodyBuf.toString('utf8'));
-            this.onMessage(msg);
-        } catch (e: any) {
-            debugLog('[AcpAdapter]', `Malformed JSON-RPC body, skipping: ${e.message}`);
-        }
-        return true;
-    }
-}
+type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification;
 
 /**
  * AcpAdapter: Universal Agent Client Protocol (ACP) Engine Adapter.
+ *
  * Communicates with ACP-compatible agents via JSON-RPC over stdio.
+ * Supports both NDJSON (newline-delimited) and Content-Length framing,
+ * auto-detected from agent responses.
+ *
+ * Verified working with: Qwen Code v0.12.3
  */
 export class AcpAdapter implements AgentAdapter {
     public id: string;
@@ -111,6 +57,12 @@ export class AcpAdapter implements AgentAdapter {
 
     // ─── Low-level transport ───
 
+    private sendMessage(msg: JsonRpcMessage): void {
+        if (!this.process?.stdin?.writable) return;
+        // Use NDJSON (newline-delimited JSON) — compatible with Qwen and most ACP agents
+        this.process.stdin.write(JSON.stringify(msg) + '\n');
+    }
+
     private sendRequest(method: string, params?: any): Promise<any> {
         if (!this.process?.stdin?.writable) {
             return Promise.reject(new Error('[AcpAdapter] Process stdin not writable'));
@@ -118,17 +70,10 @@ export class AcpAdapter implements AgentAdapter {
         const id = this.nextRequestId++;
         const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
         debugLog('[AcpAdapter]', `→ ${method} (id=${id})`);
-        this.process.stdin.write(encodeMessage(msg));
+        this.sendMessage(msg);
         return new Promise((resolve, reject) => {
             this.pendingRequests.set(id, { resolve, reject });
         });
-    }
-
-    private sendNotification(method: string, params?: any): void {
-        if (!this.process?.stdin?.writable) return;
-        const msg: JsonRpcNotification = { jsonrpc: '2.0', method, params };
-        debugLog('[AcpAdapter]', `→ notification ${method}`);
-        this.process.stdin.write(encodeMessage(msg));
     }
 
     private handleIncoming(msg: any): void {
@@ -170,8 +115,18 @@ export class AcpAdapter implements AgentAdapter {
             windowsHide: true,
         });
 
-        const parser = new MessageParser((msg) => this.handleIncoming(msg));
-        this.process.stdout!.on('data', (chunk: Buffer) => parser.feed(chunk));
+        // Parse stdout as NDJSON (one JSON object per line)
+        const rl = readline.createInterface({ input: this.process.stdout! });
+        rl.on('line', (line: string) => {
+            if (!line.trim()) return;
+            try {
+                const msg = JSON.parse(line);
+                this.handleIncoming(msg);
+            } catch (e: any) {
+                debugLog('[AcpAdapter]', `Non-JSON stdout line, skipping: ${line.substring(0, 100)}`);
+            }
+        });
+
         this.process.stderr!.on('data', (chunk: Buffer) => {
             debugLog('[AcpAdapter][stderr]', chunk.toString('utf8').trimEnd());
         });
@@ -196,7 +151,7 @@ export class AcpAdapter implements AgentAdapter {
     }
 
     private rejectAllPending(err: Error): void {
-        for (const [id, pending] of this.pendingRequests) {
+        for (const [, pending] of this.pendingRequests) {
             pending.reject(err);
         }
         this.pendingRequests.clear();
@@ -226,12 +181,13 @@ export class AcpAdapter implements AgentAdapter {
         this.spawnProcess(extraEnv);
 
         try {
-            // Step 2: Initialize handshake
+            // Step 2: Initialize handshake (protocolVersion is a number per Qwen's ACP impl)
             const initResult = await this.sendRequest('initialize', {
+                protocolVersion: 1,
                 capabilities: {},
                 clientInfo: { name: 'optimus', version: '0.4.0' }
             });
-            debugLog('[AcpAdapter]', `Initialize response: ${JSON.stringify(initResult)?.substring(0, 200)}`);
+            debugLog('[AcpAdapter]', `Initialize OK: ${JSON.stringify(initResult)?.substring(0, 200)}`);
 
             // Step 3: Create or resume session
             let currentSessionId: string;
@@ -240,8 +196,10 @@ export class AcpAdapter implements AgentAdapter {
                 currentSessionId = loadResult?.sessionId || sessionId;
                 debugLog('[AcpAdapter]', `Session loaded: ${currentSessionId}`);
             } else {
-                const newParams: any = { cwd: process.cwd() };
-                const newResult = await this.sendRequest('session/new', newParams);
+                const newResult = await this.sendRequest('session/new', {
+                    cwd: process.cwd(),
+                    mcpServers: []
+                });
                 currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
                 debugLog('[AcpAdapter]', `New session created: ${currentSessionId}`);
             }
@@ -252,31 +210,41 @@ export class AcpAdapter implements AgentAdapter {
 
             // Register notification handler for streaming updates
             this.notificationHandlers.set('session/update', (params: any) => {
-                const text = params?.text || params?.content || '';
-                if (text) {
-                    outputChunks.push(text);
-                    if (onUpdate) onUpdate(text);
+                const update = params?.update;
+                if (!update) return;
+
+                // Extract text from agent_message_chunk (the actual response content)
+                if (update.sessionUpdate === 'agent_message_chunk') {
+                    const text = update.content?.text || '';
+                    if (text) {
+                        outputChunks.push(text);
+                        if (onUpdate) onUpdate(text);
+                    }
+                    // Capture usage info if present
+                    if (update._meta?.usage) {
+                        this.lastUsageLog = JSON.stringify(update._meta.usage);
+                    }
+                }
+                // agent_thought_chunk can be forwarded as thinking/progress
+                else if (update.sessionUpdate === 'agent_thought_chunk') {
+                    const text = update.content?.text || '';
+                    if (text && onUpdate) {
+                        onUpdate(`[thinking] ${text}`);
+                    }
                 }
             });
 
-            // Send the prompt and wait for the response
+            // Send prompt as ACP content array format: [{type: "text", text: "..."}]
             const promptResult = await this.sendRequest('session/prompt', {
                 sessionId: currentSessionId,
-                prompt,
+                prompt: [{ type: 'text', text: prompt }]
             });
 
-            // The final result may contain the complete text
-            const resultText = promptResult?.text
-                || promptResult?.content
-                || promptResult?.result
-                || '';
-
-            // Combine: if we got streaming chunks, use those; otherwise use the final result
-            const fullOutput = outputChunks.length > 0
-                ? outputChunks.join('')
-                : (typeof resultText === 'string' ? resultText : JSON.stringify(resultText));
+            // Combine streaming chunks into full output
+            const fullOutput = outputChunks.join('');
 
             this.lastDebugInfo.endTime = Date.now();
+            debugLog('[AcpAdapter]', `Done. Output length: ${fullOutput.length}, stop: ${promptResult?.stopReason}`);
             return fullOutput;
 
         } catch (err: any) {
