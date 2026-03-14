@@ -36,25 +36,45 @@ a:hover{color:var(--accent)}
 
 .container{max-width:1100px;margin:0 auto;padding:0 24px}
 
-/* ========== LANGUAGE TOGGLE ========== */
+/* ========== NAV BAR ========== */
+.topnav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,10,11,.85);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:14px 24px;
+}
+.topnav-inner{
+  max-width:1100px;margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.topnav-logo{font-weight:700;font-size:1rem;color:var(--text)}
+.topnav-logo:hover{color:var(--accent-hover)}
+.topnav-links{display:flex;gap:16px;align-items:center}
+.topnav-links a{font-size:.85rem;color:var(--text-tertiary);transition:color .2s}
+.topnav-links a:hover{color:var(--text)}
+
+/* ========== LANGUAGE TOGGLE (inline in navbar) ========== */
 .lang-toggle{
-  position:fixed;top:20px;right:20px;z-index:1000;
-  display:flex;align-items:center;
-  background:var(--surface);border:1px solid var(--border);border-radius:8px;
-  overflow:hidden;cursor:pointer;
-  box-shadow:0 4px 16px rgba(0,0,0,.3);
-  transition:border-color .2s;
+  display:inline-flex;align-items:center;
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  overflow:hidden;margin-left:8px;
 }
 .lang-toggle:hover{border-color:var(--accent)}
 .lang-btn{
-  padding:8px 14px;font-size:.8rem;font-weight:600;
+  padding:5px 10px;font-size:.75rem;font-weight:600;
   color:var(--text-tertiary);background:transparent;
   border:none;cursor:pointer;transition:all .2s;
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 }
-.lang-btn.active{
-  color:#fff;background:var(--accent);
+.lang-btn.active{color:#fff;background:var(--accent)}
+/* Hamburger */
+.hamburger{
+  display:none;background:none;border:1px solid var(--border);
+  border-radius:6px;padding:6px 8px;cursor:pointer;color:var(--text);line-height:0;
 }
+.hamburger:hover{border-color:var(--accent)}
+.hamburger svg{display:block}
 
 /* ========== HERO ========== */
 .hero{
@@ -416,6 +436,15 @@ footer{
   .arch-stats{justify-content:center}
 }
 @media(max-width:767px){
+  /* Hamburger nav */
+  .topnav-links{
+    display:none;flex-direction:column;position:absolute;
+    top:100%;left:0;right:0;background:var(--surface);
+    border-bottom:1px solid var(--border);padding:16px 24px;gap:12px;
+  }
+  .topnav-links.open{display:flex}
+  .topnav-inner{position:relative}
+  .hamburger{display:block}
   .how-grid,.usecase-grid,.features-grid{grid-template-columns:1fr}
   .eco-grid{grid-template-columns:repeat(2,1fr)}
   section{padding:80px 0}
@@ -468,11 +497,25 @@ footer{
 </head>
 <body>
 
-<!-- Language Toggle -->
-<div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
-  <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
-  <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
-</div>
+<!-- Top Navigation -->
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">Optimus Code</a>
+    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle navigation">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="topnav-links" id="navLinks">
+      <a href="architecture.html" data-i18n="nav_arch">Architecture</a>
+      <a href="guide.html" data-i18n="nav_tutorial">Tutorial</a>
+      <a href="pitch.html" data-i18n="nav_pitch">Pitch</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
+        <button class="lang-btn active" data-lang="en" role="radio" aria-checked="true">EN</button>
+        <button class="lang-btn" data-lang="zh" role="radio" aria-checked="false">中文</button>
+      </div>
+    </div>
+  </div>
+</nav>
 
 <!-- ==================== SECTION 1: HERO ==================== -->
 <section class="hero" id="hero">
@@ -835,10 +878,11 @@ footer{
   <div class="container">
     <div class="footer-logo">Optimus Code</div>
     <div class="footer-links">
-      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/cloga/optimus-code#readme" target="_blank" rel="noopener" data-i18n="footer_docs">Documentation</a>
+      <a href="index.html" data-i18n="footer_home">Home</a>
       <a href="architecture.html" data-i18n="footer_arch">Architecture</a>
-      <a href="guide.html">Tutorial</a>
+      <a href="guide.html" data-i18n="footer_tutorial">Tutorial</a>
+      <a href="pitch.html" data-i18n="footer_pitch">Pitch</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
       <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT License</a>
     </div>
     <div class="footer-tagline" data-i18n="footer_tagline">Stop prompting. Start orchestrating.</div>
@@ -846,6 +890,13 @@ footer{
 </footer>
 
 <script>
+/* Hamburger toggle */
+(function(){
+  var btn=document.getElementById('hamburgerBtn');
+  var nav=document.getElementById('navLinks');
+  if(btn&&nav) btn.addEventListener('click',function(){nav.classList.toggle('open')});
+})();
+
 /* Translation dictionary */
 var i18n={
   en:{
@@ -926,10 +977,15 @@ var i18n={
     eco_title:"Works With Everything",
     eco_subtitle:"Any MCP-compatible AI coding tool. No lock-in.",
     eco_badge:"Built on Model Context Protocol",
-    footer_docs:"Documentation",
+    footer_home:"Home",
     footer_arch:"Architecture",
+    footer_tutorial:"Tutorial",
+    footer_pitch:"Pitch",
     footer_license:"MIT License",
     footer_tagline:"Stop prompting. Start orchestrating.",
+    nav_arch:"Architecture",
+    nav_tutorial:"Tutorial",
+    nav_pitch:"Pitch",
     svg_master:"Master",
     svg_agent:"Agent",
     svg_architect:"Architect",
@@ -1034,10 +1090,15 @@ var i18n={
     eco_title:"\u517C\u5BB9\u6240\u6709\u5DE5\u5177",
     eco_subtitle:"\u4EFB\u4F55 MCP \u517C\u5BB9\u7684 AI \u7F16\u7801\u5DE5\u5177\u3002\u65E0\u4F9B\u5E94\u5546\u9501\u5B9A\u3002",
     eco_badge:"\u57FA\u4E8E Model Context Protocol \u6784\u5EFA",
-    footer_docs:"\u6587\u6863",
+    footer_home:"\u9996\u9875",
     footer_arch:"\u67B6\u6784",
+    footer_tutorial:"\u6559\u7A0B",
+    footer_pitch:"\u8DEF\u6F14",
     footer_license:"MIT \u8BB8\u53EF\u8BC1",
     footer_tagline:"\u505C\u6B62\u63D0\u793A\u8BCD\u5DE5\u7A0B\u3002\u5F00\u59CB\u7F16\u6392\u3002",
+    nav_arch:"\u67B6\u6784",
+    nav_tutorial:"\u6559\u7A0B",
+    nav_pitch:"\u8DEF\u6F14",
     svg_master:"\u4E3B\u63A7",
     svg_agent:"\u667A\u80FD\u4F53",
     svg_architect:"\u67B6\u6784\u5E08",
