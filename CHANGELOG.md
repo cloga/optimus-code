@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5] - 2026-03-15
+
+### Features
+- **Self-Execution Pre-Flight Rule** — Master Agent must now check `.optimus/skills/` for a matching Skill before executing any multi-step workflow. Added to both project and scaffold system-instructions.
+
+### Fixes
+- **Council Issue title readability** — `dispatch_council_async` now extracts the topic from the proposal's `# PROBLEM:` / `# PROPOSAL:` heading instead of using the filename. Issue titles change from `[Council] 00 PROBLEM (Review)` to `[Council] Agent-driven automation architecture (Review)`. (fixes #392)
+
 ## [1.0.4] - 2026-03-15
 
 ### Features
