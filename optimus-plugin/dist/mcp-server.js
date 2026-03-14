@@ -31143,12 +31143,34 @@ ${truncDesc}` + agentSignature(role, taskId),
       cwd: workspace_path
     });
     child.unref();
+    let contextHint = "";
+    if (!context_files || context_files.length === 0) {
+      try {
+        const specsDir = import_path6.default.join(workspace_path, ".optimus", "specs");
+        if (import_fs5.default.existsSync(specsDir)) {
+          const specFolders = import_fs5.default.readdirSync(specsDir).filter((d) => {
+            try {
+              return import_fs5.default.statSync(import_path6.default.join(specsDir, d)).isDirectory();
+            } catch {
+              return false;
+            }
+          }).sort().reverse().slice(0, 3);
+          if (specFolders.length > 0) {
+            contextHint = `
+
+\u{1F4A1} **Context hint**: Found specs that might be relevant \u2014 consider passing them as \`context_files\`:
+${specFolders.map((f) => `  - \`.optimus/specs/${f}/\``).join("\n")}`;
+          }
+        }
+      } catch {
+      }
+    }
     return { content: [{ type: "text", text: `\u2705 Task spawned successfully in background.
 
 **Task ID**: ${taskId}
 **Role**: ${role}${issueInfo}
 
-Use check_task_status tool periodically with this task ID to check its completion.` }] };
+Use check_task_status tool periodically with this task ID to check its completion.${contextHint}` }] };
   }
   if (request.params.name === "dispatch_council_async") {
     let { proposal_path, roles, workspace_path, role_descriptions } = request.params.arguments;

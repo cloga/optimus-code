@@ -630,8 +630,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         detached: true, stdio: "ignore", windowsHide: true, cwd: workspace_path
     });
     child.unref();
+
+    // Context hint: check if there are relevant specs/proposals the caller might want to pass
+    let contextHint = '';
+    if (!context_files || context_files.length === 0) {
+        try {
+            const specsDir = path.join(workspace_path, '.optimus', 'specs');
+            if (fs.existsSync(specsDir)) {
+                const specFolders = fs.readdirSync(specsDir).filter(d => {
+                    try { return fs.statSync(path.join(specsDir, d)).isDirectory(); } catch { return false; }
+                }).sort().reverse().slice(0, 3); // newest 3
+                if (specFolders.length > 0) {
+                    contextHint = `\n\n💡 **Context hint**: Found specs that might be relevant — consider passing them as \`context_files\`:\n${specFolders.map(f => `  - \`.optimus/specs/${f}/\``).join('\n')}`;
+                }
+            }
+        } catch { /* best-effort */ }
+    }
     
-    return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status tool periodically with this task ID to check its completion.` }] };
+    return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status tool periodically with this task ID to check its completion.${contextHint}` }] };
   }
   
   if (request.params.name === "dispatch_council_async") {
