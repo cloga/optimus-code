@@ -511,6 +511,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["question", "context_summary", "workspace_path"]
         }
+      },
+      {
+        name: "list_knowledge",
+        description: "Discover available project knowledge artifacts (specs, memory, reports, reviews) without reading their contents. Returns metadata only — paths, types, dates, and sizes — to help agents find relevant context before starting work.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            category: { type: "string", enum: ["specs", "memory", "reports", "reviews", "all"], description: "Filter by knowledge category. Defaults to 'all'." },
+            topic: { type: "string", description: "Optional keyword filter — only return artifacts whose path or name contains this string (case-insensitive)." }
+          },
+          required: ["workspace_path"]
+        }
       }
     ],
   };
@@ -634,6 +647,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     child.unref();
 
     // Context hint: check if there are relevant specs/proposals the caller might want to pass
+    // TODO: remove after list_knowledge is proven stable (added 2026-03-15)
+    // This heuristic is superseded by the list_knowledge tool + sub-agent self-discovery prompt.
+    // Keeping for one release cycle as belt-and-suspenders.
     let contextHint = '';
     if (!context_files || context_files.length === 0) {
         try {
@@ -1451,6 +1467,84 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         text: `✅ Task paused successfully. Status set to 'awaiting_input'.${issueRef}\n\nYou can now exit cleanly. A human will answer the question, and the system will automatically resume a fresh agent with the answer within ~5 minutes of the response.`
       }]
     };
+  }
+
+  if (request.params.name === "list_knowledge") {
+    const { workspace_path, category, topic } = request.params.arguments as any;
+    requireParams("list_knowledge", request.params.arguments as any, ["workspace_path"]);
+
+    const knowledgeDirs: Record<string, string> = { specs: 'specs', memory: 'memory', reports: 'reports', reviews: 'reviews' };
+    const categories = (!category || category === 'all') ? Object.keys(knowledgeDirs) : [category];
+    const optimusRoot = path.resolve(workspace_path, '.optimus');
+
+    // SECURITY: dual-layer path validation (lexical + symlink-aware), matching write_blackboard_artifact
+    const realOptimus = fs.existsSync(optimusRoot) ? fs.realpathSync(optimusRoot) : optimusRoot;
+
+    const artifacts: Array<{ path: string; type: string; date: string; size_chars: number; topic: string }> = [];
+    const summary: Record<string, number> = { specs: 0, memory: 0, reports: 0, reviews: 0 };
+
+    const datePattern = /^(\d{4}-\d{2}-\d{2})/;
+
+    function scanDir(dirPath: string, cat: string) {
+      let entries: string[];
+      try { entries = fs.readdirSync(dirPath); } catch { return; }
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry);
+        // Lexical containment check
+        const resolved = path.resolve(fullPath);
+        if (!resolved.startsWith(optimusRoot + path.sep) && resolved !== optimusRoot) continue;
+        // Symlink containment check
+        try {
+          const realPath = fs.realpathSync(resolved);
+          if (!realPath.startsWith(realOptimus + path.sep) && realPath !== realOptimus) continue;
+        } catch { continue; } // race tolerance: skip if path vanished
+
+        let stat;
+        try { stat = fs.statSync(fullPath); } catch { continue; } // race tolerance
+
+        if (stat.isDirectory()) {
+          scanDir(fullPath, cat);
+        } else if (stat.isFile()) {
+          const relativePath = path.relative(workspace_path, fullPath).replace(/\\/g, '/');
+          // Extract date from parent folder name or fall back to mtime
+          const parentName = path.basename(path.dirname(fullPath));
+          const dateMatch = parentName.match(datePattern);
+          const date = dateMatch ? dateMatch[1] : stat.mtime.toISOString().slice(0, 10);
+          // Extract topic from parent folder name (strip date prefix) or file stem
+          const topicStr = dateMatch
+            ? parentName.replace(datePattern, '').replace(/^-/, '').replace(/-/g, ' ').trim()
+            : path.basename(fullPath, path.extname(fullPath)).replace(/-/g, ' ').replace(/_/g, ' ');
+
+          artifacts.push({ path: relativePath, type: cat, date, size_chars: stat.size, topic: topicStr || parentName });
+          summary[cat] = (summary[cat] || 0) + 1;
+        }
+      }
+    }
+
+    for (const cat of categories) {
+      const dirName = knowledgeDirs[cat];
+      if (!dirName) continue;
+      const dirPath = path.join(optimusRoot, dirName);
+      // Validate this directory is within .optimus
+      const resolvedDir = path.resolve(dirPath);
+      if (!resolvedDir.startsWith(optimusRoot + path.sep) && resolvedDir !== optimusRoot) continue;
+      scanDir(dirPath, cat);
+    }
+
+    // Apply topic keyword filter
+    const filtered = topic
+      ? artifacts.filter(a => a.path.toLowerCase().includes(topic.toLowerCase()) || a.topic.toLowerCase().includes(topic.toLowerCase()))
+      : artifacts;
+
+    const filteredSummary: Record<string, number> = { specs: 0, memory: 0, reports: 0, reviews: 0 };
+    for (const a of filtered) filteredSummary[a.type] = (filteredSummary[a.type] || 0) + 1;
+
+    const result = {
+      artifacts: filtered,
+      summary: { ...filteredSummary, total: filtered.length }
+    };
+
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);

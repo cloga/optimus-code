@@ -220,7 +220,12 @@ When delegating a task, the Master Agent should follow this sequence:
 3. **Provide structured role info** — Pass `role_description`, `role_engine`, `role_model` in `delegate_task`
 4. **Check skills** — Specify `required_skills`. Missing skills → create them first via `skill-creator`
 5. **Delegate** — Use `delegate_task_async` (preferred) or `delegate_task`
-6. **System auto-handles**:
+6. **Context Check** — Before dispatching, ask: "Does prior work exist for this topic?"
+   - Search your conversation history for references to specs, proposals, or council reviews
+   - If uncertain, call `list_knowledge` to see available artifacts in `.optimus/`
+   - Pass relevant file paths via `context_files`. Prefer specific files over broad directories
+   - When in doubt: pass the spec folder's key files. Over-context is cheaper than re-work.
+7. **System auto-handles**:
    - T3 first use → creates T2 role template (with Master's description/engine/model)
    - Task completes with session_id → creates T1 instance from T2
 

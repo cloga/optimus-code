@@ -3225,8 +3225,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path11) {
-      let input = path11;
+    function removeDotSegments(path12) {
+      let input = path12;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3425,8 +3425,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path11, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path11 && path11 !== "/" ? path11 : void 0;
+        const [path12, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6788,12 +6788,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs10, exportName) {
+    function addFormats(ajv, list, fs11, exportName) {
       var _a2;
       var _b;
       (_a2 = (_b = ajv.opts.code).formats) !== null && _a2 !== void 0 ? _a2 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs10[f]);
+        ajv.addFormat(f, fs11[f]);
     }
     module2.exports = exports2 = formatsPlugin;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -10509,8 +10509,8 @@ var require_package = __commonJS({
 var require_main = __commonJS({
   "../node_modules/dotenv/lib/main.js"(exports2, module2) {
     "use strict";
-    var fs10 = require("fs");
-    var path11 = require("path");
+    var fs11 = require("fs");
+    var path12 = require("path");
     var os = require("os");
     var crypto4 = require("crypto");
     var packageJson = require_package();
@@ -10618,7 +10618,7 @@ var require_main = __commonJS({
       if (options && options.path && options.path.length > 0) {
         if (Array.isArray(options.path)) {
           for (const filepath of options.path) {
-            if (fs10.existsSync(filepath)) {
+            if (fs11.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -10626,15 +10626,15 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path11.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path12.resolve(process.cwd(), ".env.vault");
       }
-      if (fs10.existsSync(possibleVaultPath)) {
+      if (fs11.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path11.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path12.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -10651,7 +10651,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path11.resolve(process.cwd(), ".env");
+      const dotenvPath = path12.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -10675,13 +10675,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path12 of optionPaths) {
+      for (const path13 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs10.readFileSync(path12, { encoding }));
+          const parsed = DotenvModule.parse(fs11.readFileSync(path13, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path12} ${e.message}`);
+            _debug(`Failed to load ${path13} ${e.message}`);
           }
           lastError = e;
         }
@@ -10696,7 +10696,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative2 = path11.relative(process.cwd(), filePath);
+            const relative2 = path12.relative(process.cwd(), filePath);
             shortPaths.push(relative2);
           } catch (e) {
             if (debug) {
@@ -12971,8 +12971,8 @@ function getErrorMap() {
 
 // ../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path11, errorMaps, issueData } = params;
-  const fullPath = [...path11, ...issueData.path || []];
+  const { data, path: path12, errorMaps, issueData } = params;
+  const fullPath = [...path12, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -13087,11 +13087,11 @@ var errorUtil;
 
 // ../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path11, key) {
+  constructor(parent, value, path12, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path11;
+    this._path = path12;
     this._key = key;
   }
   get path() {
@@ -16737,10 +16737,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path11) {
-  if (!path11)
+function getElementAtPath(obj, path12) {
+  if (!path12)
     return obj;
-  return path11.reduce((acc, key) => acc?.[key], obj);
+  return path12.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -17123,11 +17123,11 @@ function aborted(x2, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path11, issues) {
+function prefixIssues(path12, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path11);
+    iss.path.unshift(path12);
     return iss;
   });
 }
@@ -26629,13 +26629,13 @@ var StdioServerTransport = class {
 };
 
 // ../src/mcp/mcp-server.ts
-var import_fs5 = __toESM(require("fs"));
-var import_path6 = __toESM(require("path"));
+var import_fs6 = __toESM(require("fs"));
+var import_path7 = __toESM(require("path"));
 var import_crypto2 = __toESM(require("crypto"));
 
 // ../src/mcp/worker-spawner.ts
-var import_fs2 = __toESM(require("fs"));
-var import_path2 = __toESM(require("path"));
+var import_fs3 = __toESM(require("fs"));
+var import_path3 = __toESM(require("path"));
 var import_crypto = __toESM(require("crypto"));
 
 // ../src/constants.ts
@@ -27125,7 +27125,7 @@ ${outputBlock}
     const record2 = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record2, result);
     const lines = this.countMeaningfulLines(content);
-    const path11 = this.getStructuredResultPath(record2);
+    const path12 = this.getStructuredResultPath(record2);
     const lineRange = this.getStructuredResultLineRange(record2);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -27159,30 +27159,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path11, "matches=0"]);
+        return this.buildStructuredSummary([path12, "matches=0"]);
       }
-      return this.buildStructuredSummary([path11, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path12, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path11, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path12, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path11, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path12, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path11, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path12, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path11, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path12, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path11, "items=0"]);
+        return this.buildStructuredSummary([path12, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path11, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path12, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path11, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path12, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -27787,22 +27787,22 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   getSpawnCommand(mode) {
     const args = [];
     const cwd = PersistentAgentAdapter.getWorkspacePath();
-    const fs10 = require("fs");
-    const path11 = require("path");
+    const fs11 = require("fs");
+    const path12 = require("path");
     args.push("--add-dir", cwd);
-    const localMcpPath = path11.join(cwd, ".vscode", "mcp.json");
-    if (fs10.existsSync(localMcpPath)) {
+    const localMcpPath = path12.join(cwd, ".vscode", "mcp.json");
+    if (fs11.existsSync(localMcpPath)) {
       try {
-        let mcpContent = fs10.readFileSync(localMcpPath, "utf8");
+        let mcpContent = fs11.readFileSync(localMcpPath, "utf8");
         mcpContent = mcpContent.replace(/\$\{workspaceFolder\}/g, cwd.replace(/\\/g, "/"));
         mcpContent = mcpContent.replace(/\$\{env:(\w+)\}/g, (_2, varName) => {
           return (process.env[varName] || "").replace(/\\/g, "/");
         });
         const localMcp = JSON.parse(mcpContent);
         const claudeMcp = { mcpServers: localMcp.servers || localMcp.mcpServers || {} };
-        const proxyMcpPath = path11.join(cwd, ".optimus", ".claude-mcp.json");
-        fs10.mkdirSync(path11.dirname(proxyMcpPath), { recursive: true });
-        fs10.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
+        const proxyMcpPath = path12.join(cwd, ".optimus", ".claude-mcp.json");
+        fs11.mkdirSync(path12.dirname(proxyMcpPath), { recursive: true });
+        fs11.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
         args.push("--mcp-config", proxyMcpPath);
       } catch (e) {
       }
@@ -28239,6 +28239,370 @@ function registerRole(workspacePath, roleName, description) {
   }
 }
 
+// ../src/managers/MemoryManager.ts
+var import_fs2 = __toESM(require("fs"));
+var import_path2 = __toESM(require("path"));
+function sanitizeRoleName(role) {
+  return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
+}
+function parseMemoryEntries(content) {
+  if (content === void 0 || content === null) return [];
+  const trimmed = content.trim();
+  if (!trimmed) return [];
+  const entries = [];
+  const lines = trimmed.split("\n");
+  let i = 0;
+  let unstructuredBuffer = [];
+  function flushUnstructured() {
+    const text = unstructuredBuffer.join("\n").trim();
+    if (text) {
+      entries.push({
+        id: "legacy_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+        date: (/* @__PURE__ */ new Date()).toISOString(),
+        level: "project",
+        category: "legacy",
+        tags: ["unstructured"],
+        author: "system",
+        body: text
+      });
+    }
+    unstructuredBuffer = [];
+  }
+  while (i < lines.length) {
+    if (lines[i].trim() === "---") {
+      const fmStart = i + 1;
+      let fmEnd = -1;
+      for (let j2 = fmStart; j2 < lines.length; j2++) {
+        if (lines[j2].trim() === "---") {
+          fmEnd = j2;
+          break;
+        }
+      }
+      if (fmEnd === -1) {
+        unstructuredBuffer.push(lines[i]);
+        i++;
+        continue;
+      }
+      const fmLines = lines.slice(fmStart, fmEnd);
+      const parsed = parseSimpleYaml(fmLines);
+      if (parsed === null) {
+        unstructuredBuffer.push(lines[i]);
+        i++;
+        continue;
+      }
+      flushUnstructured();
+      let bodyStart = fmEnd + 1;
+      let bodyEnd = bodyStart;
+      while (bodyEnd < lines.length) {
+        if (lines[bodyEnd].trim() === "---") {
+          let nextClose = -1;
+          for (let k2 = bodyEnd + 1; k2 < lines.length; k2++) {
+            if (lines[k2].trim() === "---") {
+              nextClose = k2;
+              break;
+            }
+          }
+          if (nextClose !== -1) {
+            const candidateFm = lines.slice(bodyEnd + 1, nextClose);
+            if (parseSimpleYaml(candidateFm) !== null) {
+              break;
+            }
+          }
+        }
+        bodyEnd++;
+      }
+      const bodyText = lines.slice(bodyStart, bodyEnd).join("\n").trim();
+      entries.push({
+        id: parsed.id || "unknown_" + Date.now(),
+        date: parsed.date || parsed.created || "",
+        level: parsed.level === "role" ? "role" : "project",
+        category: parsed.category || "uncategorized",
+        tags: parseTags(parsed.tags),
+        author: parsed.author || "unknown",
+        body: bodyText
+      });
+      i = bodyEnd;
+    } else {
+      unstructuredBuffer.push(lines[i]);
+      i++;
+    }
+  }
+  flushUnstructured();
+  return entries;
+}
+function parseSimpleYaml(lines) {
+  if (lines.length === 0) return null;
+  const result = {};
+  let hasValidKey = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx <= 0) return null;
+    const key = trimmed.substring(0, colonIdx).trim();
+    const value = trimmed.substring(colonIdx + 1).trim();
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) return null;
+    result[key] = value;
+    hasValidKey = true;
+  }
+  return hasValidKey ? result : null;
+}
+function parseTags(raw) {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed.slice(1, -1).split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+  }
+  return trimmed ? [trimmed] : [];
+}
+function scoreEntry(entry, currentRole) {
+  let score = 0;
+  const roleLower = currentRole.toLowerCase();
+  if (roleLower) {
+    const categoryMatch = entry.category.toLowerCase().includes(roleLower);
+    const tagMatch = entry.tags.some((t) => t.toLowerCase().includes(roleLower));
+    if (categoryMatch || tagMatch) {
+      score += 3;
+    }
+  }
+  if (entry.date) {
+    try {
+      const entryDate = new Date(entry.date);
+      const now = /* @__PURE__ */ new Date();
+      const diffMs = now.getTime() - entryDate.getTime();
+      const diffDays = diffMs / (1e3 * 60 * 60 * 24);
+      if (diffDays <= 7) {
+        score += 2;
+      } else if (diffDays <= 30) {
+        score += 1;
+      }
+    } catch {
+    }
+  }
+  return score;
+}
+function loadFilteredMemory(workspacePath, currentRole, maxChars = 16e3) {
+  try {
+    const allEntries = [];
+    const projectFile = import_path2.default.join(workspacePath, ".optimus", "memory", "continuous-memory.md");
+    if (import_fs2.default.existsSync(projectFile)) {
+      try {
+        const raw = import_fs2.default.readFileSync(projectFile, "utf8");
+        allEntries.push(...parseMemoryEntries(raw));
+      } catch {
+      }
+    }
+    const sanitizedRole = sanitizeRoleName(currentRole);
+    if (sanitizedRole) {
+      const roleFile = import_path2.default.join(workspacePath, ".optimus", "memory", "roles", `${sanitizedRole}.md`);
+      if (import_fs2.default.existsSync(roleFile)) {
+        try {
+          const raw = import_fs2.default.readFileSync(roleFile, "utf8");
+          const roleEntries2 = parseMemoryEntries(raw);
+          for (const entry of roleEntries2) {
+            entry.level = "role";
+          }
+          allEntries.push(...roleEntries2);
+        } catch {
+        }
+      }
+    }
+    if (allEntries.length === 0) return "";
+    const scored = allEntries.map((entry) => ({
+      entry,
+      score: scoreEntry(entry, currentRole)
+    }));
+    scored.sort((a, b2) => {
+      if (b2.score !== a.score) return b2.score - a.score;
+      return (b2.entry.date || "").localeCompare(a.entry.date || "");
+    });
+    const projectReserve = Math.min(2e3, maxChars);
+    const roleBudget = Math.min(6e3, maxChars - projectReserve);
+    const openBudget = maxChars - projectReserve - roleBudget;
+    const selected = [];
+    const used = /* @__PURE__ */ new Set();
+    let projectUsed = 0;
+    let roleUsed = 0;
+    let openUsed = 0;
+    const projectEntries = scored.filter((s) => s.entry.level === "project");
+    for (let idx = 0; idx < projectEntries.length; idx++) {
+      const body = projectEntries[idx].entry.body;
+      if (!body) continue;
+      if (projectUsed + body.length + 2 > projectReserve) break;
+      selected.push(body);
+      projectUsed += body.length + 2;
+      used.add(scored.indexOf(projectEntries[idx]));
+    }
+    const roleEntries = scored.filter((s) => s.entry.level === "role");
+    for (let idx = 0; idx < roleEntries.length; idx++) {
+      const body = roleEntries[idx].entry.body;
+      if (!body) continue;
+      if (roleUsed + body.length + 2 > roleBudget) continue;
+      selected.push(body);
+      roleUsed += body.length + 2;
+      used.add(scored.indexOf(roleEntries[idx]));
+    }
+    for (let idx = 0; idx < scored.length; idx++) {
+      if (used.has(idx)) continue;
+      const body = scored[idx].entry.body;
+      if (!body) continue;
+      if (openUsed + body.length + 2 > openBudget) continue;
+      selected.push(body);
+      openUsed += body.length + 2;
+    }
+    return selected.join("\n\n").trim();
+  } catch {
+    return "";
+  }
+}
+function migrateMemoryFile(filePath) {
+  try {
+    let flushUnstructuredToOutput2 = function() {
+      const text = unstructuredBuffer.join("\n").trim();
+      if (text) {
+        const legacyId = "legacy_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+        outputParts.push(
+          `---
+id: ${legacyId}
+date: ${mtime}
+level: project
+category: legacy
+tags: [unstructured, migrated]
+author: system
+---
+` + text
+        );
+      }
+      unstructuredBuffer = [];
+    };
+    var flushUnstructuredToOutput = flushUnstructuredToOutput2;
+    const markerFile = filePath + ".migrated";
+    if (import_fs2.default.existsSync(markerFile)) return;
+    if (!import_fs2.default.existsSync(filePath)) return;
+    const raw = import_fs2.default.readFileSync(filePath, "utf8");
+    if (!raw.trim()) return;
+    const entries = parseMemoryEntries(raw);
+    const hasLegacy = entries.some((e) => e.category === "legacy");
+    if (!hasLegacy) {
+      import_fs2.default.writeFileSync(markerFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
+      return;
+    }
+    let mtime;
+    try {
+      const stat = import_fs2.default.statSync(filePath);
+      mtime = stat.mtime.toISOString();
+    } catch {
+      mtime = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    const lines = raw.split("\n");
+    const outputParts = [];
+    let i = 0;
+    let unstructuredBuffer = [];
+    while (i < lines.length) {
+      if (lines[i].trim() === "---") {
+        const fmStart = i + 1;
+        let fmEnd = -1;
+        for (let j2 = fmStart; j2 < lines.length; j2++) {
+          if (lines[j2].trim() === "---") {
+            fmEnd = j2;
+            break;
+          }
+        }
+        if (fmEnd !== -1) {
+          const fmLines = lines.slice(fmStart, fmEnd);
+          const parsed = parseSimpleYaml(fmLines);
+          if (parsed !== null) {
+            flushUnstructuredToOutput2();
+            let bodyEnd = fmEnd + 1;
+            while (bodyEnd < lines.length) {
+              if (lines[bodyEnd].trim() === "---") {
+                let nextClose = -1;
+                for (let k2 = bodyEnd + 1; k2 < lines.length; k2++) {
+                  if (lines[k2].trim() === "---") {
+                    nextClose = k2;
+                    break;
+                  }
+                }
+                if (nextClose !== -1) {
+                  const candidateFm = lines.slice(bodyEnd + 1, nextClose);
+                  if (parseSimpleYaml(candidateFm) !== null) {
+                    break;
+                  }
+                }
+              }
+              bodyEnd++;
+            }
+            outputParts.push(lines.slice(i, bodyEnd).join("\n"));
+            i = bodyEnd;
+            continue;
+          }
+        }
+        unstructuredBuffer.push(lines[i]);
+        i++;
+      } else {
+        unstructuredBuffer.push(lines[i]);
+        i++;
+      }
+    }
+    flushUnstructuredToOutput2();
+    const output = outputParts.join("\n\n") + "\n";
+    const tmpFile = filePath + ".tmp";
+    import_fs2.default.writeFileSync(tmpFile, output, "utf8");
+    import_fs2.default.renameSync(tmpFile, filePath);
+    import_fs2.default.writeFileSync(markerFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
+  } catch (e) {
+    console.error(`[MemoryManager] Migration failed for ${filePath}: ${e.message}`);
+  }
+}
+function buildMemoryEntry(params) {
+  const id = "mem_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  const date4 = (/* @__PURE__ */ new Date()).toISOString();
+  const tagsStr = params.tags && params.tags.length > 0 ? "[" + params.tags.join(", ") + "]" : "[]";
+  return [
+    "---",
+    `id: ${id}`,
+    `date: ${date4}`,
+    `level: ${params.level}`,
+    `category: ${params.category || "uncategorized"}`,
+    `tags: ${tagsStr}`,
+    `author: ${params.author}`,
+    "---",
+    params.content,
+    "\n"
+  ].join("\n");
+}
+function getMemoryFilePath(workspacePath, level, role) {
+  if (level === "project") {
+    return import_path2.default.join(workspacePath, ".optimus", "memory", "continuous-memory.md");
+  }
+  if (!role) {
+    throw new Error("Role name is required for role-level memory");
+  }
+  const sanitized = sanitizeRoleName(role);
+  if (!sanitized) {
+    throw new Error(`Invalid role name after sanitization: '${role}'`);
+  }
+  const rolesDir = import_path2.default.join(workspacePath, ".optimus", "memory", "roles");
+  if (!import_fs2.default.existsSync(rolesDir)) {
+    import_fs2.default.mkdirSync(rolesDir, { recursive: true });
+  }
+  const targetFile = import_path2.default.join(rolesDir, `${sanitized}.md`);
+  const resolvedTarget = import_path2.default.resolve(targetFile);
+  const resolvedRolesDir = import_path2.default.resolve(rolesDir);
+  if (!resolvedTarget.startsWith(resolvedRolesDir + import_path2.default.sep) && resolvedTarget !== resolvedRolesDir) {
+    throw new Error(`Path traversal detected: resolved path '${resolvedTarget}' is outside roles directory`);
+  }
+  try {
+    const realRolesDir = import_fs2.default.realpathSync(rolesDir);
+    if (!resolvedTarget.startsWith(realRolesDir + import_path2.default.sep)) {
+      throw new Error(`Symlink traversal detected: real path of roles dir is '${realRolesDir}'`);
+    }
+  } catch (e) {
+    if (e.message && e.message.includes("traversal")) throw e;
+  }
+  return targetFile;
+}
+
 // ../src/mcp/worker-spawner.ts
 function parseFrontmatter(content) {
   const normalized = content.replace(/\r\n/g, "\n");
@@ -28272,7 +28636,7 @@ function updateFrontmatter(content, updates) {
   const bodyStr = parsed.body.startsWith("\n") ? parsed.body : "\n" + parsed.body;
   return yamlStr + bodyStr;
 }
-function sanitizeRoleName(role) {
+function sanitizeRoleName2(role) {
   return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
 }
 var ACP_DISCOVERY_MAP = {
@@ -28282,22 +28646,22 @@ function discoverAcpCli(engine) {
   const discovery = ACP_DISCOVERY_MAP[engine];
   if (!discovery) return null;
   const homeDir = process.env.USERPROFILE || process.env.HOME || "";
-  const extensionsDir = import_path2.default.join(homeDir, ".vscode", "extensions");
-  if (!import_fs2.default.existsSync(extensionsDir)) return null;
+  const extensionsDir = import_path3.default.join(homeDir, ".vscode", "extensions");
+  if (!import_fs3.default.existsSync(extensionsDir)) return null;
   try {
-    const matches = import_fs2.default.readdirSync(extensionsDir).filter((d) => {
+    const matches = import_fs3.default.readdirSync(extensionsDir).filter((d) => {
       const prefix = discovery.extensionPattern.replace("*", "");
       return d.startsWith(prefix);
-    }).map((d) => import_path2.default.join(extensionsDir, d)).filter((d) => {
+    }).map((d) => import_path3.default.join(extensionsDir, d)).filter((d) => {
       try {
-        return import_fs2.default.statSync(d).isDirectory();
+        return import_fs3.default.statSync(d).isDirectory();
       } catch {
         return false;
       }
     }).sort().reverse();
     for (const extDir of matches) {
-      const cliPath = import_path2.default.join(extDir, discovery.cliRelPath);
-      if (import_fs2.default.existsSync(cliPath)) {
+      const cliPath = import_path3.default.join(extDir, discovery.cliRelPath);
+      if (import_fs3.default.existsSync(cliPath)) {
         return { executable: "node", args: [cliPath] };
       }
     }
@@ -28333,13 +28697,13 @@ function normalizePathForAgent(p) {
 }
 var t3LogMutex = Promise.resolve();
 function getT3UsageLogPath(workspacePath) {
-  return import_path2.default.join(workspacePath, ".optimus", "state", "t3-usage-log.json");
+  return import_path3.default.join(workspacePath, ".optimus", "state", "t3-usage-log.json");
 }
 function loadT3UsageLog(workspacePath) {
   const logPath = getT3UsageLogPath(workspacePath);
   try {
-    if (import_fs2.default.existsSync(logPath)) {
-      return JSON.parse(import_fs2.default.readFileSync(logPath, "utf8"));
+    if (import_fs3.default.existsSync(logPath)) {
+      return JSON.parse(import_fs3.default.readFileSync(logPath, "utf8"));
     }
   } catch (e) {
     console.error(`[T3UsageLog] Warning: failed to read usage log: ${e.message}`);
@@ -28348,20 +28712,20 @@ function loadT3UsageLog(workspacePath) {
 }
 function saveT3UsageLog(workspacePath, log) {
   const logPath = getT3UsageLogPath(workspacePath);
-  const dir = import_path2.default.dirname(logPath);
-  if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
-  import_fs2.default.writeFileSync(logPath, JSON.stringify(log, null, 2), "utf8");
+  const dir = import_path3.default.dirname(logPath);
+  if (!import_fs3.default.existsSync(dir)) import_fs3.default.mkdirSync(dir, { recursive: true });
+  import_fs3.default.writeFileSync(logPath, JSON.stringify(log, null, 2), "utf8");
 }
 var ENGINE_HEALTH_TTL_MS = 10 * 60 * 1e3;
 var engineHealthMutex = Promise.resolve();
 function getEngineHealthPath(workspacePath) {
-  return import_path2.default.join(workspacePath, ".optimus", "state", "engine-health.json");
+  return import_path3.default.join(workspacePath, ".optimus", "state", "engine-health.json");
 }
 function loadEngineHealth(workspacePath) {
   const healthPath = getEngineHealthPath(workspacePath);
   try {
-    if (import_fs2.default.existsSync(healthPath)) {
-      return JSON.parse(import_fs2.default.readFileSync(healthPath, "utf8"));
+    if (import_fs3.default.existsSync(healthPath)) {
+      return JSON.parse(import_fs3.default.readFileSync(healthPath, "utf8"));
     }
   } catch (e) {
     console.error(`[EngineHealth] Warning: failed to read engine-health.json: ${e.message}`);
@@ -28370,20 +28734,20 @@ function loadEngineHealth(workspacePath) {
 }
 function saveEngineHealth(workspacePath, health) {
   const healthPath = getEngineHealthPath(workspacePath);
-  const dir = import_path2.default.dirname(healthPath);
-  if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
+  const dir = import_path3.default.dirname(healthPath);
+  if (!import_fs3.default.existsSync(dir)) import_fs3.default.mkdirSync(dir, { recursive: true });
   const tmpPath = healthPath + ".tmp." + process.pid;
   try {
-    import_fs2.default.writeFileSync(tmpPath, JSON.stringify(health, null, 2), "utf8");
+    import_fs3.default.writeFileSync(tmpPath, JSON.stringify(health, null, 2), "utf8");
     try {
-      import_fs2.default.unlinkSync(healthPath);
+      import_fs3.default.unlinkSync(healthPath);
     } catch (e) {
       if (e.code !== "ENOENT") throw e;
     }
-    import_fs2.default.renameSync(tmpPath, healthPath);
+    import_fs3.default.renameSync(tmpPath, healthPath);
   } catch (err) {
     try {
-      import_fs2.default.unlinkSync(tmpPath);
+      import_fs3.default.unlinkSync(tmpPath);
     } catch (_2) {
     }
     throw err;
@@ -28505,9 +28869,9 @@ function checkRequiredSkills(workspacePath, skills) {
   const missing = [];
   for (const skill of skills) {
     const resolvedSkill = SKILL_ALIASES[skill] || skill;
-    const skillPath = import_path2.default.join(workspacePath, ".optimus", "skills", resolvedSkill, "SKILL.md");
-    if (import_fs2.default.existsSync(skillPath)) {
-      found.set(skill, import_fs2.default.readFileSync(skillPath, "utf8"));
+    const skillPath = import_path3.default.join(workspacePath, ".optimus", "skills", resolvedSkill, "SKILL.md");
+    if (import_fs3.default.existsSync(skillPath)) {
+      found.set(skill, import_fs3.default.readFileSync(skillPath, "utf8"));
     } else {
       missing.push(skill);
     }
@@ -28515,10 +28879,10 @@ function checkRequiredSkills(workspacePath, skills) {
   return { found, missing };
 }
 function loadValidEnginesAndModels(workspacePath) {
-  const configPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+  const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
   try {
-    if (import_fs2.default.existsSync(configPath)) {
-      const config2 = JSON.parse(import_fs2.default.readFileSync(configPath, "utf8"));
+    if (import_fs3.default.existsSync(configPath)) {
+      const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
       const engines = Object.keys(config2.engines || {});
       const models = {};
       for (const eng of engines) {
@@ -28540,17 +28904,17 @@ function isValidModel(model, engine, validModels) {
   return allowed.includes(model);
 }
 async function ensureT2Role(workspacePath, role, engine, model, masterInfo, delegationDepth) {
-  const safeRole = sanitizeRoleName(role);
-  const t2Dir = import_path2.default.join(workspacePath, ".optimus", "roles");
-  const t2Path = import_path2.default.join(t2Dir, `${safeRole}.md`);
-  if (!import_fs2.default.existsSync(t2Dir)) import_fs2.default.mkdirSync(t2Dir, { recursive: true });
+  const safeRole = sanitizeRoleName2(role);
+  const t2Dir = import_path3.default.join(workspacePath, ".optimus", "roles");
+  const t2Path = import_path3.default.join(t2Dir, `${safeRole}.md`);
+  if (!import_fs3.default.existsSync(t2Dir)) import_fs3.default.mkdirSync(t2Dir, { recursive: true });
   const formattedRole = safeRole.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
   const rawDesc = masterInfo?.description || `${formattedRole} expert`;
   const desc = rawDesc.replace(/\\n/g, "\n");
   const eng = masterInfo?.engine || engine;
   const mod = masterInfo?.model || model || "";
-  if (import_fs2.default.existsSync(t2Path)) {
-    const existing = import_fs2.default.readFileSync(t2Path, "utf8");
+  if (import_fs3.default.existsSync(t2Path)) {
+    const existing = import_fs3.default.readFileSync(t2Path, "utf8");
     const existingFm = parseFrontmatter(existing);
     const contentLines = existingFm.body.split("\n").filter((l) => l.trim().length > 0);
     const isThin = contentLines.length < 25 && existingFm.frontmatter.source !== "plugin";
@@ -28578,22 +28942,22 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
         }
         updates.updated_at = (/* @__PURE__ */ new Date()).toISOString();
         const updated = updateFrontmatter(existing, updates);
-        import_fs2.default.writeFileSync(t2Path, updated, "utf8");
+        import_fs3.default.writeFileSync(t2Path, updated, "utf8");
         console.error(`[T2 Evolution] Updated role '${safeRole}' template with new Master info`);
       }
       return null;
     }
   }
   const pluginRolePaths = [
-    import_path2.default.join(__dirname, "..", "..", "roles", `${safeRole}.md`),
+    import_path3.default.join(__dirname, "..", "..", "roles", `${safeRole}.md`),
     // from dist/
-    import_path2.default.join(__dirname, "..", "..", "..", "optimus-plugin", "roles", `${safeRole}.md`)
+    import_path3.default.join(__dirname, "..", "..", "..", "optimus-plugin", "roles", `${safeRole}.md`)
     // from src/mcp/
   ];
   for (const pluginPath of pluginRolePaths) {
     try {
-      if (import_fs2.default.existsSync(pluginPath)) {
-        const pluginContent = import_fs2.default.readFileSync(pluginPath, "utf8");
+      if (import_fs3.default.existsSync(pluginPath)) {
+        const pluginContent = import_fs3.default.readFileSync(pluginPath, "utf8");
         let finalContent = pluginContent;
         const updates = {};
         const { engines: validEnginesPlugin, models: validModelsPlugin } = loadValidEnginesAndModels(workspacePath);
@@ -28618,7 +28982,7 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
         if (Object.keys(updates).length > 0) {
           finalContent = updateFrontmatter(pluginContent, updates);
         }
-        import_fs2.default.writeFileSync(t2Path, finalContent, "utf8");
+        import_fs3.default.writeFileSync(t2Path, finalContent, "utf8");
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 from plugin template at ${t2Path}`);
         registerRole(workspacePath, safeRole, desc);
         return t2Path;
@@ -28635,7 +28999,7 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
     return null;
   }
   const META_ROLES = ["role-creator", "skill-creator", "agent-creator"];
-  const safeRoleCheck = sanitizeRoleName(role);
+  const safeRoleCheck = sanitizeRoleName2(role);
   const currentDepthLocal = delegationDepth ?? 0;
   const { engines: validEnginesFallback, models: validModelsFallback } = loadValidEnginesAndModels(workspacePath);
   let validatedEng = eng;
@@ -28664,7 +29028,7 @@ precipitated: ${(/* @__PURE__ */ new Date()).toISOString()}
 
 ${desc}
 `;
-    import_fs2.default.writeFileSync(t2Path, template, "utf8");
+    import_fs3.default.writeFileSync(t2Path, template, "utf8");
     console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (thin) at ${t2Path}`);
     registerRole(workspacePath, safeRole, desc);
     return t2Path;
@@ -28680,11 +29044,11 @@ ${desc}
   }
 }
 async function generateRichT2Role(workspacePath, role, engine, model, description, t2Path, delegationDepth) {
-  const safeRole = sanitizeRoleName(role);
-  const skillPath = import_path2.default.join(workspacePath, ".optimus", "skills", "role-creator", "SKILL.md");
+  const safeRole = sanitizeRoleName2(role);
+  const skillPath = import_path3.default.join(workspacePath, ".optimus", "skills", "role-creator", "SKILL.md");
   let roleCreatorSkillContent = "";
-  if (import_fs2.default.existsSync(skillPath)) {
-    roleCreatorSkillContent = import_fs2.default.readFileSync(skillPath, "utf8");
+  if (import_fs3.default.existsSync(skillPath)) {
+    roleCreatorSkillContent = import_fs3.default.readFileSync(skillPath, "utf8");
   }
   const formattedRole = safeRole.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
   const prompt = `You are a role-creation specialist. Your task is to create a professional-grade T2 role template.
@@ -28738,9 +29102,9 @@ ${roleCreatorSkillContent}
   if (secondDash === -1) {
     throw new Error("role-creator response had opening --- but no closing frontmatter delimiter");
   }
-  const dir = import_path2.default.dirname(t2Path);
-  if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
-  import_fs2.default.writeFileSync(t2Path, content, "utf8");
+  const dir = import_path3.default.dirname(t2Path);
+  if (!import_fs3.default.existsSync(dir)) import_fs3.default.mkdirSync(dir, { recursive: true });
+  import_fs3.default.writeFileSync(t2Path, content, "utf8");
 }
 var AgentLockManager = class {
   locks = /* @__PURE__ */ new Map();
@@ -28750,10 +29114,10 @@ var AgentLockManager = class {
     this.workspacePath = workspacePath;
   }
   get lockDir() {
-    return import_path2.default.join(this.workspacePath, ".optimus", "agents");
+    return import_path3.default.join(this.workspacePath, ".optimus", "agents");
   }
   lockFilePath(role) {
-    return import_path2.default.join(this.lockDir, `${role}.lock`);
+    return import_path3.default.join(this.lockDir, `${role}.lock`);
   }
   async acquireLock(role) {
     while (this.locks.has(role)) {
@@ -28776,38 +29140,38 @@ var AgentLockManager = class {
   }
   writeLockFile(role) {
     try {
-      if (!import_fs2.default.existsSync(this.lockDir)) {
-        import_fs2.default.mkdirSync(this.lockDir, { recursive: true });
+      if (!import_fs3.default.existsSync(this.lockDir)) {
+        import_fs3.default.mkdirSync(this.lockDir, { recursive: true });
       }
-      import_fs2.default.writeFileSync(this.lockFilePath(role), JSON.stringify({ pid: process.pid, timestamp: Date.now() }), "utf8");
+      import_fs3.default.writeFileSync(this.lockFilePath(role), JSON.stringify({ pid: process.pid, timestamp: Date.now() }), "utf8");
     } catch (e) {
       console.error(`[AgentLockManager] Warning: failed to write lock file for '${role}': ${e.message}. In-memory lock still active.`);
     }
   }
   deleteLockFile(role) {
     try {
-      import_fs2.default.unlinkSync(this.lockFilePath(role));
+      import_fs3.default.unlinkSync(this.lockFilePath(role));
     } catch (e) {
       if (e.code !== "ENOENT") console.error(`[AgentLockManager] Warning: failed to delete lock file for '${role}': ${e.message}`);
     }
   }
   cleanStaleLocks() {
     try {
-      if (!import_fs2.default.existsSync(this.lockDir)) return;
-      const files = import_fs2.default.readdirSync(this.lockDir);
+      if (!import_fs3.default.existsSync(this.lockDir)) return;
+      const files = import_fs3.default.readdirSync(this.lockDir);
       for (const file2 of files) {
         if (!file2.endsWith(".lock")) continue;
-        const filePath = import_path2.default.join(this.lockDir, file2);
+        const filePath = import_path3.default.join(this.lockDir, file2);
         try {
-          const content = JSON.parse(import_fs2.default.readFileSync(filePath, "utf8"));
+          const content = JSON.parse(import_fs3.default.readFileSync(filePath, "utf8"));
           if (content.pid && !isProcessRunning(content.pid)) {
-            import_fs2.default.unlinkSync(filePath);
+            import_fs3.default.unlinkSync(filePath);
             console.error(`[AgentLockManager] Cleaned stale lock for ${file2} (PID ${content.pid} no longer running)`);
           }
         } catch (e) {
           console.error(`[AgentLockManager] Removing malformed lock file ${file2}: ${e.message}`);
           try {
-            import_fs2.default.unlinkSync(filePath);
+            import_fs3.default.unlinkSync(filePath);
           } catch (e2) {
             console.error(`[AgentLockManager] Warning: cleanup failed for ${file2}: ${e2.message}`);
           }
@@ -28857,12 +29221,12 @@ var ConcurrencyGovernor = class {
   }
 };
 function parseRoleSpec(roleArg) {
-  const segments = import_path2.default.basename(roleArg).split("_").filter(Boolean);
+  const segments = import_path3.default.basename(roleArg).split("_").filter(Boolean);
   const engineIndex = segments.findIndex((segment) => segment === "claude-code" || segment === "copilot-cli" || segment === "github-copilot" || segment === "acp");
   if (engineIndex === -1) {
-    return { role: import_path2.default.basename(roleArg) };
+    return { role: import_path3.default.basename(roleArg) };
   }
-  const role = segments.slice(0, engineIndex).join("_") || import_path2.default.basename(roleArg);
+  const role = segments.slice(0, engineIndex).join("_") || import_path3.default.basename(roleArg);
   const engine = segments[engineIndex];
   const model = segments.slice(engineIndex + 1).join("_");
   return { role, engine, model };
@@ -28871,9 +29235,9 @@ function getAdapterForEngine(engine, sessionId, model, workspacePath) {
   let engineConfig = null;
   if (workspacePath) {
     try {
-      const configPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
-      if (import_fs2.default.existsSync(configPath)) {
-        const config2 = JSON.parse(import_fs2.default.readFileSync(configPath, "utf8"));
+      const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+      if (import_fs3.default.existsSync(configPath)) {
+        const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
         engineConfig = config2.engines?.[engine];
       }
     } catch {
@@ -28909,49 +29273,29 @@ function getAdapterForEngine(engine, sessionId, model, workspacePath) {
   }
   return new ClaudeCodeAdapter(void 0, "\u{1F996} Claude Code", model || "");
 }
-function loadProjectMemory(workspacePath, maxChars = 4e3) {
-  const memoryFile = import_path2.default.join(workspacePath, ".optimus", "memory", "continuous-memory.md");
-  if (!import_fs2.default.existsSync(memoryFile)) return "";
-  try {
-    const raw = import_fs2.default.readFileSync(memoryFile, "utf8");
-    if (!raw.trim()) return "";
-    const entries = raw.split(/(?=^---\nid:)/m).filter((e) => e.trim());
-    entries.reverse();
-    let content = "";
-    for (const entry of entries) {
-      const body = entry.replace(/^---[\s\S]*?---\n?/m, "").trim();
-      if (!body) continue;
-      if (content.length + body.length + 4 > maxChars) break;
-      content = body + "\n\n" + content;
-    }
-    return content.trim();
-  } catch (e) {
-    return "";
-  }
-}
 async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessionId, workspacePath, contextFiles, masterInfo, parentDepth, parentIssueNumber, autoIssueNumber, agentId) {
   const parsedRole = parseRoleSpec(roleArg);
-  const role = sanitizeRoleName(parsedRole.role);
+  const role = sanitizeRoleName2(parsedRole.role);
   const currentDepth = parentDepth !== void 0 ? parentDepth : parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10);
   const childDepth = currentDepth + 1;
   console.error(`[Orchestrator] Delegation depth: ${childDepth}/${MAX_DELEGATION_DEPTH}`);
   if (childDepth >= MAX_DELEGATION_DEPTH) {
     console.error(`[Orchestrator] Max delegation depth reached \u2014 MCP config will be stripped`);
   }
-  const legacyT1Dir = import_path2.default.join(workspacePath, ".optimus", "personas");
-  const t1Dir = import_path2.default.join(workspacePath, ".optimus", "agents");
-  if (import_fs2.default.existsSync(legacyT1Dir) && !import_fs2.default.existsSync(t1Dir)) {
+  const legacyT1Dir = import_path3.default.join(workspacePath, ".optimus", "personas");
+  const t1Dir = import_path3.default.join(workspacePath, ".optimus", "agents");
+  if (import_fs3.default.existsSync(legacyT1Dir) && !import_fs3.default.existsSync(t1Dir)) {
     try {
-      import_fs2.default.renameSync(legacyT1Dir, t1Dir);
+      import_fs3.default.renameSync(legacyT1Dir, t1Dir);
     } catch (e) {
       console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
     }
   }
-  const t2Dir = import_path2.default.join(workspacePath, ".optimus", "roles");
-  if (!import_fs2.default.existsSync(t2Dir)) {
-    import_fs2.default.mkdirSync(t2Dir, { recursive: true });
+  const t2Dir = import_path3.default.join(workspacePath, ".optimus", "roles");
+  if (!import_fs3.default.existsSync(t2Dir)) {
+    import_fs3.default.mkdirSync(t2Dir, { recursive: true });
   }
-  const t2Path = import_path2.default.join(t2Dir, `${role}.md`);
+  const t2Path = import_path3.default.join(t2Dir, `${role}.md`);
   let activeEngine = masterInfo?.engine || parsedRole.engine;
   let activeModel = masterInfo?.model || parsedRole.model;
   let activeMode = masterInfo?.mode || "agent";
@@ -28961,11 +29305,11 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   let shouldLocalize = false;
   let resolvedTier = "T3 (Zero-Shot Outsource)";
   let personaProof = "No dedicated role template found in T2 or T1. Using T3 generic prompt.";
-  if (agentId && import_fs2.default.existsSync(t1Dir)) {
-    const exactPath = import_path2.default.join(t1Dir, `${agentId}.md`);
-    if (import_fs2.default.existsSync(exactPath)) {
+  if (agentId && import_fs3.default.existsSync(t1Dir)) {
+    const exactPath = import_path3.default.join(t1Dir, `${agentId}.md`);
+    if (import_fs3.default.existsSync(exactPath)) {
       t1Path = exactPath;
-      t1Content = import_fs2.default.readFileSync(exactPath, "utf8");
+      t1Content = import_fs3.default.readFileSync(exactPath, "utf8");
       resolvedTier = `T1 (Agent Instance -> ${agentId}.md, via agent_id)`;
       personaProof = `Resumed specific agent instance: ${t1Path}`;
       console.error(`[Orchestrator] agent_id="${agentId}" resolved to T1 instance: ${exactPath}`);
@@ -28973,8 +29317,8 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
       console.error(`[Orchestrator] agent_id="${agentId}" not found at ${exactPath} \u2014 falling back to T2 role template`);
     }
   }
-  if (!t1Content && import_fs2.default.existsSync(t2Path)) {
-    t1Content = import_fs2.default.readFileSync(t2Path, "utf8");
+  if (!t1Content && import_fs3.default.existsSync(t2Path)) {
+    t1Content = import_fs3.default.readFileSync(t2Path, "utf8");
     shouldLocalize = true;
     resolvedTier = `T2 (Role Template -> ${role}.md)`;
     personaProof = `Found globally promoted Role template: ${t2Path}`;
@@ -28996,8 +29340,8 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
       );
     }
   }
-  if (import_fs2.default.existsSync(t2Path)) {
-    const t2Fm = parseFrontmatter(import_fs2.default.readFileSync(t2Path, "utf8"));
+  if (import_fs3.default.existsSync(t2Path)) {
+    const t2Fm = parseFrontmatter(import_fs3.default.readFileSync(t2Path, "utf8"));
     if (t2Fm.frontmatter.status === "quarantined") {
       const usageLog2 = loadT3UsageLog(workspacePath);
       const usageEntry2 = usageLog2[role];
@@ -29007,10 +29351,10 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
     }
   }
   if (!activeEngine) {
-    const configPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+    const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
     try {
-      if (import_fs2.default.existsSync(configPath)) {
-        const config2 = JSON.parse(import_fs2.default.readFileSync(configPath, "utf8"));
+      if (import_fs3.default.existsSync(configPath)) {
+        const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
         const engines = Object.keys(config2.engines || {}).filter(
           (e) => !config2.engines[e].status?.includes("demo")
         );
@@ -29035,10 +29379,10 @@ No engine was specified in the caller arguments, local frontmatter, or T2 metada
     );
   }
   if (activeModel) {
-    const modelConfigPath = import_path2.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+    const modelConfigPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
     try {
-      if (import_fs2.default.existsSync(modelConfigPath)) {
-        const config2 = JSON.parse(import_fs2.default.readFileSync(modelConfigPath, "utf8"));
+      if (import_fs3.default.existsSync(modelConfigPath)) {
+        const config2 = JSON.parse(import_fs3.default.readFileSync(modelConfigPath, "utf8"));
         const engineConfig = config2.engines?.[activeEngine];
         if (engineConfig?.available_models && Array.isArray(engineConfig.available_models)) {
           const allowedModels = engineConfig.available_models;
@@ -29094,7 +29438,7 @@ ${content}
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
   console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
-  const rawTaskText = import_fs2.default.existsSync(taskPath) ? import_fs2.default.readFileSync(taskPath, "utf8") : taskPath;
+  const rawTaskText = import_fs3.default.existsSync(taskPath) ? import_fs3.default.readFileSync(taskPath, "utf8") : taskPath;
   const { sanitized: sanitizedTaskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
   let taskText = sanitizedTaskText;
   if (process.platform === "win32") {
@@ -29110,10 +29454,10 @@ ${content}
     const formattedRole = role.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
     personaContext = `You are a ${formattedRole} expert operating within the Optimus Spartan Swarm. Your purpose is to fulfill tasks autonomously within your specialized domain of expertise.
 As a dynamically provisioned "T3" agent, apply industry best practices, solve complex problems, and deliver professional-grade results associated with your role.`;
-    const systemInstructionsPath = import_path2.default.join(workspacePath, ".optimus", "config", "system-instructions.md");
-    if (import_fs2.default.existsSync(systemInstructionsPath)) {
+    const systemInstructionsPath = import_path3.default.join(workspacePath, ".optimus", "config", "system-instructions.md");
+    if (import_fs3.default.existsSync(systemInstructionsPath)) {
       try {
-        const systemInstructions = import_fs2.default.readFileSync(systemInstructionsPath, "utf8");
+        const systemInstructions = import_fs3.default.readFileSync(systemInstructionsPath, "utf8");
         personaContext += `
 
 --- START WORKSPACE SYSTEM INSTRUCTIONS ---
@@ -29124,7 +29468,9 @@ ${systemInstructions.trim()}
       }
     }
   }
-  const memoryContent = loadProjectMemory(workspacePath);
+  const memoryFile = import_path3.default.join(workspacePath, ".optimus", "memory", "continuous-memory.md");
+  migrateMemoryFile(memoryFile);
+  const memoryContent = loadFilteredMemory(workspacePath, role);
   const memorySection = memoryContent ? `
 
 --- START PROJECT MEMORY ---
@@ -29137,9 +29483,9 @@ ${memoryContent}
   if (contextFiles && contextFiles.length > 0) {
     contextContent = "\n\n=== CONTEXT FILES ===\n\nThe following files are provided as required context for, and must be strictly adhered to during this task:\n\n";
     for (const cf of contextFiles) {
-      const absolutePath = import_path2.default.resolve(workspacePath, cf);
-      if (import_fs2.default.existsSync(absolutePath)) {
-        const rawContent = import_fs2.default.readFileSync(absolutePath, "utf8");
+      const absolutePath = import_path3.default.resolve(workspacePath, cf);
+      if (import_fs3.default.existsSync(absolutePath)) {
+        const rawContent = import_fs3.default.readFileSync(absolutePath, "utf8");
         const { sanitized: fileContent } = sanitizeExternalContent(rawContent, `context:${cf}`);
         contextContent += `--- START OF ${cf} ---
 `;
@@ -29176,6 +29522,11 @@ ${memorySection}
 Goal: Execute the following task.
 System Note: ${personaProof}
 ${trackingIssueHeader}
+If you need additional project context beyond what was provided:
+1. Call \`list_knowledge\` to discover available specs, proposals, and memory entries
+2. Read only the artifacts directly relevant to your task
+3. Do not read everything \u2014 prioritize by topic match and recency
+
 Task Description:
 ${taskText}${contextContent}${skillContent ? `
 
@@ -29192,12 +29543,12 @@ Please provide your complete execution result below.`;
   try {
     await ConcurrencyGovernor.acquire();
     await ensureT2Role(workspacePath, role, activeEngine, activeModel, masterInfo, currentDepth);
-    const agentsDir = import_path2.default.join(workspacePath, ".optimus", "agents");
-    if (!import_fs2.default.existsSync(agentsDir)) import_fs2.default.mkdirSync(agentsDir, { recursive: true });
+    const agentsDir = import_path3.default.join(workspacePath, ".optimus", "agents");
+    if (!import_fs3.default.existsSync(agentsDir)) import_fs3.default.mkdirSync(agentsDir, { recursive: true });
     const tempId = Math.random().toString(36).slice(2, 10);
-    const t1TempPath = t1Path || import_path2.default.join(agentsDir, `${role}_pending_${tempId}.md`);
+    const t1TempPath = t1Path || import_path3.default.join(agentsDir, `${role}_pending_${tempId}.md`);
     if (!t1Path) {
-      const t1Template = import_fs2.default.existsSync(t2Path) ? import_fs2.default.readFileSync(t2Path, "utf8") : `---
+      const t1Template = import_fs3.default.existsSync(t2Path) ? import_fs3.default.readFileSync(t2Path, "utf8") : `---
 role: ${role}
 ---
 
@@ -29212,11 +29563,12 @@ role: ${role}
         status: "running",
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
-      import_fs2.default.writeFileSync(t1TempPath, t1Instance, "utf8");
-      console.error(`[Orchestrator] T2\u2192T1: Created temp agent placeholder '${role}' at ${import_path2.default.basename(t1TempPath)}`);
+      import_fs3.default.writeFileSync(t1TempPath, t1Instance, "utf8");
+      console.error(`[Orchestrator] T2\u2192T1: Created temp agent placeholder '${role}' at ${import_path3.default.basename(t1TempPath)}`);
     }
     const extraEnv = {
-      OPTIMUS_DELEGATION_DEPTH: String(childDepth)
+      OPTIMUS_DELEGATION_DEPTH: String(childDepth),
+      OPTIMUS_CURRENT_ROLE: role
     };
     if (parentIssueNumber !== void 0) {
       extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
@@ -29238,10 +29590,10 @@ role: ${role}
     ];
     const matchedError = errorPatterns.find((p) => p.test(firstLines));
     if (matchedError && nonLogLines.length < 100) {
-      const tempFile = t1Path || import_path2.default.join(workspacePath, ".optimus", "agents", `${role}_pending_${tempId}.md`);
-      if (import_fs2.default.existsSync(tempFile) && tempFile.includes("pending_")) {
+      const tempFile = t1Path || import_path3.default.join(workspacePath, ".optimus", "agents", `${role}_pending_${tempId}.md`);
+      if (import_fs3.default.existsSync(tempFile) && tempFile.includes("pending_")) {
         try {
-          import_fs2.default.unlinkSync(tempFile);
+          import_fs3.default.unlinkSync(tempFile);
         } catch (e) {
           console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
         }
@@ -29260,9 +29612,9 @@ ${firstLines.trim()}
 - Verify CLI authentication (e.g., \`copilot login\`, \`claude auth\`)`
       );
     }
-    const currentT1 = import_fs2.default.existsSync(t1TempPath) ? t1TempPath : t1Path;
-    if (currentT1 && import_fs2.default.existsSync(currentT1)) {
-      const currentStr = import_fs2.default.readFileSync(currentT1, "utf8");
+    const currentT1 = import_fs3.default.existsSync(t1TempPath) ? t1TempPath : t1Path;
+    if (currentT1 && import_fs3.default.existsSync(currentT1)) {
+      const currentStr = import_fs3.default.readFileSync(currentT1, "utf8");
       const updates = {
         status: "idle",
         last_invoked: (/* @__PURE__ */ new Date()).toISOString()
@@ -29273,21 +29625,21 @@ ${firstLines.trim()}
       }
       const updated = updateFrontmatter(currentStr, updates);
       const sessionPrefix = (newSessionId || tempId).slice(0, 8);
-      const finalT1Path = import_path2.default.join(agentsDir, `${role}_${sessionPrefix}.md`);
-      import_fs2.default.writeFileSync(finalT1Path, updated, "utf8");
-      if (currentT1 !== finalT1Path && import_fs2.default.existsSync(currentT1)) {
+      const finalT1Path = import_path3.default.join(agentsDir, `${role}_${sessionPrefix}.md`);
+      import_fs3.default.writeFileSync(finalT1Path, updated, "utf8");
+      if (currentT1 !== finalT1Path && import_fs3.default.existsSync(currentT1)) {
         try {
-          import_fs2.default.unlinkSync(currentT1);
+          import_fs3.default.unlinkSync(currentT1);
         } catch (e) {
           console.error(`[Orchestrator] Warning: operation failed: ${e.message}`);
         }
       }
-      console.error(`[Orchestrator] T1 finalized: '${role}' \u2192 ${import_path2.default.basename(finalT1Path)}, session=${newSessionId || "none"}, status=idle`);
+      console.error(`[Orchestrator] T1 finalized: '${role}' \u2192 ${import_path3.default.basename(finalT1Path)}, session=${newSessionId || "none"}, status=idle`);
     }
-    const dir = import_path2.default.dirname(outputPath);
-    if (!import_fs2.default.existsSync(dir)) import_fs2.default.mkdirSync(dir, { recursive: true });
+    const dir = import_path3.default.dirname(outputPath);
+    if (!import_fs3.default.existsSync(dir)) import_fs3.default.mkdirSync(dir, { recursive: true });
     const cleanResponse = stripTraceLines(response);
-    import_fs2.default.writeFileSync(outputPath, cleanResponse, "utf8");
+    import_fs3.default.writeFileSync(outputPath, cleanResponse, "utf8");
     if (isT3) {
       trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
     }
@@ -29313,14 +29665,14 @@ Agent has finished execution. Check standard output at \`${normalizePathForAgent
     const log = loadT3UsageLog(workspacePath);
     const entry = log[role];
     if (entry && entry.consecutive_failures >= 3 && entry.successes === 0 && !wasFallback) {
-      const t2RolePath = import_path2.default.join(workspacePath, ".optimus", "roles", `${sanitizeRoleName(role)}.md`);
-      if (import_fs2.default.existsSync(t2RolePath)) {
-        const t2Content = import_fs2.default.readFileSync(t2RolePath, "utf8");
+      const t2RolePath = import_path3.default.join(workspacePath, ".optimus", "roles", `${sanitizeRoleName2(role)}.md`);
+      if (import_fs3.default.existsSync(t2RolePath)) {
+        const t2Content = import_fs3.default.readFileSync(t2RolePath, "utf8");
         const quarantined = updateFrontmatter(t2Content, {
           status: "quarantined",
           quarantined_at: (/* @__PURE__ */ new Date()).toISOString()
         });
-        import_fs2.default.writeFileSync(t2RolePath, quarantined, "utf8");
+        import_fs3.default.writeFileSync(t2RolePath, quarantined, "utf8");
         console.error(`[Meta-Immune] Role '${role}' quarantined after ${entry.consecutive_failures} consecutive failures with 0 successes`);
       }
     }
@@ -29390,7 +29742,7 @@ function computeDiversityAssignments(roles, workspacePath) {
 async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath, parentDepth, parentIssueNumber, roleDescriptions) {
   const diversityAssignments = computeDiversityAssignments(roles, workspacePath);
   const promises = roles.map((role, i) => {
-    const outputPath = import_path2.default.join(reviewsPath, `${role}_review.md`);
+    const outputPath = import_path3.default.join(reviewsPath, `${role}_review.md`);
     const assignment = diversityAssignments[i];
     return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
   });
@@ -29411,24 +29763,24 @@ async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, times
 
 ${failed.map((f) => `- ${f}`).join("\n")}
 `;
-    import_fs2.default.writeFileSync(import_path2.default.join(reviewsPath, "FAILURES.md"), failSummary, "utf8");
+    import_fs3.default.writeFileSync(import_path3.default.join(reviewsPath, "FAILURES.md"), failSummary, "utf8");
   }
   return succeeded;
 }
 
 // ../src/mcp/agent-gc.ts
-var fs4 = __toESM(require("fs"));
-var path4 = __toESM(require("path"));
+var fs5 = __toESM(require("fs"));
+var path5 = __toESM(require("path"));
 function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
-  const agentsDir = path4.join(workspacePath, ".optimus", "agents");
-  if (!fs4.existsSync(agentsDir)) return;
-  const files = fs4.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+  const agentsDir = path5.join(workspacePath, ".optimus", "agents");
+  if (!fs5.existsSync(agentsDir)) return;
+  const files = fs5.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
   const now = Date.now();
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1e3;
   for (const file2 of files) {
     if (file2.endsWith(".lock")) continue;
-    const filePath = path4.join(agentsDir, file2);
-    const content = fs4.readFileSync(filePath, "utf8");
+    const filePath = path5.join(agentsDir, file2);
+    const content = fs5.readFileSync(filePath, "utf8");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) continue;
     const lines = fmMatch[1].split("\n");
@@ -29439,21 +29791,21 @@ function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
     if (getValue("persistent") === "true") continue;
     const lastInvoked = getValue("last_invoked") || getValue("created_at");
     if (!lastInvoked) {
-      fs4.unlinkSync(filePath);
+      fs5.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file2}' (no timestamp found)`);
       continue;
     }
     const age = now - new Date(lastInvoked).getTime();
     if (age > maxAgeMs) {
-      fs4.unlinkSync(filePath);
+      fs5.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file2}' (last invoked: ${lastInvoked})`);
     }
   }
 }
 
 // ../src/managers/TaskManifestManager.ts
-var fs5 = __toESM(require("fs"));
-var path5 = __toESM(require("path"));
+var fs6 = __toESM(require("fs"));
+var path6 = __toESM(require("path"));
 var manifestMutex = Promise.resolve();
 function withManifestLock(fn) {
   let release;
@@ -29473,15 +29825,15 @@ function withManifestLock(fn) {
 }
 var TaskManifestManager = class {
   static getManifestPath(workspacePath) {
-    return path5.join(workspacePath, ".optimus", "state", "task-manifest.json");
+    return path6.join(workspacePath, ".optimus", "state", "task-manifest.json");
   }
   static loadManifest(workspacePath) {
     const manifestPath = this.getManifestPath(workspacePath);
-    if (!fs5.existsSync(manifestPath)) {
+    if (!fs6.existsSync(manifestPath)) {
       return {};
     }
     try {
-      return JSON.parse(fs5.readFileSync(manifestPath, "utf8"));
+      return JSON.parse(fs6.readFileSync(manifestPath, "utf8"));
     } catch (e) {
       console.error(`[TaskManifest] Warning: failed to parse task manifest at ${manifestPath}: ${e.message}. Returning empty manifest \u2014 existing tasks may appear missing.`);
       return {};
@@ -29490,10 +29842,10 @@ var TaskManifestManager = class {
   static saveManifest(workspacePath, manifest) {
     const manifestPath = this.getManifestPath(workspacePath);
     const tempPath = `${manifestPath}.tmp`;
-    const dir = path5.dirname(manifestPath);
-    if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
-    fs5.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
-    fs5.renameSync(tempPath, manifestPath);
+    const dir = path6.dirname(manifestPath);
+    if (!fs6.existsSync(dir)) fs6.mkdirSync(dir, { recursive: true });
+    fs6.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
+    fs6.renameSync(tempPath, manifestPath);
   }
   static createTask(workspacePath, record2) {
     const fullRecord = {
@@ -29540,9 +29892,9 @@ var TaskManifestManager = class {
             changed = true;
             try {
               if (task.output_path) {
-                const dir = path5.dirname(task.output_path);
-                if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
-                fs5.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
+                const dir = path6.dirname(task.output_path);
+                if (!fs6.existsSync(dir)) fs6.mkdirSync(dir, { recursive: true });
+                fs6.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
 `, "utf8");
               }
             } catch (e) {
@@ -29626,8 +29978,8 @@ async function commentOnGitHubIssue(owner, repo, issueNumber, body) {
 }
 
 // ../src/mcp/council-runner.ts
-var import_fs3 = __toESM(require("fs"));
-var import_path3 = __toESM(require("path"));
+var import_fs4 = __toESM(require("fs"));
+var import_path4 = __toESM(require("path"));
 
 // ../src/utils/agentSignature.ts
 function agentSignature(role, taskId) {
@@ -29642,13 +29994,13 @@ _\u{1F916} Created by \`${role}\`${taskRef} via Optimus Spartan Swarm_`;
 function verifyOutputPath(outputPath) {
   if (!outputPath) return "partial";
   try {
-    const stat = import_fs3.default.statSync(outputPath);
+    const stat = import_fs4.default.statSync(outputPath);
     if (stat.isFile()) {
       if (stat.size === 0) return "partial";
-      const fd = import_fs3.default.openSync(outputPath, "r");
+      const fd = import_fs4.default.openSync(outputPath, "r");
       const buffer = Buffer.alloc(1024);
-      const bytesRead = import_fs3.default.readSync(fd, buffer, 0, 1024, 0);
-      import_fs3.default.closeSync(fd);
+      const bytesRead = import_fs4.default.readSync(fd, buffer, 0, 1024, 0);
+      import_fs4.default.closeSync(fd);
       const content = buffer.slice(0, bytesRead).toString("utf8");
       const lines = content.split("\n").slice(0, 5);
       for (const line of lines) {
@@ -29659,7 +30011,7 @@ function verifyOutputPath(outputPath) {
       return "verified";
     }
     if (stat.isDirectory()) {
-      const files = import_fs3.default.readdirSync(outputPath);
+      const files = import_fs4.default.readdirSync(outputPath);
       return files.length > 0 ? "verified" : "partial";
     }
     return "partial";
@@ -29727,7 +30079,7 @@ async function runAsyncWorker(taskId, workspacePath) {
         task.role_descriptions
       );
       const reviewsPath = task.output_path;
-      const synthesisPath = import_path3.default.join(reviewsPath, "COUNCIL_SYNTHESIS.md");
+      const synthesisPath = import_path4.default.join(reviewsPath, "COUNCIL_SYNTHESIS.md");
       let synthesisContent = `# Council Synthesis Report
 
 `;
@@ -29740,14 +30092,14 @@ async function runAsyncWorker(taskId, workspacePath) {
       let synthesisFailedRoles = [];
       for (let i = 0; i < task.roles.length; i++) {
         const role = task.roles[i];
-        const reviewFile = import_path3.default.join(reviewsPath, `${role}_review.md`);
+        const reviewFile = import_path4.default.join(reviewsPath, `${role}_review.md`);
         const status = verifyOutputPath(reviewFile);
         if (status === "verified") {
           synthesisVerifiedCount++;
           synthesisContent += `## ${i + 1}. Review from ${role}
 
 `;
-          const rawReview = import_fs3.default.readFileSync(reviewFile, "utf8");
+          const rawReview = import_fs4.default.readFileSync(reviewFile, "utf8");
           const { sanitized: reviewContent } = sanitizeExternalContent(rawReview, `review:${role}`);
           synthesisContent += reviewContent;
           synthesisContent += `
@@ -29780,7 +30132,7 @@ async function runAsyncWorker(taskId, workspacePath) {
 ${header}`
         );
       }
-      import_fs3.default.writeFileSync(synthesisPath, synthesisContent, "utf8");
+      import_fs4.default.writeFileSync(synthesisPath, synthesisContent, "utf8");
       console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
       try {
         let verdictTemplate = `## Unified Council Verdict
@@ -29798,10 +30150,10 @@ ${header}`
 
 ### Implementation Priority
 1. (ordered action items)`;
-        const templatePath = import_path3.default.join(task.workspacePath, ".optimus", "config", "verdict-template.md");
+        const templatePath = import_path4.default.join(task.workspacePath, ".optimus", "config", "verdict-template.md");
         try {
-          if (import_fs3.default.existsSync(templatePath)) {
-            verdictTemplate = import_fs3.default.readFileSync(templatePath, "utf8").trim();
+          if (import_fs4.default.existsSync(templatePath)) {
+            verdictTemplate = import_fs4.default.readFileSync(templatePath, "utf8").trim();
             console.error(`[Runner] Using custom VERDICT template from ${templatePath}`);
           }
         } catch {
@@ -29816,7 +30168,7 @@ ${verdictTemplate}
 Here is the synthesis report:
 
 ${synthesisContent}`;
-        const verdictPath = import_path3.default.join(reviewsPath, "VERDICT.md");
+        const verdictPath = import_path4.default.join(reviewsPath, "VERDICT.md");
         await delegateTaskSingle(
           "pm",
           pmSynthesisPrompt,
@@ -29840,7 +30192,7 @@ ${synthesisContent}`;
       const failedWorkers = [];
       const reviewsPath = task.output_path;
       for (const role of task.roles) {
-        const reviewFile = import_path3.default.join(reviewsPath, `${role}_review.md`);
+        const reviewFile = import_path4.default.join(reviewsPath, `${role}_review.md`);
         const status = verifyOutputPath(reviewFile);
         if (status === "verified") successCount++;
         else {
@@ -29856,8 +30208,8 @@ ${synthesisContent}`;
         verificationStatus = "partial";
         errorMessage = `${failureCount} of ${task.roles.length} workers failed: ${failedWorkers.join(", ")}. ${successCount} succeeded.`;
       }
-      const synthesisPath = import_path3.default.join(task.output_path, "COUNCIL_SYNTHESIS.md");
-      if (verificationStatus !== "failed" && !import_fs3.default.existsSync(synthesisPath)) {
+      const synthesisPath = import_path4.default.join(task.output_path, "COUNCIL_SYNTHESIS.md");
+      if (verificationStatus !== "failed" && !import_fs4.default.existsSync(synthesisPath)) {
         verificationStatus = "failed";
         errorMessage = "COUNCIL_SYNTHESIS.md was not generated";
       }
@@ -29911,8 +30263,8 @@ var import_child_process5 = require("child_process");
 var import_dotenv = __toESM(require_main());
 
 // ../src/adapters/vcs/VcsProviderFactory.ts
-var path7 = __toESM(require("path"));
-var fs7 = __toESM(require("fs"));
+var path8 = __toESM(require("path"));
+var fs8 = __toESM(require("fs"));
 var crypto2 = __toESM(require("crypto"));
 var import_child_process2 = require("child_process");
 var VcsProviderFactory = class {
@@ -29928,7 +30280,7 @@ var VcsProviderFactory = class {
   static async getProvider(workspacePath) {
     const resolvedWorkspacePath = workspacePath || process.cwd();
     const configPath = this.getConfigPath(resolvedWorkspacePath);
-    const configContent = fs7.existsSync(configPath) ? fs7.readFileSync(configPath, "utf8") : "";
+    const configContent = fs8.existsSync(configPath) ? fs8.readFileSync(configPath, "utf8") : "";
     const configHash = crypto2.createHash("md5").update(configContent).digest("hex");
     if (this.cachedProvider && this.cachedConfigPath === configPath && this.cachedConfigHash === configHash) {
       return this.cachedProvider;
@@ -29971,13 +30323,13 @@ var VcsProviderFactory = class {
     this.cachedConfigHash = null;
   }
   static getConfigPath(workspacePath) {
-    return path7.join(workspacePath, ".optimus", "config", "vcs.json");
+    return path8.join(workspacePath, ".optimus", "config", "vcs.json");
   }
   static loadConfig(workspacePath) {
     const configPath = this.getConfigPath(workspacePath);
-    if (fs7.existsSync(configPath)) {
+    if (fs8.existsSync(configPath)) {
       try {
-        const configContent = fs7.readFileSync(configPath, "utf8");
+        const configContent = fs8.readFileSync(configPath, "utf8");
         return JSON.parse(configContent);
       } catch (error2) {
         console.error(`Warning: Failed to parse VCS config at ${configPath}:`, error2);
@@ -30071,11 +30423,11 @@ var VcsProviderFactory = class {
    */
   static createConfig(workspacePath, config2) {
     const configPath = this.getConfigPath(workspacePath);
-    const configDir = path7.dirname(configPath);
-    if (!fs7.existsSync(configDir)) {
-      fs7.mkdirSync(configDir, { recursive: true });
+    const configDir = path8.dirname(configPath);
+    if (!fs8.existsSync(configDir)) {
+      fs8.mkdirSync(configDir, { recursive: true });
     }
-    fs7.writeFileSync(configPath, JSON.stringify(config2, null, 2), "utf8");
+    fs8.writeFileSync(configPath, JSON.stringify(config2, null, 2), "utf8");
   }
 };
 
@@ -30107,8 +30459,8 @@ function validateRoleNotModelName(role) {
 }
 
 // ../src/mcp/meta-cron-engine.ts
-var import_fs4 = __toESM(require("fs"));
-var import_path4 = __toESM(require("path"));
+var import_fs5 = __toESM(require("fs"));
+var import_path5 = __toESM(require("path"));
 var import_child_process3 = require("child_process");
 function matchesCronField(field, value, min, max) {
   if (field === "*") return true;
@@ -30152,16 +30504,16 @@ function matchesCronExpression(expression, now) {
   return matchesCronField(minuteField, minute, 0, 59) && matchesCronField(hourField, hour, 0, 23) && matchesCronField(dayOfMonthField, dayOfMonth, 1, 31) && matchesCronField(monthField, month, 1, 12) && matchesCronField(dayOfWeekField, dayOfWeek, 0, 6);
 }
 function getLockDir(workspacePath) {
-  return import_path4.default.join(workspacePath, ".optimus", "system", "cron-locks");
+  return import_path5.default.join(workspacePath, ".optimus", "system", "cron-locks");
 }
 function getLockPath(workspacePath, id) {
-  return import_path4.default.join(getLockDir(workspacePath), `${id}.lock`);
+  return import_path5.default.join(getLockDir(workspacePath), `${id}.lock`);
 }
 function isLocked(workspacePath, id) {
   const lockPath = getLockPath(workspacePath, id);
   try {
-    if (!import_fs4.default.existsSync(lockPath)) return false;
-    const stat = import_fs4.default.statSync(lockPath);
+    if (!import_fs5.default.existsSync(lockPath)) return false;
+    const stat = import_fs5.default.statSync(lockPath);
     const ageMs = Date.now() - stat.mtimeMs;
     return ageMs < 60 * 60 * 1e3;
   } catch (e) {
@@ -30172,8 +30524,8 @@ function isLocked(workspacePath, id) {
 function createLock(workspacePath, id) {
   try {
     const lockDir = getLockDir(workspacePath);
-    if (!import_fs4.default.existsSync(lockDir)) import_fs4.default.mkdirSync(lockDir, { recursive: true });
-    import_fs4.default.writeFileSync(getLockPath(workspacePath, id), JSON.stringify({
+    if (!import_fs5.default.existsSync(lockDir)) import_fs5.default.mkdirSync(lockDir, { recursive: true });
+    import_fs5.default.writeFileSync(getLockPath(workspacePath, id), JSON.stringify({
       pid: process.pid,
       locked_at: (/* @__PURE__ */ new Date()).toISOString()
     }), "utf8");
@@ -30186,19 +30538,19 @@ function createLock(workspacePath, id) {
 function deleteLock(workspacePath, id) {
   try {
     const lockPath = getLockPath(workspacePath, id);
-    if (import_fs4.default.existsSync(lockPath)) import_fs4.default.unlinkSync(lockPath);
+    if (import_fs5.default.existsSync(lockPath)) import_fs5.default.unlinkSync(lockPath);
   } catch (e) {
     if (e.code !== "ENOENT") console.error(`[Meta-Cron] Warning: failed to delete lock for '${id}': ${e.message}. Stale lock may prevent next run.`);
   }
 }
 function getCrontabPath(workspacePath) {
-  return import_path4.default.join(workspacePath, ".optimus", "system", "meta-crontab.json");
+  return import_path5.default.join(workspacePath, ".optimus", "system", "meta-crontab.json");
 }
 function loadCrontab(workspacePath) {
   const crontabPath = getCrontabPath(workspacePath);
   try {
-    if (!import_fs4.default.existsSync(crontabPath)) return null;
-    return JSON.parse(import_fs4.default.readFileSync(crontabPath, "utf8"));
+    if (!import_fs5.default.existsSync(crontabPath)) return null;
+    return JSON.parse(import_fs5.default.readFileSync(crontabPath, "utf8"));
   } catch (e) {
     console.error(`[Meta-Cron] Failed to parse crontab: ${e.message}`);
     return null;
@@ -30206,11 +30558,11 @@ function loadCrontab(workspacePath) {
 }
 function saveCrontab(workspacePath, data) {
   const crontabPath = getCrontabPath(workspacePath);
-  const dir = import_path4.default.dirname(crontabPath);
-  if (!import_fs4.default.existsSync(dir)) import_fs4.default.mkdirSync(dir, { recursive: true });
+  const dir = import_path5.default.dirname(crontabPath);
+  if (!import_fs5.default.existsSync(dir)) import_fs5.default.mkdirSync(dir, { recursive: true });
   const tmpPath = crontabPath + ".tmp";
-  import_fs4.default.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf8");
-  import_fs4.default.renameSync(tmpPath, crontabPath);
+  import_fs5.default.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf8");
+  import_fs5.default.renameSync(tmpPath, crontabPath);
 }
 var MetaCronEngine = class _MetaCronEngine {
   static interval = null;
@@ -30297,10 +30649,10 @@ var MetaCronEngine = class _MetaCronEngine {
       required_skills: entry.required_skills,
       delegation_depth: 0
     });
-    const logDir = import_path4.default.join(this.workspacePath, ".optimus", "system", "cron-logs");
-    if (!import_fs4.default.existsSync(logDir)) import_fs4.default.mkdirSync(logDir, { recursive: true });
-    const logFile = import_path4.default.join(logDir, `${entry.id}_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.log`);
-    const logFd = import_fs4.default.openSync(logFile, "a");
+    const logDir = import_path5.default.join(this.workspacePath, ".optimus", "system", "cron-logs");
+    if (!import_fs5.default.existsSync(logDir)) import_fs5.default.mkdirSync(logDir, { recursive: true });
+    const logFile = import_path5.default.join(logDir, `${entry.id}_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.log`);
+    const logFd = import_fs5.default.openSync(logFile, "a");
     const child = (0, import_child_process3.spawn)(process.execPath, [
       __filename,
       "--run-task",
@@ -30314,7 +30666,7 @@ var MetaCronEngine = class _MetaCronEngine {
       env: { ...process.env, OPTIMUS_DELEGATION_DEPTH: "0", OPTIMUS_CRON_TRIGGERED: "true" }
     });
     child.unref();
-    import_fs4.default.closeSync(logFd);
+    import_fs5.default.closeSync(logFd);
     const entryId = entry.id;
     const ws = this.workspacePath;
     const fireTime = Date.now();
@@ -30379,7 +30731,7 @@ var MetaCronEngine = class _MetaCronEngine {
 };
 
 // ../src/mcp/input-resume-checker.ts
-var import_path5 = __toESM(require("path"));
+var import_path6 = __toESM(require("path"));
 var import_child_process4 = require("child_process");
 var DEFAULT_PAUSE_TIMEOUT_MS = 48 * 60 * 60 * 1e3;
 var ALLOWED_AUTHOR_ASSOCIATIONS = /* @__PURE__ */ new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
@@ -30486,7 +30838,7 @@ The question asked by agent \`${task.role || "unknown"}\` has expired without a 
       delegation_depth: task.delegation_depth || 0
     });
     const child = (0, import_child_process4.spawn)(process.execPath, [
-      import_path5.default.join(__dirname, "..", "..", "dist", "mcp-server.js"),
+      import_path6.default.join(__dirname, "..", "..", "dist", "mcp-server.js"),
       "--run-task",
       resumeTaskId,
       workspacePath
@@ -30548,7 +30900,7 @@ function requireParams(toolName, params, required2) {
 }
 function reloadEnv() {
   if (process.env.DOTENV_PATH) {
-    import_dotenv.default.config({ path: import_path6.default.resolve(process.env.DOTENV_PATH), override: true });
+    import_dotenv.default.config({ path: import_path7.default.resolve(process.env.DOTENV_PATH), override: true });
   } else {
     import_dotenv.default.config({ override: true });
   }
@@ -30581,13 +30933,13 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   if (request.params.uri === "optimus://system/instructions") {
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    const instructionsPath = import_path6.default.resolve(workspacePath, ".optimus", "config", "system-instructions.md");
-    if (!instructionsPath.startsWith(import_path6.default.resolve(workspacePath))) {
+    const instructionsPath = import_path7.default.resolve(workspacePath, ".optimus", "config", "system-instructions.md");
+    if (!instructionsPath.startsWith(import_path7.default.resolve(workspacePath))) {
       throw new McpError(ErrorCode.InvalidRequest, `Path traversal detected`);
     }
     try {
-      if (import_fs5.default.existsSync(instructionsPath)) {
-        const content = import_fs5.default.readFileSync(instructionsPath, "utf8");
+      if (import_fs6.default.existsSync(instructionsPath)) {
+        const content = import_fs6.default.readFileSync(instructionsPath, "utf8");
         return {
           contents: [
             {
@@ -30617,7 +30969,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
             tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
-            content: { type: "string", description: "The actual memory content to solidify" }
+            content: { type: "string", description: "The actual memory content to solidify" },
+            level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific. Defaults to project.", enum: ["project", "role"] }
           },
           required: ["category", "tags", "content"]
         }
@@ -31003,6 +31356,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ["question", "context_summary", "workspace_path"]
         }
+      },
+      {
+        name: "list_knowledge",
+        description: "Discover available project knowledge artifacts (specs, memory, reports, reviews) without reading their contents. Returns metadata only \u2014 paths, types, dates, and sizes \u2014 to help agents find relevant context before starting work.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            category: { type: "string", enum: ["specs", "memory", "reports", "reviews", "all"], description: "Filter by knowledge category. Defaults to 'all'." },
+            topic: { type: "string", description: "Optional keyword filter \u2014 only return artifacts whose path or name contains this string (case-insensitive)." }
+          },
+          required: ["workspace_path"]
+        }
       }
     ]
   };
@@ -31028,8 +31394,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 Output verified at ${task.output_path || "the review path"}.`;
       if (task.type === "dispatch_council") {
-        const verdictPath = import_path6.default.join(task.output_path, "VERDICT.md");
-        if (import_fs5.default.existsSync(verdictPath)) {
+        const verdictPath = import_path7.default.join(task.output_path, "VERDICT.md");
+        if (import_fs6.default.existsSync(verdictPath)) {
           details += `
 PM Verdict available at: ${verdictPath}`;
         }
@@ -31038,8 +31404,8 @@ PM Verdict available at: ${verdictPath}`;
       let outputExists = false;
       if (task.output_path) {
         try {
-          const stat = import_fs5.default.statSync(task.output_path);
-          outputExists = stat.isFile() ? stat.size > 0 : import_fs5.default.readdirSync(task.output_path).length > 0;
+          const stat = import_fs6.default.statSync(task.output_path);
+          outputExists = stat.isFile() ? stat.size > 0 : import_fs6.default.readdirSync(task.output_path).length > 0;
         } catch (e) {
           console.error(`[TaskStatus] Warning: failed to stat output path: ${e.message}`);
         }
@@ -31088,9 +31454,9 @@ Human input request expired without a response. ${task.error_message || ""}`;
     validateEngineAndModel(role_engine, role_model, workspace_path);
     const rawParentAsync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync) ? void 0 : rawParentAsync);
-    const optimusDir = import_path6.default.join(workspace_path, ".optimus");
-    const resolvedOutputPath = import_path6.default.resolve(workspace_path, output_path);
-    output_path = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path6.default.join(optimusDir, "results", import_path6.default.basename(output_path));
+    const optimusDir = import_path7.default.join(workspace_path, ".optimus");
+    const resolvedOutputPath = import_path7.default.resolve(workspace_path, output_path);
+    output_path = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path7.default.join(optimusDir, "results", import_path7.default.basename(output_path));
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     TaskManifestManager.createTask(workspace_path, {
       taskId,
@@ -31146,11 +31512,11 @@ ${truncDesc}` + agentSignature(role, taskId),
     let contextHint = "";
     if (!context_files || context_files.length === 0) {
       try {
-        const specsDir = import_path6.default.join(workspace_path, ".optimus", "specs");
-        if (import_fs5.default.existsSync(specsDir)) {
-          const specFolders = import_fs5.default.readdirSync(specsDir).filter((d) => {
+        const specsDir = import_path7.default.join(workspace_path, ".optimus", "specs");
+        if (import_fs6.default.existsSync(specsDir)) {
+          const specFolders = import_fs6.default.readdirSync(specsDir).filter((d) => {
             try {
-              return import_fs5.default.statSync(import_path6.default.join(specsDir, d)).isDirectory();
+              return import_fs6.default.statSync(import_path7.default.join(specsDir, d)).isDirectory();
             } catch {
               return false;
             }
@@ -31189,7 +31555,7 @@ Use check_task_status tool periodically with this task ID to check its completio
     const rawParentAsync2 = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync2) ? void 0 : rawParentAsync2);
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const reviewsPath = import_path6.default.join(workspace_path, ".optimus", "reviews", taskId);
+    const reviewsPath = import_path7.default.join(workspace_path, ".optimus", "reviews", taskId);
     TaskManifestManager.createTask(workspace_path, {
       taskId,
       type: "dispatch_council",
@@ -31250,7 +31616,7 @@ Use check_task_status tool periodically with this Council ID to check completion
     if (optimusIndex !== -1) {
       workspacePath = proposal_path.substring(0, optimusIndex);
     } else {
-      workspacePath = import_path6.default.resolve(import_path6.default.dirname(proposal_path));
+      workspacePath = import_path7.default.resolve(import_path7.default.dirname(proposal_path));
     }
     roles = resolveRoleNames(roles, workspacePath);
     const modelAsRoleSync = roles.find((r) => looksLikeModelName(r));
@@ -31263,8 +31629,8 @@ Use check_task_status tool periodically with this Council ID to check completion
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : void 0;
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentSync) ? void 0 : rawParentSync);
     const timestampId = Date.now();
-    const reviewsPath = import_path6.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
-    import_fs5.default.mkdirSync(reviewsPath, { recursive: true });
+    const reviewsPath = import_path7.default.join(workspacePath, ".optimus", "reviews", timestampId.toString());
+    import_fs6.default.mkdirSync(reviewsPath, { recursive: true });
     console.error(`[MCP] Dispatching council with roles: ${roles.join(", ")}`);
     const results = await dispatchCouncilConcurrent(roles, proposal_path, reviewsPath, timestampId.toString(), workspacePath, void 0, parentIssueNumber, role_descriptions);
     return {
@@ -31286,13 +31652,27 @@ Please read these review files to continue.`
       ]
     };
   } else if (request.params.name === "append_memory") {
-    let { category, tags, content } = request.params.arguments;
+    let { category, tags, content, level } = request.params.arguments;
     requireParams("append_memory", request.params.arguments, ["category", "content"]);
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    const memoryDir = import_path6.default.resolve(workspacePath, ".optimus", "memory");
-    const memoryFile = import_path6.default.join(memoryDir, "continuous-memory.md");
-    if (!import_fs5.default.existsSync(memoryDir)) {
-      import_fs5.default.mkdirSync(memoryDir, { recursive: true });
+    const memoryLevel = level === "role" ? "role" : "project";
+    const author = process.env.OPTIMUS_CURRENT_ROLE || "unknown";
+    let memoryFile;
+    if (memoryLevel === "role") {
+      const currentRole = process.env.OPTIMUS_CURRENT_ROLE;
+      if (!currentRole) {
+        return {
+          content: [{ type: "text", text: "Cannot write role-level memory: OPTIMUS_CURRENT_ROLE not set. Use level: 'project' or ensure this is called from a delegated worker." }],
+          isError: true
+        };
+      }
+      memoryFile = getMemoryFilePath(workspacePath, "role", currentRole);
+    } else {
+      memoryFile = getMemoryFilePath(workspacePath, "project");
+    }
+    const memoryDir = import_path7.default.dirname(memoryFile);
+    if (!import_fs6.default.existsSync(memoryDir)) {
+      import_fs6.default.mkdirSync(memoryDir, { recursive: true });
     }
     if (!global.memoryLock) {
       global.memoryLock = Promise.resolve();
@@ -31301,19 +31681,14 @@ Please read these review files to continue.`
       await global.memoryLock;
       const writePromise = new Promise((resolve, reject) => {
         try {
-          const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-          const memoryId = "mem_" + Date.now() + "_" + Math.floor(Math.random() * 1e3);
-          const freshEntry = [
-            "---",
-            "id: " + memoryId,
-            "category: " + (category || "uncategorized"),
-            "tags: [" + (tags ? tags.join(", ") : "") + "]",
-            "created: " + timestamp,
-            "---",
+          const freshEntry = buildMemoryEntry({
+            level: memoryLevel,
+            category: category || "uncategorized",
+            tags: tags || [],
             content,
-            "\n"
-          ].join("\n");
-          import_fs5.default.appendFileSync(memoryFile, freshEntry, "utf8");
+            author
+          });
+          import_fs6.default.appendFileSync(memoryFile, freshEntry, "utf8");
           resolve();
         } catch (err) {
           reject(err);
@@ -31326,7 +31701,8 @@ Please read these review files to continue.`
           {
             type: "text",
             text: `\u2705 Experience solidifed to memory!
-Tags: ${tags.join(", ")}
+Level: ${memoryLevel}
+Tags: ${tags ? tags.join(", ") : "(none)"}
 Memory appended to: ${memoryFile}`
           }
         ]
@@ -31340,23 +31716,23 @@ Memory appended to: ${memoryFile}`
   } else if (request.params.name === "roster_check") {
     const { workspace_path } = request.params.arguments;
     requireParams("roster_check", request.params.arguments, ["workspace_path"]);
-    const t1Dir = import_path6.default.join(workspace_path, ".optimus", "agents");
-    const t2Dir = import_path6.default.join(workspace_path, ".optimus", "roles");
-    if (!import_fs5.default.existsSync(t2Dir)) {
-      import_fs5.default.mkdirSync(t2Dir, { recursive: true });
+    const t1Dir = import_path7.default.join(workspace_path, ".optimus", "agents");
+    const t2Dir = import_path7.default.join(workspace_path, ".optimus", "roles");
+    if (!import_fs6.default.existsSync(t2Dir)) {
+      import_fs6.default.mkdirSync(t2Dir, { recursive: true });
     }
     let roster = "\u{1F4CB} **Spartan Swarm Active Roster**\n\n";
     roster += "### T1: Local Project Experts\n";
-    if (import_fs5.default.existsSync(t1Dir)) {
-      const t1Files = import_fs5.default.readdirSync(t1Dir).filter((f) => f.endsWith(".md"));
+    if (import_fs6.default.existsSync(t1Dir)) {
+      const t1Files = import_fs6.default.readdirSync(t1Dir).filter((f) => f.endsWith(".md"));
       roster += t1Files.length > 0 ? t1Files.map((f) => `- ${f.replace(".md", "")}`).join("\n") : "(No local overrides found)\n";
     } else {
       roster += "(No local personas directory found)\n";
     }
-    const configPath = import_path6.default.join(workspace_path, ".optimus", "config", "available-agents.json");
-    if (import_fs5.default.existsSync(configPath)) {
+    const configPath = import_path7.default.join(workspace_path, ".optimus", "config", "available-agents.json");
+    if (import_fs6.default.existsSync(configPath)) {
       try {
-        const config2 = JSON.parse(import_fs5.default.readFileSync(configPath, "utf8"));
+        const config2 = JSON.parse(import_fs6.default.readFileSync(configPath, "utf8"));
         roster += "\n### \u2699\uFE0F Engine & Model Spec (T3 configuration)\n";
         roster += "**Available Execution Engines (Toolchains & Supported Models)**:\n";
         Object.keys(config2.engines).forEach((engine) => {
@@ -31373,14 +31749,14 @@ Memory appended to: ${memoryFile}`
     }
     roster += "\n## \u{1F465} Roles \u2014 WHO does the work\n";
     const t2RoleNames = [];
-    if (import_fs5.default.existsSync(t2Dir)) {
-      const t2Files = import_fs5.default.readdirSync(t2Dir).filter((f) => f.endsWith(".md"));
+    if (import_fs6.default.existsSync(t2Dir)) {
+      const t2Files = import_fs6.default.readdirSync(t2Dir).filter((f) => f.endsWith(".md"));
       if (t2Files.length > 0) {
         for (const f of t2Files) {
           const roleName = f.replace(".md", "");
           t2RoleNames.push(roleName);
           try {
-            const content = import_fs5.default.readFileSync(import_path6.default.join(t2Dir, f), "utf8");
+            const content = import_fs6.default.readFileSync(import_path7.default.join(t2Dir, f), "utf8");
             const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
             let engineInfo = "";
             let quarantineMarker = "";
@@ -31431,10 +31807,10 @@ Memory appended to: ${memoryFile}`
       }
       roster += "*Tip: You can use any alias in delegate_task \u2014 it auto-resolves to the canonical name.*\n";
     }
-    const t3LogPath = import_path6.default.join(workspace_path, ".optimus", "state", "t3-usage-log.json");
-    if (import_fs5.default.existsSync(t3LogPath)) {
+    const t3LogPath = import_path7.default.join(workspace_path, ".optimus", "state", "t3-usage-log.json");
+    if (import_fs6.default.existsSync(t3LogPath)) {
       try {
-        const t3Log = JSON.parse(import_fs5.default.readFileSync(t3LogPath, "utf8"));
+        const t3Log = JSON.parse(import_fs6.default.readFileSync(t3LogPath, "utf8"));
         const entries = Object.values(t3Log);
         if (entries.length > 0) {
           roster += "\n### \u{1F4CA} T3 Dynamic Role Usage Stats\n";
@@ -31452,11 +31828,11 @@ Memory appended to: ${memoryFile}`
     roster += "- If no roles/agents exist, the system defaults to **PM (Master Agent)** behavior.\n";
     roster += "- If a role has no `engine`/`model` in frontmatter, the system auto-resolves from `available-agents.json`, or falls back to `claude-code`.\n";
     roster += "- T3 roles auto-precipitate to T2 immediately on first use.\n";
-    const skillsDir = import_path6.default.join(workspace_path, ".optimus", "skills");
-    if (import_fs5.default.existsSync(skillsDir)) {
-      const skillDirs = import_fs5.default.readdirSync(skillsDir).filter((d) => {
+    const skillsDir = import_path7.default.join(workspace_path, ".optimus", "skills");
+    if (import_fs6.default.existsSync(skillsDir)) {
+      const skillDirs = import_fs6.default.readdirSync(skillsDir).filter((d) => {
         try {
-          return import_fs5.default.statSync(import_path6.default.join(skillsDir, d)).isDirectory() && import_fs5.default.existsSync(import_path6.default.join(skillsDir, d, "SKILL.md"));
+          return import_fs6.default.statSync(import_path7.default.join(skillsDir, d)).isDirectory() && import_fs6.default.existsSync(import_path7.default.join(skillsDir, d, "SKILL.md"));
         } catch (e) {
           console.error("[roster_check] Warning: failed to stat skill dir " + d + ":", e.message);
           return false;
@@ -31467,7 +31843,7 @@ Memory appended to: ${memoryFile}`
         roster += "Use `required_skills` in `delegate_task` to equip agents with these skills:\n";
         for (const skill of skillDirs) {
           try {
-            const content = import_fs5.default.readFileSync(import_path6.default.join(skillsDir, skill, "SKILL.md"), "utf8");
+            const content = import_fs6.default.readFileSync(import_path7.default.join(skillsDir, skill, "SKILL.md"), "utf8");
             const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
             let desc = "";
             let isAutoGenerated = false;
@@ -31511,14 +31887,14 @@ Memory appended to: ${memoryFile}`
     validateEngineAndModel(role_engine, role_model, workspace_path);
     const sessionId = import_crypto2.default.randomUUID();
     const workspacePath = workspace_path;
-    const optimusDir = import_path6.default.join(workspacePath, ".optimus");
-    const resolvedOutputPath = import_path6.default.resolve(workspacePath, output_path);
-    const canonicalOutputPath = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path6.default.join(optimusDir, "results", import_path6.default.basename(output_path));
-    const tasksDir = import_path6.default.join(workspacePath, ".optimus", "tasks");
-    import_fs5.default.mkdirSync(tasksDir, { recursive: true });
-    const taskArtifactPath = import_path6.default.join(tasksDir, `task_${sessionId}.md`);
-    import_fs5.default.writeFileSync(taskArtifactPath, task_description, "utf8");
-    import_fs5.default.mkdirSync(import_path6.default.dirname(canonicalOutputPath), { recursive: true });
+    const optimusDir = import_path7.default.join(workspacePath, ".optimus");
+    const resolvedOutputPath = import_path7.default.resolve(workspacePath, output_path);
+    const canonicalOutputPath = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path7.default.join(optimusDir, "results", import_path7.default.basename(output_path));
+    const tasksDir = import_path7.default.join(workspacePath, ".optimus", "tasks");
+    import_fs6.default.mkdirSync(tasksDir, { recursive: true });
+    const taskArtifactPath = import_path7.default.join(tasksDir, `task_${sessionId}.md`);
+    import_fs6.default.writeFileSync(taskArtifactPath, task_description, "utf8");
+    import_fs6.default.mkdirSync(import_path7.default.dirname(canonicalOutputPath), { recursive: true });
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
     const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, void 0, parentIssueNumber, void 0, agent_id);
     return {
@@ -31597,17 +31973,17 @@ Memory appended to: ${memoryFile}`
     const PROTECTED_BRANCHES = ["master", "main", "develop", "release"];
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const vcsConfigPath = import_path6.default.join(workspace_path, ".optimus", "config", "vcs.json");
-      if (import_fs5.default.existsSync(vcsConfigPath)) {
+      const vcsConfigPath = import_path7.default.join(workspace_path, ".optimus", "config", "vcs.json");
+      if (import_fs6.default.existsSync(vcsConfigPath)) {
         try {
-          const vcsConfig = JSON.parse(import_fs5.default.readFileSync(vcsConfigPath, "utf8"));
+          const vcsConfig = JSON.parse(import_fs6.default.readFileSync(vcsConfigPath, "utf8"));
           const buildGate = vcsConfig.pre_merge_build;
           if (buildGate?.enabled) {
             const buildCmd = buildGate.command || "npm run build";
-            const buildCwd = buildGate.cwd ? import_path6.default.resolve(workspace_path, buildGate.cwd) : workspace_path;
-            const normalizedCwd = import_path6.default.normalize(buildCwd);
-            const normalizedWorkspace = import_path6.default.normalize(workspace_path);
-            if (!normalizedCwd.startsWith(normalizedWorkspace + import_path6.default.sep) && normalizedCwd !== normalizedWorkspace) {
+            const buildCwd = buildGate.cwd ? import_path7.default.resolve(workspace_path, buildGate.cwd) : workspace_path;
+            const normalizedCwd = import_path7.default.normalize(buildCwd);
+            const normalizedWorkspace = import_path7.default.normalize(workspace_path);
+            if (!normalizedCwd.startsWith(normalizedWorkspace + import_path7.default.sep) && normalizedCwd !== normalizedWorkspace) {
               throw new McpError(
                 ErrorCode.InvalidParams,
                 `Pre-Merge Build Gate: configured cwd '${buildGate.cwd}' resolves outside workspace boundary. Aborting.`
@@ -31711,26 +32087,26 @@ Fix the build errors and try again.`
     if (content === void 0 || content === null) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for write_blackboard_artifact: 'content' must be provided (can be empty string, but not null/undefined)");
     }
-    const optimusRoot = import_path6.default.resolve(workspace_path, ".optimus");
-    const resolvedTarget = import_path6.default.resolve(optimusRoot, artifact_path);
-    if (!resolvedTarget.startsWith(optimusRoot + import_path6.default.sep) && resolvedTarget !== optimusRoot) {
+    const optimusRoot = import_path7.default.resolve(workspace_path, ".optimus");
+    const resolvedTarget = import_path7.default.resolve(optimusRoot, artifact_path);
+    if (!resolvedTarget.startsWith(optimusRoot + import_path7.default.sep) && resolvedTarget !== optimusRoot) {
       throw new McpError(ErrorCode.InvalidParams, "artifact_path must resolve to within .optimus/ directory. Path traversal detected.");
     }
     let existingPath = resolvedTarget;
     let suffix = "";
-    while (!import_fs5.default.existsSync(existingPath)) {
-      suffix = import_path6.default.join(import_path6.default.basename(existingPath), suffix);
-      existingPath = import_path6.default.dirname(existingPath);
+    while (!import_fs6.default.existsSync(existingPath)) {
+      suffix = import_path7.default.join(import_path7.default.basename(existingPath), suffix);
+      existingPath = import_path7.default.dirname(existingPath);
     }
-    const realExisting = import_fs5.default.realpathSync(existingPath);
-    const realTarget = import_path6.default.join(realExisting, suffix);
-    const realOptimus = import_fs5.default.existsSync(optimusRoot) ? import_fs5.default.realpathSync(optimusRoot) : optimusRoot;
-    if (!realTarget.startsWith(realOptimus + import_path6.default.sep) && realTarget !== realOptimus) {
+    const realExisting = import_fs6.default.realpathSync(existingPath);
+    const realTarget = import_path7.default.join(realExisting, suffix);
+    const realOptimus = import_fs6.default.existsSync(optimusRoot) ? import_fs6.default.realpathSync(optimusRoot) : optimusRoot;
+    if (!realTarget.startsWith(realOptimus + import_path7.default.sep) && realTarget !== realOptimus) {
       throw new McpError(ErrorCode.InvalidParams, "artifact_path resolves outside .optimus/ via symlink. Path traversal detected.");
     }
     try {
-      import_fs5.default.mkdirSync(import_path6.default.dirname(resolvedTarget), { recursive: true });
-      import_fs5.default.writeFileSync(resolvedTarget, content, "utf8");
+      import_fs6.default.mkdirSync(import_path7.default.dirname(resolvedTarget), { recursive: true });
+      import_fs6.default.writeFileSync(resolvedTarget, content, "utf8");
       return { content: [{ type: "text", text: `Artifact written to: ${resolvedTarget}` }] };
     } catch (error2) {
       throw new McpError(ErrorCode.InternalError, `Failed to write artifact: ${error2.message}`);
@@ -31742,18 +32118,18 @@ Fix the build errors and try again.`
   } else if (request.params.name === "quarantine_role") {
     const { role, action, workspace_path } = request.params.arguments;
     requireParams("quarantine_role", request.params.arguments, ["role", "action", "workspace_path"]);
-    const t2Dir = import_path6.default.join(workspace_path, ".optimus", "roles");
-    const rolePath = import_path6.default.join(t2Dir, `${role}.md`);
-    if (!import_fs5.default.existsSync(rolePath)) {
+    const t2Dir = import_path7.default.join(workspace_path, ".optimus", "roles");
+    const rolePath = import_path7.default.join(t2Dir, `${role}.md`);
+    if (!import_fs6.default.existsSync(rolePath)) {
       return { content: [{ type: "text", text: `Role '${role}' not found at ${rolePath}` }] };
     }
-    const content = import_fs5.default.readFileSync(rolePath, "utf8");
+    const content = import_fs6.default.readFileSync(rolePath, "utf8");
     if (action === "quarantine") {
       const updated = updateFrontmatter(content, {
         status: "quarantined",
         quarantined_at: (/* @__PURE__ */ new Date()).toISOString()
       });
-      import_fs5.default.writeFileSync(rolePath, updated, "utf8");
+      import_fs6.default.writeFileSync(rolePath, updated, "utf8");
       const log = loadT3UsageLog(workspace_path);
       if (log[role]) {
         log[role].consecutive_failures = 0;
@@ -31765,7 +32141,7 @@ Fix the build errors and try again.`
         status: "idle",
         quarantined_at: ""
       });
-      import_fs5.default.writeFileSync(rolePath, updated, "utf8");
+      import_fs6.default.writeFileSync(rolePath, updated, "utf8");
       const log = loadT3UsageLog(workspace_path);
       if (log[role]) {
         log[role].consecutive_failures = 0;
@@ -31831,9 +32207,9 @@ Max concurrent: ${crontab.max_concurrent}`;
     if (idx === -1) return { content: [{ type: "text", text: `Cron entry '${id}' not found.` }] };
     crontab.crons.splice(idx, 1);
     saveCrontab(workspace_path, crontab);
-    const lockPath = import_path6.default.join(workspace_path, ".optimus", "system", "cron-locks", id + ".lock");
+    const lockPath = import_path7.default.join(workspace_path, ".optimus", "system", "cron-locks", id + ".lock");
     try {
-      if (import_fs5.default.existsSync(lockPath)) import_fs5.default.unlinkSync(lockPath);
+      if (import_fs6.default.existsSync(lockPath)) import_fs6.default.unlinkSync(lockPath);
     } catch (e) {
       console.error(`[MCP] Warning: operation failed: ${e.message}`);
     }
@@ -31913,6 +32289,70 @@ You can now exit cleanly. A human will answer the question, and the system will 
       }]
     };
   }
+  if (request.params.name === "list_knowledge") {
+    let scanDir2 = function(dirPath, cat) {
+      let entries;
+      try {
+        entries = import_fs6.default.readdirSync(dirPath);
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = import_path7.default.join(dirPath, entry);
+        const resolved = import_path7.default.resolve(fullPath);
+        if (!resolved.startsWith(optimusRoot + import_path7.default.sep) && resolved !== optimusRoot) continue;
+        try {
+          const realPath = import_fs6.default.realpathSync(resolved);
+          if (!realPath.startsWith(realOptimus + import_path7.default.sep) && realPath !== realOptimus) continue;
+        } catch {
+          continue;
+        }
+        let stat;
+        try {
+          stat = import_fs6.default.statSync(fullPath);
+        } catch {
+          continue;
+        }
+        if (stat.isDirectory()) {
+          scanDir2(fullPath, cat);
+        } else if (stat.isFile()) {
+          const relativePath = import_path7.default.relative(workspace_path, fullPath).replace(/\\/g, "/");
+          const parentName = import_path7.default.basename(import_path7.default.dirname(fullPath));
+          const dateMatch = parentName.match(datePattern);
+          const date4 = dateMatch ? dateMatch[1] : stat.mtime.toISOString().slice(0, 10);
+          const topicStr = dateMatch ? parentName.replace(datePattern, "").replace(/^-/, "").replace(/-/g, " ").trim() : import_path7.default.basename(fullPath, import_path7.default.extname(fullPath)).replace(/-/g, " ").replace(/_/g, " ");
+          artifacts.push({ path: relativePath, type: cat, date: date4, size_chars: stat.size, topic: topicStr || parentName });
+          summary[cat] = (summary[cat] || 0) + 1;
+        }
+      }
+    };
+    var scanDir = scanDir2;
+    const { workspace_path, category, topic } = request.params.arguments;
+    requireParams("list_knowledge", request.params.arguments, ["workspace_path"]);
+    const knowledgeDirs = { specs: "specs", memory: "memory", reports: "reports", reviews: "reviews" };
+    const categories = !category || category === "all" ? Object.keys(knowledgeDirs) : [category];
+    const optimusRoot = import_path7.default.resolve(workspace_path, ".optimus");
+    const realOptimus = import_fs6.default.existsSync(optimusRoot) ? import_fs6.default.realpathSync(optimusRoot) : optimusRoot;
+    const artifacts = [];
+    const summary = { specs: 0, memory: 0, reports: 0, reviews: 0 };
+    const datePattern = /^(\d{4}-\d{2}-\d{2})/;
+    for (const cat of categories) {
+      const dirName = knowledgeDirs[cat];
+      if (!dirName) continue;
+      const dirPath = import_path7.default.join(optimusRoot, dirName);
+      const resolvedDir = import_path7.default.resolve(dirPath);
+      if (!resolvedDir.startsWith(optimusRoot + import_path7.default.sep) && resolvedDir !== optimusRoot) continue;
+      scanDir2(dirPath, cat);
+    }
+    const filtered = topic ? artifacts.filter((a) => a.path.toLowerCase().includes(topic.toLowerCase()) || a.topic.toLowerCase().includes(topic.toLowerCase())) : artifacts;
+    const filteredSummary = { specs: 0, memory: 0, reports: 0, reviews: 0 };
+    for (const a of filtered) filteredSummary[a.type] = (filteredSummary[a.type] || 0) + 1;
+    const result = {
+      artifacts: filtered,
+      summary: { ...filteredSummary, total: filtered.length }
+    };
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
   throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
 });
 if (process.argv.includes("--run-task")) {
@@ -31939,12 +32379,12 @@ if (process.argv.includes("--run-task")) {
       console.error(`[Agent GC] Warning: ${e.message}`);
     }
     try {
-      const rolesDir = import_path6.default.join(workspaceRoot, ".optimus", "roles");
-      if (import_fs5.default.existsSync(rolesDir)) {
-        const roleFiles = import_fs5.default.readdirSync(rolesDir).filter((f) => f.endsWith(".md"));
+      const rolesDir = import_path7.default.join(workspaceRoot, ".optimus", "roles");
+      if (import_fs6.default.existsSync(rolesDir)) {
+        const roleFiles = import_fs6.default.readdirSync(rolesDir).filter((f) => f.endsWith(".md"));
         for (const file2 of roleFiles) {
-          const filePath = import_path6.default.join(rolesDir, file2);
-          const content = import_fs5.default.readFileSync(filePath, "utf8");
+          const filePath = import_path7.default.join(rolesDir, file2);
+          const content = import_fs6.default.readFileSync(filePath, "utf8");
           const bodyMatch = content.replace(/\r\n/g, "\n").match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
           const body = bodyMatch ? bodyMatch[1] : content;
           const contentLineCount = body.split("\n").filter((l) => l.trim().length > 0).length;
