@@ -28275,6 +28275,37 @@ function updateFrontmatter(content, updates) {
 function sanitizeRoleName(role) {
   return role.replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 100);
 }
+var ACP_DISCOVERY_MAP = {
+  "qwen-code": { extensionPattern: "qwenlm.qwen-code*", cliRelPath: "dist/qwen-cli/cli.js" }
+};
+function discoverAcpCli(engine) {
+  const discovery = ACP_DISCOVERY_MAP[engine];
+  if (!discovery) return null;
+  const homeDir = process.env.USERPROFILE || process.env.HOME || "";
+  const extensionsDir = import_path2.default.join(homeDir, ".vscode", "extensions");
+  if (!import_fs2.default.existsSync(extensionsDir)) return null;
+  try {
+    const matches = import_fs2.default.readdirSync(extensionsDir).filter((d) => {
+      const prefix = discovery.extensionPattern.replace("*", "");
+      return d.startsWith(prefix);
+    }).map((d) => import_path2.default.join(extensionsDir, d)).filter((d) => {
+      try {
+        return import_fs2.default.statSync(d).isDirectory();
+      } catch {
+        return false;
+      }
+    }).sort().reverse();
+    for (const extDir of matches) {
+      const cliPath = import_path2.default.join(extDir, discovery.cliRelPath);
+      if (import_fs2.default.existsSync(cliPath)) {
+        return { executable: "node", args: [cliPath] };
+      }
+    }
+  } catch (e) {
+    console.error(`[Engine] ACP auto-discovery error for ${engine}: ${e.message}`);
+  }
+  return null;
+}
 function stripTraceLines(output) {
   const lines = output.split("\n");
   const tracePattern = /^[•✓✗↳] |^↳ /;
@@ -28851,8 +28882,19 @@ function getAdapterForEngine(engine, sessionId, model, workspacePath) {
   const protocol = engineConfig?.protocol || (engine === "acp" || engine.startsWith("acp-") ? "acp" : "cli");
   if (protocol === "acp") {
     let executable = engineConfig?.path || "copilot";
-    let args = engineConfig?.args || ["--acp"];
-    if (!engineConfig?.args && engineConfig?.path) {
+    let args = engineConfig?.args ? [...engineConfig.args] : ["--acp"];
+    if (executable === "auto") {
+      const discovered = discoverAcpCli(engine);
+      if (discovered) {
+        executable = discovered.executable;
+        args = [...discovered.args, ...args];
+        console.error(`[Engine] Auto-discovered ${engine} CLI: ${executable} ${discovered.args.join(" ")}`);
+      } else {
+        throw new Error(
+          `[Engine] Auto-discovery failed for '${engine}': Could not find CLI in VS Code extensions. Install the Qwen Code extension in VS Code, or set an explicit 'path' in available-agents.json.`
+        );
+      }
+    } else if (!engineConfig?.args && engineConfig?.path && executable !== "node") {
       const parts = engineConfig.path.split(/\s+/);
       executable = parts[0];
       args = parts.slice(1);

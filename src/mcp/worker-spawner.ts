@@ -69,6 +69,56 @@ function sanitizeRoleName(role: string): string {
     return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
 }
 
+// ─── ACP CLI Auto-Discovery ───
+
+/**
+ * Auto-discover ACP CLI executables from VS Code extensions directory.
+ * Scans ~/.vscode/extensions/ for known vendor extension patterns and returns
+ * the newest installed version's CLI entry point.
+ * 
+ * Supported engines:
+ *   - qwen-code: qwenlm.qwen-code-vscode-ide-companion-{version}/dist/qwen-cli/cli.js
+ */
+const ACP_DISCOVERY_MAP: Record<string, { extensionPattern: string; cliRelPath: string }> = {
+    'qwen-code': { extensionPattern: 'qwenlm.qwen-code*', cliRelPath: 'dist/qwen-cli/cli.js' },
+};
+
+function discoverAcpCli(engine: string): { executable: string; args: string[] } | null {
+    const discovery = ACP_DISCOVERY_MAP[engine];
+    if (!discovery) return null;
+
+    const homeDir = process.env.USERPROFILE || process.env.HOME || '';
+    const extensionsDir = path.join(homeDir, '.vscode', 'extensions');
+
+    if (!fs.existsSync(extensionsDir)) return null;
+
+    try {
+        const matches = fs.readdirSync(extensionsDir)
+            .filter(d => {
+                // Simple glob: convert 'qwenlm.qwen-code*' to startsWith check
+                const prefix = discovery.extensionPattern.replace('*', '');
+                return d.startsWith(prefix);
+            })
+            .map(d => path.join(extensionsDir, d))
+            .filter(d => {
+                try { return fs.statSync(d).isDirectory(); } catch { return false; }
+            })
+            .sort() // Lexicographic sort — higher version numbers come last
+            .reverse(); // Newest first
+
+        for (const extDir of matches) {
+            const cliPath = path.join(extDir, discovery.cliRelPath);
+            if (fs.existsSync(cliPath)) {
+                return { executable: 'node', args: [cliPath] };
+            }
+        }
+    } catch (e: any) {
+        console.error(`[Engine] ACP auto-discovery error for ${engine}: ${e.message}`);
+    }
+
+    return null;
+}
+
 // ─── Output Trace Stripping ───
 
 /**
@@ -825,10 +875,24 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
     if (protocol === 'acp') {
         // Resolve executable and args from config
         let executable = engineConfig?.path || 'copilot';
-        let args: string[] = engineConfig?.args || ['--acp'];
+        let args: string[] = engineConfig?.args ? [...engineConfig.args] : ['--acp'];
 
-        // Legacy compat: if no 'args' field, split 'path' on whitespace
-        if (!engineConfig?.args && engineConfig?.path) {
+        // Auto-discovery: if path is 'auto', detect CLI from VS Code extensions
+        if (executable === 'auto') {
+            const discovered = discoverAcpCli(engine);
+            if (discovered) {
+                executable = discovered.executable;
+                // Prepend discovered args before config args (e.g., [cli.js] + [--acp])
+                args = [...discovered.args, ...args];
+                console.error(`[Engine] Auto-discovered ${engine} CLI: ${executable} ${discovered.args.join(' ')}`);
+            } else {
+                throw new Error(
+                    `[Engine] Auto-discovery failed for '${engine}': Could not find CLI in VS Code extensions. ` +
+                    `Install the Qwen Code extension in VS Code, or set an explicit 'path' in available-agents.json.`
+                );
+            }
+        } else if (!engineConfig?.args && engineConfig?.path && executable !== 'node') {
+            // Legacy compat: if no 'args' field, split 'path' on whitespace
             const parts = engineConfig.path.split(/\s+/);
             executable = parts[0];
             args = parts.slice(1);

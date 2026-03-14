@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-03-14
+
+### Features
+- **Qwen Code Auto-Discovery**: ACP engine config supports `"path": "auto"` — automatically scans `~/.vscode/extensions/` for Qwen Code CLI, no hardcoded paths needed
+- Scaffold now ships qwen-code engine entry with auto-discovery (users just need Qwen Code VS Code extension installed)
+
+### Fixes
+- Fix AcpAdapter TypeScript errors (invalid `chat` mode, undefined `encodeMessage`)
+- Fix scaffold `available-agents.json` leaking local paths
+
 ## [1.0.0] - 2026-03-14
 
 ### Features

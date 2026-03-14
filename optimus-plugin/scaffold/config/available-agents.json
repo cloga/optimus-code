@@ -1,10 +1,10 @@
 {
-  "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli' (default) or 'acp' (JSON-RPC over NDJSON). Add new ACP vendors by adding entries with protocol: 'acp'.",
+  "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli' (default) or 'acp' (JSON-RPC over NDJSON).",
   "engines": {
     "claude-code": {
       "protocol": "cli",
       "path": "npx @anthropic-ai/claude-code",
-      "available_models": ["claude-opus-4.6-1m"],
+      "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
       "cli_flags": "--model"
     },
     "github-copilot": {
@@ -12,6 +12,14 @@
       "path": "copilot",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
       "cli_flags": "-m"
+    },
+    "qwen-code": {
+      "protocol": "acp",
+      "path": "auto",
+      "args": ["--acp"],
+      "available_models": ["qwen3-coder"],
+      "cli_flags": "--model",
+      "_comment": "path 'auto' = auto-discover Qwen Code CLI from VS Code extensions. Install the Qwen Code extension first."
     }
   }
 }
