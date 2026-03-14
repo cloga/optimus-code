@@ -215,14 +215,22 @@ The system uses a three-tier agent hierarchy that evolves automatically:
 
 When delegating a task, the Master Agent should follow this sequence:
 
-1. **`roster_check`** — See available T1 agents, T2 roles, T3 engines, and skills
-2. **Select role** — Choose existing or invent new role name (use `role-creator` meta-skill for guidance)
+1. **`roster_check`** — See available T1 agents, T2 roles, T3 engines, and skills. **Never skip.**
+2. **Select role** — Choose an existing role from the roster. Only invent a new role name if no existing role matches.
 3. **Provide structured role info** — Pass `role_description`, `role_engine`, `role_model` in `delegate_task`
 4. **Check skills** — Specify `required_skills`. Missing skills → create them first via `skill-creator`
 5. **Delegate** — Use `delegate_task_async` (preferred) or `delegate_task`
 6. **System auto-handles**:
    - T3 first use → creates T2 role template (with Master's description/engine/model)
    - Task completes with session_id → creates T1 instance from T2
+
+### Role Creation Decision Rules
+
+Before creating a new role, the Master Agent MUST verify:
+1. **Roster check first** — Run `roster_check` and scan existing T2 roles for a match
+2. **No near-duplicates** — Don't create `code-reviewer` if `code-architect` already covers reviews. Don't create `backend-dev` if `dev` or `senior-full-stack-builder` exists.
+3. **Provide `role_description`** — Every new role MUST include a meaningful description. The system refuses to create "garbage T2" templates without one.
+4. **Reuse over creation** — Fewer specialized roles with good descriptions > many thin roles with no context
 
 ## Skill System
 

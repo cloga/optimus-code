@@ -1,7 +1,9 @@
-<!-- optimus-instructions v1 -->
+<!-- optimus-instructions v2 -->
 <!-- Auto-managed by Optimus Swarm — edits between these markers will be overwritten on upgrade -->
 
 ## Optimus Swarm — AI Development Team
+
+**First action:** Read `.optimus/skills/master-onboarding/SKILL.md` for the complete onboarding protocol.
 
 You have a multi-agent AI development team available via MCP tools (server: `spartan-swarm`).
 Instead of writing code directly, delegate to specialist agents who follow project conventions.
