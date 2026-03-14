@@ -29718,12 +29718,7 @@ ${header}`
       import_fs3.default.writeFileSync(synthesisPath, synthesisContent, "utf8");
       console.error(`[Runner] Generated COUNCIL_SYNTHESIS.md at ${synthesisPath}`);
       try {
-        const pmSynthesisPrompt = `You are the PM arbiter for this council review.
-
-Read the following council synthesis report and produce a UNIFIED VERDICT.
-
-Your output MUST follow this exact format:
-## Unified Council Verdict
+        let verdictTemplate = `## Unified Council Verdict
 **Decision**: APPROVED / REJECTED / APPROVED_WITH_CONDITIONS
 **Consensus Level**: UNANIMOUS / MAJORITY / SPLIT
 
@@ -29737,7 +29732,21 @@ Your output MUST follow this exact format:
 - (list unresolved disagreements)
 
 ### Implementation Priority
-1. (ordered action items)
+1. (ordered action items)`;
+        const templatePath = import_path3.default.join(task.workspacePath, ".optimus", "config", "verdict-template.md");
+        try {
+          if (import_fs3.default.existsSync(templatePath)) {
+            verdictTemplate = import_fs3.default.readFileSync(templatePath, "utf8").trim();
+            console.error(`[Runner] Using custom VERDICT template from ${templatePath}`);
+          }
+        } catch {
+        }
+        const pmSynthesisPrompt = `You are the PM arbiter for this council review.
+
+Read the following council synthesis report and produce a UNIFIED VERDICT.
+
+Your output MUST follow this exact format:
+${verdictTemplate}
 
 Here is the synthesis report:
 

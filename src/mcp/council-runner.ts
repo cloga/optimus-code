@@ -154,12 +154,8 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
 
             // Phase 4: True Map-Reduce — delegate PM to synthesize a unified verdict
             try {
-                const pmSynthesisPrompt = `You are the PM arbiter for this council review.
-
-Read the following council synthesis report and produce a UNIFIED VERDICT.
-
-Your output MUST follow this exact format:
-## Unified Council Verdict
+                // Load VERDICT template from external config (customizable), with hardcoded fallback
+                let verdictTemplate = `## Unified Council Verdict
 **Decision**: APPROVED / REJECTED / APPROVED_WITH_CONDITIONS
 **Consensus Level**: UNANIMOUS / MAJORITY / SPLIT
 
@@ -173,7 +169,22 @@ Your output MUST follow this exact format:
 - (list unresolved disagreements)
 
 ### Implementation Priority
-1. (ordered action items)
+1. (ordered action items)`;
+
+                const templatePath = path.join(task.workspacePath, '.optimus', 'config', 'verdict-template.md');
+                try {
+                    if (fs.existsSync(templatePath)) {
+                        verdictTemplate = fs.readFileSync(templatePath, 'utf8').trim();
+                        console.error(`[Runner] Using custom VERDICT template from ${templatePath}`);
+                    }
+                } catch { /* use default */ }
+
+                const pmSynthesisPrompt = `You are the PM arbiter for this council review.
+
+Read the following council synthesis report and produce a UNIFIED VERDICT.
+
+Your output MUST follow this exact format:
+${verdictTemplate}
 
 Here is the synthesis report:\n\n${synthesisContent}`;
 
