@@ -1278,12 +1278,18 @@ Please provide your complete execution result below.`;
 /**
  * Spawns a single expert worker process for council review.
  */
-export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescription?: string): Promise<string> {
+export async function spawnWorker(role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescription?: string, diversityEngine?: string, diversityModel?: string): Promise<string> {
     try {
-        console.error(`[Spawner] Launching Real Worker ${role} for council review`);
-        const masterInfo: MasterRoleInfo | undefined = roleDescription ? { description: roleDescription } : undefined;
+        const engineLabel = diversityEngine ? ` [engine=${diversityEngine}, model=${diversityModel}]` : '';
+        console.error(`[Spawner] Launching Real Worker ${role}${engineLabel} for council review`);
+        const masterInfo: MasterRoleInfo | undefined = {
+            ...(roleDescription ? { description: roleDescription } : {}),
+            ...(diversityEngine ? { engine: diversityEngine } : {}),
+            ...(diversityModel ? { model: diversityModel } : {})
+        };
+        const effectiveMasterInfo = Object.keys(masterInfo).length > 0 ? masterInfo : undefined;
         return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, masterInfo, parentDepth, parentIssueNumber);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, effectiveMasterInfo, parentDepth, parentIssueNumber);
     } catch (err: any) {
         console.error(`[Spawner] Worker ${role} failed to start:`, err);
         return `❌ ${role}: exited with errors (${err.message}).`;
@@ -1291,12 +1297,75 @@ Provide your expert critique from the perspective of your role (${role}). Identi
 }
 
 /**
- * Dispatches the council of experts concurrently.
+ * Compute cross-model diversity assignments for council roles.
+ * Greedy round-robin: distribute roles across available engine:model combos.
+ * Handles edge cases: 1 engine, 1 model, or more roles than combos.
+ */
+function computeDiversityAssignments(roles: string[], workspacePath: string): Array<{ engine?: string; model?: string }> {
+    const health = loadEngineHealth(workspacePath);
+    const { engines, models } = loadValidEnginesAndModels(workspacePath);
+
+    if (engines.length === 0) {
+        // No config — let each role use its default
+        return roles.map(() => ({}));
+    }
+
+    // Build list of healthy engine:model combos
+    const combos: Array<{ engine: string; model: string }> = [];
+    for (const eng of engines) {
+        const engineModels = models[eng] || [];
+        if (engineModels.length === 0) {
+            // Engine with no models listed — still usable with default model
+            const key = `${eng}:default`;
+            const entry = health[key];
+            const isUnhealthy = entry?.status === 'unhealthy' &&
+                (Date.now() - new Date(entry.last_failure).getTime()) < ENGINE_HEALTH_TTL_MS;
+            if (!isUnhealthy) {
+                combos.push({ engine: eng, model: '' });
+            }
+            continue;
+        }
+        for (const mdl of engineModels) {
+            const key = `${eng}:${mdl}`;
+            const entry = health[key];
+            const isUnhealthy = entry?.status === 'unhealthy' &&
+                (Date.now() - new Date(entry.last_failure).getTime()) < ENGINE_HEALTH_TTL_MS;
+            if (!isUnhealthy) {
+                combos.push({ engine: eng, model: mdl });
+            }
+        }
+    }
+
+    if (combos.length === 0) {
+        // All combos unhealthy — let defaults handle it (escape hatch)
+        console.error('[Council Diversity] All engine:model combos unhealthy — falling back to defaults');
+        return roles.map(() => ({}));
+    }
+
+    // Round-robin assignment
+    const assignments: Array<{ engine?: string; model?: string }> = [];
+    for (let i = 0; i < roles.length; i++) {
+        const combo = combos[i % combos.length];
+        assignments.push({ engine: combo.engine, model: combo.model || undefined });
+    }
+
+    const summary = assignments.map((a, i) => `${roles[i]} → ${a.engine}:${a.model || 'default'}`).join(', ');
+    console.error(`[Council Diversity] ${combos.length} healthy combos, ${roles.length} roles. Assignments: ${summary}`);
+
+    return assignments;
+}
+
+/**
+ * Dispatches the council of experts concurrently with automatic cross-model diversity.
  */
 export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescriptions?: Record<string, string>): Promise<string[]> {
-  const promises = roles.map(role => {
+  // Compute diversity assignments — greedy round-robin across healthy engine:model combos
+  const diversityAssignments = computeDiversityAssignments(roles, workspacePath);
+
+  const promises = roles.map((role, i) => {
     const outputPath = path.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role]);
+    const assignment = diversityAssignments[i];
+    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
   });
 
   const results = await Promise.allSettled(promises);

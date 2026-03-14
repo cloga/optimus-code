@@ -29265,21 +29265,69 @@ Agent has finished execution. Check standard output at \`${normalizePathForAgent
     lockManager.releaseLock(lockKey);
   }
 }
-async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath, parentDepth, parentIssueNumber, roleDescription) {
+async function spawnWorker(role, proposalPath, outputPath, sessionId, workspacePath, parentDepth, parentIssueNumber, roleDescription, diversityEngine, diversityModel) {
   try {
-    console.error(`[Spawner] Launching Real Worker ${role} for council review`);
-    const masterInfo = roleDescription ? { description: roleDescription } : void 0;
+    const engineLabel = diversityEngine ? ` [engine=${diversityEngine}, model=${diversityModel}]` : "";
+    console.error(`[Spawner] Launching Real Worker ${role}${engineLabel} for council review`);
+    const masterInfo = {
+      ...roleDescription ? { description: roleDescription } : {},
+      ...diversityEngine ? { engine: diversityEngine } : {},
+      ...diversityModel ? { model: diversityModel } : {}
+    };
+    const effectiveMasterInfo = Object.keys(masterInfo).length > 0 ? masterInfo : void 0;
     return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
-Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, void 0, masterInfo, parentDepth, parentIssueNumber);
+Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, void 0, effectiveMasterInfo, parentDepth, parentIssueNumber);
   } catch (err) {
     console.error(`[Spawner] Worker ${role} failed to start:`, err);
     return `\u274C ${role}: exited with errors (${err.message}).`;
   }
 }
+function computeDiversityAssignments(roles, workspacePath) {
+  const health = loadEngineHealth(workspacePath);
+  const { engines, models } = loadValidEnginesAndModels(workspacePath);
+  if (engines.length === 0) {
+    return roles.map(() => ({}));
+  }
+  const combos = [];
+  for (const eng of engines) {
+    const engineModels = models[eng] || [];
+    if (engineModels.length === 0) {
+      const key = `${eng}:default`;
+      const entry = health[key];
+      const isUnhealthy = entry?.status === "unhealthy" && Date.now() - new Date(entry.last_failure).getTime() < ENGINE_HEALTH_TTL_MS;
+      if (!isUnhealthy) {
+        combos.push({ engine: eng, model: "" });
+      }
+      continue;
+    }
+    for (const mdl of engineModels) {
+      const key = `${eng}:${mdl}`;
+      const entry = health[key];
+      const isUnhealthy = entry?.status === "unhealthy" && Date.now() - new Date(entry.last_failure).getTime() < ENGINE_HEALTH_TTL_MS;
+      if (!isUnhealthy) {
+        combos.push({ engine: eng, model: mdl });
+      }
+    }
+  }
+  if (combos.length === 0) {
+    console.error("[Council Diversity] All engine:model combos unhealthy \u2014 falling back to defaults");
+    return roles.map(() => ({}));
+  }
+  const assignments = [];
+  for (let i = 0; i < roles.length; i++) {
+    const combo = combos[i % combos.length];
+    assignments.push({ engine: combo.engine, model: combo.model || void 0 });
+  }
+  const summary = assignments.map((a, i) => `${roles[i]} \u2192 ${a.engine}:${a.model || "default"}`).join(", ");
+  console.error(`[Council Diversity] ${combos.length} healthy combos, ${roles.length} roles. Assignments: ${summary}`);
+  return assignments;
+}
 async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath, parentDepth, parentIssueNumber, roleDescriptions) {
-  const promises = roles.map((role) => {
+  const diversityAssignments = computeDiversityAssignments(roles, workspacePath);
+  const promises = roles.map((role, i) => {
     const outputPath = import_path2.default.join(reviewsPath, `${role}_review.md`);
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role]);
+    const assignment = diversityAssignments[i];
+    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
   });
   const results = await Promise.allSettled(promises);
   const succeeded = [];
