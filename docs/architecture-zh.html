@@ -337,6 +337,23 @@ footer{
 
 <p data-i18n="arch_s2_p5">系统指令、技能或配置的更改必须评估是否需要同步到插件脚手架。T1 智能体实例、状态文件和报告不会包含在插件中。</p>
 
+<h3>适配器 / 引擎层</h3>
+
+<p>Optimus 通过<strong>适配器</strong>与外部 AI 编码智能体通信 &mdash; 这些适配器是 <code>src/adapters/</code> 中 <code>AgentAdapter</code> 接口的可插拔实现。每个适配器将 Optimus 编排命令转换为特定智能体引擎所理解的通信协议。</p>
+
+<table>
+  <thead>
+    <tr><th>适配器</th><th>协议</th><th>兼容的智能体</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>github-copilot</code></td><td>Copilot CLI 文本解析</td><td>GitHub Copilot</td></tr>
+    <tr><td><code>claude-code</code></td><td>Claude Code CLI 文本解析</td><td>Claude Code</td></tr>
+    <tr><td><code>acp</code></td><td><strong>ACP (Agent Client Protocol)</strong> &mdash; 基于 stdio 的 JSON-RPC</td><td>Claude Code、GitHub Copilot (<code>copilot --acp</code>)、Kimi CLI、Qwen Code、Gemini CLI 及任何 ACP 兼容智能体</td></tr>
+  </tbody>
+</table>
+
+<p><strong>ACP 适配器</strong>（<code>src/adapters/AcpAdapter.ts</code>）实现了 Agent Client Protocol &mdash; 一种通用的基于 stdio 的 JSON-RPC 协议，使用 LSP 风格的 <code>Content-Length</code> 帧格式。会话生命周期：<code>initialize</code> &rarr; <code>session/new</code> &rarr; <code>session/prompt</code> &rarr; <code>session/update</code>（流式）&rarr; 响应。完整迁移路线图请参阅 <a href="https://github.com/cloga/optimus-code/issues/319" target="_blank" rel="noopener">Epic #319</a>。</p>
+
 <!-- Section 3 -->
 <h2 id="self-evolving-agent-lifecycle" data-i18n-html="arch_s3_title">3. 自进化智能体生命周期 (T3→T2→T1)</h2>
 
