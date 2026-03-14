@@ -1,10 +1,11 @@
 import { AgentAdapter } from './AgentAdapter';
 import { GitHubCopilotAdapter } from './GitHubCopilotAdapter';
 import { ClaudeCodeAdapter } from './ClaudeCodeAdapter';
+import { AcpAdapter } from './AcpAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import { debugLog } from '../debugLogger';
 
-type AdapterKind = 'github-copilot' | 'claude-code';
+type AdapterKind = 'github-copilot' | 'claude-code' | 'acp';
 
 export interface AgentConfig {
     id: string;
@@ -13,6 +14,8 @@ export interface AgentConfig {
     model?: string;
     enabled: boolean;
     modes?: AgentMode[];
+    executable?: string;
+    args?: string[];
 }
 
 /**
@@ -30,6 +33,8 @@ export function getActiveAdapters(agentsConfig: AgentConfig[] = []): AgentAdapte
             adapterInstance = new GitHubCopilotAdapter(agent.id, agent.name, agent.model || '', modes);
         } else if (agent.adapter === 'claude-code') {
             adapterInstance = new ClaudeCodeAdapter(agent.id, agent.name, agent.model || '', modes);
+        } else if (agent.adapter === 'acp') {
+            adapterInstance = new AcpAdapter(agent.id, agent.name, agent.executable || 'claude', agent.args || []);
         } else {
             debugLog('Adapters', `Unknown adapter type '${agent.adapter}', skipping agent '${agent.id}'`);
         }
