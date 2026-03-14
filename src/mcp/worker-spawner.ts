@@ -25,6 +25,7 @@ import { AcpAdapter } from "../adapters/AcpAdapter";
 import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
+import { loadFilteredMemory, migrateMemoryFile } from "../managers/MemoryManager";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -912,41 +913,6 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
 }
 
 /**
- * Loads project memory entries from .optimus/memory/continuous-memory.md.
- * Returns newest-first entries (body only, frontmatter stripped) up to maxChars.
- * Best-effort: returns empty string on any error.
- */
-function loadProjectMemory(workspacePath: string, maxChars: number = 4000): string {
-    const memoryFile = path.join(workspacePath, '.optimus', 'memory', 'continuous-memory.md');
-    if (!fs.existsSync(memoryFile)) return '';
-
-    try {
-        const raw = fs.readFileSync(memoryFile, 'utf8');
-        if (!raw.trim()) return '';
-
-        // Split on YAML frontmatter delimiters to get individual entries
-        // Each entry starts with ---\nid: ... \n---\n<body>
-        const entries = raw.split(/(?=^---\nid:)/m).filter(e => e.trim());
-
-        // Reverse for newest-first
-        entries.reverse();
-
-        let content = '';
-        for (const entry of entries) {
-            // Strip YAML frontmatter, keep only body text
-            const body = entry.replace(/^---[\s\S]*?---\n?/m, '').trim();
-            if (!body) continue;
-            if (content.length + body.length + 4 > maxChars) break;
-            content = body + '\n\n' + content; // Prepend to restore chronological order
-        }
-
-        return content.trim();
-    } catch (e) {
-        return ''; // Silent fail — memory injection is best-effort
-    }
-}
-
-/**
  * Executes a single task delegation synchronously.
  */
 export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number, agentId?: string): Promise<string> {
@@ -1184,7 +1150,9 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     }
 
     // Load project memory for injection (after persona, before task)
-    const memoryContent = loadProjectMemory(workspacePath);
+    const memoryFile = path.join(workspacePath, '.optimus', 'memory', 'continuous-memory.md');
+    migrateMemoryFile(memoryFile);
+    const memoryContent = loadFilteredMemory(workspacePath, role);
     const memorySection = memoryContent
         ? `\n\n--- START PROJECT MEMORY ---\nThe following are verified lessons and decisions from this project's history.\nApply them to avoid repeating past mistakes.\n\n${memoryContent}\n--- END PROJECT MEMORY ---`
         : '';
@@ -1267,7 +1235,8 @@ Please provide your complete execution result below.`;
         }
 
         const extraEnv: Record<string, string> = {
-            OPTIMUS_DELEGATION_DEPTH: String(childDepth)
+            OPTIMUS_DELEGATION_DEPTH: String(childDepth),
+            OPTIMUS_CURRENT_ROLE: role,
         };
         if (parentIssueNumber !== undefined) {
             extraEnv.OPTIMUS_PARENT_ISSUE = String(parentIssueNumber);
