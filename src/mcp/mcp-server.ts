@@ -1031,7 +1031,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalBody = agent_role ? body + agentSignature(agent_role) : body;
-      const result = await vcsProvider.createWorkItem(title, finalBody, labels, work_item_type, {
+      // Auto-append 'optimus-bot' label for traceability
+      const finalLabels = Array.isArray(labels) ? [...labels] : [];
+      if (!finalLabels.includes('optimus-bot')) finalLabels.push('optimus-bot');
+      const result = await vcsProvider.createWorkItem(title, finalBody, finalLabels, work_item_type, {
         iteration_path,
         area_path,
         assigned_to,
@@ -1056,6 +1059,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalBody = agent_role ? body + agentSignature(agent_role) : body;
       const result = await vcsProvider.createPullRequest(title, finalBody, head, base);
+
+      // Auto-label PR for traceability
+      try {
+          await vcsProvider.addLabels('pullrequest', result.number || result.id, ['optimus-bot']);
+      } catch (labelErr: any) {
+          console.error(`[VCS] Warning: failed to add optimus-bot label to PR: ${labelErr.message}`);
+      }
 
       return {
         content: [{

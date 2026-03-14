@@ -31520,7 +31520,9 @@ Memory appended to: ${memoryFile}`
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalBody = agent_role ? body + agentSignature(agent_role) : body;
-      const result = await vcsProvider.createWorkItem(title, finalBody, labels, work_item_type, {
+      const finalLabels = Array.isArray(labels) ? [...labels] : [];
+      if (!finalLabels.includes("optimus-bot")) finalLabels.push("optimus-bot");
+      const result = await vcsProvider.createWorkItem(title, finalBody, finalLabels, work_item_type, {
         iteration_path,
         area_path,
         assigned_to,
@@ -31548,6 +31550,11 @@ Memory appended to: ${memoryFile}`
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
       const finalBody = agent_role ? body + agentSignature(agent_role) : body;
       const result = await vcsProvider.createPullRequest(title, finalBody, head, base);
+      try {
+        await vcsProvider.addLabels("pullrequest", result.number || result.id, ["optimus-bot"]);
+      } catch (labelErr) {
+        console.error(`[VCS] Warning: failed to add optimus-bot label to PR: ${labelErr.message}`);
+      }
       return {
         content: [{
           type: "text",
