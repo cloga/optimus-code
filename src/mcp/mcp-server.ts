@@ -13,6 +13,7 @@ import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
+import { getMemoryFilePath, buildMemoryEntry } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
@@ -122,7 +123,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             properties: {
               category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
               tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
-              content: { type: "string", description: "The actual memory content to solidify" }
+              content: { type: "string", description: "The actual memory content to solidify" },
+              level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific. Defaults to project.", enum: ["project", "role"] }
             },
             required: ["category", "tags", "content"]
           }
@@ -766,12 +768,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
         } else if (request.params.name === "append_memory") {
-      let { category, tags, content } = request.params.arguments as any;
+      let { category, tags, content, level } = request.params.arguments as any;
       requireParams("append_memory", request.params.arguments as any, ["category", "content"]);
       const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-      const memoryDir = path.resolve(workspacePath, '.optimus', 'memory');
-      const memoryFile = path.join(memoryDir, 'continuous-memory.md');
+      const memoryLevel: 'project' | 'role' = level === 'role' ? 'role' : 'project';
+      const author = process.env.OPTIMUS_CURRENT_ROLE || 'unknown';
 
+      // Determine target file based on level
+      let memoryFile: string;
+      if (memoryLevel === 'role') {
+        const currentRole = process.env.OPTIMUS_CURRENT_ROLE;
+        if (!currentRole) {
+          return {
+            content: [{ type: "text", text: "Cannot write role-level memory: OPTIMUS_CURRENT_ROLE not set. Use level: 'project' or ensure this is called from a delegated worker." }],
+            isError: true
+          };
+        }
+        memoryFile = getMemoryFilePath(workspacePath, 'role', currentRole);
+      } else {
+        memoryFile = getMemoryFilePath(workspacePath, 'project');
+      }
+
+      // Ensure parent directory exists
+      const memoryDir = path.dirname(memoryFile);
       if (!fs.existsSync(memoryDir)) {
         fs.mkdirSync(memoryDir, { recursive: true });
       }
@@ -787,19 +806,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Create new write promise
         const writePromise = new Promise<void>((resolve, reject) => {
           try {
-            const timestamp = new Date().toISOString();
-            const memoryId = 'mem_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-            
-            const freshEntry = [
-              '---',
-              'id: ' + memoryId,
-              'category: ' + (category || 'uncategorized'),
-              'tags: [' + (tags ? tags.join(', ') : '') + ']',
-              'created: ' + timestamp,
-              '---',
-              content,
-              '\n'
-            ].join('\n');
+            const freshEntry = buildMemoryEntry({
+              level: memoryLevel,
+              category: category || 'uncategorized',
+              tags: tags || [],
+              content: content,
+              author: author,
+            });
 
             fs.appendFileSync(memoryFile, freshEntry, 'utf8');
             resolve();
@@ -807,15 +820,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             reject(err);
           }
         });
-        
+
         (global as any).memoryLock = writePromise;
         await writePromise;
-        
+
         return {
           content: [
             {
               type: "text",
-              text: `✅ Experience solidifed to memory!\nTags: ${tags.join(', ')}\nMemory appended to: ${memoryFile}`
+              text: `✅ Experience solidifed to memory!\nLevel: ${memoryLevel}\nTags: ${tags ? tags.join(', ') : '(none)'}\nMemory appended to: ${memoryFile}`
             }
           ]
         };
