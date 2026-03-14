@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Optimus Code — 架构白皮书</title>
+<meta name="description" content="Architecture Whitepaper for Optimus Code: a self-evolving multi-agent orchestration engine built on the Model Context Protocol.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0b;
+  --surface:#141416;
+  --surface-hover:#1c1c20;
+  --border:#2a2a2e;
+  --text:#e4e4e7;
+  --text-secondary:#a1a1aa;
+  --text-tertiary:#71717a;
+  --accent:#3b82f6;
+  --accent-hover:#60a5fa;
+  --accent-secondary:#10b981;
+  --accent-tertiary:#8b5cf6;
+  --code-bg:#18181b;
+  --code-text:#4ade80;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  line-height:1.7;
+  overflow-x:hidden;
+}
+a{color:var(--accent-hover);text-decoration:none;transition:color .2s}
+a:hover{color:var(--accent)}
+
+/* ========== LAYOUT ========== */
+.container{max-width:860px;margin:0 auto;padding:0 24px}
+
+/* ========== NAV BAR ========== */
+.topnav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,10,11,.85);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:14px 24px;
+}
+.topnav-inner{
+  max-width:1100px;margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.topnav-logo{font-weight:700;font-size:1rem;color:var(--text)}
+.topnav-logo:hover{color:var(--accent-hover)}
+.topnav-links{display:flex;gap:16px;align-items:center}
+.topnav-links a{font-size:.85rem;color:var(--text-tertiary);transition:color .2s}
+.topnav-links a:hover{color:var(--text)}
+
+/* ========== HERO HEADER ========== */
+.page-hero{
+  padding:80px 24px 48px;text-align:center;position:relative;
+}
+.page-hero::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:600px;height:400px;
+  background:radial-gradient(circle,rgba(139,92,246,.06),transparent 70%);
+  pointer-events:none;
+}
+.page-hero h1{
+  font-size:clamp(1.8rem,4vw,2.5rem);font-weight:800;
+  line-height:1.15;margin-bottom:16px;position:relative;
+}
+.page-hero .lead{
+  font-size:1.1rem;color:var(--text-secondary);
+  max-width:600px;margin:0 auto 24px;line-height:1.6;font-style:italic;
+}
+
+/* ========== TABLE OF CONTENTS ========== */
+.toc{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:28px 32px;margin:0 auto 64px;max-width:540px;
+}
+.toc h2{font-size:1rem;font-weight:700;margin-bottom:14px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em}
+.toc ol{padding-left:20px}
+.toc li{margin-bottom:6px}
+.toc a{font-size:.95rem;color:var(--accent-hover)}
+.toc a:hover{color:var(--text)}
+
+/* ========== CONTENT ========== */
+.content{padding-bottom:100px}
+.content h2{
+  font-size:clamp(1.3rem,3vw,1.75rem);font-weight:700;
+  margin:64px 0 20px;padding-top:24px;
+  border-top:1px solid var(--border);
+  color:var(--text);
+}
+.content h2:first-child{border-top:none;margin-top:0}
+.content h3{
+  font-size:1.15rem;font-weight:600;margin:32px 0 12px;
+  color:var(--text);
+}
+.content p{
+  font-size:1rem;color:var(--text-secondary);line-height:1.7;
+  margin-bottom:16px;
+}
+.content ul,.content ol{
+  padding-left:24px;margin-bottom:16px;
+}
+.content li{
+  font-size:1rem;color:var(--text-secondary);line-height:1.7;
+  margin-bottom:6px;
+}
+.content strong{color:var(--text);font-weight:600}
+
+/* Code blocks */
+.content pre{
+  background:var(--code-bg);border:1px solid var(--border);
+  border-radius:8px;padding:18px 22px;margin-bottom:20px;
+  overflow-x:auto;line-height:1.5;
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.85rem;color:var(--code-text);
+}
+.content code{
+  font-family:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  font-size:.875em;color:var(--accent-hover);
+  background:var(--code-bg);padding:2px 6px;border-radius:4px;
+}
+.content pre code{
+  background:transparent;padding:0;color:var(--code-text);font-size:inherit;
+}
+
+/* Tables */
+.content table{
+  width:100%;border-collapse:collapse;margin-bottom:20px;
+  font-size:.9rem;
+}
+.content th,.content td{
+  padding:10px 14px;text-align:left;
+  border:1px solid var(--border);
+}
+.content th{
+  background:var(--surface);color:var(--text);font-weight:600;
+  font-size:.85rem;text-transform:uppercase;letter-spacing:.03em;
+}
+.content td{color:var(--text-secondary)}
+
+/* Blockquote */
+.content blockquote{
+  border-left:3px solid var(--accent-tertiary);
+  padding:12px 20px;margin-bottom:20px;
+  background:rgba(139,92,246,.04);border-radius:0 8px 8px 0;
+}
+.content blockquote p{color:var(--text-secondary);margin-bottom:0;font-style:italic}
+
+/* Horizontal rule */
+.content hr{border:none;border-top:1px solid var(--border);margin:48px 0}
+
+/* ========== BACK TO TOP ========== */
+.back-to-top{
+  position:fixed;bottom:24px;right:24px;z-index:100;
+  width:40px;height:40px;border-radius:8px;
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text-tertiary);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color .2s,color .2s,opacity .3s;
+  opacity:0;pointer-events:none;
+}
+.back-to-top.visible{opacity:1;pointer-events:auto}
+.back-to-top:hover{border-color:var(--accent);color:var(--text)}
+
+/* ========== FOOTER ========== */
+footer{
+  border-top:1px solid var(--border);padding:36px 0;text-align:center;
+}
+.footer-links{
+  display:flex;justify-content:center;gap:24px;flex-wrap:wrap;margin-bottom:12px;
+}
+.footer-links a{color:var(--text-tertiary);font-size:.85rem;transition:color .2s}
+.footer-links a:hover{color:var(--accent)}
+.footer-tagline{color:var(--text-tertiary);font-size:.85rem;font-style:italic}
+
+/* ========== LANGUAGE TOGGLE (inline in navbar) ========== */
+.lang-toggle{
+  display:inline-flex;align-items:center;
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  overflow:hidden;margin-left:8px;
+}
+.lang-toggle:hover{border-color:var(--accent)}
+.lang-btn{
+  padding:5px 10px;font-size:.75rem;font-weight:600;
+  color:var(--text-tertiary);background:transparent;
+  border:none;cursor:pointer;transition:all .2s;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+.lang-btn.active{color:#fff;background:var(--accent)}
+/* Hamburger */
+.hamburger{
+  display:none;background:none;border:1px solid var(--border);
+  border-radius:6px;padding:6px 8px;cursor:pointer;color:var(--text);line-height:0;
+}
+.hamburger:hover{border-color:var(--accent)}
+.hamburger svg{display:block}
+
+/* ========== RESPONSIVE ========== */
+@media(max-width:767px){
+  .page-hero{padding:60px 16px 32px}
+  .toc{padding:20px 22px}
+  .content h2{margin-top:48px}
+  .content pre{padding:14px 16px;font-size:.8rem}
+  .content table{font-size:.82rem}
+  .content th,.content td{padding:8px 10px}
+  /* Hamburger nav */
+  .topnav-links{
+    display:none;flex-direction:column;position:absolute;
+    top:100%;left:0;right:0;background:var(--surface);
+    border-bottom:1px solid var(--border);padding:16px 24px;gap:12px;
+  }
+  .topnav-links.open{display:flex}
+  .topnav-inner{position:relative}
+  .hamburger{display:block}
+}
+/* ========== REDUCED MOTION ========== */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">Optimus Code</a>
+    <button class="hamburger" id="hamburgerBtn" aria-label="Toggle navigation">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="topnav-links" id="navLinks">
+      <a href="index.html" data-i18n="nav_home">首页</a>
+      <a href="guide.html" data-i18n="nav_tutorial">教程</a>
+      <a href="pitch.html" data-i18n="nav_pitch">路演</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <div class="lang-toggle" id="langToggle" role="radiogroup" aria-label="Language selector">
+        <a href="architecture.html" class="lang-btn" style="text-decoration:none">EN</a>
+        <a href="architecture-zh.html" class="lang-btn active" style="text-decoration:none">中文</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- Page Hero -->
+<header class="page-hero">
+  <h1 data-i18n="arch_hero_title">架构白皮书</h1>
+  <p class="lead" data-i18n="arch_hero_lead">基于 Model Context Protocol 构建的自进化多智能体编排引擎。</p>
+</header>
+
+<!-- Table of Contents -->
+<div class="container">
+  <nav class="toc">
+    <h2 data-i18n="arch_toc_title">目录</h2>
+    <ol>
+      <li><a href="#executive-summary" data-i18n="arch_toc_1">执行摘要</a></li>
+      <li><a href="#the-great-unification" data-i18n="arch_toc_2">大统一架构</a></li>
+      <li><a href="#self-evolving-agent-lifecycle" data-i18n-html="arch_toc_3">自进化智能体生命周期 (T3→T2→T1)</a></li>
+      <li><a href="#the-spartan-swarm-protocol" data-i18n="arch_toc_4">Spartan Swarm 协议</a></li>
+      <li><a href="#council-pattern" data-i18n="arch_toc_5">Council 模式 (MapReduce)</a></li>
+      <li><a href="#skills-system" data-i18n="arch_toc_6">技能系统</a></li>
+      <li><a href="#plan-mode" data-i18n-html="arch_toc_7">规划模式与关注点分离</a></li>
+      <li><a href="#issue-first-sdlc" data-i18n="arch_toc_8">Issue 驱动的 SDLC</a></li>
+      <li><a href="#memory-reflection" data-i18n-html="arch_toc_9">记忆与反思</a></li>
+      <li><a href="#autonomous-operations" data-i18n="arch_toc_10">自主运维</a></li>
+      <li><a href="#security-architecture" data-i18n="arch_toc_11">安全架构</a></li>
+    </ol>
+  </nav>
+</div>
+
+<!-- Content -->
+<article class="container content">
+
+<!-- Section 1 -->
+<h2 id="executive-summary" data-i18n="arch_s1_title">1. 执行摘要</h2>
+
+<p data-i18n-html="arch_s1_p1">Optimus Code 是一个<strong>多智能体编排引擎</strong>，能将任何 MCP 兼容的 AI 编码工具转化为协调的开发团队。支持 VS Code (GitHub Copilot)、Cursor、Windsurf、Claude Code、Goose、Roo Cline 及任何其他支持 <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a> 的客户端。</p>
+
+<p data-i18n-html="arch_s1_p2">不再依赖单个 AI 助手处理所有任务 — 规划、编码、审查、测试 — Optimus 将工作分配给专业角色：产品经理、架构师、开发者、QA 工程师等。这些智能体不是预配置的，它们在系统遇到新任务类型时动态涌现，通过使用进化角色定义，并跨会话积累项目记忆。</p>
+
+<p data-i18n="arch_s1_p3">结果是一个这样的系统：</p>
+<ul>
+  <li data-i18n-html="arch_s1_li1"><strong>一句自然语言提示</strong>触发完整的软件开发生命周期（Issue → Branch → PR → Merge）。</li>
+  <li data-i18n-html="arch_s1_li2"><strong>智能体自组织</strong>通过三层生命周期：临时工作者沉淀为角色模板，然后冻结为可复用实例。</li>
+  <li data-i18n-html="arch_s1_li3"><strong>并行专家委员会</strong>在写任何代码之前，使用 MapReduce 模式讨论架构决策。</li>
+  <li data-i18n-html="arch_s1_li4"><strong>项目记忆</strong>确保过去的错误和决策保留下来，团队随每次任务不断进步。</li>
+</ul>
+
+<p data-i18n-html="arch_s1_p4">Optimus 是 100% 编辑器无关的 — 纯 Node.js MCP 守护进程，不依赖 VS Code 扩展。</p>
+
+<!-- Section 2 -->
+<h2 id="the-great-unification" data-i18n="arch_s2_title">2. 大统一架构</h2>
+
+<h3 data-i18n="arch_s2_h3_1">仅扩展方案的问题</h3>
+
+<p data-i18n="arch_s2_p1">传统 AI 编码助手与特定编辑器紧密耦合。它们的编排逻辑嵌入在 VS Code 扩展、Cursor 插件或专有后端中。这造成了碎片化：如果你换编辑器，就会失去智能体基础设施。</p>
+
+<h3 data-i18n="arch_s2_h3_2">架构决策：纯 Node.js MCP 守护进程</h3>
+
+<p data-i18n-html="arch_s2_p2">Optimus Code 遵循<strong>“大统一”架构</strong>。MCP 服务器（<code>optimus-plugin/dist/mcp-server.js</code>）是一个独立的 Node.js 守护进程，通过 stdio 传输通信。它对任何编辑器的扩展 API 零依赖。</p>
+
+<pre><code>&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502; Any MCP Client (VS Code, Cursor, Claude, ..) &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;
+                       &#x2502; stdio (JSON-RPC)
+&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x25BC;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502;           Optimus MCP Server                 &#x2502;
+&#x2502;  &#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;  &#x2502;
+&#x2502;  &#x2502; Managers &#x2502; Adapters &#x2502; MCP Tool Handlers &#x2502;  &#x2502;
+&#x2502;  &#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;  &#x2502;
+&#x2502;        Pure Node.js &#x2014; No vscode namespace    &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</code></pre>
+
+<p data-i18n-html="arch_s2_p3"><strong>代码库中强制执行的关键约束：</strong></p>
+<ul>
+  <li data-i18n-html="arch_s2_li1"><code>src/adapters/</code>、<code>src/mcp/</code> 和 <code>src/managers/</code> 目录必须保持 100% 环境无关。不允许导入 <code>vscode</code> 命名空间。</li>
+  <li data-i18n-html="arch_s2_li2">所有智能体产物（报告、任务、记忆、审查）都存储在 <code>.optimus/</code> 目录中 — 绝不作为散落文件放在仓库根目录。</li>
+  <li data-i18n-html="arch_s2_li3">服务器通过 <code>npx -y github:cloga/optimus-code serve</code> 启动并一次性配置 — 每个 MCP 客户端连接到同一个守护进程。</li>
+</ul>
+
+<h3 data-i18n="arch_s2_h3_3">双代码库结构</h3>
+
+<p data-i18n="arch_s2_p4">仓库包含两个相互交织的代码库：</p>
+
+<table>
+  <thead>
+    <tr><th data-i18n="arch_s2_th_layer">层级</th><th data-i18n="arch_s2_th_path">路径</th><th data-i18n="arch_s2_th_purpose">用途</th></tr>
+  </thead>
+  <tbody>
+    <tr><td data-i18n-html="arch_s2_td_host"><strong>宿主项目</strong></td><td>Root (<code>src/</code>, <code>docs/</code>, <code>.optimus/</code>)</td><td data-i18n="arch_s2_td_host_purpose">Optimus 自身的开发工作区</td></tr>
+    <tr><td data-i18n-html="arch_s2_td_plugin"><strong>插件包</strong></td><td><code>optimus-plugin/</code></td><td data-i18n="arch_s2_td_plugin_purpose">发布给终端用户的 npm MCP 服务器</td></tr>
+  </tbody>
+</table>
+
+<p data-i18n="arch_s2_p5">系统指令、技能或配置的更改必须评估是否需要同步到插件脚手架。T1 智能体实例、状态文件和报告不会包含在插件中。</p>
+
+<!-- Section 3 -->
+<h2 id="self-evolving-agent-lifecycle" data-i18n-html="arch_s3_title">3. 自进化智能体生命周期 (T3→T2→T1)</h2>
+
+<p data-i18n-html="arch_s3_p1">Optimus 使用一个自动进化的三层智能体层级结构。没有预装角色 — 系统从空白开始，通过使用有机生长。</p>
+
+<h3 data-i18n="arch_s3_h3_1">三个层级</h3>
+
+<table>
+  <thead>
+    <tr><th data-i18n="arch_s3_th_tier">层级</th><th data-i18n="arch_s3_th_storage">存储</th><th data-i18n="arch_s3_th_desc">描述</th><th data-i18n="arch_s3_th_created">创建方式</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td data-i18n-html="arch_s3_td_t3"><strong>T3</strong>（临时）</td>
+      <td data-i18n="arch_s3_td_t3_store">仅内存</td>
+      <td data-i18n-html="arch_s3_td_t3_desc">零样本动态工作者，没有持久化文件。Master Agent 发明一个描述性角色名（例如 <code>security-auditor</code>），引擎即时生成工作者。</td>
+      <td data-i18n="arch_s3_td_t3_created">Master Agent 在委派时命名</td>
+    </tr>
+    <tr>
+      <td data-i18n-html="arch_s3_td_t2"><strong>T2</strong>（模板）</td>
+      <td><code>.optimus/roles/&lt;name&gt;.md</code></td>
+      <td data-i18n-html="arch_s3_td_t2_desc">带有角色指令、引擎/模型绑定和行为约束的角色模板。在首次 T3 使用时自动创建 — “沉淀”。</td>
+      <td data-i18n="arch_s3_td_t2_created">从 T3 自动沉淀；Master Agent 进化它</td>
+    </tr>
+    <tr>
+      <td data-i18n-html="arch_s3_td_t1"><strong>T1</strong>（实例）</td>
+      <td><code>.optimus/agents/&lt;name&gt;_&lt;hash&gt;.md</code></td>
+      <td data-i18n="arch_s3_td_t1_desc">T2 角色在任务完成后的冻结快照，包含用于上下文连续性的 session ID。</td>
+      <td data-i18n="arch_s3_td_t1_created">任务完成并带有 session_id 时自动创建</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 data-i18n="arch_s3_h3_2">生命周期流程</h3>
+
+<pre><code>First delegation (T3):
+  Master invents role name &rarr; worker-spawner creates ephemeral agent
+      &darr;
+  Task completes &rarr; T2 role template auto-created in .optimus/roles/
+      &darr;
+  Session ID captured &rarr; T1 instance created in .optimus/agents/
+      &darr;
+Next delegation (T1 reuse):
+  Master provides agent_id &rarr; system resumes the T1 session</code></pre>
+
+<h3 data-i18n="arch_s3_h3_3">关键不变量</h3>
+
+<ul>
+  <li data-i18n-html="arch_s3_li1"><strong>T2 ≥ T1</strong>：每个 T1 智能体实例必须有对应的 T2 角色模板。孤立的 T1 是无效的。</li>
+  <li data-i18n-html="arch_s3_li2"><strong>T1 是冻结的</strong>：一旦创建，T1 文件的主体内容永不修改。只有 <code>session_id</code> 字段在重用时更新。</li>
+  <li data-i18n-html="arch_s3_li3"><strong>T2 是活跃的</strong>：Master Agent 可以用新的描述、引擎绑定和模型设置更新 T2 模板，随时间进化团队。</li>
+  <li data-i18n-html="arch_s3_li4"><strong>沉淀是即时的</strong>：与基于阈值的方法不同（需要 3 次调用 + 80% 成功率），T3→T2 沉淀在首次委派时就发生。这是在早期阈值模型被证明脆弱后的刻意简化。</li>
+</ul>
+
+<h3 data-i18n-html="arch_s3_h3_4">智能体退役与隔离</h3>
+
+<p data-i18n-html="arch_s3_p2">持续失败的智能体不会被删除 — 它们会被<strong>隔离</strong>。<code>quarantine_role</code> MCP 工具将角色标记为不可分派。这在保留智能体历史记录以便调试的同时，防止级联故障。被隔离的智能体在修复后可以解除隔离。</p>
+
+<p data-i18n="arch_s3_p3">T1 垃圾回收会删除在可配置时间窗口内未被引用的过期实例文件，防止磁盘无限增长。</p>
+
+<!-- Section 4 -->
+<h2 id="the-spartan-swarm-protocol" data-i18n="arch_s4_title">4. Spartan Swarm 协议</h2>
+
+<p data-i18n="arch_s4_p1">Spartan Swarm 协议定义了 Master Agent 如何发现、选择和分配工作给专业智能体。</p>
+
+<h3 data-i18n="arch_s4_h3_1">委派流水线</h3>
+
+<p data-i18n="arch_s4_p2">每次任务委派都遵循严格的 3 步流水线：</p>
+
+<p data-i18n-html="arch_s4_p3"><strong>步骤 1 — 军营检阅（<code>roster_check</code>）</strong></p>
+
+<p data-i18n-html="arch_s4_p4">Master Agent 调用 <code>roster_check</code> 获取当前兵力：</p>
+<ul>
+  <li data-i18n="arch_s4_li1">T1 本地实例（有状态、可恢复会话）</li>
+  <li data-i18n="arch_s4_li2">T2 项目角色模板（共享、可进化）</li>
+  <li data-i18n-html="arch_s4_li3">来自 <code>available-agents.json</code> 的可用引擎和模型</li>
+  <li data-i18n="arch_s4_li4">已注册的技能</li>
+</ul>
+
+<p data-i18n-html="arch_s4_p5">此步骤<strong>永不跳过</strong> — 它防止 Master 幻想出不存在的角色。</p>
+
+<p data-i18n-html="arch_s4_p6"><strong>步骤 2 — 兵力评估（角色选择）</strong></p>
+
+<p data-i18n="arch_s4_p7">Master 将任务与花名册匹配：</p>
+<ul>
+  <li data-i18n-html="arch_s4_li5"><strong>优先 T1</strong>：如果存在具有相关会话上下文的匹配实例。</li>
+  <li data-i18n-html="arch_s4_li6"><strong>回退到 T2</strong>：如果存在角色模板但没有实例。</li>
+  <li data-i18n-html="arch_s4_li7"><strong>发明 T3</strong>：用于小众任务 — 只需命名一个角色（例如 <code>webgl-shader-guru</code>），引擎就会自动生成零样本工作者。</li>
+</ul>
+
+<p data-i18n-html="arch_s4_p8"><strong>步骤 3 — 部署（<code>delegate_task</code> / <code>delegate_task_async</code>）</strong></p>
+
+<p data-i18n="arch_s4_p9">Master 使用结构化参数进行分派：</p>
+
+<table>
+  <thead>
+    <tr><th data-i18n="arch_s4_th_param">参数</th><th data-i18n="arch_s4_th_purpose">用途</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>role</code></td><td data-i18n="arch_s4_td_role">调用哪个智能体</td></tr>
+    <tr><td><code>role_description</code></td><td data-i18n="arch_s4_td_role_desc">该角色的功能（用于 T2 模板生成）</td></tr>
+    <tr><td><code>role_engine</code></td><td data-i18n-html="arch_s4_td_engine">使用哪个引擎（例如 <code>claude-code</code>、<code>copilot-cli</code>）</td></tr>
+    <tr><td><code>role_model</code></td><td data-i18n-html="arch_s4_td_model">使用哪个模型（例如 <code>claude-opus-4.6-1m</code>）</td></tr>
+    <tr><td><code>task_description</code></td><td data-i18n="arch_s4_td_task">详细指令</td></tr>
+    <tr><td><code>context_files</code></td><td data-i18n="arch_s4_td_ctx">智能体必须在开始前读取的文件</td></tr>
+    <tr><td><code>required_skills</code></td><td data-i18n="arch_s4_td_skills">智能体需要的技能（预检查）</td></tr>
+    <tr><td><code>parent_issue_number</code></td><td data-i18n="arch_s4_td_parent">用于 Issue 谱系追踪</td></tr>
+    <tr><td><code>output_path</code></td><td data-i18n="arch_s4_td_output">结果写入位置</td></tr>
+  </tbody>
+</table>
+
+<h3 data-i18n="arch_s4_h3_2">引擎/模型解析</h3>
+
+<p data-i18n="arch_s4_p10">当 Master 未指定引擎或模型时，系统按优先级解析：</p>
+<ol>
+  <li data-i18n-html="arch_s4_oli1">Master 提供的 <code>role_engine</code> / <code>role_model</code>（最高优先级）</li>
+  <li data-i18n-html="arch_s4_oli2">T2 角色前置元数据中的 <code>engine</code> / <code>model</code></li>
+  <li data-i18n-html="arch_s4_oli3"><code>available-agents.json</code>（第一个非演示引擎 + 第一个模型）</li>
+  <li data-i18n-html="arch_s4_oli4">硬编码后备：<code>claude-code</code></li>
+</ol>
+
+<p data-i18n-html="arch_s4_p11">无效的引擎或模型名称会在网关被拒绝，并返回可操作的错误信息，列出 <code>available-agents.json</code> 中的有效选项。</p>
+
+<h3 data-i18n="arch_s4_h3_3">反模拟规则</h3>
+
+<p data-i18n-html="arch_s4_p12">Master Agent 必须在委派时<strong>物理调用</strong> <code>delegate_task</code> MCP 工具。严格禁止在纯文本中模拟工作者的响应或编写临时脚本来扮演下属角色。这就是<strong>严格委派协议</strong>。</p>
+
+<!-- Section 5 -->
+<h2 id="council-pattern" data-i18n="arch_s5_title">5. Council 模式 (MapReduce)</h2>
+
+<p data-i18n-html="arch_s5_p1">当决策需要多个专家视角 — 架构审查、安全审计、设计评估 — Optimus 使用 <strong>Council 模式</strong>。</p>
+
+<h3 data-i18n="arch_s5_h3_1">工作原理</h3>
+
+<ol>
+  <li data-i18n-html="arch_s5_oli1"><strong>提案</strong>：编排器将提案文档写入 <code>.optimus/proposals/PROPOSAL_&lt;topic&gt;.md</code>。</li>
+  <li data-i18n-html="arch_s5_oli2"><strong>分派</strong>：<code>dispatch_council</code>（或 <code>dispatch_council_async</code>）并行启动多个专家智能体，每个从各自专业角度审查同一提案。</li>
+  <li data-i18n-html="arch_s5_oli3"><strong>Map 阶段</strong>：每个委员写一份独立审查到 <code>.optimus/reviews/&lt;council_id&gt;/&lt;role&gt;.md</code>。</li>
+  <li data-i18n-html="arch_s5_oli4"><strong>Reduce 阶段</strong>：系统生成 <code>COUNCIL_SYNTHESIS.md</code>，汇总发现、识别共识并呈现冲突。</li>
+  <li data-i18n-html="arch_s5_oli5"><strong>仲裁</strong>：编排器读取综合报告。如果没有阻碍因素，则继续实施。如果存在致命冲突，则创建 <code>.optimus/CONFLICTS.md</code> 进行解决。</li>
+</ol>
+
+<h3 data-i18n="arch_s5_h3_2">示例：架构审查 Council</h3>
+
+<pre><code>dispatch_council({
+  proposal_path: ".optimus/proposals/PROPOSAL_auth_refactor.md",
+  roles: ["security-expert", "performance-expert", "code-architect"]
+})</code></pre>
+
+<p data-i18n="arch_s5_p2">这会同时启动三个智能体。每个都从自己的专业角度阅读提案。安全专家关注认证漏洞，性能专家评估查询模式，架构师评估结构影响。</p>
+
+<h3 data-i18n="arch_s5_h3_3">异步优先设计</h3>
+
+<p data-i18n-html="arch_s5_p3">Council 本质上是异步的。<code>dispatch_council_async</code> 立即返回任务 ID。编排器通过 <code>check_task_status</code> 轮询状态，并在所有成员完成后读取结果。</p>
+
+<!-- Section 6 -->
+<h2 id="skills-system" data-i18n="arch_s6_title">6. 技能系统</h2>
+
+<h3 data-i18n="arch_s6_h3_1">角色 vs. 技能架构</h3>
+
+<p data-i18n-html="arch_s6_p1">Optimus 将<strong>身份</strong>与<strong>能力</strong>解耦：</p>
+<ul>
+  <li data-i18n-html="arch_s6_li1"><strong>角色</strong> = 谁做工作（身份、约束、权限）— 存储在 <code>.optimus/roles/</code></li>
+  <li data-i18n-html="arch_s6_li2"><strong>技能</strong> = 如何做工作（操作 SOP、工作流步骤、工具用法）— 存储在 <code>.optimus/skills/</code></li>
+</ul>
+
+<p data-i18n-html="arch_s6_p2">角色和技能具有<strong>多对多关系</strong>，在运行时通过 <code>delegate_task</code> 中的 <code>required_skills</code> 参数绑定。单个角色（例如 <code>senior-full-stack-builder</code>）可以为不同任务配备不同的技能组合。</p>
+
+<p data-i18n-html="arch_s6_p3"><strong>命名约定</strong>：角色使用身份名称（例如 <code>product-manager</code>）。技能使用能力名称（例如 <code>feature-dev</code>、<code>git-workflow</code>、<code>council-review</code>）。技能永远不以角色命名。</p>
+
+<h3 data-i18n="arch_s6_h3_2">技能预检查</h3>
+
+<p data-i18n-html="arch_s6_p4">当 <code>required_skills</code> 在委派中指定时，系统在智能体进程启动前验证每个技能文件是否存在于 <code>.optimus/skills/&lt;name&gt;/SKILL.md</code>。缺失的技能导致立即拒绝并给出可操作的错误 — Master 必须先创建它们。</p>
+
+<p data-i18n="arch_s6_p5">预检查防止智能体接收它们没有装备的任务。</p>
+
+<h3 data-i18n="arch_s6_h3_3">引导元技能</h3>
+
+<p data-i18n-html="arch_s6_p6">系统附带两个<strong>元技能</strong>来实现自进化：</p>
+
+<table>
+  <thead>
+    <tr><th data-i18n="arch_s6_th_skill">技能</th><th data-i18n="arch_s6_th_purpose">用途</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>role-creator</code></td><td data-i18n-html="arch_s6_td_rc">教 Master Agent 如何构建和进化团队（T3→T2→T1 生命周期、引擎选择、角色定义最佳实践）</td></tr>
+    <tr><td><code>skill-creator</code></td><td data-i18n-html="arch_s6_td_sc">教智能体如何按正确格式编写新的 <code>SKILL.md</code> 文件</td></tr>
+  </tbody>
+</table>
+
+<p data-i18n-html="arch_s6_p7">三个<strong>核心技能</strong>处理运营工作流：</p>
+
+<table>
+  <thead>
+    <tr><th data-i18n="arch_s6_th_skill2">技能</th><th data-i18n="arch_s6_th_purpose2">用途</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>delegate-task</code></td><td data-i18n="arch_s6_td_dt">异步优先的任务委派协议</td></tr>
+    <tr><td><code>council-review</code></td><td data-i18n="arch_s6_td_cr">并行专家审查 (MapReduce)</td></tr>
+    <tr><td><code>git-workflow</code></td><td data-i18n="arch_s6_td_gw">包含分支、PR 和合并的 Issue 驱动 SDLC</td></tr>
+  </tbody>
+</table>
+
+<h3 data-i18n="arch_s6_h3_4">创建新技能</h3>
+
+<p data-i18n-html="arch_s6_p8">当技能不存在时，Master 委派给任何具有 <code>required_skills: ["skill-creator"]</code> 的智能体，描述新技能应该教什么。智能体读取 <code>skill-creator</code> SKILL.md，学习格式，然后编写新技能。然后可以重试原始委派。</p>
+
+<!-- Section 7 -->
+<h2 id="plan-mode" data-i18n-html="arch_s7_title">7. 规划模式与关注点分离</h2>
+
+<h3 data-i18n="arch_s7_h3_1">问题</h3>
+
+<p data-i18n-html="arch_s7_p1">如果没有防护栏，编排器智能体（PM、架构师）倾向于自己编写代码而不是委派。这违反了关注点分离 — 定义需求的同一智能体不应该实现它们。</p>
+
+<h3 data-i18n="arch_s7_h3_2">规划模式</h3>
+
+<p data-i18n-html="arch_s7_p2">编排器角色在其角色定义中以 <strong><code>mode: plan</code></strong> 运行。在规划模式下：</p>
+<ul>
+  <li data-i18n-html="arch_s7_li1">智能体<strong>不能写入源代码文件</strong>。文件写入操作被限制在 <code>.optimus/</code> 目录，通过 <code>write_blackboard_artifact</code> MCP 工具实现。</li>
+  <li data-i18n-html="arch_s7_li2">智能体<strong>必须委派</strong>实施工作给开发者角色（例如 <code>senior-full-stack-builder</code>）。</li>
+  <li data-i18n-html="arch_s7_li3">智能体可以创建提案、需求文档、任务分解和审查报告 — 但不能写代码。</li>
+</ul>
+
+<h3>write_blackboard_artifact</h3>
+
+<p data-i18n-html="arch_s7_p3">此 MCP 工具允许规划模式智能体仅向 <code>.optimus/</code> 写入文件。它强制执行两层路径验证：</p>
+<ol>
+  <li data-i18n-html="arch_s7_oli1"><strong>词法检查</strong>：<code>startsWith(optimusRoot + path.sep)</code> 防止 <code>..</code> 遍历和兄弟目录逃逸。</li>
+  <li data-i18n-html="arch_s7_oli2"><strong>符号链接检查</strong>：<code>fs.realpathSync()</code> 对解析的路径前缀进行检查，防止基于符号链接的逃逸到 <code>.optimus/</code> 外的目录。</li>
+</ol>
+
+<p data-i18n-html="arch_s7_p4">内容验证使用 <code>=== undefined || === null</code>（而非 <code>!content</code>）以允许合法的空字符串写入。</p>
+
+<h3 data-i18n="arch_s7_h3_3">强制执行</h3>
+
+<p data-i18n-html="arch_s7_p5">规划模式是通过角色模板和技能指令强制执行的行为约束。编排器的提示明确声明它不能写代码且必须使用委派工具。这通过技能系统得到加强 — 编排器配备了规划技能（<code>council-review</code>、<code>feature-dev</code>），引导它们完成委派工作流。</p>
+
+<!-- Section 8 -->
+<h2 id="issue-first-sdlc" data-i18n="arch_s8_title">8. Issue 驱动的 SDLC</h2>
+
+<p data-i18n-html="arch_s8_p1">Optimus 中的所有代码变更都遵循<strong>“Issue 优先”协议</strong>。没有跟踪工作项就不会编写代码。</p>
+
+<h3 data-i18n="arch_s8_h3_1">完整工作流</h3>
+
+<pre><code>1. Create Issue    &rarr; vcs_create_work_item (GitHub Issue or ADO Work Item)
+2. Branch          &rarr; git checkout -b feature/issue-&lt;ID&gt;-&lt;desc&gt;
+3. Implement       &rarr; Agent writes code, runs build, runs tests
+4. PR              &rarr; vcs_create_pr with "Fixes #&lt;ID&gt;" in body
+5. Merge           &rarr; vcs_merge_pr (squash merge for clean history)
+6. Cleanup         &rarr; Auto-delete source branch, sync local master</code></pre>
+
+<h3 data-i18n="arch_s8_h3_2">Issue 谱系追踪</h3>
+
+<p data-i18n-html="arch_s8_p2">当智能体创建 GitHub Issue 然后委派子任务时，它将自己的 Issue 编号作为 <code>parent_issue_number</code> 传递给所有后续的 <code>delegate_task</code> 和 <code>dispatch_council</code> 调用。系统自动将 <code>OPTIMUS_PARENT_ISSUE</code> 注入子智能体进程，在工作流中的所有 Issue 之间维护父子树。</p>
+
+<p data-i18n="arch_s8_p3">这实现了完整的可追溯性：从高层 Epic 到单个子任务 PR。</p>
+
+<h3 data-i18n="arch_s8_h3_3">自动标签</h3>
+
+<p data-i18n="arch_s8_p4">所有通过 MCP 工具创建的 Issue 和 PR 都会自动标记：</p>
+<ul>
+  <li data-i18n-html="arch_s8_li1">标题中的 <code>[Optimus]</code> 前缀</li>
+  <li data-i18n-html="arch_s8_li2">用于过滤的 <code>optimus-bot</code> 标签</li>
+</ul>
+
+<h3 data-i18n="arch_s8_h3_4">受保护分支规则</h3>
+
+<p data-i18n-html="arch_s8_p5">禁止直接 <code>git push</code> 到 master/main。所有变更必须通过 <code>vcs_merge_pr</code> 的 PR 合并。这确保：</p>
+<ul>
+  <li data-i18n-html="arch_s8_li3">GitHub 的 <code>fixes #N</code> 自动关闭功能正常工作（仅由 PR 合并事件触发）</li>
+  <li data-i18n="arch_s8_li4">合并前进行代码审查</li>
+  <li data-i18n="arch_s8_li5">保持 Issue 驱动 SDLC 的可追溯性</li>
+</ul>
+
+<h3 data-i18n="arch_s8_h3_5">VCS 抽象层</h3>
+
+<p data-i18n-html="arch_s8_p6"><code>vcs_*</code> MCP 工具提供了对 GitHub 和 Azure DevOps 的统一抽象。无论仓库托管在哪个平台，相同的工作流都能正常工作。配置存储在 <code>.optimus/config/vcs.json</code> 中。</p>
+
+<!-- Section 9 -->
+<h2 id="memory-reflection" data-i18n-html="arch_s9_title">9. 记忆与反思</h2>
+
+<h3 data-i18n="arch_s9_h3_1">持续记忆</h3>
+
+<p data-i18n-html="arch_s9_p1">Optimus 在 <code>.optimus/memory/continuous-memory.md</code> 维护一个<strong>项目记忆</strong>。这是一个结构化的仅追加日志，记录经过验证的经验教训、架构决策、Bug 事后分析和工作流改进。</p>
+
+<p data-i18n-html="arch_s9_p2">记忆条目通过 <code>append_memory</code> MCP 工具创建，带有分类元数据：</p>
+
+<pre><code>{
+  category: "bug-postmortem",
+  tags: ["upgrade", "config-wipe", "vcs.json"],
+  content: "optimus upgrade force-overwrote vcs.json..."
+}</code></pre>
+
+<p data-i18n-html="arch_s9_p3">在智能体启动时，项目记忆被<strong>自动注入</strong>到智能体的提示中。这意味着每个智能体 — 无论何时创建 — 都以所有过去会话积累的知识开始。</p>
+
+<h3 data-i18n="arch_s9_h3_2">智能体自我反思协议</h3>
+
+<p data-i18n-html="arch_s9_p4">智能体可以在其输出报告中包含一个<strong>自我评估</strong>部分，包含：</p>
+<ul>
+  <li data-i18n-html="arch_s9_li1"><strong>有效之处</strong>：角色和技能与任务良好对齐的方面</li>
+  <li data-i18n-html="arch_s9_li2"><strong>缺失之处</strong>：需要即兴发挥的差距</li>
+  <li data-i18n-html="arch_s9_li3"><strong>建议更新</strong>：针对角色或技能改进的具体可操作建议</li>
+</ul>
+
+<p data-i18n-html="arch_s9_p5">自我评估是建议性的，非强制性的。智能体不能自主修改自己的角色模板或写入项目记忆 — PM 或 Master Agent 决定什么值得推广。这在仍然捕获改进信号的同时，防止了失控的自我修改。</p>
+
+<h3 data-i18n="arch_s9_h3_3">三个层次的反思</h3>
+
+<ol>
+  <li data-i18n-html="arch_s9_oli1"><strong>指令级</strong>（已实现）：嵌入在指令文件（<code>.claude/CLAUDE.md</code>、<code>.github/copilot-instructions.md</code>）中的委派后检查清单和委派前自检。</li>
+  <li data-i18n-html="arch_s9_oli2"><strong>记忆驱动</strong>（已实现）：智能体在对话开始时读取项目记忆。过去的错误自动出现在上下文中。</li>
+  <li data-i18n-html="arch_s9_oli3"><strong>Root Master 自委派</strong>（未来）：Root Master 委派给 <code>master-orchestrator</code> 角色，使自身与工作者智能体遵循相同的提示注入和反思协议。</li>
+</ol>
+
+<!-- Section 10 -->
+<h2 id="autonomous-operations" data-i18n="arch_s10_title">10. 自主运维</h2>
+
+<h3 data-i18n="arch_s10_h3_1">Meta-Cron 引擎</h3>
+
+<p data-i18n-html="arch_s10_p1">Optimus 包含一个 <strong>Meta-Cron</strong> 系统，用于调度自主智能体操作。Cron 条目通过 <code>register_meta_cron</code> 注册，使用标准的 5 字段 cron 表达式。</p>
+
+<p data-i18n="arch_s10_p2">每个 cron 条目指定：</p>
+<ul>
+  <li data-i18n-html="arch_s10_li1">要调用的<strong>角色</strong></li>
+  <li data-i18n-html="arch_s10_li2">任务的<strong>必需技能</strong></li>
+  <li data-i18n-html="arch_s10_li3"><strong>能力层级</strong>（<code>maintain</code>、<code>develop</code>、<code>review</code>），界定触发智能体能做什么</li>
+  <li data-i18n-html="arch_s10_li4"><strong>并发策略</strong>（<code>Forbid</code> 或 <code>Allow</code>）</li>
+  <li data-i18n-html="arch_s10_li5"><strong>每次触发最大动作数</strong>（默认：5）</li>
+  <li data-i18n-html="arch_s10_li6"><strong>试运行期</strong>（默认：3 个周期后才正式执行）</li>
+</ul>
+
+<p data-i18n="arch_s10_p3">示例用例：</p>
+<ul>
+  <li data-i18n="arch_s10_li7">每日依赖审计扫描</li>
+  <li data-i18n="arch_s10_li8">过期 Issue 清理</li>
+  <li data-i18n="arch_s10_li9">健康监控和系统检查</li>
+</ul>
+
+<h3 data-i18n="arch_s10_h3_2">异步任务架构</h3>
+
+<p data-i18n-html="arch_s10_p4">Optimus 中的所有委派都是异步优先的。<code>delegate_task_async</code> 和 <code>dispatch_council_async</code> 立即返回任务 ID。<code>check_task_status</code> 工具轮询完成状态。这防止 Master Agent 在工作者执行时阻塞。</p>
+
+<h3 data-i18n="arch_s10_h3_3">异步反馈通道（提案）</h3>
+
+<p data-i18n="arch_s10_p5">当智能体遇到模糊情况无法自主继续时，提议的工作流是：</p>
+<ol>
+  <li data-i18n-html="arch_s10_oli1">智能体通过 <code>vcs_add_comment</code> 在其跟踪 Issue 上发布问题</li>
+  <li data-i18n-html="arch_s10_oli2">智能体添加 <code>needs-human-input</code> 标签并将检查点写入 <code>.optimus/reports/</code></li>
+  <li data-i18n-html="arch_s10_oli3">智能体退出（即发即弃 — 无进程挂起）</li>
+  <li data-i18n="arch_s10_oli4">人类通过 GitHub 评论按自己的时间安排回复</li>
+  <li data-i18n-html="arch_s10_oli5">Meta-Cron 巡逻检测到响应，并使用相同的 <code>agent_id</code> 启动延续任务以保持上下文连续性</li>
+</ol>
+
+<p data-i18n="arch_s10_p6">这创建了一个完全异步的人在回路机制，无需任何实时通道。</p>
+
+<!-- Section 11 -->
+<h2 id="security-architecture" data-i18n="arch_s11_title">11. 安全架构</h2>
+
+<h3 data-i18n="arch_s11_h3_1">网关层输入验证</h3>
+
+<p data-i18n="arch_s11_p1">所有 MCP 工具处理程序在任务创建、文件写入或进程启动之前验证输入：</p>
+<ul>
+  <li data-i18n-html="arch_s11_li1"><strong>角色名混淆防护</strong>：如果 <code>role</code> 参数看起来像模型名（例如 <code>claude-opus-4</code>、<code>gpt-4o</code>），调用将被拒绝，并给出建议使用 <code>role_model</code> 的可操作错误。</li>
+  <li data-i18n-html="arch_s11_li2"><strong>引擎/模型验证</strong>：无效的引擎或模型值将被拒绝，并列出 <code>available-agents.json</code> 中的有效选项。</li>
+  <li data-i18n-html="arch_s11_li3">调用者收到 <code>McpError(InvalidParams)</code>，包含足够的信息进行自我纠正。</li>
+</ul>
+
+<h3 data-i18n="arch_s11_h3_2">委派深度控制</h3>
+
+<p data-i18n-html="arch_s11_p2">智能体委派上限为 <strong>3 个嵌套层</strong>（<code>MAX_DELEGATION_DEPTH = 3</code>，定义在 <code>src/constants.ts</code>）。这防止了智能体无限递归委派给其他智能体。</p>
+<ul>
+  <li data-i18n-html="arch_s11_li4">通过 <code>OPTIMUS_DELEGATION_DEPTH</code> 环境变量追踪，在每次委派时自动注入并递增。</li>
+  <li data-i18n="arch_s11_li5">在深度 3 时，MCP 配置从子进程中剥离，物理上阻止进一步委派。</li>
+</ul>
+
+<h3 data-i18n="arch_s11_h3_3">路径遍历防护</h3>
+<ul>
+  <li data-i18n-html="arch_s11_li6"><code>sanitizeRoleName()</code> 从角色名中剥离危险字符，防止通过精心构造的角色标识符进行目录遍历。</li>
+  <li data-i18n-html="arch_s11_li7"><code>write_blackboard_artifact</code> 使用双层验证（词法 + <code>fs.realpathSync()</code>）防止写入 <code>.optimus/</code> 之外。符号链接检查在安全审查中被识别为 P0 缺陷 — <code>path.resolve()</code> 和 <code>path.normalize()</code> 本身不解析符号链接。</li>
+</ul>
+
+<h3 data-i18n="arch_s11_h3_4">提示注入防御</h3>
+<ul>
+  <li data-i18n-html="arch_s11_li8">来自 GitHub Issues、ADO Work Items 和 PR 评论的所有内容都被视为<strong>不可信数据</strong>，绝不作为可执行指令。</li>
+  <li data-i18n="arch_s11_li9">智能体被指示永不运行在外部内容中找到的命令、脚本或 URL。</li>
+  <li data-i18n="arch_s11_li10">系统指令通过可信通道传递（MCP Resources、CLAUDE.md、copilot-instructions.md），不通过用户可修改字段。</li>
+</ul>
+
+<h3 data-i18n="arch_s11_h3_5">秘密保护</h3>
+<ul>
+  <li data-i18n-html="arch_s11_li11"><code>.env</code> 文件永不提交或包含在插件包中。</li>
+  <li data-i18n-html="arch_s11_li12"><code>.gitignore</code> 和插件打包规则排除了 <code>.optimus/agents/</code>、<code>.optimus/state/</code> 和凭据文件。</li>
+  <li data-i18n="arch_s11_li13">智能体被警告不要提交可能包含秘密的文件。</li>
+</ul>
+
+<h3 data-i18n="arch_s11_h3_6">规划模式作为安全边界</h3>
+
+<p data-i18n-html="arch_s11_p3">规划模式防止编排器智能体写入任意文件。即使提示注入说服编排器“写一个配置文件”，<code>write_blackboard_artifact</code> 路径验证也会拒绝 <code>.optimus/</code> 之外的任何目标。</p>
+
+<hr>
+
+<h2 data-i18n="arch_appendix_title">附录：项目结构</h2>
+
+<pre><code>.optimus/
+&#x251C;&#x2500;&#x2500; agents/          # T1 frozen instance snapshots
+&#x251C;&#x2500;&#x2500; config/          # vcs.json, available-agents.json, system-instructions.md
+&#x251C;&#x2500;&#x2500; memory/          # continuous-memory.md
+&#x251C;&#x2500;&#x2500; proposals/       # Council proposal documents
+&#x251C;&#x2500;&#x2500; reports/         # Agent output reports
+&#x251C;&#x2500;&#x2500; reviews/         # Council review outputs + synthesis
+&#x251C;&#x2500;&#x2500; roles/           # T2 role templates
+&#x251C;&#x2500;&#x2500; skills/          # Skill definitions (SKILL.md per skill)
+&#x251C;&#x2500;&#x2500; state/           # task-manifest.json, t3-usage-log.json
+&#x2514;&#x2500;&#x2500; system/          # System-level config
+
+optimus-plugin/
+&#x251C;&#x2500;&#x2500; bin/             # CLI entry points (init, serve, upgrade)
+&#x251C;&#x2500;&#x2500; dist/            # Compiled MCP server
+&#x251C;&#x2500;&#x2500; scaffold/        # Template files shipped to end-users
+&#x2514;&#x2500;&#x2500; skills/          # Universal bootstrap skills</code></pre>
+
+<hr>
+
+<p data-i18n-html="arch_version"><em>本文档描述 Optimus Code v0.4.0。最新更新请查看 <a href="https://github.com/cloga/optimus-code/blob/master/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG</a>。</em></p>
+
+</article>
+
+<!-- Back to Top -->
+<button class="back-to-top" id="backToTop" aria-label="Back to top">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+</button>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="index.html" data-i18n="footer_home">首页</a>
+      <a href="architecture.html" data-i18n="footer_arch">架构</a>
+      <a href="guide.html" data-i18n="footer_tutorial">教程</a>
+      <a href="pitch.html" data-i18n="footer_pitch">路演</a>
+      <a href="https://github.com/cloga/optimus-code" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" data-i18n="footer_license">MIT 许可证</a>
+    </div>
+    <div class="footer-tagline" data-i18n="footer_tagline">停止提示词工程。开始编排。</div>
+  </div>
+</footer>
+
+<script>
+/* Back to top button */
+(function(){
+  var btn=document.getElementById('backToTop');
+  if(!btn)return;
+  window.addEventListener('scroll',function(){
+    btn.classList.toggle('visible',window.scrollY>400);
+  });
+  btn.addEventListener('click',function(){
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+})();
+
+/* Hamburger menu toggle */
+(function(){
+  var btn=document.getElementById('hamburgerBtn');
+  var nav=document.getElementById('navLinks');
+  if(!btn||!nav)return;
+  btn.addEventListener('click',function(){
+    nav.classList.toggle('open');
+  });
+  nav.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('click',function(){nav.classList.remove('open')});
+  });
+})();
+</script>
+</body>
+</html>
