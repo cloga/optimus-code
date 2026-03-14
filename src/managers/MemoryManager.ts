@@ -7,6 +7,8 @@
  */
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
 
 // ─── Types ───
 
@@ -576,4 +578,228 @@ export function getMemoryFilePath(
     }
 
     return targetFile;
+}
+
+// ─── User Memory System ───
+// Separate subsystem from project/role memory.
+// Different format (plain Markdown bullets), different trust domain,
+// different storage location (~/.optimus/memory/user-memory.md).
+
+const ALLOWED_USER_MEMORY_CATEGORIES = ['Preferences', 'Toolchain', 'Lessons', 'Team Conventions', 'Uncategorized'];
+
+const DANGEROUS_PATTERNS: Array<{ name: string; regex: RegExp }> = [
+    { name: 'shell-command', regex: /(\$\(|`[^`]+`|exec\(|eval\(|system\(|rm\s+-rf|sudo\s|chmod\s|>\s*\/dev\/null)/ },
+    { name: 'pipe-execution', regex: /\|\s*(sh|bash|zsh|node|python|ruby)/ },
+    { name: 'secrets', regex: /(password\s*=|api_key\s*=|token\s*=|secret\s*=|aws_[a-z_]+\s*=)/i },
+    { name: 'base64-block', regex: /[A-Za-z0-9+\/=]{40,}/ },
+    { name: 'prompt-injection', regex: /(ignore previous|ignore all|you are now|system:|<\||\[INST\]|IMPORTANT:\s*override)/i },
+    { name: 'file-path', regex: /(\/[a-z_-]+){2,}\.(ts|js|py|rb|go|rs|java|cs)|\\[a-z_-]+\\[a-z_-]+\.(ts|js)/i },
+];
+
+/**
+ * Get the user memory file path.
+ * Overridable via OPTIMUS_USER_MEMORY_PATH env var.
+ */
+export function getUserMemoryPath(): string {
+    return process.env.OPTIMUS_USER_MEMORY_PATH || path.join(os.homedir(), '.optimus', 'memory', 'user-memory.md');
+}
+
+/**
+ * Validate user memory content against dangerous patterns.
+ * Returns { valid: true } or { valid: false, reason: string }.
+ */
+export function validateUserMemoryContent(content: string): { valid: boolean; reason?: string } {
+    for (const pattern of DANGEROUS_PATTERNS) {
+        if (pattern.regex.test(content)) {
+            return { valid: false, reason: `Rejected: content matches '${pattern.name}' safety pattern. User memory should contain generic preferences, not code, secrets, or commands.` };
+        }
+    }
+    return { valid: true };
+}
+
+/**
+ * Load user memory for prompt injection.
+ * Returns empty string if not opted in, in CI, or on any error.
+ * Applies sanitizeExternalContent() at read time and strips code blocks.
+ * Never throws.
+ */
+export function loadUserMemory(maxChars: number = 2000): string {
+    try {
+        // CI guard
+        if (process.env.CI === 'true' || process.env.CODESPACES === 'true') return '';
+
+        const memPath = getUserMemoryPath();
+        if (!fs.existsSync(memPath)) return '';
+
+        let content = fs.readFileSync(memPath, 'utf8');
+
+        // Apply read-time sanitization
+        const { sanitized } = sanitizeExternalContent(content, 'user-memory');
+        content = sanitized;
+
+        // Strip fenced code blocks
+        content = content.replace(/```[\s\S]*?```/g, '');
+
+        // Truncate to maxChars on a line boundary
+        if (content.length > maxChars) {
+            const truncated = content.substring(0, maxChars);
+            const lastNewline = truncated.lastIndexOf('\n');
+            content = lastNewline > 0 ? truncated.substring(0, lastNewline) : truncated;
+        }
+
+        return content.trim();
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * Parse user memory entries from the Markdown bullet list format.
+ * Each entry is a `- text` line under a `## Section` header.
+ */
+export function parseUserMemoryEntries(content: string): Array<{ section: string; text: string; lineNumber: number }> {
+    const entries: Array<{ section: string; text: string; lineNumber: number }> = [];
+    const lines = content.split('\n');
+    let currentSection = 'Uncategorized';
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const sectionMatch = line.match(/^##\s+(.+)/);
+        if (sectionMatch) {
+            currentSection = sectionMatch[1].trim();
+            continue;
+        }
+        const entryMatch = line.match(/^-\s+(.+)/);
+        if (entryMatch) {
+            entries.push({
+                section: currentSection,
+                text: entryMatch[1].trim(),
+                lineNumber: i + 1,
+            });
+        }
+    }
+
+    return entries;
+}
+
+/**
+ * Resolve category name: capitalize first letter, map unrecognized to Uncategorized.
+ */
+function resolveCategory(category: string): string {
+    const capitalized = category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+    // Match against allowed categories (case-insensitive)
+    const match = ALLOWED_USER_MEMORY_CATEGORIES.find(c => c.toLowerCase() === category.toLowerCase());
+    return match || 'Uncategorized';
+}
+
+/**
+ * Append an entry to the user memory file under the given category section.
+ * Uses atomic temp-file + rename to prevent corruption.
+ */
+export function appendToUserMemory(category: string, content: string): void {
+    const memPath = getUserMemoryPath();
+    let fileContent = fs.readFileSync(memPath, 'utf8');
+    const resolvedCategory = resolveCategory(category);
+    const sectionHeader = `## ${resolvedCategory}`;
+
+    const lines = fileContent.split('\n');
+    let sectionIdx = -1;
+    let nextSectionIdx = -1;
+
+    // Find the target section (case-insensitive)
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim().toLowerCase() === sectionHeader.toLowerCase()) {
+            sectionIdx = i;
+            // Find next section or EOF
+            for (let j = i + 1; j < lines.length; j++) {
+                if (lines[j].match(/^##\s+/)) {
+                    nextSectionIdx = j;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    if (sectionIdx === -1) {
+        // Section doesn't exist — create it before the last section
+        // Find the last ## header
+        let lastSectionIdx = -1;
+        for (let i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].match(/^##\s+/)) {
+                lastSectionIdx = i;
+                break;
+            }
+        }
+
+        if (lastSectionIdx >= 0) {
+            // Insert before the last section
+            lines.splice(lastSectionIdx, 0, sectionHeader, `- ${content}`, '');
+        } else {
+            // No sections at all — append at end
+            lines.push('', sectionHeader, `- ${content}`, '');
+        }
+    } else {
+        // Section exists — append entry at end of section
+        const insertIdx = nextSectionIdx !== -1 ? nextSectionIdx : lines.length;
+        // Insert before the next section (or at EOF), ensuring a blank line before next section
+        lines.splice(insertIdx, 0, `- ${content}`);
+    }
+
+    const newContent = lines.join('\n');
+
+    // Update header metadata
+    const updatedContent = updateUserMemoryHeader(newContent);
+
+    // Atomic write
+    const tmpPath = memPath + '.tmp';
+    fs.writeFileSync(tmpPath, updatedContent, 'utf8');
+    fs.renameSync(tmpPath, memPath);
+}
+
+/**
+ * Remove a user memory entry by 1-indexed number.
+ * Uses atomic temp-file + rename.
+ */
+export function removeUserMemoryEntry(index: number): void {
+    const memPath = getUserMemoryPath();
+    const fileContent = fs.readFileSync(memPath, 'utf8');
+    const entries = parseUserMemoryEntries(fileContent);
+
+    if (index < 1 || index > entries.length) {
+        throw new Error(`Invalid entry number ${index}. Valid range: 1-${entries.length}`);
+    }
+
+    const targetEntry = entries[index - 1];
+    const lines = fileContent.split('\n');
+
+    // Remove the line at the target lineNumber (1-indexed)
+    lines.splice(targetEntry.lineNumber - 1, 1);
+
+    const newContent = lines.join('\n');
+    const updatedContent = updateUserMemoryHeader(newContent);
+
+    // Atomic write
+    const tmpPath = memPath + '.tmp';
+    fs.writeFileSync(tmpPath, updatedContent, 'utf8');
+    fs.renameSync(tmpPath, memPath);
+}
+
+/**
+ * Update the # Last updated and # Entries header lines in user memory content.
+ */
+function updateUserMemoryHeader(content: string): string {
+    const lines = content.split('\n');
+    const entryCount = parseUserMemoryEntries(content).length;
+
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+        if (lines[i].startsWith('# Last updated:')) {
+            lines[i] = `# Last updated: ${new Date().toISOString()}`;
+        }
+        if (lines[i].startsWith('# Entries:')) {
+            lines[i] = `# Entries: ${entryCount}`;
+        }
+    }
+
+    return lines.join('\n');
 }

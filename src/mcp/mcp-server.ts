@@ -13,7 +13,7 @@ import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
-import { getMemoryFilePath, buildMemoryEntry } from "../managers/MemoryManager";
+import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
@@ -124,7 +124,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               category: { type: "string", description: "The category of the memory (e.g. 'architecture-decision', 'bug-fix', 'workflow')" },
               tags: { type: "array", items: { type: "string" }, description: "A list of tags for selective loading" },
               content: { type: "string", description: "The actual memory content to solidify" },
-              level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific. Defaults to project.", enum: ["project", "role"] }
+              level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific, 'user' for cross-project personal memory. Defaults to project.", enum: ["project", "role", "user"] }
             },
             required: ["category", "tags", "content"]
           }
@@ -786,6 +786,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else if (request.params.name === "append_memory") {
       let { category, tags, content, level } = request.params.arguments as any;
       requireParams("append_memory", request.params.arguments as any, ["category", "content"]);
+
+      // User-level memory: separate subsystem with different format and trust domain
+      if (level === 'user') {
+        const userMemPath = getUserMemoryPath();
+        if (!fs.existsSync(userMemPath)) {
+          return {
+            content: [{ type: "text", text: "User memory not initialized. Run `optimus memory init` first." }],
+            isError: true
+          };
+        }
+        const validation = validateUserMemoryContent(content);
+        if (!validation.valid) {
+          return {
+            content: [{ type: "text", text: `Content rejected: ${validation.reason}` }],
+            isError: true
+          };
+        }
+        const resolvedCategory = category || 'uncategorized';
+        appendToUserMemory(resolvedCategory, content);
+        const displayCategory = resolvedCategory.charAt(0).toUpperCase() + resolvedCategory.slice(1).toLowerCase();
+        return {
+          content: [{ type: "text", text: `✅ Memory saved to user memory under ## ${displayCategory}` }]
+        };
+      }
+
       const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
       const memoryLevel: 'project' | 'role' = level === 'role' ? 'role' : 'project';
       const author = process.env.OPTIMUS_CURRENT_ROLE || 'unknown';
