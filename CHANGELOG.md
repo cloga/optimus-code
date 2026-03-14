@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.4] - 2026-03-15
+
+### Features
+- **Multi-Level Memory System** — New `MemoryManager.ts` with project + role memory scopes, YAML frontmatter parser, relevance scoring (+3 role match, +2 recency), tiered token budgets, and greedy-fill loader. `append_memory` now accepts `level: "project" | "role"`. Workers receive `OPTIMUS_CURRENT_ROLE` env var. (#375)
+- **User-Level Cross-Project Memory** — Opt-in `~/.optimus/memory/user-memory.md` for persistent user preferences across projects. `append_memory` accepts `level: "user"` with write-time safety filtering. `optimus memory` CLI subcommands: init, list, edit, add, remove. CI-guarded (disabled when `CI=true`). (#380)
+- **Context Continuity System** — New `list_knowledge` MCP tool returns structured manifest of all `.optimus/` artifacts (specs, memory, reports, reviews). Master delegation pre-flight now includes Context Check step. Sub-agents can self-discover context. (#381)
+
+### Fixes
+- **Enforce T3→T2→T1 lifecycle** — `ensureT2Role` now throws an error (instead of silent null) when `role_description` is missing for a new role. T1 instance creation skipped when no T2 exists, preventing orphaned empty-shell agent files.
+
 ## [1.0.3] - 2026-03-14
 
 ### Features
