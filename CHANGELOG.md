@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.2] - 2026-03-15
+
+### Fixes
+- **Patrol no longer auto-closes `swarm-council` Issues** — Council `verified` only means the review finished, not that recommendations were implemented. Now only `swarm-task` verified Issues are closed. Council Issues get a status comment but stay open until manually closed.
+
 ## [2.3.1] - 2026-03-15
 
 ### Features
