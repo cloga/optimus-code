@@ -2,11 +2,12 @@
   "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli' (default) or 'acp' (JSON-RPC over NDJSON).",
   "engines": {
     "claude-code": {
-      "protocol": "cli",
-      "path": "npx @anthropic-ai/claude-code",
-      "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
+      "protocol": "acp",
+      "path": "claude-agent-acp",
+      "available_models": ["default", "opus", "opus[1m]", "sonnet[1m]", "haiku"],
       "cli_flags": "--model",
-      "timeout": { "heartbeat_ms": 600000 }
+      "timeout": { "heartbeat_ms": 600000 },
+      "_comment": "Requires: npm install -g @zed-industries/claude-agent-acp"
     },
     "github-copilot": {
       "protocol": "cli",

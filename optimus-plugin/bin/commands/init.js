@@ -183,6 +183,22 @@ module.exports = function init() {
     for (const e of injectResult.errors) console.log(`  ! ${e}`);
   }
 
+  // 6. Auto-install claude-agent-acp if not already available
+  const { execSync } = require('child_process');
+  try {
+    execSync('claude-agent-acp --version', { stdio: 'ignore', timeout: 5000 });
+    console.log('\n🔗 claude-agent-acp already installed (ACP engine ready)');
+  } catch {
+    console.log('\n📦 Installing claude-agent-acp (ACP protocol bridge for Claude Code)...');
+    try {
+      execSync('npm install -g @zed-industries/claude-agent-acp', { stdio: 'inherit', timeout: 60000 });
+      console.log('  ✅ claude-agent-acp installed successfully');
+    } catch (e) {
+      console.log('  ⚠️  Failed to install claude-agent-acp:', e.message);
+      console.log('  💡 Install manually: npm install -g @zed-industries/claude-agent-acp');
+    }
+  }
+
   console.log('\n✅ Workspace initialized! Your AI development team is ready.');
   console.log('\n📋 What happened:');
   console.log('   • Created .optimus/ with agent roles, skills, and config');

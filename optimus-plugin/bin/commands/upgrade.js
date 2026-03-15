@@ -212,7 +212,21 @@ module.exports = function upgrade() {
     for (const e of injectResult.errors) console.log(`  ! ${e}`);
   }
 
-  // 8. Summary
+  // 8. Ensure claude-agent-acp is installed (ACP is now the default for claude-code engine)
+  const { execSync } = require('child_process');
+  try {
+    execSync('claude-agent-acp --version', { stdio: 'ignore', timeout: 5000 });
+  } catch {
+    console.log('\n📦 Installing claude-agent-acp (now default for claude-code engine)...');
+    try {
+      execSync('npm install -g @zed-industries/claude-agent-acp', { stdio: 'inherit', timeout: 60000 });
+      console.log('  ✅ claude-agent-acp installed');
+    } catch (e) {
+      console.log('  ⚠️  Auto-install failed. Run manually: npm install -g @zed-industries/claude-agent-acp');
+    }
+  }
+
+  // 9. Summary
   console.log(`\n✅ Upgrade complete: ${skillCount} skills, ${roleCount} roles, ${configCount} config files updated.`);
   console.log('   User agents and runtime data preserved.\n');
 };
