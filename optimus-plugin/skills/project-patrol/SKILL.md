@@ -25,10 +25,12 @@ Issues labeled `swarm-task` or `swarm-council` are auto-created tracker Issues f
 2. **Correlate**: Read `.optimus/state/task-manifest.json` and match each Issue's number against `github_issue_number` on task records
 3. **Classify** each matched task by status:
 
-| Task Status | Action |
-|-------------|--------|
-| `verified` | Close Issue via `vcs_update_work_item(item_id: N, state: "closed")`. Add comment via `vcs_add_comment`: `[patrol-manager] ✅ Task completed. Output: {output_path}` |
-| `failed` or `timeout` | Add `failed` label via `vcs_update_work_item(item_id: N, labels_add: ["failed"])`. Add comment via `vcs_add_comment`: `[patrol-manager] ❌ Task failed: {error_message}` |
+| Task Status | Label | Action |
+|-------------|-------|--------|
+| `verified` | `swarm-task` | Close Issue via `vcs_update_work_item(item_id: N, state: "closed")`. Add comment via `vcs_add_comment`: `[patrol-manager] ✅ Task completed. Output: {output_path}` |
+| `verified` | `swarm-council` | Do NOT close. Council `verified` means the review finished, not that recommendations were implemented. Add comment: `[patrol-manager] ℹ️ Council review completed. Verdict at: {output_path}. Close manually when recommendations are implemented.` Report in patrol summary. |
+| `partial` | `swarm-council` | Do NOT close. Add comment: `[patrol-manager] ⚠️ Council partial: {error_message}. Some experts failed. Consider re-running.` |
+| `failed` or `timeout` | any | Add `failed` label via `vcs_update_work_item(item_id: N, labels_add: ["failed"])`. Add comment via `vcs_add_comment`: `[patrol-manager] ❌ Task failed: {error_message}` |
 | `running` + heartbeat fresh (< 10 min) | Skip — task still active |
 | `running` + heartbeat stale | Skip — handled by Phase 2.5 (Diagnose) |
 | No manifest match | Skip — orphan Issue, report for manual review |
@@ -126,7 +128,8 @@ Apply this decision framework to each finding:
 | Task stuck in running (> 2h) | Mark as failed in task manifest | Self (depth-1) | Low |
 | Task failed (systemic pattern) | Analyze, delegate fix to specialist | Specialist (depth-2) | Medium |
 | Agent zombie (active, no heartbeat > 1h) | Mark as completed | Self (depth-1) | Low |
-| Task-tracking Issue (`swarm-task`/`swarm-council`) with task `verified` | Close Issue with completion comment (see §1.1.1) | Self (depth-1) | Low |
+| Task-tracking Issue (`swarm-task`) with task `verified` | Close Issue with completion comment (see §1.1.1) | Self (depth-1) | Low |
+| Task-tracking Issue (`swarm-council`) with task `verified` or `partial` | Do NOT close — council completion ≠ recommendations implemented. Add status comment only (see §1.1.1) | Self (depth-1) | Info |
 | Task-tracking Issue with task `failed`/`timeout` | Add `failed` label + error comment (see §1.1.1) | Self (depth-1) | Low |
 | All children of a parent Issue verified | Add "all sub-tasks completed" comment to parent (see §1.1.2) | Self (depth-1) | Low |
 
