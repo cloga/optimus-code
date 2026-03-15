@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.0] - 2026-03-16
+
+### Features
+- **`competitive-discovery` skill** — New weekly discovery skill for finding unknown competitors via GitHub topic search. Separate from daily monitoring. Weekly cron registered (`0 9 * * 1`).
+- **9 new competitors added to watchlist** — Zeroshot, ComposioHQ/agent-orchestrator, Babysitter, OpenCastle, Ruflo, TAKT, DeerFlow, AG2, Google ADK.
+
+### Improvements
+- **Unified prompt for all engines** — Removed ACP lean prompt. All engines (CLI and ACP) now receive the same full prompt with inline memory, user memory, persona, skills, and context. Fixes: ACP sub-agents were missing user preferences and project memory because they didn't read the file paths provided in the lean prompt.
+
 ## [2.3.2] - 2026-03-15
 
 ### Fixes
