@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 
 /**
  * GitHub VCS Provider Implementation
@@ -341,6 +341,120 @@ export class GitHubProvider implements IVcsProvider {
 
     getProviderName(): string {
         return 'github';
+    }
+
+    async updateWorkItem(
+        itemId: string | number,
+        updates: { state?: 'open' | 'closed'; title?: string; labels_add?: string[]; labels_remove?: string[] }
+    ): Promise<WorkItemResult> {
+        const token = this.getToken();
+        if (!token) throw new Error('GitHub token not found in environment variables');
+
+        const id = typeof itemId === 'string' ? parseInt(itemId) : itemId;
+        const payload: any = {};
+        if (updates.state) payload.state = updates.state;
+        if (updates.title) payload.title = updates.title;
+
+        const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Optimus-Agent'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+        }
+
+        const data = await response.json() as any;
+
+        // Handle label additions
+        if (updates.labels_add && updates.labels_add.length > 0) {
+            await this.addLabels('workitem', id, updates.labels_add);
+        }
+
+        // Handle label removals
+        if (updates.labels_remove) {
+            for (const label of updates.labels_remove) {
+                try {
+                    await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/labels/${encodeURIComponent(label)}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'User-Agent': 'Optimus-Agent'
+                        }
+                    });
+                } catch { /* best-effort */ }
+            }
+        }
+
+        return {
+            id: data.id.toString(),
+            number: data.number,
+            url: data.html_url,
+            title: data.title
+        };
+    }
+
+    async listWorkItems(
+        filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
+    ): Promise<WorkItemListItem[]> {
+        const token = this.getToken();
+        if (!token) throw new Error('GitHub token not found in environment variables');
+
+        const state = filters?.state || 'open';
+        const limit = Math.min(filters?.limit || 100, 100);
+        const labelsParam = filters?.labels?.join(',') || '';
+
+        let url = `https://api.github.com/repos/${this.owner}/${this.repo}/issues?state=${state}&per_page=${limit}`;
+        if (labelsParam) url += `&labels=${encodeURIComponent(labelsParam)}`;
+
+        const allItems: WorkItemListItem[] = [];
+
+        while (url && allItems.length < limit) {
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Optimus-Agent'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            }
+
+            const data = await response.json() as any[];
+            for (const item of data) {
+                if (item.pull_request) continue; // Skip PRs (GitHub returns them in issues endpoint)
+                allItems.push({
+                    id: item.id.toString(),
+                    number: item.number,
+                    title: item.title,
+                    state: item.state,
+                    labels: (item.labels || []).map((l: any) => l.name),
+                    url: item.html_url,
+                    created_at: item.created_at,
+                    updated_at: item.updated_at
+                });
+                if (allItems.length >= limit) break;
+            }
+
+            // Follow pagination
+            const linkHeader = response.headers.get('link');
+            url = '';
+            if (linkHeader && allItems.length < limit) {
+                const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+                if (nextMatch) url = nextMatch[1];
+            }
+        }
+
+        return allItems;
     }
 
     private getToken(): string | undefined {

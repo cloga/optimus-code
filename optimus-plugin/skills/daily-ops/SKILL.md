@@ -61,9 +61,9 @@ Read the following blackboard locations and note anything anomalous:
    5. Write findings to `.optimus/reports/release-readiness-<date>.md`
    6. DO NOT trigger a release. Only report. Release decision belongs to PM.
 
-7. **Issue Triage & Hygiene** — Use `github_update_issue` and `github_sync_board` MCP tools
+7. **Issue Triage & Hygiene** — Use `vcs_update_work_item` and `vcs_list_work_items` MCP tools
    The steward scans open Issues and performs automated triage:
-   1. Fetch all open Issues via `github_sync_board` or equivalent VCS tool
+   1. Fetch all open Issues via `vcs_list_work_items` or equivalent VCS tool
    2. For any Issue **without** a priority label (`P0`, `P1`, `P2`, `P3`):
       - Read the Issue title and body
       - Assess priority using this matrix:
@@ -71,14 +71,14 @@ Read the following blackboard locations and note anything anomalous:
         - **P1**: Major feature broken, significant user impact, blocks other work
         - **P2**: Minor feature issue, workaround exists, non-blocking
         - **P3**: Enhancement, cosmetic, nice-to-have
-      - Apply the appropriate priority label via `github_update_issue`
+      - Apply the appropriate priority label via `vcs_update_work_item`
    3. For any Issue **already implemented** (check `git log --oneline --all` for `fixes #N`, `closes #N`, `resolves #N`, or `closed #N` references):
-      - Close the Issue via `github_update_issue` with `state: "closed"`
+      - Close the Issue via `vcs_update_work_item` with `state: "closed"`
       - Add a comment referencing the implementing commit
    4. For every Issue the steward processes → add the `system-maintained` label
    5. For every comment the steward adds → include `[system-maintained]` tag in the comment body
 
-   **Resilience**: If `github_update_issue` or `github_sync_board` returns an error (e.g., `MethodNotFound`), log the failure in the patrol report and skip Issue Triage. Do NOT fail the entire patrol.
+   **Resilience**: If `vcs_update_work_item` or `vcs_list_work_items` returns an error (e.g., `MethodNotFound`), log the failure in the patrol report and skip Issue Triage. Do NOT fail the entire patrol.
 
 8. **Failed Task Analysis** — `.optimus/state/task-manifest.json`
    Scan for tasks with `"status": "failed"` to identify systemic issues:
@@ -108,9 +108,9 @@ Apply this decision matrix:
 | Stale PR (> 7 days, no activity) | Report only (do not auto-close) | Info |
 | Unreleased P0 fix on master | Report as URGENT — flag for PM | High |
 | Commits since last tag (features) | Report release readiness | Info |
-| Issue without priority label | Assess and add P0/P1/P2/P3 label via `github_update_issue` | Medium |
-| Issue already implemented (commit ref exists) | Close via `github_update_issue` with commit reference | Low |
-| Issue processed by steward | Add `system-maintained` label via `github_update_issue` | Low |
+| Issue without priority label | Assess and add P0/P1/P2/P3 label via `vcs_update_work_item` | Medium |
+| Issue already implemented (commit ref exists) | Close via `vcs_update_work_item` with commit reference | Low |
+| Issue processed by steward | Add `system-maintained` label via `vcs_update_work_item` | Low |
 | Deferred action from previous patrol still applicable | Execute if budget allows (counts toward action budget) | Medium |
 | Previous recommendation not addressed after 2+ patrols | Escalate in report as recurring issue | Info |
 | Failed tasks in last 7 days | Report failure summary by category | Info |

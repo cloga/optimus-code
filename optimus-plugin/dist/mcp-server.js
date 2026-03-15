@@ -11062,6 +11062,96 @@ var init_GitHubProvider = __esm({
       getProviderName() {
         return "github";
       }
+      async updateWorkItem(itemId, updates) {
+        const token = this.getToken();
+        if (!token) throw new Error("GitHub token not found in environment variables");
+        const id = typeof itemId === "string" ? parseInt(itemId) : itemId;
+        const payload = {};
+        if (updates.state) payload.state = updates.state;
+        if (updates.title) payload.title = updates.title;
+        const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}`, {
+          method: "PATCH",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+            "User-Agent": "Optimus-Agent"
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+        }
+        const data = await response.json();
+        if (updates.labels_add && updates.labels_add.length > 0) {
+          await this.addLabels("workitem", id, updates.labels_add);
+        }
+        if (updates.labels_remove) {
+          for (const label of updates.labels_remove) {
+            try {
+              await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}/labels/${encodeURIComponent(label)}`, {
+                method: "DELETE",
+                headers: {
+                  "Authorization": `Bearer ${token}`,
+                  "Accept": "application/vnd.github.v3+json",
+                  "User-Agent": "Optimus-Agent"
+                }
+              });
+            } catch {
+            }
+          }
+        }
+        return {
+          id: data.id.toString(),
+          number: data.number,
+          url: data.html_url,
+          title: data.title
+        };
+      }
+      async listWorkItems(filters) {
+        const token = this.getToken();
+        if (!token) throw new Error("GitHub token not found in environment variables");
+        const state = filters?.state || "open";
+        const limit = Math.min(filters?.limit || 100, 100);
+        const labelsParam = filters?.labels?.join(",") || "";
+        let url2 = `https://api.github.com/repos/${this.owner}/${this.repo}/issues?state=${state}&per_page=${limit}`;
+        if (labelsParam) url2 += `&labels=${encodeURIComponent(labelsParam)}`;
+        const allItems = [];
+        while (url2 && allItems.length < limit) {
+          const response = await fetch(url2, {
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Optimus-Agent"
+            }
+          });
+          if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+          }
+          const data = await response.json();
+          for (const item of data) {
+            if (item.pull_request) continue;
+            allItems.push({
+              id: item.id.toString(),
+              number: item.number,
+              title: item.title,
+              state: item.state,
+              labels: (item.labels || []).map((l) => l.name),
+              url: item.html_url,
+              created_at: item.created_at,
+              updated_at: item.updated_at
+            });
+            if (allItems.length >= limit) break;
+          }
+          const linkHeader = response.headers.get("link");
+          url2 = "";
+          if (linkHeader && allItems.length < limit) {
+            const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+            if (nextMatch) url2 = nextMatch[1];
+          }
+        }
+        return allItems;
+      }
       getToken() {
         return process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
       }
@@ -12604,6 +12694,13 @@ var init_AdoProvider = __esm({
       }
       getProviderName() {
         return "azure-devops";
+      }
+      async updateWorkItem(_itemId, _updates) {
+        throw new Error("[AdoProvider] updateWorkItem() is not yet implemented for Azure DevOps.");
+      }
+      async listWorkItems(_filters) {
+        console.error("[AdoProvider] listWorkItems() is not yet implemented for Azure DevOps. Returning empty array.");
+        return [];
       }
       getToken() {
         return process.env.ADO_PAT || process.env.AZURE_DEVOPS_PAT;
@@ -31243,34 +31340,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
-        name: "github_update_issue",
-        description: "Updates an existing issue in a GitHub repository (e.g. to close it or add comments).",
+        name: "vcs_update_work_item",
+        description: "Update an existing work item (GitHub Issue / ADO Work Item) \u2014 change state, title, or labels.",
         inputSchema: {
           type: "object",
           properties: {
-            owner: { type: "string", description: "Repository owner" },
-            repo: { type: "string", description: "Repository name" },
-            issue_number: { type: "number", description: "The number of the issue to update" },
-            state: { type: "string", enum: ["open", "closed"], description: "State of the issue" },
-            title: { type: "string", description: "New title for the issue" },
-            body: { type: "string", description: "New body for the issue (overwrites existing)" },
-            agent_role: { type: "string", description: "The role of the agent making this update" },
-            session_id: { type: "string", description: "The session ID of the agent" }
+            item_id: { type: ["string", "number"], description: "Work item ID or issue number" },
+            state: { type: "string", enum: ["open", "closed"], description: "New state for the work item" },
+            title: { type: "string", description: "New title for the work item" },
+            labels_add: { type: "array", items: { type: "string" }, description: "Labels to add" },
+            labels_remove: { type: "array", items: { type: "string" }, description: "Labels to remove" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            agent_role: { type: "string", description: "The role of the agent making this update. Used for attribution." }
           },
-          required: ["owner", "repo", "issue_number"]
+          required: ["item_id", "workspace_path"]
         }
       },
       {
-        name: "github_sync_board",
-        description: "Fetches open issues from a GitHub repository and dumps them into the local blackboard.",
+        name: "vcs_list_work_items",
+        description: "List work items (GitHub Issues / ADO Work Items) with optional filters.",
         inputSchema: {
           type: "object",
           properties: {
-            owner: { type: "string", description: "Repository owner (e.g. cloga)" },
-            repo: { type: "string", description: "Repository name (e.g. optimus-code)" },
-            workspace_path: { type: "string", description: "Absolute workspace path" }
+            state: { type: "string", enum: ["open", "closed", "all"], description: "Filter by state (default: open)" },
+            labels: { type: "array", items: { type: "string" }, description: "Filter by labels (items must have ALL listed labels)" },
+            limit: { type: "number", description: "Maximum number of items to return (default: 100, max: 100)" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
           },
-          required: ["owner", "repo", "workspace_path"]
+          required: ["workspace_path"]
         }
       },
       {
@@ -32454,6 +32551,43 @@ Fix the build errors and try again.`
       };
     } catch (error2) {
       throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error2.message}`);
+    }
+  } else if (request.params.name === "vcs_update_work_item") {
+    const { item_id, state, title, labels_add, labels_remove, workspace_path } = request.params.arguments;
+    requireParams("vcs_update_work_item", request.params.arguments, ["item_id", "workspace_path"]);
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const result = await vcsProvider.updateWorkItem(item_id, { state, title, labels_add, labels_remove });
+      return {
+        content: [{
+          type: "text",
+          text: `\u2705 Work item #${item_id} updated on ${vcsProvider.getProviderName()}
+
+**Title:** ${result.title}
+**URL:** ${result.url}${state ? `
+**State:** ${state}` : ""}`
+        }]
+      };
+    } catch (error2) {
+      throw new McpError(ErrorCode.InternalError, `Failed to update work item: ${error2.message}`);
+    }
+  } else if (request.params.name === "vcs_list_work_items") {
+    const { state, labels, limit, workspace_path } = request.params.arguments;
+    requireParams("vcs_list_work_items", request.params.arguments, ["workspace_path"]);
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const items = await vcsProvider.listWorkItems({ state, labels, limit });
+      const summary = items.map((i) => `#${i.number} [${i.state}] ${i.labels.length ? `(${i.labels.join(", ")}) ` : ""}${i.title}`).join("\n");
+      return {
+        content: [{
+          type: "text",
+          text: `Found ${items.length} work items on ${vcsProvider.getProviderName()}:
+
+${summary}`
+        }]
+      };
+    } catch (error2) {
+      throw new McpError(ErrorCode.InternalError, `Failed to list work items: ${error2.message}`);
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments;

@@ -130,36 +130,36 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           }
         },
         {
-          name: "github_update_issue",
-          description: "Updates an existing issue in a GitHub repository (e.g. to close it or add comments).",
+          name: "vcs_update_work_item",
+          description: "Update an existing work item (GitHub Issue / ADO Work Item) — change state, title, or labels.",
           inputSchema: {
             type: "object",
             properties: {
-              owner: { type: "string", description: "Repository owner" },
-              repo: { type: "string", description: "Repository name" },
-              issue_number: { type: "number", description: "The number of the issue to update" },
-              state: { type: "string", enum: ["open", "closed"], description: "State of the issue" },
-              title: { type: "string", description: "New title for the issue" },
-              body: { type: "string", description: "New body for the issue (overwrites existing)" },
-              agent_role: { type: "string", description: "The role of the agent making this update" },
-              session_id: { type: "string", description: "The session ID of the agent" }
+              item_id: { type: ["string", "number"], description: "Work item ID or issue number" },
+              state: { type: "string", enum: ["open", "closed"], description: "New state for the work item" },
+              title: { type: "string", description: "New title for the work item" },
+              labels_add: { type: "array", items: { type: "string" }, description: "Labels to add" },
+              labels_remove: { type: "array", items: { type: "string" }, description: "Labels to remove" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+              agent_role: { type: "string", description: "The role of the agent making this update. Used for attribution." }
             },
-            required: ["owner", "repo", "issue_number"]
+            required: ["item_id", "workspace_path"]
           }
         },
         {
-          name: "github_sync_board",
-        description: "Fetches open issues from a GitHub repository and dumps them into the local blackboard.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            owner: { type: "string", description: "Repository owner (e.g. cloga)" },
-            repo: { type: "string", description: "Repository name (e.g. optimus-code)" },
-            workspace_path: { type: "string", description: "Absolute workspace path" }
-          },
-          required: ["owner", "repo", "workspace_path"]
-        }
-      },
+          name: "vcs_list_work_items",
+          description: "List work items (GitHub Issues / ADO Work Items) with optional filters.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              state: { type: "string", enum: ["open", "closed", "all"], description: "Filter by state (default: open)" },
+              labels: { type: "array", items: { type: "string" }, description: "Filter by labels (items must have ALL listed labels)" },
+              limit: { type: "number", description: "Maximum number of items to return (default: 100, max: 100)" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["workspace_path"]
+          }
+        },
 
       {
         name: "dispatch_council",
@@ -1361,6 +1361,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_update_work_item") {
+    const { item_id, state, title, labels_add, labels_remove, workspace_path } = request.params.arguments as any;
+    requireParams("vcs_update_work_item", request.params.arguments as any, ["item_id", "workspace_path"]);
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const result = await vcsProvider.updateWorkItem(item_id, { state, title, labels_add, labels_remove });
+
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Work item #${item_id} updated on ${vcsProvider.getProviderName()}\n\n**Title:** ${result.title}\n**URL:** ${result.url}${state ? `\n**State:** ${state}` : ''}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to update work item: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_list_work_items") {
+    const { state, labels, limit, workspace_path } = request.params.arguments as any;
+    requireParams("vcs_list_work_items", request.params.arguments as any, ["workspace_path"]);
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const items = await vcsProvider.listWorkItems({ state, labels, limit });
+
+      const summary = items.map(i => `#${i.number} [${i.state}] ${i.labels.length ? `(${i.labels.join(', ')}) ` : ''}${i.title}`).join('\n');
+      return {
+        content: [{
+          type: "text",
+          text: `Found ${items.length} work items on ${vcsProvider.getProviderName()}:\n\n${summary}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to list work items: ${error.message}`);
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments as any;

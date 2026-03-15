@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 import { marked } from 'marked';
 
 /**
@@ -421,6 +421,20 @@ export class AdoProvider implements IVcsProvider {
 
     getProviderName(): string {
         return 'azure-devops';
+    }
+
+    async updateWorkItem(
+        _itemId: string | number,
+        _updates: { state?: 'open' | 'closed'; title?: string; labels_add?: string[]; labels_remove?: string[] }
+    ): Promise<WorkItemResult> {
+        throw new Error('[AdoProvider] updateWorkItem() is not yet implemented for Azure DevOps.');
+    }
+
+    async listWorkItems(
+        _filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
+    ): Promise<WorkItemListItem[]> {
+        console.error('[AdoProvider] listWorkItems() is not yet implemented for Azure DevOps. Returning empty array.');
+        return [];
     }
 
     private getToken(): string | undefined {

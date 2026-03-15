@@ -58,8 +58,8 @@ Current valid tools:
 | `vcs_create_pr` | Create Pull Request |
 | `vcs_merge_pr` | Merge Pull Request |
 | `vcs_add_comment` | Comment on Issue or PR |
-| `github_update_issue` | Update Issue state |
-| `github_sync_board` | Sync Issues to local board |
+| `vcs_update_work_item` | Update Issue state |
+| `vcs_list_work_items` | List work items with filters |
 | `roster_check` | List available agents/roles/skills |
 | `delegate_task` / `delegate_task_async` | Dispatch work |
 | `dispatch_council` / `dispatch_council_async` | Multi-expert review |

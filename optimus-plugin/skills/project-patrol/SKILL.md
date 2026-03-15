@@ -12,7 +12,7 @@ You have been triggered by Meta-Cron for a system patrol. Your job: observe proj
 Read the following state sources and note anything anomalous:
 
 ### 1.1 Open Issues
-- Fetch all open Issues via `github_sync_board` or VCS tools
+- Fetch all open Issues via `vcs_list_work_items` or VCS tools
 - For each Issue, note: number, title, labels, last activity date
 - Cross-reference with `git log --oneline --all` for `fixes #N`, `closes #N`, `resolves #N` references
 - Identify: Issues already implemented (commit reference exists), Issues without priority labels, stale Issues (no activity > 30 days)
@@ -27,8 +27,8 @@ Issues labeled `swarm-task` or `swarm-council` are auto-created tracker Issues f
 
 | Task Status | Action |
 |-------------|--------|
-| `verified` | Close Issue via `github_update_issue(state: "closed")`. Add comment: `[patrol-manager] ✅ Task completed. Output: {output_path}` |
-| `failed` or `timeout` | Add `failed` label via `github_update_issue`. Add comment: `[patrol-manager] ❌ Task failed: {error_message}` |
+| `verified` | Close Issue via `vcs_update_work_item(item_id: N, state: "closed")`. Add comment via `vcs_add_comment`: `[patrol-manager] ✅ Task completed. Output: {output_path}` |
+| `failed` or `timeout` | Add `failed` label via `vcs_update_work_item(item_id: N, labels_add: ["failed"])`. Add comment via `vcs_add_comment`: `[patrol-manager] ❌ Task failed: {error_message}` |
 | `running` + heartbeat fresh (< 10 min) | Skip — task still active |
 | `running` + heartbeat stale | Skip — handled by Phase 2.5 (Diagnose) |
 | No manifest match | Skip — orphan Issue, report for manual review |
@@ -109,7 +109,7 @@ Apply this decision framework to each finding:
 
 | Finding | Action | Who | Severity |
 |---------|--------|-----|----------|
-| Issue verified-implemented (commit ref with `fixes/closes/resolves #N` exists) | Close directly via `github_update_issue` with state: "closed" | Self (depth-1) | Low |
+| Issue verified-implemented (commit ref with `fixes/closes/resolves #N` exists) | Close directly via `vcs_update_work_item(item_id: N, state: "closed")` | Self (depth-1) | Low |
 | Issue unimplemented idea/enhancement/investigation | Leave open, add priority label if missing | Self (depth-1) | Info |
 | Issue needs investigation (unclear if implemented) | Delegate read-only investigation | Specialist (depth-2) | Medium |
 | Issue without priority label | **MANDATORY**: Assess and add P0/P1/P2/P3 label — every unlabeled Issue MUST be triaged | Self (depth-1) | Low |
@@ -164,6 +164,8 @@ For each stale open Issue #N:
 | `running` | Still open | Skip — task is still in progress. Note in report. |
 | `awaiting_input` | Still open | Skip — task is blocked on human input. Apply escalation rules from Phase 4. |
 | No tasks found | Still open | Issue was never worked on. Assess priority: if P0/P1, delegate to appropriate specialist. If P2/P3, report only. |
+
+**Escalation Rule**: If a failed task's error is ambiguous or the fix is unclear, call `request_human_input` with the error details and task context instead of guessing at a fix. Include the task ID, error message, and suggested options for the human to choose from.
 
 ### Step 3: Re-delegation with Session Continuity
 
@@ -224,7 +226,7 @@ For each delegation issued:
 2. Use `delegate_task_async` with `parent_issue_number` set to the cron's tracking Issue
 
 ### Action Attribution
-- For every Issue the patrol manager processes, add the `system-maintained` label
+- For every Issue the patrol manager processes, add the `system-maintained` label via `vcs_update_work_item(item_id: N, labels_add: ["system-maintained"])`
 - For every comment posted, include `[patrol-manager]` tag in the comment body
 
 ## Phase 4: Track

@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0] - 2026-03-15
+
+### Features
+- **`vcs_update_work_item` tool** — New VCS tool to update work items (close/reopen issues, change titles, add/remove labels). Platform-agnostic — works on both GitHub and Azure DevOps.
+- **`vcs_list_work_items` tool** — New VCS tool to list work items with state and label filters. Replaces legacy `github_sync_board`.
+
+### Breaking Changes
+- **Removed `github_update_issue` and `github_sync_board`** — These legacy tool schemas had no handler implementation. Replaced by `vcs_update_work_item` and `vcs_list_work_items` which use the unified VCS provider layer.
+
+### Fixes
+- **Patrol PM was unable to close issues** — Root cause: patrol skill referenced `github_update_issue` which had a schema but no handler. All skill references updated to use `vcs_update_work_item` / `vcs_list_work_items`.
+
 ## [2.1.1] - 2026-03-15
 
 ### Fixes

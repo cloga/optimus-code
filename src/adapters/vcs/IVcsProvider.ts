@@ -38,6 +38,17 @@ export interface MergeResult {
     baseBranch?: string;  // target branch name
 }
 
+export interface WorkItemListItem {
+    id: string;
+    number?: number;
+    title: string;
+    state: string;
+    labels: string[];
+    url: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface AdoWorkItemOptions {
     iteration_path?: string;
     area_path?: string;
@@ -142,6 +153,21 @@ export interface IVcsProvider {
         itemId: string | number,
         labels: string[]
     ): Promise<void>;
+
+    /**
+     * Update a work item (change state, title, labels, etc.)
+     */
+    updateWorkItem(
+        itemId: string | number,
+        updates: { state?: 'open' | 'closed'; title?: string; labels_add?: string[]; labels_remove?: string[] }
+    ): Promise<WorkItemResult>;
+
+    /**
+     * List work items (issues) matching filters
+     */
+    listWorkItems(
+        filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
+    ): Promise<WorkItemListItem[]>;
 
     /**
      * Get provider name for diagnostics

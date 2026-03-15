@@ -135,8 +135,8 @@ Once the server is running, your AI assistant gains these tools:
 | `vcs_create_pr` | Create a Pull Request via unified VCS abstraction |
 | `vcs_merge_pr` | Merge a Pull Request via unified VCS abstraction |
 | `vcs_add_comment` | Add a comment to a work item or PR (requires `item_type`) |
-| `github_update_issue` | Update an existing GitHub Issue |
-| `github_sync_board` | Sync open issues to local TODO board |
+| `vcs_update_work_item` | Update an existing work item (close, relabel, rename) |
+| `vcs_list_work_items` | List work items with state/label filters |
 | `request_human_input` | Pause execution and ask the human for input |
 | `quarantine_role` | Quarantine/unquarantine a misbehaving role |
 | `register_meta_cron` | Register a scheduled recurring task |
@@ -283,20 +283,23 @@ Engines are defined in `.optimus/config/available-agents.json`. The `protocol` f
       "protocol": "cli",
       "path": "npx @anthropic-ai/claude-code",
       "available_models": ["claude-opus-4.6-1m"],
-      "cli_flags": "--model"
+      "cli_flags": "--model",
+      "timeout": { "heartbeat_ms": 600000 }
     },
     "github-copilot": {
       "protocol": "cli",
       "path": "copilot",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4"],
-      "cli_flags": "-m"
+      "cli_flags": "-m",
+      "timeout": { "heartbeat_ms": 600000 }
     },
     "qwen-code": {
       "protocol": "acp",
-      "path": "node",
-      "args": ["/path/to/qwen-cli/cli.js", "--acp"],
+      "path": "auto",
+      "args": ["--acp"],
       "available_models": ["qwen3-coder"],
-      "cli_flags": "--model"
+      "cli_flags": "--model",
+      "timeout": { "heartbeat_ms": 600000 }
     }
   }
 }
@@ -304,6 +307,7 @@ Engines are defined in `.optimus/config/available-agents.json`. The `protocol` f
 
 - **`cli`** (default) — Text-based structured output via CLI (Claude Code, GitHub Copilot)
 - **`acp`** — JSON-RPC 2.0 over NDJSON stdio (Qwen Code, and any future ACP-compliant agent)
+- **`timeout.heartbeat_ms`** — Engine-level heartbeat timeout (default: 10 min). Tasks with no heartbeat update beyond this threshold are marked failed. Can be overridden per-task via `heartbeat_timeout_ms` on `delegate_task_async`.
 
 To add a new ACP vendor, just add an entry with `"protocol": "acp"` — zero code changes required.
 

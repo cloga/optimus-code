@@ -269,6 +269,7 @@ Three reviewers, three lenses:
 PM reads all reviews and ranks issues by severity:
 - **Critical issues found** → PM delegates back to dev for fixes, then re-reviews
 - **Clean** → PM merges the PR via `vcs_merge_pr`
+- **Council VERDICT is REJECTED or SPLIT** → Call `request_human_input` before proceeding, presenting the conflict summary and options (e.g., rework, override, abandon). Do not autonomously override a REJECTED or SPLIT verdict.
 
 
 ### Pre-Merge Checklist (MANDATORY — do NOT skip)
