@@ -79,6 +79,54 @@ module.exports = function init() {
     copyDirRecursive(systemSrc, path.join(optimusDir, 'system'));
   }
 
+  // 2.2 Auto-create Health Log issue if GITHUB_TOKEN available and health_log_issue is null
+  const crontabPath = path.join(optimusDir, 'system', 'meta-crontab.json');
+  if (fs.existsSync(crontabPath)) {
+    try {
+      const crontab = JSON.parse(fs.readFileSync(crontabPath, 'utf8'));
+      if (!crontab.health_log_issue) {
+        // Try loading token from .env
+        const envPath = path.join(cwd, '.env');
+        let ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+        if (!ghToken && fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf8');
+          const match = envContent.match(/^GITHUB_TOKEN=(.+)$/m);
+          if (match) ghToken = match[1].trim();
+        }
+        // Try detecting repo from git remote
+        if (ghToken) {
+          try {
+            const { execSync } = require('child_process');
+            const remote = execSync('git remote get-url origin', { encoding: 'utf8', timeout: 5000 }).trim();
+            const repoMatch = remote.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
+            if (repoMatch) {
+              const [, owner, repo] = repoMatch;
+              console.log(`\n🏥 Creating Health Log issue on ${owner}/${repo}...`);
+              const res = execSync(`node -e "${[
+                `const f=require('node:https');`,
+                `const data=JSON.stringify({title:'[Optimus] System Health Log — Automated Patrol Reports',body:'Permanent log for patrol reports. Each hourly patrol appends a summary comment here.',labels:['optimus-bot','system-maintained']});`,
+                `const req=f.request({hostname:'api.github.com',path:'/repos/${owner}/${repo}/issues',method:'POST',headers:{'Authorization':'Bearer '+process.env.T,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json','User-Agent':'Optimus-Agent','Content-Length':Buffer.byteLength(data)}},r=>{let b='';r.on('data',c=>b+=c);r.on('end',()=>{try{const j=JSON.parse(b);console.log(j.number||'ERR:'+b.slice(0,200))}catch{console.log('ERR:'+b.slice(0,200))}})});`,
+                `req.write(data);req.end();`
+              ].join('')}"`, { encoding: 'utf8', timeout: 15000, env: { ...process.env, T: ghToken } }).trim();
+              const issueNum = parseInt(res);
+              if (issueNum > 0) {
+                crontab.health_log_issue = issueNum;
+                fs.writeFileSync(crontabPath, JSON.stringify(crontab, null, 2), 'utf8');
+                console.log(`  ✅ Health Log issue #${issueNum} created and linked in meta-crontab.json`);
+              } else {
+                console.log(`  ⚠️  Could not create Health Log issue: ${res.slice(0, 100)}`);
+              }
+            }
+          } catch (e) {
+            console.log(`  ⚠️  Skipped Health Log issue creation: ${e.message}`);
+          }
+        } else {
+          console.log('\n💡 Set GITHUB_TOKEN in .env to enable automatic Health Log issue creation');
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }
+
   // 2.5 Copy plugin roles as starter T2 templates.
   // These provide rich persona definitions for common roles (architect, pm, qa-engineer, etc.)
   // so that council reviews and delegations have meaningful agent context from day one.
