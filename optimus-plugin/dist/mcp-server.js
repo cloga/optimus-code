@@ -27965,7 +27965,8 @@ var AcpAdapter = class {
     this.process = cp2.spawn(this.executable, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
-      windowsHide: true
+      windowsHide: true,
+      shell: process.platform === "win32"
     });
     const rl = readline.createInterface({ input: this.process.stdout });
     rl.on("line", (line) => {

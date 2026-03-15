@@ -113,6 +113,7 @@ export class AcpAdapter implements AgentAdapter {
             stdio: ['pipe', 'pipe', 'pipe'],
             env,
             windowsHide: true,
+            shell: process.platform === 'win32',
         });
 
         // Parse stdout as NDJSON (one JSON object per line)
