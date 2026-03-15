@@ -29731,7 +29731,7 @@ ${content}
   }
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
-  console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
+  console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}, ACP: ${isAcpEngine}`);
   const rawTaskText = import_fs3.default.existsSync(taskPath) ? import_fs3.default.readFileSync(taskPath, "utf8") : taskPath;
   const { sanitized: sanitizedTaskText } = sanitizeExternalContent(rawTaskText, `task:${role}`);
   let taskText = sanitizedTaskText;
@@ -29861,6 +29861,7 @@ ${skillContent}
 === END SKILLS ===` : ""}
 
 Please provide your complete execution result below.`;
+  console.error(`[Orchestrator] Prompt size: ${basePrompt.length} chars (ACP lean: ${isAcpEngine})`);
   const isT3 = resolvedTier.startsWith("T3");
   const lockKey = agentId || `${role}_ephemeral_${import_crypto.default.randomUUID().slice(0, 8)}`;
   const lockManager = getLockManager(workspacePath);

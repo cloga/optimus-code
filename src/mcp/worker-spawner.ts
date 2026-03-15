@@ -1139,7 +1139,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
 
     console.error(`[Orchestrator] Resolving Identity for ${role}...`);
     console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
-    console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || 'New/Ephemeral'}`);
+    console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || 'New/Ephemeral'}, ACP: ${isAcpEngine}`);
 
     // T2→T1 instantiation happens AFTER task execution (when session_id is captured).
 
@@ -1258,6 +1258,7 @@ ${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe f
 
 Please provide your complete execution result below.`;
 
+    console.error(`[Orchestrator] Prompt size: ${basePrompt.length} chars (ACP lean: ${isAcpEngine})`);
     const isT3 = resolvedTier.startsWith('T3');
 
     // Lock by agent_id (serial for same session) or ephemeral key (parallel for independent tasks)
