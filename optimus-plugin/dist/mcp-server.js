@@ -28726,6 +28726,140 @@ function updateUserMemoryHeader(content) {
   return lines.join("\n");
 }
 
+// ../src/managers/TaskManifestManager.ts
+var fs4 = __toESM(require("fs"));
+var path4 = __toESM(require("path"));
+var manifestMutex = Promise.resolve();
+function withManifestLock(fn) {
+  let release;
+  const next = new Promise((resolve) => {
+    release = resolve;
+  });
+  const prev = manifestMutex;
+  manifestMutex = next;
+  return prev.then(() => {
+    try {
+      const result = fn();
+      return result;
+    } finally {
+      release();
+    }
+  });
+}
+var TaskManifestManager = class {
+  static getManifestPath(workspacePath) {
+    return path4.join(workspacePath, ".optimus", "state", "task-manifest.json");
+  }
+  static loadManifest(workspacePath) {
+    const manifestPath = this.getManifestPath(workspacePath);
+    if (!fs4.existsSync(manifestPath)) {
+      return {};
+    }
+    try {
+      return JSON.parse(fs4.readFileSync(manifestPath, "utf8"));
+    } catch (e) {
+      console.error(`[TaskManifest] Warning: failed to parse task manifest at ${manifestPath}: ${e.message}. Returning empty manifest \u2014 existing tasks may appear missing.`);
+      return {};
+    }
+  }
+  static saveManifest(workspacePath, manifest) {
+    const manifestPath = this.getManifestPath(workspacePath);
+    const tempPath = `${manifestPath}.tmp`;
+    const dir = path4.dirname(manifestPath);
+    if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
+    fs4.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
+    fs4.renameSync(tempPath, manifestPath);
+  }
+  static createTask(workspacePath, record2) {
+    const fullRecord = {
+      ...record2,
+      status: "pending",
+      startTime: Date.now(),
+      heartbeatTime: Date.now()
+    };
+    const manifest = this.loadManifest(workspacePath);
+    manifest[record2.taskId] = fullRecord;
+    this.saveManifest(workspacePath, manifest);
+    return fullRecord;
+  }
+  static updateTask(workspacePath, taskId, updates) {
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      if (manifest[taskId]) {
+        manifest[taskId] = { ...manifest[taskId], ...updates };
+        this.saveManifest(workspacePath, manifest);
+      }
+    });
+  }
+  static heartbeat(workspacePath, taskId) {
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      if (manifest[taskId]) {
+        manifest[taskId].heartbeatTime = Date.now();
+        this.saveManifest(workspacePath, manifest);
+      }
+    });
+  }
+  static reapStaleTasks(workspacePath) {
+    withManifestLock(() => {
+      const manifest = this.loadManifest(workspacePath);
+      const now = Date.now();
+      const TIMEOUT_MS = 1e3 * 60 * 3;
+      let changed = false;
+      for (const taskId in manifest) {
+        const task = manifest[taskId];
+        if (task.status === "running") {
+          if (now - task.heartbeatTime > TIMEOUT_MS) {
+            task.status = "failed";
+            task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
+            changed = true;
+            try {
+              if (task.output_path) {
+                const dir = path4.dirname(task.output_path);
+                if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
+                fs4.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
+`, "utf8");
+              }
+            } catch (e) {
+              console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
+            }
+          }
+        }
+      }
+      if (changed) {
+        this.saveManifest(workspacePath, manifest);
+      }
+    });
+  }
+  /**
+   * Unblock dependent tasks after a task completes with 'verified' status.
+   * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
+   * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
+   */
+  static unblockDependents(workspacePath, completedTaskId) {
+    const manifest = this.loadManifest(workspacePath);
+    const unblocked = [];
+    let changed = false;
+    for (const taskId in manifest) {
+      const task = manifest[taskId];
+      if (task.status !== "blocked" || !task.blocked_by) continue;
+      const idx = task.blocked_by.indexOf(completedTaskId);
+      if (idx === -1) continue;
+      task.blocked_by.splice(idx, 1);
+      changed = true;
+      if (task.blocked_by.length === 0) {
+        task.status = "pending";
+        task.blocked_by = void 0;
+        unblocked.push(taskId);
+      }
+    }
+    if (changed) {
+      this.saveManifest(workspacePath, manifest);
+    }
+    return unblocked;
+  }
+};
+
 // ../src/mcp/worker-spawner.ts
 function parseFrontmatter(content) {
   const normalized = content.replace(/\r\n/g, "\n");
@@ -29768,6 +29902,11 @@ ${firstLines.trim()}
         }
       }
       console.error(`[Orchestrator] T1 finalized: '${role}' \u2192 ${import_path3.default.basename(finalT1Path)}, session=${newSessionId || "none"}, status=idle`);
+      const agentId2 = `${role}_${sessionPrefix}`;
+      if (_fallbackSessionId.startsWith("async_")) {
+        const taskId = _fallbackSessionId.replace("async_", "");
+        TaskManifestManager.updateTask(workspacePath, taskId, { agent_id: agentId2 });
+      }
     }
     const dir = import_path3.default.dirname(outputPath);
     if (!import_fs3.default.existsSync(dir)) import_fs3.default.mkdirSync(dir, { recursive: true });
@@ -29902,18 +30041,18 @@ ${failed.map((f) => `- ${f}`).join("\n")}
 }
 
 // ../src/mcp/agent-gc.ts
-var fs5 = __toESM(require("fs"));
-var path5 = __toESM(require("path"));
+var fs6 = __toESM(require("fs"));
+var path6 = __toESM(require("path"));
 function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
-  const agentsDir = path5.join(workspacePath, ".optimus", "agents");
-  if (!fs5.existsSync(agentsDir)) return;
-  const files = fs5.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+  const agentsDir = path6.join(workspacePath, ".optimus", "agents");
+  if (!fs6.existsSync(agentsDir)) return;
+  const files = fs6.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
   const now = Date.now();
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1e3;
   for (const file2 of files) {
     if (file2.endsWith(".lock")) continue;
-    const filePath = path5.join(agentsDir, file2);
-    const content = fs5.readFileSync(filePath, "utf8");
+    const filePath = path6.join(agentsDir, file2);
+    const content = fs6.readFileSync(filePath, "utf8");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) continue;
     const lines = fmMatch[1].split("\n");
@@ -29924,151 +30063,17 @@ function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
     if (getValue("persistent") === "true") continue;
     const lastInvoked = getValue("last_invoked") || getValue("created_at");
     if (!lastInvoked) {
-      fs5.unlinkSync(filePath);
+      fs6.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file2}' (no timestamp found)`);
       continue;
     }
     const age = now - new Date(lastInvoked).getTime();
     if (age > maxAgeMs) {
-      fs5.unlinkSync(filePath);
+      fs6.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file2}' (last invoked: ${lastInvoked})`);
     }
   }
 }
-
-// ../src/managers/TaskManifestManager.ts
-var fs6 = __toESM(require("fs"));
-var path6 = __toESM(require("path"));
-var manifestMutex = Promise.resolve();
-function withManifestLock(fn) {
-  let release;
-  const next = new Promise((resolve) => {
-    release = resolve;
-  });
-  const prev = manifestMutex;
-  manifestMutex = next;
-  return prev.then(() => {
-    try {
-      const result = fn();
-      return result;
-    } finally {
-      release();
-    }
-  });
-}
-var TaskManifestManager = class {
-  static getManifestPath(workspacePath) {
-    return path6.join(workspacePath, ".optimus", "state", "task-manifest.json");
-  }
-  static loadManifest(workspacePath) {
-    const manifestPath = this.getManifestPath(workspacePath);
-    if (!fs6.existsSync(manifestPath)) {
-      return {};
-    }
-    try {
-      return JSON.parse(fs6.readFileSync(manifestPath, "utf8"));
-    } catch (e) {
-      console.error(`[TaskManifest] Warning: failed to parse task manifest at ${manifestPath}: ${e.message}. Returning empty manifest \u2014 existing tasks may appear missing.`);
-      return {};
-    }
-  }
-  static saveManifest(workspacePath, manifest) {
-    const manifestPath = this.getManifestPath(workspacePath);
-    const tempPath = `${manifestPath}.tmp`;
-    const dir = path6.dirname(manifestPath);
-    if (!fs6.existsSync(dir)) fs6.mkdirSync(dir, { recursive: true });
-    fs6.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
-    fs6.renameSync(tempPath, manifestPath);
-  }
-  static createTask(workspacePath, record2) {
-    const fullRecord = {
-      ...record2,
-      status: "pending",
-      startTime: Date.now(),
-      heartbeatTime: Date.now()
-    };
-    const manifest = this.loadManifest(workspacePath);
-    manifest[record2.taskId] = fullRecord;
-    this.saveManifest(workspacePath, manifest);
-    return fullRecord;
-  }
-  static updateTask(workspacePath, taskId, updates) {
-    withManifestLock(() => {
-      const manifest = this.loadManifest(workspacePath);
-      if (manifest[taskId]) {
-        manifest[taskId] = { ...manifest[taskId], ...updates };
-        this.saveManifest(workspacePath, manifest);
-      }
-    });
-  }
-  static heartbeat(workspacePath, taskId) {
-    withManifestLock(() => {
-      const manifest = this.loadManifest(workspacePath);
-      if (manifest[taskId]) {
-        manifest[taskId].heartbeatTime = Date.now();
-        this.saveManifest(workspacePath, manifest);
-      }
-    });
-  }
-  static reapStaleTasks(workspacePath) {
-    withManifestLock(() => {
-      const manifest = this.loadManifest(workspacePath);
-      const now = Date.now();
-      const TIMEOUT_MS = 1e3 * 60 * 3;
-      let changed = false;
-      for (const taskId in manifest) {
-        const task = manifest[taskId];
-        if (task.status === "running") {
-          if (now - task.heartbeatTime > TIMEOUT_MS) {
-            task.status = "failed";
-            task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
-            changed = true;
-            try {
-              if (task.output_path) {
-                const dir = path6.dirname(task.output_path);
-                if (!fs6.existsSync(dir)) fs6.mkdirSync(dir, { recursive: true });
-                fs6.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
-              }
-            } catch (e) {
-              console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
-            }
-          }
-        }
-      }
-      if (changed) {
-        this.saveManifest(workspacePath, manifest);
-      }
-    });
-  }
-  /**
-   * Unblock dependent tasks after a task completes with 'verified' status.
-   * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
-   * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
-   */
-  static unblockDependents(workspacePath, completedTaskId) {
-    const manifest = this.loadManifest(workspacePath);
-    const unblocked = [];
-    let changed = false;
-    for (const taskId in manifest) {
-      const task = manifest[taskId];
-      if (task.status !== "blocked" || !task.blocked_by) continue;
-      const idx = task.blocked_by.indexOf(completedTaskId);
-      if (idx === -1) continue;
-      task.blocked_by.splice(idx, 1);
-      changed = true;
-      if (task.blocked_by.length === 0) {
-        task.status = "pending";
-        task.blocked_by = void 0;
-        unblocked.push(taskId);
-      }
-    }
-    if (changed) {
-      this.saveManifest(workspacePath, manifest);
-    }
-    return unblocked;
-  }
-};
 
 // ../src/utils/githubApi.ts
 var import_child_process = require("child_process");
@@ -30829,7 +30834,8 @@ var MetaCronEngine = class _MetaCronEngine {
       output_path: `.optimus/reports/cron-${entry.id}-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.md`,
       workspacePath: this.workspacePath,
       required_skills: entry.required_skills,
-      delegation_depth: 0
+      delegation_depth: 0,
+      agent_id: entry.last_agent_id
     });
     const logDir = import_path5.default.join(this.workspacePath, ".optimus", "system", "cron-logs");
     if (!import_fs5.default.existsSync(logDir)) import_fs5.default.mkdirSync(logDir, { recursive: true });
@@ -30884,6 +30890,9 @@ var MetaCronEngine = class _MetaCronEngine {
             if (freshEntry) {
               freshEntry.last_status = task.status;
               if (task.status === "failed") freshEntry.fail_count++;
+              if (task.agent_id) {
+                freshEntry.last_agent_id = task.agent_id;
+              }
               saveCrontab(ws, freshCrontab);
             }
           }
