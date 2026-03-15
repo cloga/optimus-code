@@ -28832,6 +28832,14 @@ var TaskManifestManager = class {
     });
   }
   /**
+   * Find all tasks associated with a given GitHub Issue number.
+   * Used by patrol-manager to diagnose open Issues and determine task status.
+   */
+  static findTasksByIssue(workspacePath, issueNumber) {
+    const manifest = this.loadManifest(workspacePath);
+    return Object.values(manifest).filter((t) => t.github_issue_number === issueNumber || t.parent_issue_number === issueNumber);
+  }
+  /**
    * Unblock dependent tasks after a task completes with 'verified' status.
    * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
    * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
@@ -31661,7 +31669,7 @@ Human input request expired without a response. ${task.error_message || ""}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms } = request.params.arguments;
     requireParams("delegate_task_async", request.params.arguments, ["role", "task_description", "output_path", "workspace_path"]);
     role = resolveRoleName(role, workspace_path);
     validateRoleNotModelName(role);
