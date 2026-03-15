@@ -1217,29 +1217,7 @@ let contextContent = "";
         ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
         : '';
 
-    const basePrompt = isAcpEngine
-        // ACP lean prompt: agent runs in workspace cwd, can read files on demand
-        ? `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
-Your Role: ${role}
-Identity: ${resolvedTier}
-
-${personaContext ? `Your persona: ${personaContext.split('\n')[0]}` : ''}
-Goal: Execute the following task.
-${trackingIssueHeader}
-IMPORTANT: You are running in the project workspace. Read files directly when needed:
-- System instructions: .optimus/config/system-instructions.md
-- Project memory: .optimus/memory/continuous-memory.md
-- Role memory: .optimus/memory/roles/${role}.md
-${skillContent ? `- Skills have been loaded (see below)` : `- Skills: .optimus/skills/`}
-${contextFiles && contextFiles.length > 0 ? `- Required context files: ${contextFiles.join(', ')}` : ''}
-
-Task Description:
-${taskText}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\n${skillContent}\n=== END SKILLS ===` : ''}
-
-CRITICAL: Your output MUST be written to this EXACT file: ${normalizePathForAgent(outputPath)}
-Please provide your complete execution result below.`
-        // CLI full prompt: inject everything inline (agent may not have file access)
-        : `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
+    const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
 
@@ -1256,6 +1234,7 @@ If you need additional project context beyond what was provided:
 Task Description:
 ${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe following skills have been loaded for you to reference and follow:\n${skillContent}\n=== END SKILLS ===` : ''}
 
+CRITICAL: Your output MUST be written to this EXACT file: ${normalizePathForAgent(outputPath)}
 Please provide your complete execution result below.`;
 
     console.error(`[Orchestrator] Prompt size: ${basePrompt.length} chars (ACP lean: ${isAcpEngine})`);
