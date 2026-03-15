@@ -56,6 +56,8 @@ export interface TaskRecord {
     // Task dependency fields
     depends_on?: string[];   // Declared prerequisite task IDs
     blocked_by?: string[];   // Runtime: unresolved prerequisite task IDs
+    // Configurable heartbeat timeout (overrides TIMEOUT_MS default per-task)
+    heartbeat_timeout_ms?: number;
 }
 
 export class TaskManifestManager {
@@ -133,7 +135,8 @@ export class TaskManifestManager {
             for (const taskId in manifest) {
                 const task = manifest[taskId];
                 if (task.status === 'running') {
-                    if (now - task.heartbeatTime > TIMEOUT_MS) {
+                    const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
+                    if (now - task.heartbeatTime > effectiveTimeout) {
                         task.status = 'failed';
                         task.error_message = 'Task timed out or runner process died (reaped by Watchdog).';
                         changed = true;

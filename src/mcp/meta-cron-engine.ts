@@ -23,6 +23,7 @@ interface CronEntry {
     fail_count: number;
     created_at: string;
     last_agent_id?: string;
+    startup_timeout_ms?: number;
 }
 
 interface CrontabData {
@@ -277,8 +278,9 @@ export class MetaCronEngine {
                 if (!task) return;
 
                 // Detect stuck-pending: child process failed to start (wrong path, crash, etc.)
-                // If still pending after 2 minutes, the spawned process never called runAsyncWorker.
-                if (task.status === 'pending' && (Date.now() - fireTime) > 2 * 60 * 1000) {
+                // If still pending after startup timeout, the spawned process never called runAsyncWorker.
+                const startupTimeout = entry.startup_timeout_ms || 2 * 60 * 1000;
+                if (task.status === 'pending' && (Date.now() - fireTime) > startupTimeout) {
                     console.error(`[Meta-Cron] Task '${taskId}' still pending after 2 minutes — child process likely failed to start. Marking as failed.`);
                     TaskManifestManager.updateTask(ws, taskId, { status: 'failed', error_message: 'Child process failed to start (task remained pending)' });
                     clearInterval(checkInterval);
