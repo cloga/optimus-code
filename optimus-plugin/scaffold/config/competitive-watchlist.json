@@ -1,0 +1,15 @@
+{
+  "_comment": "Competitive intelligence watchlist. Add competitors to monitor. See .optimus/skills/competitive-intel/SKILL.md for details.",
+  "competitors": [],
+  "thresholds": {
+    "star_absolute_min": 25,
+    "star_relative_min_pct": 2,
+    "brief_cooldown_days": 7,
+    "max_briefs_per_cycle": 3,
+    "max_dispatches_per_cycle": 1
+  },
+  "reporting": {
+    "output_dir": ".optimus/reports",
+    "escalation_labels": ["human-input-needed", "competitive-intel"]
+  }
+}
