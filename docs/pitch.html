@@ -603,6 +603,70 @@ footer{border-top:1px solid var(--border);padding:48px 0;text-align:center}
         </tbody>
       </table>
     </div>
+
+    <!-- VS Claude Agent Teams sub-table -->
+    <div style="margin-top:56px">
+      <h3 style="text-align:center;margin-bottom:8px" data-i18n="vs_teams_title">Deep Dive: Optimus vs. Claude Code Agent Teams</h3>
+      <p style="text-align:center;color:var(--text-secondary);margin-bottom:32px;font-size:.95rem" data-i18n="vs_teams_subtitle">How our multi-agent architecture compares to Claude's new Agent Teams feature</p>
+    </div>
+    <div class="comp-table-wrap animate-on-scroll">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th data-i18n="vs_t_dim">Dimension</th>
+            <th>Claude Agent Teams</th>
+            <th class="highlight-col">Optimus Swarm</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="vs_t_r1">Multi-Vendor Support</td>
+            <td><span class="cross">&#10007;</span> <span data-i18n="vs_t_r1b">Claude only</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r1c">Claude + GPT + Gemini + Qwen + any ACP agent</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r2">Cross-IDE</td>
+            <td><span class="cross">&#10007;</span> <span data-i18n="vs_t_r2b">Terminal only (tmux/iTerm2)</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r2c">VS Code, Cursor, Claude Code, any MCP client</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r3">Expert Review</td>
+            <td><span class="partial">&#9679;</span> <span data-i18n="vs_t_r3b">Same-model Lead reviews Worker</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r3c">Cross-model heterogeneous council</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r4">Design Process</td>
+            <td><span class="partial">&#9679;</span> <span data-i18n="vs_t_r4b">Plan Approval (same model)</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r4c">Problem-First SDLC with heterogeneous experts</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r5">Coordination</td>
+            <td><span class="partial">&#9679;</span> <span data-i18n="vs_t_r5b">Workers self-claim from shared list</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r5c">PM-orchestrated role-aware assignment</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r6">Nested Delegation</td>
+            <td><span class="cross">&#10007;</span> <span data-i18n="vs_t_r6b">Flat topology only</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r6c">3-level depth with tracking</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r7">Persistent Memory</td>
+            <td><span class="cross">&#10007;</span> <span data-i18n="vs_t_r7b">None</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r7c">Project + Role + User level</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r8">SDLC Integration</td>
+            <td><span class="cross">&#10007;</span> <span data-i18n="vs_t_r8b">Task execution only</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r8c">Full lifecycle: Problem &rarr; Solution &rarr; Review &rarr; Release</span></td>
+          </tr>
+          <tr>
+            <td data-i18n="vs_t_r9">GitHub/ADO Integration</td>
+            <td><span class="cross">&#10007;</span> <span data-i18n="vs_t_r9b">None</span></td>
+            <td class="highlight-col"><span class="check">&#10003;</span> <span data-i18n="vs_t_r9c">Auto Issue/PR, lineage tracking</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </section>
 
