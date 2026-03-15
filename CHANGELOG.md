@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0] - 2026-03-15
+
+### Features
+- **Task Dependencies** — `delegate_task_async` now accepts `depends_on: [task_ids]`. Tasks register as `blocked` and auto-spawn when all dependencies are `verified`. (#395)
+- **Meta-Cron Session Persistence** — Cron-triggered agents (e.g., patrol PM) now resume their previous session via `last_agent_id`, maintaining context across patrol cycles. (#398)
+- **Patrol PM Diagnose & Re-delegate** — Patrol skill gains Phase 2.5: diagnoses open Issues by correlating with task manifest, auto-closes verified Issues, re-delegates failed tasks to last executor with session continuity. (#400)
+- **Generic Release Process Skill** — `release-process` skill refactored into a config-driven meta-skill with `release-config.json` schema. Ships in scaffold for all users. (#403)
+- **Configurable Timeouts** — Engine-level and per-task timeout overrides via `available-agents.json` and `timeout_ms` parameter on `delegate_task`. (#407)
+- **Landing Page Claude Teams Comparison** — New "Optimus vs. Agent Teams" comparison section on both landing page and pitch deck.
+
 ## [1.0.6] - 2026-03-15
 
 ### Fixes
