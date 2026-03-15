@@ -1,10 +1,24 @@
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import { TaskManifestManager } from '../managers/TaskManifestManager';
 import { dispatchCouncilConcurrent, delegateTaskSingle } from './worker-spawner';
 import { parseGitRemote, commentOnGitHubIssue, closeGitHubIssue } from '../utils/githubApi';
 import { agentSignature } from '../utils/agentSignature';
 import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
+
+/**
+ * Spawn a detached background worker for an async task.
+ * Centralized helper used by delegate_task_async, dispatch_council_async, and dependency unblocking.
+ */
+export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
+    // __filename resolves to the compiled mcp-server.js at runtime (council-runner is bundled alongside)
+    const mcpServerPath = path.join(__dirname, 'mcp-server.js');
+    const child = spawn(process.execPath, [mcpServerPath, "--run-task", taskId, workspacePath], {
+        detached: true, stdio: "ignore", windowsHide: true, cwd: workspacePath
+    });
+    child.unref();
+}
 
 function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial' | 'failed' {
     if (!outputPath) return 'partial';
@@ -240,6 +254,19 @@ Here is the synthesis report:\n\n${synthesisContent}`;
         if (errorMessage) statusUpdate.error_message = errorMessage;
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
+
+        // Unblock dependent tasks if this task was verified
+        if (verificationStatus === 'verified') {
+            try {
+                const unblockedTasks = TaskManifestManager.unblockDependents(workspacePath, taskId);
+                for (const unblockedId of unblockedTasks) {
+                    console.error(`[Runner] Unblocked dependent task: ${unblockedId} — spawning worker`);
+                    spawnAsyncWorker(unblockedId, workspacePath);
+                }
+            } catch (depErr: any) {
+                console.error(`[Runner] Warning: failed to unblock dependents for ${taskId}: ${depErr.message}`);
+            }
+        }
 
         // Best-effort: update GitHub Issue with completion status
         await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
