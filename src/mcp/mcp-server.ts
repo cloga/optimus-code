@@ -1220,7 +1220,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to create work item: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to create work item: ${error.message}. The agent should continue without Issue tracking.` }] };
     }
   } else if (request.params.name === "vcs_create_pr") {
     const { title, body, head, base, workspace_path, agent_role } = request.params.arguments as any;
@@ -1245,7 +1245,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to create pull request: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to create pull request: ${error.message}` }] };
     }
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments as any;
@@ -1355,7 +1355,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to merge pull request: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to merge pull request: ${error.message}` }] };
     }
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments as any;
@@ -1373,7 +1373,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to add comment: ${error.message}` }] };
     }
   } else if (request.params.name === "vcs_update_work_item") {
     const { item_id, state, title, labels_add, labels_remove, workspace_path } = request.params.arguments as any;
@@ -1390,7 +1390,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to update work item: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to update work item: ${error.message}` }] };
     }
   } else if (request.params.name === "vcs_list_work_items") {
     const { state, labels, limit, workspace_path } = request.params.arguments as any;
@@ -1408,7 +1408,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to list work items: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — could not list work items: ${error.message}. Returning empty list.` }] };
     }
   } else if (request.params.name === "vcs_list_pull_requests") {
     const { state, limit, workspace_path } = request.params.arguments as any;
@@ -1426,7 +1426,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, `Failed to list pull requests: ${error.message}`);
+      return { content: [{ type: "text", text: `⚠️ VCS unavailable — could not list pull requests: ${error.message}. Returning empty list.` }] };
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments as any;

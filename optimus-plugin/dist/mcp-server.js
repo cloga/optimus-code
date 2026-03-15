@@ -32493,7 +32493,7 @@ Memory appended to: ${memoryFile}`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to create work item: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 failed to create work item: ${error2.message}. The agent should continue without Issue tracking.` }] };
     }
   } else if (request.params.name === "vcs_create_pr") {
     const { title, body, head, base, workspace_path, agent_role } = request.params.arguments;
@@ -32519,7 +32519,7 @@ Memory appended to: ${memoryFile}`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to create pull request: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 failed to create pull request: ${error2.message}` }] };
     }
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments;
@@ -32614,7 +32614,7 @@ Fix the build errors and try again.`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to merge pull request: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 failed to merge pull request: ${error2.message}` }] };
     }
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments;
@@ -32633,7 +32633,7 @@ Fix the build errors and try again.`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to add comment: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 failed to add comment: ${error2.message}` }] };
     }
   } else if (request.params.name === "vcs_update_work_item") {
     const { item_id, state, title, labels_add, labels_remove, workspace_path } = request.params.arguments;
@@ -32652,7 +32652,7 @@ Fix the build errors and try again.`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to update work item: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 failed to update work item: ${error2.message}` }] };
     }
   } else if (request.params.name === "vcs_list_work_items") {
     const { state, labels, limit, workspace_path } = request.params.arguments;
@@ -32670,7 +32670,7 @@ ${summary}`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to list work items: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 could not list work items: ${error2.message}. Returning empty list.` }] };
     }
   } else if (request.params.name === "vcs_list_pull_requests") {
     const { state, limit, workspace_path } = request.params.arguments;
@@ -32688,7 +32688,7 @@ ${summary}`
         }]
       };
     } catch (error2) {
-      throw new McpError(ErrorCode.InternalError, `Failed to list pull requests: ${error2.message}`);
+      return { content: [{ type: "text", text: `\u26A0\uFE0F VCS unavailable \u2014 could not list pull requests: ${error2.message}. Returning empty list.` }] };
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments;
