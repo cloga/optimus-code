@@ -281,7 +281,7 @@ export class MetaCronEngine {
                 // If still pending after startup timeout, the spawned process never called runAsyncWorker.
                 const startupTimeout = entry.startup_timeout_ms || 2 * 60 * 1000;
                 if (task.status === 'pending' && (Date.now() - fireTime) > startupTimeout) {
-                    console.error(`[Meta-Cron] Task '${taskId}' still pending after 2 minutes — child process likely failed to start. Marking as failed.`);
+                    console.error(`[Meta-Cron] Task '${taskId}' still pending after ${Math.round(startupTimeout / 1000)}s — child process likely failed to start. Marking as failed.`);
                     TaskManifestManager.updateTask(ws, taskId, { status: 'failed', error_message: 'Child process failed to start (task remained pending)' });
                     clearInterval(checkInterval);
                     deleteLock(ws, entryId);
