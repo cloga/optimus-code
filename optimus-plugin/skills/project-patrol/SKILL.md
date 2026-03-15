@@ -1,6 +1,6 @@
 ---
 name: project-patrol
-description: Structured patrol protocol for the patrol-manager role. Provides a 5-phase inspection framework (Observe, Judge, Act, Track, Report) covering Issues, PRs, branches, tasks, and agent health. Includes a decision matrix mapping findings to direct actions or specialist delegations.
+description: Structured patrol protocol for the patrol-manager role. Provides a 6-phase inspection framework (Observe, Judge, Diagnose, Act, Track, Report) covering Issues, PRs, branches, tasks, and agent health. Includes a decision matrix mapping findings to direct actions or specialist delegations, and a diagnose-and-re-delegate phase that correlates open Issues with task-manifest records to automatically retry failed tasks with session continuity.
 ---
 
 # Project Patrol — Patrol Protocol
@@ -103,6 +103,56 @@ The following actions are MANDATORY on every patrol — not optional, not deferr
 2. **Issue Closing**: Every Issue where a `fixes/closes/resolves #N` commit exists in git history MUST be closed with a comment citing the commit SHA. No exceptions.
 
 Failure to perform mandatory actions is a protocol violation. These actions do NOT count against the delegation budget — they are free direct actions.
+
+## Phase 2.5: Diagnose Open Issues
+
+For each open Issue without recent activity (> 7 days), perform task-manifest correlation to determine if the Issue was worked on and what happened:
+
+### Step 1: Find Related Tasks
+
+For each stale open Issue #N:
+1. Read `.optimus/state/task-manifest.json` and find all tasks where `github_issue_number === N` or `parent_issue_number === N`
+   - The `TaskManifestManager.findTasksByIssue(workspacePath, N)` helper does this lookup
+2. If no tasks found, this Issue was never worked on — proceed to Step 2 assessment
+3. If tasks found, sort by `startTime` descending (most recent first)
+
+### Step 2: Assess Task Status and Act
+
+| Task Status | Issue State | Action |
+|-------------|-------------|--------|
+| `verified` | Still open | Close the Issue directly — the fix was delivered but the Issue was not auto-closed (likely missing `fixes #N` in commit message). Comment with the task ID and output_path for traceability. |
+| `failed` or `timeout` | Still open | **Re-delegate** with session continuity (see Step 3). The previous attempt failed but the Issue still needs resolution. |
+| `running` | Still open | Skip — task is still in progress. Note in report. |
+| `awaiting_input` | Still open | Skip — task is blocked on human input. Apply escalation rules from Phase 4. |
+| No tasks found | Still open | Issue was never worked on. Assess priority: if P0/P1, delegate to appropriate specialist. If P2/P3, report only. |
+
+### Step 3: Re-delegation with Session Continuity
+
+When re-delegating a failed task, ALWAYS preserve session context:
+
+1. **Find the last agent_id**: Read the most recent task record for this Issue from the manifest. Use its `agent_id` field.
+2. **Collect context files**: Include the failed task's `output_path` (if it exists and has content) in `context_files` so the agent can see what went wrong.
+3. **Compose the re-delegation**:
+   ```
+   delegate_task_async(
+     role: <same role as the failed task>,
+     agent_id: <last task's agent_id>,     // Session continuity
+     task_description: "Re-attempt: <original task description>. Previous attempt (task_id: <failed_task_id>) failed with: <error_message>. Diagnose the failure, check if the root cause has been fixed, and re-attempt the implementation.",
+     context_files: [<failed task's output_path>, <any other relevant files>],
+     parent_issue_number: <the Issue number being resolved>,
+     output_path: ".optimus/reports/redelegate_issue_<N>_<date>.md",
+     workspace_path: "<project root>"
+   )
+   ```
+4. **Record in patrol ledger**: Add the re-delegation to `delegations` array with `finding: "Re-delegation of failed task <task_id> for Issue #N"`
+5. **Budget**: Each re-delegation counts against the delegation budget
+
+### Diagnosis Constraints
+
+- This phase runs AFTER Phase 2 (Judge) and BEFORE Phase 3 (Act)
+- Re-delegations count against the same delegation budget as Phase 3 actions
+- Direct actions from diagnosis (closing verified Issues) do NOT count against the budget
+- Only diagnose Issues that are genuinely stale (> 7 days no activity) — recently active Issues are skipped
 
 ## Phase 3: Act
 

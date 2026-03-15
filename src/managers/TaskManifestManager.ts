@@ -154,6 +154,15 @@ export class TaskManifestManager {
     }
 
     /**
+     * Find all tasks associated with a given GitHub Issue number.
+     * Used by patrol-manager to diagnose open Issues and determine task status.
+     */
+    static findTasksByIssue(workspacePath: string, issueNumber: number): TaskRecord[] {
+        const manifest = this.loadManifest(workspacePath);
+        return Object.values(manifest).filter(t => t.github_issue_number === issueNumber || t.parent_issue_number === issueNumber);
+    }
+
+    /**
      * Unblock dependent tasks after a task completes with 'verified' status.
      * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
      * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
