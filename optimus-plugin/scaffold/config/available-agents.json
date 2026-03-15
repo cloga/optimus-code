@@ -5,13 +5,15 @@
       "protocol": "cli",
       "path": "npx @anthropic-ai/claude-code",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
-      "cli_flags": "--model"
+      "cli_flags": "--model",
+      "timeout": { "heartbeat_ms": 600000 }
     },
     "github-copilot": {
       "protocol": "cli",
       "path": "copilot",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
-      "cli_flags": "-m"
+      "cli_flags": "-m",
+      "timeout": { "heartbeat_ms": 600000 }
     },
     "qwen-code": {
       "protocol": "acp",
