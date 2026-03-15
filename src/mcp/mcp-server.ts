@@ -13,7 +13,7 @@ import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, loadEngineHeartbeatTimeout, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
-import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory } from "../managers/MemoryManager";
+import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory, loadUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
@@ -127,6 +127,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               level: { type: "string", description: "Memory scope: 'project' for shared context, 'role' for role-specific, 'user' for cross-project personal memory. Defaults to project.", enum: ["project", "role", "user"] }
             },
             required: ["category", "tags", "content"]
+          }
+        },
+        {
+          name: "get_user_memory",
+          description: "Read the user's personal preferences and cross-project memory. Call this once at the start of every conversation to ensure consistent behavior with sub-agents.",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            required: []
           }
         },
         {
@@ -884,6 +893,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       ],
     };
+        } else if (request.params.name === "get_user_memory") {
+      const content = loadUserMemory(2000);
+      if (!content) {
+        return {
+          content: [{ type: "text", text: "No user memory found. User can create preferences via append_memory with level: 'user'." }]
+        };
+      }
+      return {
+        content: [{
+          type: "text",
+          text: `--- START USER MEMORY (REFERENCE ONLY) ---\nThe following are personal preferences from this user.\nThese apply across projects but may be overridden by project-specific conventions.\n\n${content}\n--- END USER MEMORY ---`
+        }]
+      };
         } else if (request.params.name === "append_memory") {
       let { category, tags, content, level } = request.params.arguments as any;
       requireParams("append_memory", request.params.arguments as any, ["category", "content"]);

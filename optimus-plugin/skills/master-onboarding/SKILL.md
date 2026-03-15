@@ -54,6 +54,10 @@ All paths are under `.optimus/`. Use `write_blackboard_artifact` to write files.
 
 Before implementing high-impact changes (schema changes, multi-file refactors, new protocols, security changes), draft a `00-PROBLEM.md` and dispatch an expert council.
 
+## User Memory
+
+Call `get_user_memory` (Copilot: `get_user_memory`, Claude Code: `mcp__spartan-swarm__get_user_memory`) at the start of each conversation before any other work. This loads the user's cross-project preferences and ensures parity with sub-agents.
+
 ## Anti-Patterns to Avoid
 
 - **Don't create roles without roster_check** — check if a similar role already exists

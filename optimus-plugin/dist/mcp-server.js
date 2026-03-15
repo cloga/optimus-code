@@ -31389,6 +31389,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "get_user_memory",
+        description: "Read the user's personal preferences and cross-project memory. Call this once at the start of every conversation to ensure consistent behavior with sub-agents.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      },
+      {
         name: "vcs_update_work_item",
         description: "Update an existing work item (GitHub Issue / ADO Work Item) \u2014 change state, title, or labels.",
         inputSchema: {
@@ -32161,6 +32170,24 @@ ${results.join("\n")}
 Please read these review files to continue.`
         }
       ]
+    };
+  } else if (request.params.name === "get_user_memory") {
+    const content = loadUserMemory(2e3);
+    if (!content) {
+      return {
+        content: [{ type: "text", text: "No user memory found. User can create preferences via append_memory with level: 'user'." }]
+      };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: `--- START USER MEMORY (REFERENCE ONLY) ---
+The following are personal preferences from this user.
+These apply across projects but may be overridden by project-specific conventions.
+
+${content}
+--- END USER MEMORY ---`
+      }]
     };
   } else if (request.params.name === "append_memory") {
     let { category, tags, content, level } = request.params.arguments;
