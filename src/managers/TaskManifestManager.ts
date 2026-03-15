@@ -23,7 +23,7 @@ function withManifestLock<T>(fn: () => T): Promise<T> {
 export interface TaskRecord {
     taskId: string;
     type: 'delegate_task' | 'dispatch_council';
-    status: 'pending' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired';
+    status: 'pending' | 'blocked' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired';
     role?: string;
     roles?: string[];
     task_description?: string;
@@ -53,6 +53,9 @@ export interface TaskRecord {
     human_answer?: string;
     max_pause_timeout_ms?: number;
     resume_task_id?: string;
+    // Task dependency fields
+    depends_on?: string[];   // Declared prerequisite task IDs
+    blocked_by?: string[];   // Runtime: unresolved prerequisite task IDs
 }
 
 export class TaskManifestManager {
@@ -148,5 +151,38 @@ export class TaskManifestManager {
                 this.saveManifest(workspacePath, manifest);
             }
         });
+    }
+
+    /**
+     * Unblock dependent tasks after a task completes with 'verified' status.
+     * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
+     * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
+     */
+    static unblockDependents(workspacePath: string, completedTaskId: string): string[] {
+        const manifest = this.loadManifest(workspacePath);
+        const unblocked: string[] = [];
+        let changed = false;
+
+        for (const taskId in manifest) {
+            const task = manifest[taskId];
+            if (task.status !== 'blocked' || !task.blocked_by) continue;
+
+            const idx = task.blocked_by.indexOf(completedTaskId);
+            if (idx === -1) continue;
+
+            task.blocked_by.splice(idx, 1);
+            changed = true;
+
+            if (task.blocked_by.length === 0) {
+                task.status = 'pending';
+                task.blocked_by = undefined; // clean up
+                unblocked.push(taskId);
+            }
+        }
+
+        if (changed) {
+            this.saveManifest(workspacePath, manifest);
+        }
+        return unblocked;
     }
 }

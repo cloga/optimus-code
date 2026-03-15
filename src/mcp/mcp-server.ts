@@ -17,8 +17,8 @@ import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMem
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
-import { runAsyncWorker } from "./council-runner";
-import { spawn, execSync } from "child_process";
+import { runAsyncWorker, spawnAsyncWorker } from "./council-runner";
+import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
 import { agentSignature } from "../utils/agentSignature";
@@ -311,6 +311,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation."
             },
+            depends_on: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of task IDs that must complete (status: verified) before this task starts execution."
+            },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
         }
@@ -577,6 +582,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       details = `Task ${taskId} status: **partial** ⚠️\n\nProcess exited successfully but output artifact was not found at: \`${task.output_path}\``;
     } else if (task.status === 'failed') {
       details = `Task ${taskId} status: **failed** ❌\n\nError: ${task.error_message}`;
+    } else if (task.status === 'blocked') {
+      let depDetails = '';
+      if (task.blocked_by && task.blocked_by.length > 0) {
+          const depStatuses = task.blocked_by.map(depId => {
+              const dep = manifest[depId];
+              return dep ? `\`${depId}\` (${dep.status})` : `\`${depId}\` (unknown)`;
+          });
+          depDetails = `\n\n**Waiting for:** ${depStatuses.join(', ')}`;
+      }
+      details = `Task ${taskId} status: **blocked** ⏳\n\nTask is registered but waiting for dependencies to complete.${depDetails}`;
+      if (task.depends_on) {
+          details += `\n**Declared dependencies:** ${task.depends_on.map(d => `\`${d}\``).join(', ')}`;
+      }
     } else if (task.status === 'awaiting_input') {
       const pauseAge = task.pause_timestamp ? Math.round((Date.now() - task.pause_timestamp) / 60000) : 0;
       details = `Task ${taskId} status: **awaiting_input** ⏸️\n\nAgent is waiting for human input (${pauseAge}m elapsed).\n\n**Question:** ${task.pause_question || '(none)'}\n**Pause count:** ${task.pause_count || 0}/3${task.github_issue_number ? `\n**GitHub Issue:** #${task.github_issue_number}` : ''}`;
@@ -590,7 +608,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
     // Resolve role alias to canonical name before validation
@@ -619,8 +637,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         role_description, role_engine, role_model, required_skills,
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
         parent_issue_number: parentIssueNumber,
-        agent_id: agent_id || undefined
+        agent_id: agent_id || undefined,
+        depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : undefined
     });
+
+    // Dependency check: determine if task should be blocked
+    let isBlocked = false;
+    let blockedBy: string[] = [];
+    if (Array.isArray(depends_on) && depends_on.length > 0) {
+        const manifest = TaskManifestManager.loadManifest(workspace_path);
+        blockedBy = depends_on.filter((depId: string) => {
+            const dep = manifest[depId];
+            return !dep || dep.status !== 'verified';
+        });
+        if (blockedBy.length > 0) {
+            isBlocked = true;
+            // Synchronously update to blocked status before any spawn
+            TaskManifestManager.updateTask(workspace_path, taskId, {
+                status: 'blocked',
+                blocked_by: blockedBy
+            });
+        }
+    }
 
     // Best-effort: auto-create GitHub Issue for traceability
     let issueInfo = '';
@@ -640,11 +678,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
     }
 
-    // Spawn background process — set cwd to workspace so relative paths resolve correctly
-    const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
-        detached: true, stdio: "ignore", windowsHide: true, cwd: workspace_path
-    });
-    child.unref();
+    if (!isBlocked) {
+        // Spawn background process using centralized helper
+        spawnAsyncWorker(taskId, workspace_path);
+    }
 
     // Context hint: check if there are relevant specs/proposals the caller might want to pass
     // TODO: remove after list_knowledge is proven stable (added 2026-03-15)
@@ -665,6 +702,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } catch { /* best-effort */ }
     }
     
+    if (isBlocked) {
+        return { content: [{ type: "text", text: `⏳ Task queued with dependencies.\n\n**Task ID**: ${taskId}\n**Role**: ${role}\n**Status**: blocked\n**Blocked by**: ${blockedBy.map(id => `\`${id}\``).join(', ')}${issueInfo}\n\nTask will auto-start when all dependencies reach \`verified\` status. Use check_task_status to monitor.${contextHint}` }] };
+    }
     return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status tool periodically with this task ID to check its completion.${contextHint}` }] };
   }
   
@@ -734,11 +774,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
     }
     
-    // Spawn background process — set cwd to workspace so relative paths resolve correctly
-    const child = spawn(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
-        detached: true, stdio: "ignore", windowsHide: true, cwd: workspace_path
-    });
-    child.unref();
+    // Spawn background process using centralized helper
+    spawnAsyncWorker(taskId, workspace_path);
 
     return { content: [{ type: "text", text: `✅ Council spawned successfully in background.\n\n**Council ID**: ${taskId}\n**Roles**: ${roles.join(", ")}${issueInfo}\n\nUse check_task_status tool periodically with this Council ID to check completion.` }] };
   }

@@ -30041,6 +30041,33 @@ var TaskManifestManager = class {
       }
     });
   }
+  /**
+   * Unblock dependent tasks after a task completes with 'verified' status.
+   * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
+   * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
+   */
+  static unblockDependents(workspacePath, completedTaskId) {
+    const manifest = this.loadManifest(workspacePath);
+    const unblocked = [];
+    let changed = false;
+    for (const taskId in manifest) {
+      const task = manifest[taskId];
+      if (task.status !== "blocked" || !task.blocked_by) continue;
+      const idx = task.blocked_by.indexOf(completedTaskId);
+      if (idx === -1) continue;
+      task.blocked_by.splice(idx, 1);
+      changed = true;
+      if (task.blocked_by.length === 0) {
+        task.status = "pending";
+        task.blocked_by = void 0;
+        unblocked.push(taskId);
+      }
+    }
+    if (changed) {
+      this.saveManifest(workspacePath, manifest);
+    }
+    return unblocked;
+  }
 };
 
 // ../src/utils/githubApi.ts
@@ -30113,6 +30140,7 @@ async function commentOnGitHubIssue(owner, repo, issueNumber, body) {
 // ../src/mcp/council-runner.ts
 var import_fs4 = __toESM(require("fs"));
 var import_path4 = __toESM(require("path"));
+var import_child_process2 = require("child_process");
 
 // ../src/utils/agentSignature.ts
 function agentSignature(role, taskId) {
@@ -30124,6 +30152,16 @@ _\u{1F916} Created by \`${role}\`${taskRef} via Optimus Spartan Swarm_`;
 }
 
 // ../src/mcp/council-runner.ts
+function spawnAsyncWorker(taskId, workspacePath) {
+  const mcpServerPath = import_path4.default.join(__dirname, "mcp-server.js");
+  const child = (0, import_child_process2.spawn)(process.execPath, [mcpServerPath, "--run-task", taskId, workspacePath], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    cwd: workspacePath
+  });
+  child.unref();
+}
 function verifyOutputPath(outputPath) {
   if (!outputPath) return "partial";
   try {
@@ -30355,6 +30393,17 @@ ${synthesisContent}`;
     if (errorMessage) statusUpdate.error_message = errorMessage;
     TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
     console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
+    if (verificationStatus === "verified") {
+      try {
+        const unblockedTasks = TaskManifestManager.unblockDependents(workspacePath, taskId);
+        for (const unblockedId of unblockedTasks) {
+          console.error(`[Runner] Unblocked dependent task: ${unblockedId} \u2014 spawning worker`);
+          spawnAsyncWorker(unblockedId, workspacePath);
+        }
+      } catch (depErr) {
+        console.error(`[Runner] Warning: failed to unblock dependents for ${taskId}: ${depErr.message}`);
+      }
+    }
     await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
   } catch (err) {
     console.error(`[Runner] Task ${taskId} failed:`, err);
@@ -30392,14 +30441,14 @@ async function updateTaskGitHubIssue(workspacePath, taskId, status, outputPath, 
 }
 
 // ../src/mcp/mcp-server.ts
-var import_child_process5 = require("child_process");
+var import_child_process6 = require("child_process");
 var import_dotenv = __toESM(require_main());
 
 // ../src/adapters/vcs/VcsProviderFactory.ts
 var path8 = __toESM(require("path"));
 var fs8 = __toESM(require("fs"));
 var crypto2 = __toESM(require("crypto"));
-var import_child_process2 = require("child_process");
+var import_child_process3 = require("child_process");
 var VcsProviderFactory = class {
   static cachedProvider = null;
   static cachedConfigPath = null;
@@ -30472,7 +30521,7 @@ var VcsProviderFactory = class {
   }
   static detectProviderFromGitRemote(workspacePath) {
     try {
-      const remoteUrl = (0, import_child_process2.execSync)("git remote get-url origin", {
+      const remoteUrl = (0, import_child_process3.execSync)("git remote get-url origin", {
         cwd: workspacePath,
         encoding: "utf8"
       }).trim();
@@ -30497,7 +30546,7 @@ var VcsProviderFactory = class {
       };
     }
     try {
-      const remoteUrl = (0, import_child_process2.execSync)("git remote get-url origin", {
+      const remoteUrl = (0, import_child_process3.execSync)("git remote get-url origin", {
         cwd: workspacePath,
         encoding: "utf8"
       }).trim();
@@ -30523,7 +30572,7 @@ var VcsProviderFactory = class {
       };
     }
     try {
-      const remoteUrl = (0, import_child_process2.execSync)("git remote get-url origin", {
+      const remoteUrl = (0, import_child_process3.execSync)("git remote get-url origin", {
         cwd: workspacePath,
         encoding: "utf8"
       }).trim();
@@ -30594,7 +30643,7 @@ function validateRoleNotModelName(role) {
 // ../src/mcp/meta-cron-engine.ts
 var import_fs5 = __toESM(require("fs"));
 var import_path5 = __toESM(require("path"));
-var import_child_process3 = require("child_process");
+var import_child_process4 = require("child_process");
 function matchesCronField(field, value, min, max) {
   if (field === "*") return true;
   if (field.includes("/")) {
@@ -30786,7 +30835,7 @@ var MetaCronEngine = class _MetaCronEngine {
     if (!import_fs5.default.existsSync(logDir)) import_fs5.default.mkdirSync(logDir, { recursive: true });
     const logFile = import_path5.default.join(logDir, `${entry.id}_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.log`);
     const logFd = import_fs5.default.openSync(logFile, "a");
-    const child = (0, import_child_process3.spawn)(process.execPath, [
+    const child = (0, import_child_process4.spawn)(process.execPath, [
       __filename,
       "--run-task",
       taskId,
@@ -30865,7 +30914,7 @@ var MetaCronEngine = class _MetaCronEngine {
 
 // ../src/mcp/input-resume-checker.ts
 var import_path6 = __toESM(require("path"));
-var import_child_process4 = require("child_process");
+var import_child_process5 = require("child_process");
 var DEFAULT_PAUSE_TIMEOUT_MS = 48 * 60 * 60 * 1e3;
 var ALLOWED_AUTHOR_ASSOCIATIONS = /* @__PURE__ */ new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 async function checkAndResumeAwaitingTasks(workspacePath) {
@@ -30970,7 +31019,7 @@ The question asked by agent \`${task.role || "unknown"}\` has expired without a 
       github_issue_number: task.github_issue_number,
       delegation_depth: task.delegation_depth || 0
     });
-    const child = (0, import_child_process4.spawn)(process.execPath, [
+    const child = (0, import_child_process5.spawn)(process.execPath, [
       import_path6.default.join(__dirname, "..", "..", "dist", "mcp-server.js"),
       "--run-task",
       resumeTaskId,
@@ -31288,6 +31337,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             agent_id: {
               type: "string",
               description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation."
+            },
+            depends_on: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional array of task IDs that must complete (status: verified) before this task starts execution."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]
@@ -31561,6 +31615,24 @@ Process exited successfully but output artifact was not found at: \`${task.outpu
       details = `Task ${taskId} status: **failed** \u274C
 
 Error: ${task.error_message}`;
+    } else if (task.status === "blocked") {
+      let depDetails = "";
+      if (task.blocked_by && task.blocked_by.length > 0) {
+        const depStatuses = task.blocked_by.map((depId) => {
+          const dep = manifest[depId];
+          return dep ? `\`${depId}\` (${dep.status})` : `\`${depId}\` (unknown)`;
+        });
+        depDetails = `
+
+**Waiting for:** ${depStatuses.join(", ")}`;
+      }
+      details = `Task ${taskId} status: **blocked** \u23F3
+
+Task is registered but waiting for dependencies to complete.${depDetails}`;
+      if (task.depends_on) {
+        details += `
+**Declared dependencies:** ${task.depends_on.map((d) => `\`${d}\``).join(", ")}`;
+      }
     } else if (task.status === "awaiting_input") {
       const pauseAge = task.pause_timestamp ? Math.round((Date.now() - task.pause_timestamp) / 6e4) : 0;
       details = `Task ${taskId} status: **awaiting_input** \u23F8\uFE0F
@@ -31580,7 +31652,7 @@ Human input request expired without a response. ${task.error_message || ""}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on } = request.params.arguments;
     requireParams("delegate_task_async", request.params.arguments, ["role", "task_description", "output_path", "workspace_path"]);
     role = resolveRoleName(role, workspace_path);
     validateRoleNotModelName(role);
@@ -31605,8 +31677,25 @@ Human input request expired without a response. ${task.error_message || ""}`;
       required_skills,
       delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10),
       parent_issue_number: parentIssueNumber,
-      agent_id: agent_id || void 0
+      agent_id: agent_id || void 0,
+      depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : void 0
     });
+    let isBlocked = false;
+    let blockedBy = [];
+    if (Array.isArray(depends_on) && depends_on.length > 0) {
+      const manifest = TaskManifestManager.loadManifest(workspace_path);
+      blockedBy = depends_on.filter((depId) => {
+        const dep = manifest[depId];
+        return !dep || dep.status !== "verified";
+      });
+      if (blockedBy.length > 0) {
+        isBlocked = true;
+        TaskManifestManager.updateTask(workspace_path, taskId, {
+          status: "blocked",
+          blocked_by: blockedBy
+        });
+      }
+    }
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);
     if (remote) {
@@ -31635,13 +31724,9 @@ ${truncDesc}` + agentSignature(role, taskId),
 **GitHub Issue**: ${issue2.html_url}`;
       }
     }
-    const child = (0, import_child_process5.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      cwd: workspace_path
-    });
-    child.unref();
+    if (!isBlocked) {
+      spawnAsyncWorker(taskId, workspace_path);
+    }
     let contextHint = "";
     if (!context_files || context_files.length === 0) {
       try {
@@ -31663,6 +31748,16 @@ ${specFolders.map((f) => `  - \`.optimus/specs/${f}/\``).join("\n")}`;
         }
       } catch {
       }
+    }
+    if (isBlocked) {
+      return { content: [{ type: "text", text: `\u23F3 Task queued with dependencies.
+
+**Task ID**: ${taskId}
+**Role**: ${role}
+**Status**: blocked
+**Blocked by**: ${blockedBy.map((id) => `\`${id}\``).join(", ")}${issueInfo}
+
+Task will auto-start when all dependencies reach \`verified\` status. Use check_task_status to monitor.${contextHint}` }] };
     }
     return { content: [{ type: "text", text: `\u2705 Task spawned successfully in background.
 
@@ -31737,13 +31832,7 @@ Use check_task_status tool periodically with this task ID to check its completio
 **GitHub Issue**: ${issue2.html_url}`;
       }
     }
-    const child = (0, import_child_process5.spawn)(process.execPath, [__filename, "--run-task", taskId, workspace_path], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      cwd: workspace_path
-    });
-    child.unref();
+    spawnAsyncWorker(taskId, workspace_path);
     return { content: [{ type: "text", text: `\u2705 Council spawned successfully in background.
 
 **Council ID**: ${taskId}
@@ -32158,7 +32247,7 @@ Memory appended to: ${memoryFile}`
               );
             }
             console.error(`[Pre-Merge Gate] Running build verification: ${buildCmd} in ${buildCwd}`);
-            (0, import_child_process5.execSync)(buildCmd, {
+            (0, import_child_process6.execSync)(buildCmd, {
               cwd: buildCwd,
               encoding: "utf8",
               timeout: 12e4
@@ -32191,12 +32280,12 @@ Fix the build errors and try again.`
       let branchCleanupMsg = "";
       if (result.headBranch && !PROTECTED_BRANCHES.includes(result.headBranch)) {
         try {
-          const currentBranch = (0, import_child_process5.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
+          const currentBranch = (0, import_child_process6.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
           if (currentBranch === result.headBranch) {
             const checkoutTarget = result.baseBranch || "master";
-            (0, import_child_process5.execSync)(`git checkout ${checkoutTarget}`, { cwd: workspace_path, encoding: "utf8" });
+            (0, import_child_process6.execSync)(`git checkout ${checkoutTarget}`, { cwd: workspace_path, encoding: "utf8" });
           }
-          (0, import_child_process5.execSync)(`git branch -d ${result.headBranch}`, { cwd: workspace_path, encoding: "utf8" });
+          (0, import_child_process6.execSync)(`git branch -d ${result.headBranch}`, { cwd: workspace_path, encoding: "utf8" });
           branchCleanupMsg = ` Branch '${result.headBranch}' cleaned up.`;
           console.error(`[Branch Cleanup] Deleted branch '${result.headBranch}' after merging PR #${pull_request_id}`);
         } catch (cleanupErr) {
@@ -32207,11 +32296,11 @@ Fix the build errors and try again.`
       let syncMsg = "";
       try {
         const syncBranch = result.baseBranch || "master";
-        const currentBranchAfterCleanup = (0, import_child_process5.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
+        const currentBranchAfterCleanup = (0, import_child_process6.execSync)("git rev-parse --abbrev-ref HEAD", { cwd: workspace_path, encoding: "utf8" }).trim();
         if (currentBranchAfterCleanup !== syncBranch) {
-          (0, import_child_process5.execSync)(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+          (0, import_child_process6.execSync)(`git checkout ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
         }
-        (0, import_child_process5.execSync)(`git pull --rebase origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
+        (0, import_child_process6.execSync)(`git pull --rebase origin ${syncBranch}`, { cwd: workspace_path, encoding: "utf8" });
         syncMsg = ` Local '${syncBranch}' synced.`;
       } catch (syncErr) {
         console.error(`[Post-Merge Sync] Warning: ${syncErr.message}`);
