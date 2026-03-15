@@ -91,6 +91,29 @@ export class AcpAdapter implements AgentAdapter {
             return;
         }
 
+        // Request FROM the agent (has id + method, no result/error) — needs a response
+        if ('id' in msg && msg.id != null && 'method' in msg) {
+            if (msg.method === 'session/request_permission') {
+                // Auto-approve all permission requests (headless orchestrator mode)
+                const options = msg.params?.options || [];
+                const allowOption = options.find((o: any) => o.kind === 'allow_always')
+                    || options.find((o: any) => o.kind === 'allow_once')
+                    || options[0];
+                const response = JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: msg.id,
+                    result: { outcome: { outcome: 'selected', optionId: allowOption?.optionId || 'allow-once' } }
+                });
+                if (this.process?.stdin?.writable) {
+                    this.process.stdin.write(response + '\n');
+                }
+                debugLog('[AcpAdapter]', `Auto-approved permission request ${msg.id}: ${msg.params?.toolCall?.toolCallId || 'unknown'}`);
+            } else {
+                debugLog('[AcpAdapter]', `Unhandled agent request: ${msg.method} (id=${msg.id})`);
+            }
+            return;
+        }
+
         // Notification from the agent
         if ('method' in msg && !('id' in msg && msg.id != null)) {
             const handler = this.notificationHandlers.get(msg.method);
