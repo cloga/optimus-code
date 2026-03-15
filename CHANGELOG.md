@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.6] - 2026-03-15
+
+### Fixes
+- **T2 Guard regression fix** — Thin T2 templates (existing but < 25 body lines, e.g., `pm.md`) were incorrectly triggering the new "missing role_description" error. Now: if a T2 file exists (even thin), delegation proceeds without requiring `role_description`. The error only fires when truly no T2 exists.
+
 ## [1.0.5] - 2026-03-15
 
 ### Features
