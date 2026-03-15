@@ -29719,6 +29719,16 @@ ${content}
     console.error(`[Orchestrator] Loaded ${found.size} skill(s) for ${role}: ${[...found.keys()].join(", ")}`);
   }
   const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel, workspacePath);
+  let isAcpEngine = false;
+  try {
+    const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+    if (import_fs3.default.existsSync(configPath)) {
+      const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
+      const engConf = config2.engines?.[activeEngine];
+      isAcpEngine = engConf?.protocol === "acp" || activeEngine === "acp" || activeEngine.startsWith("acp-");
+    }
+  } catch {
+  }
   console.error(`[Orchestrator] Resolving Identity for ${role}...`);
   console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
   console.error(`[Orchestrator] Engine: ${activeEngine}, Session: ${activeSessionId || "New/Ephemeral"}`);
@@ -29804,7 +29814,29 @@ A GitHub Issue #${autoIssueNumber} has already been created to track this task.
 DO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.
 Pass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.
 ` : "";
-  const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
+  const basePrompt = isAcpEngine ? `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
+Your Role: ${role}
+Identity: ${resolvedTier}
+
+${personaContext ? `Your persona: ${personaContext.split("\n")[0]}` : ""}
+Goal: Execute the following task.
+${trackingIssueHeader}
+IMPORTANT: You are running in the project workspace. Read files directly when needed:
+- System instructions: .optimus/config/system-instructions.md
+- Project memory: .optimus/memory/continuous-memory.md
+- Role memory: .optimus/memory/roles/${role}.md
+${skillContent ? `- Skills have been loaded (see below)` : `- Skills: .optimus/skills/`}
+${contextFiles && contextFiles.length > 0 ? `- Required context files: ${contextFiles.join(", ")}` : ""}
+
+Task Description:
+${taskText}${skillContent ? `
+
+=== EQUIPPED SKILLS ===
+${skillContent}
+=== END SKILLS ===` : ""}
+
+CRITICAL: Your output MUST be written to this EXACT file: ${normalizePathForAgent(outputPath)}
+Please provide your complete execution result below.` : `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
 
