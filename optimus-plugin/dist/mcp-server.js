@@ -3225,8 +3225,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path12) {
-      let input = path12;
+    function removeDotSegments(path13) {
+      let input = path13;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3425,8 +3425,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path12, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
+        const [path13, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path13 && path13 !== "/" ? path13 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -6788,12 +6788,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs11, exportName) {
+    function addFormats(ajv, list, fs12, exportName) {
       var _a2;
       var _b;
       (_a2 = (_b = ajv.opts.code).formats) !== null && _a2 !== void 0 ? _a2 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs11[f]);
+        ajv.addFormat(f, fs12[f]);
     }
     module2.exports = exports2 = formatsPlugin;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -10509,8 +10509,8 @@ var require_package = __commonJS({
 var require_main = __commonJS({
   "../node_modules/dotenv/lib/main.js"(exports2, module2) {
     "use strict";
-    var fs11 = require("fs");
-    var path12 = require("path");
+    var fs12 = require("fs");
+    var path13 = require("path");
     var os2 = require("os");
     var crypto4 = require("crypto");
     var packageJson = require_package();
@@ -10618,7 +10618,7 @@ var require_main = __commonJS({
       if (options && options.path && options.path.length > 0) {
         if (Array.isArray(options.path)) {
           for (const filepath of options.path) {
-            if (fs11.existsSync(filepath)) {
+            if (fs12.existsSync(filepath)) {
               possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
             }
           }
@@ -10626,15 +10626,15 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path12.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path13.resolve(process.cwd(), ".env.vault");
       }
-      if (fs11.existsSync(possibleVaultPath)) {
+      if (fs12.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
       }
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path12.join(os2.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path13.join(os2.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -10651,7 +10651,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path12.resolve(process.cwd(), ".env");
+      const dotenvPath = path13.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -10675,13 +10675,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path13 of optionPaths) {
+      for (const path14 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs11.readFileSync(path13, { encoding }));
+          const parsed = DotenvModule.parse(fs12.readFileSync(path14, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path13} ${e.message}`);
+            _debug(`Failed to load ${path14} ${e.message}`);
           }
           lastError = e;
         }
@@ -10696,7 +10696,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative2 = path12.relative(process.cwd(), filePath);
+            const relative2 = path13.relative(process.cwd(), filePath);
             shortPaths.push(relative2);
           } catch (e) {
             if (debug) {
@@ -13068,8 +13068,8 @@ function getErrorMap() {
 
 // ../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path12, errorMaps, issueData } = params;
-  const fullPath = [...path12, ...issueData.path || []];
+  const { data, path: path13, errorMaps, issueData } = params;
+  const fullPath = [...path13, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -13184,11 +13184,11 @@ var errorUtil;
 
 // ../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path12, key) {
+  constructor(parent, value, path13, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path12;
+    this._path = path13;
     this._key = key;
   }
   get path() {
@@ -16834,10 +16834,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path12) {
-  if (!path12)
+function getElementAtPath(obj, path13) {
+  if (!path13)
     return obj;
-  return path12.reduce((acc, key) => acc?.[key], obj);
+  return path13.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -17220,11 +17220,11 @@ function aborted(x2, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path12, issues) {
+function prefixIssues(path13, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path12);
+    iss.path.unshift(path13);
     return iss;
   });
 }
@@ -27222,7 +27222,7 @@ ${outputBlock}
     const record2 = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record2, result);
     const lines = this.countMeaningfulLines(content);
-    const path12 = this.getStructuredResultPath(record2);
+    const path13 = this.getStructuredResultPath(record2);
     const lineRange = this.getStructuredResultLineRange(record2);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -27256,30 +27256,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path12, "matches=0"]);
+        return this.buildStructuredSummary([path13, "matches=0"]);
       }
-      return this.buildStructuredSummary([path12, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path13, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path12, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path13, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path12, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path13, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path12, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path13, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path12, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path13, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path12, "items=0"]);
+        return this.buildStructuredSummary([path13, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path12, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path13, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path12, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path13, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -27884,22 +27884,22 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   getSpawnCommand(mode) {
     const args = [];
     const cwd = PersistentAgentAdapter.getWorkspacePath();
-    const fs11 = require("fs");
-    const path12 = require("path");
+    const fs12 = require("fs");
+    const path13 = require("path");
     args.push("--add-dir", cwd);
-    const localMcpPath = path12.join(cwd, ".vscode", "mcp.json");
-    if (fs11.existsSync(localMcpPath)) {
+    const localMcpPath = path13.join(cwd, ".vscode", "mcp.json");
+    if (fs12.existsSync(localMcpPath)) {
       try {
-        let mcpContent = fs11.readFileSync(localMcpPath, "utf8");
+        let mcpContent = fs12.readFileSync(localMcpPath, "utf8");
         mcpContent = mcpContent.replace(/\$\{workspaceFolder\}/g, cwd.replace(/\\/g, "/"));
         mcpContent = mcpContent.replace(/\$\{env:(\w+)\}/g, (_2, varName) => {
           return (process.env[varName] || "").replace(/\\/g, "/");
         });
         const localMcp = JSON.parse(mcpContent);
         const claudeMcp = { mcpServers: localMcp.servers || localMcp.mcpServers || {} };
-        const proxyMcpPath = path12.join(cwd, ".optimus", ".claude-mcp.json");
-        fs11.mkdirSync(path12.dirname(proxyMcpPath), { recursive: true });
-        fs11.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
+        const proxyMcpPath = path13.join(cwd, ".optimus", ".claude-mcp.json");
+        fs12.mkdirSync(path13.dirname(proxyMcpPath), { recursive: true });
+        fs12.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
         args.push("--mcp-config", proxyMcpPath);
       } catch (e) {
       }
@@ -27994,6 +27994,8 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
 // ../src/adapters/AcpAdapter.ts
 var cp2 = __toESM(require("child_process"));
 var readline = __toESM(require("readline"));
+var fs2 = __toESM(require("fs"));
+var path2 = __toESM(require("path"));
 var AcpAdapter = class {
   id;
   name;
@@ -28143,9 +28145,10 @@ var AcpAdapter = class {
         currentSessionId = loadResult?.sessionId || sessionId;
         debugLog("[AcpAdapter]", `Session loaded: ${currentSessionId}`);
       } else {
+        const mcpServers = this.loadMcpServers();
         const newResult = await this.sendRequest("session/new", {
           cwd: process.cwd(),
-          mcpServers: []
+          mcpServers
         });
         currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
         debugLog("[AcpAdapter]", `New session created: ${currentSessionId}`);
@@ -28184,6 +28187,38 @@ var AcpAdapter = class {
       throw err;
     } finally {
       this.cleanup();
+    }
+  }
+  /**
+   * Load MCP server config from .vscode/mcp.json and convert to ACP array format.
+   * ACP expects: [{ name, command, args, env: [{name, value}] }]
+   * VS Code uses: { "server-name": { type, command, args, env: {KEY: VALUE} } }
+   */
+  loadMcpServers() {
+    const cwd = process.cwd();
+    const mcpPath = path2.join(cwd, ".vscode", "mcp.json");
+    if (!fs2.existsSync(mcpPath)) {
+      debugLog("[AcpAdapter]", "No .vscode/mcp.json found, mcpServers=[]");
+      return [];
+    }
+    try {
+      let raw = fs2.readFileSync(mcpPath, "utf8");
+      const cwdEscaped = cwd.replace(/\\/g, "\\\\");
+      raw = raw.replace(/\$\{workspaceFolder\}/g, cwdEscaped);
+      raw = raw.replace(/\$\{env:(\w+)\}/g, (_2, varName) => (process.env[varName] || "").replace(/\\/g, "\\\\"));
+      const cfg = JSON.parse(raw);
+      const servers = cfg.servers || cfg.mcpServers || {};
+      const acpServers = Object.entries(servers).map(([name, config2]) => ({
+        name,
+        command: config2.command || "",
+        args: config2.args || [],
+        env: Object.entries(config2.env || {}).map(([k2, v2]) => ({ name: k2, value: String(v2) }))
+      }));
+      debugLog("[AcpAdapter]", `Loaded ${acpServers.length} MCP servers: ${acpServers.map((s) => s.name).join(", ")}`);
+      return acpServers;
+    } catch (e) {
+      debugLog("[AcpAdapter]", `Failed to load MCP config: ${e.message}`);
+      return [];
     }
   }
   /**
@@ -28843,8 +28878,8 @@ function updateUserMemoryHeader(content) {
 }
 
 // ../src/managers/TaskManifestManager.ts
-var fs4 = __toESM(require("fs"));
-var path4 = __toESM(require("path"));
+var fs5 = __toESM(require("fs"));
+var path5 = __toESM(require("path"));
 var manifestMutex = Promise.resolve();
 function withManifestLock(fn) {
   let release;
@@ -28864,15 +28899,15 @@ function withManifestLock(fn) {
 }
 var TaskManifestManager = class {
   static getManifestPath(workspacePath) {
-    return path4.join(workspacePath, ".optimus", "state", "task-manifest.json");
+    return path5.join(workspacePath, ".optimus", "state", "task-manifest.json");
   }
   static loadManifest(workspacePath) {
     const manifestPath = this.getManifestPath(workspacePath);
-    if (!fs4.existsSync(manifestPath)) {
+    if (!fs5.existsSync(manifestPath)) {
       return {};
     }
     try {
-      return JSON.parse(fs4.readFileSync(manifestPath, "utf8"));
+      return JSON.parse(fs5.readFileSync(manifestPath, "utf8"));
     } catch (e) {
       console.error(`[TaskManifest] Warning: failed to parse task manifest at ${manifestPath}: ${e.message}. Returning empty manifest \u2014 existing tasks may appear missing.`);
       return {};
@@ -28881,10 +28916,10 @@ var TaskManifestManager = class {
   static saveManifest(workspacePath, manifest) {
     const manifestPath = this.getManifestPath(workspacePath);
     const tempPath = `${manifestPath}.tmp`;
-    const dir = path4.dirname(manifestPath);
-    if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
-    fs4.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
-    fs4.renameSync(tempPath, manifestPath);
+    const dir = path5.dirname(manifestPath);
+    if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
+    fs5.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), "utf8");
+    fs5.renameSync(tempPath, manifestPath);
   }
   static createTask(workspacePath, record2) {
     const fullRecord = {
@@ -28932,9 +28967,9 @@ var TaskManifestManager = class {
             changed = true;
             try {
               if (task.output_path) {
-                const dir = path4.dirname(task.output_path);
-                if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
-                fs4.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
+                const dir = path5.dirname(task.output_path);
+                if (!fs5.existsSync(dir)) fs5.mkdirSync(dir, { recursive: true });
+                fs5.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
 `, "utf8");
               }
             } catch (e) {
@@ -30213,18 +30248,18 @@ ${failed.map((f) => `- ${f}`).join("\n")}
 }
 
 // ../src/mcp/agent-gc.ts
-var fs6 = __toESM(require("fs"));
-var path6 = __toESM(require("path"));
+var fs7 = __toESM(require("fs"));
+var path7 = __toESM(require("path"));
 function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
-  const agentsDir = path6.join(workspacePath, ".optimus", "agents");
-  if (!fs6.existsSync(agentsDir)) return;
-  const files = fs6.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
+  const agentsDir = path7.join(workspacePath, ".optimus", "agents");
+  if (!fs7.existsSync(agentsDir)) return;
+  const files = fs7.readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
   const now = Date.now();
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1e3;
   for (const file2 of files) {
     if (file2.endsWith(".lock")) continue;
-    const filePath = path6.join(agentsDir, file2);
-    const content = fs6.readFileSync(filePath, "utf8");
+    const filePath = path7.join(agentsDir, file2);
+    const content = fs7.readFileSync(filePath, "utf8");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) continue;
     const lines = fmMatch[1].split("\n");
@@ -30235,13 +30270,13 @@ function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
     if (getValue("persistent") === "true") continue;
     const lastInvoked = getValue("last_invoked") || getValue("created_at");
     if (!lastInvoked) {
-      fs6.unlinkSync(filePath);
+      fs7.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file2}' (no timestamp found)`);
       continue;
     }
     const age = now - new Date(lastInvoked).getTime();
     if (age > maxAgeMs) {
-      fs6.unlinkSync(filePath);
+      fs7.unlinkSync(filePath);
       console.error(`[Agent GC] Removed stale T1 instance '${file2}' (last invoked: ${lastInvoked})`);
     }
   }
@@ -30622,8 +30657,8 @@ var import_child_process6 = require("child_process");
 var import_dotenv = __toESM(require_main());
 
 // ../src/adapters/vcs/VcsProviderFactory.ts
-var path8 = __toESM(require("path"));
-var fs8 = __toESM(require("fs"));
+var path9 = __toESM(require("path"));
+var fs9 = __toESM(require("fs"));
 var crypto2 = __toESM(require("crypto"));
 var import_child_process3 = require("child_process");
 var VcsProviderFactory = class {
@@ -30639,7 +30674,7 @@ var VcsProviderFactory = class {
   static async getProvider(workspacePath) {
     const resolvedWorkspacePath = workspacePath || process.cwd();
     const configPath = this.getConfigPath(resolvedWorkspacePath);
-    const configContent = fs8.existsSync(configPath) ? fs8.readFileSync(configPath, "utf8") : "";
+    const configContent = fs9.existsSync(configPath) ? fs9.readFileSync(configPath, "utf8") : "";
     const configHash = crypto2.createHash("md5").update(configContent).digest("hex");
     if (this.cachedProvider && this.cachedConfigPath === configPath && this.cachedConfigHash === configHash) {
       return this.cachedProvider;
@@ -30682,13 +30717,13 @@ var VcsProviderFactory = class {
     this.cachedConfigHash = null;
   }
   static getConfigPath(workspacePath) {
-    return path8.join(workspacePath, ".optimus", "config", "vcs.json");
+    return path9.join(workspacePath, ".optimus", "config", "vcs.json");
   }
   static loadConfig(workspacePath) {
     const configPath = this.getConfigPath(workspacePath);
-    if (fs8.existsSync(configPath)) {
+    if (fs9.existsSync(configPath)) {
       try {
-        const configContent = fs8.readFileSync(configPath, "utf8");
+        const configContent = fs9.readFileSync(configPath, "utf8");
         return JSON.parse(configContent);
       } catch (error2) {
         console.error(`Warning: Failed to parse VCS config at ${configPath}:`, error2);
@@ -30782,11 +30817,11 @@ var VcsProviderFactory = class {
    */
   static createConfig(workspacePath, config2) {
     const configPath = this.getConfigPath(workspacePath);
-    const configDir = path8.dirname(configPath);
-    if (!fs8.existsSync(configDir)) {
-      fs8.mkdirSync(configDir, { recursive: true });
+    const configDir = path9.dirname(configPath);
+    if (!fs9.existsSync(configDir)) {
+      fs9.mkdirSync(configDir, { recursive: true });
     }
-    fs8.writeFileSync(configPath, JSON.stringify(config2, null, 2), "utf8");
+    fs9.writeFileSync(configPath, JSON.stringify(config2, null, 2), "utf8");
   }
 };
 

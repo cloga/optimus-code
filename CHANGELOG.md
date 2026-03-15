@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.1] - 2026-03-15
+
+### Fixes
+- **ACP sub-agents can now call MCP tools** — `AcpAdapter` was passing `mcpServers: []` to `session/new`, making sub-agents unable to call any MCP tools (e.g. `request_human_input`, `vcs_update_work_item`). Now reads `.vscode/mcp.json`, resolves `${workspaceFolder}`/`${env:VAR}` macros, and converts VS Code object format to ACP array format. Verified with `request_human_input` end-to-end test.
+
 ## [2.2.0] - 2026-03-15
 
 ### Features

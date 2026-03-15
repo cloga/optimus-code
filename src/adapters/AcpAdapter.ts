@@ -2,6 +2,8 @@ import { AgentAdapter } from './AgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import * as cp from 'child_process';
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
 import { debugLog } from '../debugLogger';
 
 // ─── JSON-RPC Types ───
@@ -220,9 +222,10 @@ export class AcpAdapter implements AgentAdapter {
                 currentSessionId = loadResult?.sessionId || sessionId;
                 debugLog('[AcpAdapter]', `Session loaded: ${currentSessionId}`);
             } else {
+                const mcpServers = this.loadMcpServers();
                 const newResult = await this.sendRequest('session/new', {
                     cwd: process.cwd(),
-                    mcpServers: []
+                    mcpServers
                 });
                 currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
                 debugLog('[AcpAdapter]', `New session created: ${currentSessionId}`);
@@ -276,6 +279,45 @@ export class AcpAdapter implements AgentAdapter {
             throw err;
         } finally {
             this.cleanup();
+        }
+    }
+
+    /**
+     * Load MCP server config from .vscode/mcp.json and convert to ACP array format.
+     * ACP expects: [{ name, command, args, env: [{name, value}] }]
+     * VS Code uses: { "server-name": { type, command, args, env: {KEY: VALUE} } }
+     */
+    private loadMcpServers(): any[] {
+        const cwd = process.cwd();
+        const mcpPath = path.join(cwd, '.vscode', 'mcp.json');
+
+        if (!fs.existsSync(mcpPath)) {
+            debugLog('[AcpAdapter]', 'No .vscode/mcp.json found, mcpServers=[]');
+            return [];
+        }
+
+        try {
+            let raw = fs.readFileSync(mcpPath, 'utf8');
+            // Resolve VS Code macros — escape backslashes for valid JSON on Windows
+            const cwdEscaped = cwd.replace(/\\/g, '\\\\');
+            raw = raw.replace(/\$\{workspaceFolder\}/g, cwdEscaped);
+            raw = raw.replace(/\$\{env:(\w+)\}/g, (_: string, varName: string) => (process.env[varName] || '').replace(/\\/g, '\\\\'));
+            const cfg = JSON.parse(raw);
+            const servers = cfg.servers || cfg.mcpServers || {};
+
+            // Convert VS Code object format → ACP array format
+            const acpServers = Object.entries(servers).map(([name, config]: [string, any]) => ({
+                name,
+                command: config.command || '',
+                args: config.args || [],
+                env: Object.entries(config.env || {}).map(([k, v]) => ({ name: k, value: String(v) }))
+            }));
+
+            debugLog('[AcpAdapter]', `Loaded ${acpServers.length} MCP servers: ${acpServers.map(s => s.name).join(', ')}`);
+            return acpServers;
+        } catch (e: any) {
+            debugLog('[AcpAdapter]', `Failed to load MCP config: ${e.message}`);
+            return [];
         }
     }
 
