@@ -160,6 +160,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             required: ["workspace_path"]
           }
         },
+        {
+          name: "vcs_list_pull_requests",
+          description: "List pull requests with optional state filter. Returns PR number, title, state, mergeable status, head/base branches, and labels.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              state: { type: "string", enum: ["open", "closed", "all"], description: "Filter by state (default: open)" },
+              limit: { type: "number", description: "Maximum number of PRs to return (default: 30, max: 100)" },
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+            },
+            required: ["workspace_path"]
+          }
+        },
 
       {
         name: "dispatch_council",
@@ -1396,6 +1409,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to list work items: ${error.message}`);
+    }
+  } else if (request.params.name === "vcs_list_pull_requests") {
+    const { state, limit, workspace_path } = request.params.arguments as any;
+    requireParams("vcs_list_pull_requests", request.params.arguments as any, ["workspace_path"]);
+
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const prs = await vcsProvider.listPullRequests({ state, limit });
+
+      const summary = prs.map(pr => `#${pr.number} [${pr.state}] [${pr.mergeable}] ${pr.headBranch}→${pr.baseBranch} ${pr.labels.length ? `(${pr.labels.join(', ')}) ` : ''}${pr.title}`).join('\n');
+      return {
+        content: [{
+          type: "text",
+          text: `Found ${prs.length} pull requests on ${vcsProvider.getProviderName()}:\n\n${summary}`
+        }]
+      };
+    } catch (error: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to list pull requests: ${error.message}`);
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments as any;

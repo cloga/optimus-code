@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 
 /**
  * GitHub VCS Provider Implementation
@@ -455,6 +455,44 @@ export class GitHubProvider implements IVcsProvider {
         }
 
         return allItems;
+    }
+
+    async listPullRequests(
+        filters?: { state?: 'open' | 'closed' | 'all'; limit?: number }
+    ): Promise<PullRequestListItem[]> {
+        const token = this.getToken();
+        if (!token) throw new Error('GitHub token not found in environment variables');
+
+        const state = filters?.state || 'open';
+        const limit = Math.min(filters?.limit || 30, 100);
+
+        const url = `https://api.github.com/repos/${this.owner}/${this.repo}/pulls?state=${state}&per_page=${limit}`;
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Optimus-Agent'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+        }
+
+        const data = await response.json() as any[];
+        return data.map(pr => ({
+            id: pr.id.toString(),
+            number: pr.number,
+            title: pr.title,
+            state: pr.state,
+            mergeable: pr.mergeable_state || 'unknown',
+            headBranch: pr.head?.ref || '',
+            baseBranch: pr.base?.ref || '',
+            labels: (pr.labels || []).map((l: any) => l.name),
+            url: pr.html_url,
+            created_at: pr.created_at,
+            updated_at: pr.updated_at
+        }));
     }
 
     private getToken(): string | undefined {

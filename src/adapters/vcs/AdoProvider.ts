@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 import { marked } from 'marked';
 
 /**
@@ -434,6 +434,13 @@ export class AdoProvider implements IVcsProvider {
         _filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
     ): Promise<WorkItemListItem[]> {
         console.error('[AdoProvider] listWorkItems() is not yet implemented for Azure DevOps. Returning empty array.');
+        return [];
+    }
+
+    async listPullRequests(
+        _filters?: { state?: 'open' | 'closed' | 'all'; limit?: number }
+    ): Promise<PullRequestListItem[]> {
+        console.error('[AdoProvider] listPullRequests() is not yet implemented for Azure DevOps. Returning empty array.');
         return [];
     }
 

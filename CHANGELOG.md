@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0] - 2026-03-15
+
+### Features
+- **`vcs_list_pull_requests` tool** — New VCS tool to list pull requests with state filter. Returns PR number, title, mergeable status (`clean`/`CONFLICTING`/`unknown`), head/base branches, and labels. Enables patrol PM to automatically discover and handle open PRs.
+
+### Improvements
+- **Patrol PR phase upgraded** — Patrol skill now uses `vcs_list_pull_requests` instead of unreliable `git log --remotes`. Adds decision matrix for conflicting bot PRs (auto-close) and conflicting human PRs (escalate via `request_human_input`).
+
 ## [2.2.1] - 2026-03-15
 
 ### Fixes

@@ -49,6 +49,20 @@ export interface WorkItemListItem {
     updated_at: string;
 }
 
+export interface PullRequestListItem {
+    id: string;
+    number: number;
+    title: string;
+    state: string;
+    mergeable: string;
+    headBranch: string;
+    baseBranch: string;
+    labels: string[];
+    url: string;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface AdoWorkItemOptions {
     iteration_path?: string;
     area_path?: string;
@@ -168,6 +182,13 @@ export interface IVcsProvider {
     listWorkItems(
         filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
     ): Promise<WorkItemListItem[]>;
+
+    /**
+     * List pull requests matching filters
+     */
+    listPullRequests(
+        filters?: { state?: 'open' | 'closed' | 'all'; limit?: number }
+    ): Promise<PullRequestListItem[]>;
 
     /**
      * Get provider name for diagnostics

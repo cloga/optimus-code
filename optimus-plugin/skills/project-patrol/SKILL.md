@@ -51,9 +51,13 @@ After processing task-tracking Issues, check for parent cascade effects:
    - Do NOT close the parent Issue — parent Issues are "real" Issues managed by the standard triage flow
 
 ### 1.2 Open PRs
-- Check for open PRs via `git log --remotes` or VCS tools
-- For each PR, note: number, title, age, review status
-- Identify: PRs approved and ready to merge, PRs stale (> 7 days with no activity), PRs with merge conflicts
+- Fetch open PRs via `vcs_list_pull_requests(workspace_path: "...")` 
+- For each PR, note: number, title, mergeable status, head/base branches, labels, age
+- Classify:
+  - **Mergeable + approved** → ready to merge
+  - **CONFLICTING** → has merge conflicts, needs human decision or auto-close
+  - **Stale** (> 7 days, no activity) → report only
+  - **Bot PR with conflicts** (has `optimus-bot` label + CONFLICTING) → close directly with comment explaining the conflict
 
 ### 1.3 Stale Branches
 - Run `git branch -r --merged master` to find remote branches already merged to master
@@ -114,6 +118,8 @@ Apply this decision framework to each finding:
 | Issue needs investigation (unclear if implemented) | Delegate read-only investigation | Specialist (depth-2) | Medium |
 | Issue without priority label | **MANDATORY**: Assess and add P0/P1/P2/P3 label — every unlabeled Issue MUST be triaged | Self (depth-1) | Low |
 | PR approved, ready to merge | Merge via `vcs_merge_pr` | Self (depth-1) | Medium |
+| PR with merge conflicts (`optimus-bot` label) | Close PR via GitHub API. Comment: `[patrol-manager] Closed: merge conflicts detected. Will re-create if needed.` | Self (depth-1) | Low |
+| PR with merge conflicts (human PR) | Escalate via `request_human_input`: "PR #N has merge conflicts. Close or resolve?" | Self (depth-1) | Medium |
 | PR needs review | Delegate to code-reviewer | Specialist (depth-2) | Medium |
 | PR stale (> 7 days, no activity) | Report only | N/A | Info |
 | Branch merged to master | Delete via `git push origin --delete <branch>` | Self (depth-1) | Low |

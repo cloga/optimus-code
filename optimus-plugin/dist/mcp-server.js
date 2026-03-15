@@ -11152,6 +11152,37 @@ var init_GitHubProvider = __esm({
         }
         return allItems;
       }
+      async listPullRequests(filters) {
+        const token = this.getToken();
+        if (!token) throw new Error("GitHub token not found in environment variables");
+        const state = filters?.state || "open";
+        const limit = Math.min(filters?.limit || 30, 100);
+        const url2 = `https://api.github.com/repos/${this.owner}/${this.repo}/pulls?state=${state}&per_page=${limit}`;
+        const response = await fetch(url2, {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Optimus-Agent"
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+        }
+        const data = await response.json();
+        return data.map((pr) => ({
+          id: pr.id.toString(),
+          number: pr.number,
+          title: pr.title,
+          state: pr.state,
+          mergeable: pr.mergeable_state || "unknown",
+          headBranch: pr.head?.ref || "",
+          baseBranch: pr.base?.ref || "",
+          labels: (pr.labels || []).map((l) => l.name),
+          url: pr.html_url,
+          created_at: pr.created_at,
+          updated_at: pr.updated_at
+        }));
+      }
       getToken() {
         return process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
       }
@@ -12700,6 +12731,10 @@ var init_AdoProvider = __esm({
       }
       async listWorkItems(_filters) {
         console.error("[AdoProvider] listWorkItems() is not yet implemented for Azure DevOps. Returning empty array.");
+        return [];
+      }
+      async listPullRequests(_filters) {
+        console.error("[AdoProvider] listPullRequests() is not yet implemented for Azure DevOps. Returning empty array.");
         return [];
       }
       getToken() {
@@ -31406,6 +31441,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "vcs_list_pull_requests",
+        description: "List pull requests with optional state filter. Returns PR number, title, state, mergeable status, head/base branches, and labels.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            state: { type: "string", enum: ["open", "closed", "all"], description: "Filter by state (default: open)" },
+            limit: { type: "number", description: "Maximum number of PRs to return (default: 30, max: 100)" },
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
+          },
+          required: ["workspace_path"]
+        }
+      },
+      {
         name: "dispatch_council",
         description: "Trigger a map-reduce multi-expert review for an architectural proposal using the Spartan Swarm protocol.",
         inputSchema: {
@@ -32623,6 +32671,24 @@ ${summary}`
       };
     } catch (error2) {
       throw new McpError(ErrorCode.InternalError, `Failed to list work items: ${error2.message}`);
+    }
+  } else if (request.params.name === "vcs_list_pull_requests") {
+    const { state, limit, workspace_path } = request.params.arguments;
+    requireParams("vcs_list_pull_requests", request.params.arguments, ["workspace_path"]);
+    try {
+      const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
+      const prs = await vcsProvider.listPullRequests({ state, limit });
+      const summary = prs.map((pr) => `#${pr.number} [${pr.state}] [${pr.mergeable}] ${pr.headBranch}\u2192${pr.baseBranch} ${pr.labels.length ? `(${pr.labels.join(", ")}) ` : ""}${pr.title}`).join("\n");
+      return {
+        content: [{
+          type: "text",
+          text: `Found ${prs.length} pull requests on ${vcsProvider.getProviderName()}:
+
+${summary}`
+        }]
+      };
+    } catch (error2) {
+      throw new McpError(ErrorCode.InternalError, `Failed to list pull requests: ${error2.message}`);
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments;
