@@ -55,7 +55,7 @@ module.exports = function init() {
   // Most agents are auto-generated at runtime via the T3→T2→T1 Cascade.
   // Only the PM (Master Agent) is pre-installed — it bootstraps the entire
   // workflow and cannot be dynamically generated since it's the entry point.
-  const dirs = ['config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'state', 'system', 'specs', 'results'];
+  const dirs = ['config', 'skills', 'agents', 'tasks', 'reports', 'reviews', 'memory', 'memory/roles', 'state', 'system', 'specs', 'results'];
   for (const dir of dirs) {
     const dirPath = path.join(optimusDir, dir);
     if (!fs.existsSync(dirPath)) {
@@ -197,6 +197,32 @@ module.exports = function init() {
       console.log('  ⚠️  Failed to install claude-agent-acp:', e.message);
       console.log('  💡 Install manually: npm install -g @zed-industries/claude-agent-acp');
     }
+  }
+
+  // 7. Initialize User Memory (cross-project, opt-in)
+  const os = require('os');
+  const userMemDir = path.join(os.homedir(), '.optimus', 'memory');
+  const userMemFile = path.join(userMemDir, 'user-memory.md');
+  if (!fs.existsSync(userMemFile)) {
+    if (!fs.existsSync(userMemDir)) fs.mkdirSync(userMemDir, { recursive: true });
+    const template = `# User Memory — managed by Optimus
+# Last updated: ${new Date().toISOString().slice(0, 10)}
+# Entries: 0
+#
+# Edit this file directly or use 'optimus memory' commands.
+# Agents read this across all projects to personalize their behavior.
+
+## Preferences
+
+## Toolchain
+
+## Lessons
+`;
+    fs.writeFileSync(userMemFile, template, 'utf8');
+    console.log('\n🧠 Initialized User Memory at ~/.optimus/memory/user-memory.md');
+    console.log('   💡 Add your preferences: edit the file or tell your AI assistant');
+  } else {
+    console.log('\n🧠 User Memory already exists (~/.optimus/memory/user-memory.md)');
   }
 
   console.log('\n✅ Workspace initialized! Your AI development team is ready.');
