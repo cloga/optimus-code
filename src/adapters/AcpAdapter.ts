@@ -28,7 +28,7 @@ type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification;
  * Supports both NDJSON (newline-delimited) and Content-Length framing,
  * auto-detected from agent responses.
  *
- * Verified working with: Qwen Code v0.12.3
+ * Verified working with: Qwen Code v0.12.3, claude-agent-acp v0.21.0
  */
 export class AcpAdapter implements AgentAdapter {
     public id: string;

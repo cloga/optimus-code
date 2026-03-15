@@ -240,7 +240,7 @@ The system ships with 5 pre-installed skills. Two are **meta-skills** that enabl
 |---------|----------|-------------------|
 | `github-copilot` | Copilot CLI text parsing | GitHub Copilot |
 | `claude-code` | Claude Code CLI text parsing | Claude Code |
-| `acp` | ACP (Agent Client Protocol) — JSON-RPC over stdio | Claude Code, GitHub Copilot (`copilot --acp`), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent |
+| `acp` | ACP (Agent Client Protocol) — JSON-RPC over stdio | claude-agent-acp, Claude Code, GitHub Copilot (`copilot --acp`), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent |
 
 The **ACP adapter** is the universal protocol layer that standardizes communication with any agent supporting the [Agent Client Protocol](https://github.com/cloga/optimus-code/issues/319). It uses JSON-RPC over stdio with LSP-style `Content-Length` framing, replacing legacy CLI text parsing with structured session lifecycle messages (`initialize` → `session/new` → `session/prompt` → `session/update` → response).
 

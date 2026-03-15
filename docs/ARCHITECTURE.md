@@ -86,7 +86,7 @@ Optimus communicates with external AI coding agents through **adapters** — plu
 |---------|-------|----------|--------|
 | `github-copilot` | `GitHubCopilotAdapter` | Copilot CLI text parsing | GitHub Copilot |
 | `claude-code` | `ClaudeCodeAdapter` | Claude Code CLI text parsing | Claude Code |
-| `acp` | `AcpAdapter` | **ACP (Agent Client Protocol)** — JSON-RPC over stdio | Claude Code, GitHub Copilot (`copilot --acp`), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent |
+| `acp` | `AcpAdapter` | **ACP (Agent Client Protocol)** — JSON-RPC over stdio | claude-agent-acp, Claude Code, GitHub Copilot (`copilot --acp`), Kimi CLI, Qwen Code, Gemini CLI, and any ACP-compliant agent |
 
 #### ACP Adapter (Epic [#319](https://github.com/cloga/optimus-code/issues/319))
 
@@ -106,7 +106,7 @@ initialize → session/new → session/prompt → session/update (streaming) →
 
 ACP coexists with the existing `ClaudeCodeAdapter` and `GitHubCopilotAdapter` through the factory pattern in `src/adapters/index.ts`. The `AdapterKind` union type (`'github-copilot' | 'claude-code' | 'acp'`) drives adapter selection via `available-agents.json` configuration.
 
-> **Status**: The AcpAdapter is scaffolded with the full interface contract. Transport and JSON-RPC message handling are pending implementation. See Epic #319 for the migration roadmap.
+> **Status**: The AcpAdapter is fully implemented with NDJSON transport and JSON-RPC message handling. Verified with Qwen Code v0.12.3 and claude-agent-acp v0.21.0.
 
 ---
 
