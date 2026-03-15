@@ -239,6 +239,23 @@ Before executing ANY multi-step workflow yourself (release, refactor, migration,
 
 **Why this matters**: You are an LLM — you have no memory between sessions. "I'll remember next time" is never true. Skills are your persistent process memory. Ignoring them means repeating past mistakes.
 
+### Human Escalation Protocol
+
+When encountering any of the following situations, call `request_human_input` instead of making assumptions or failing silently:
+
+| Situation | Example | Action |
+|-----------|---------|--------|
+| **Strategic decision** | "Should we adopt this competitor's pattern?" | Escalate with options |
+| **Missing credentials/config** | "GITHUB_TOKEN not set", "API key needed" | Escalate with setup instructions |
+| **Destructive operation** | "Delete 50 stale Issues?", "Force-push?" | Escalate for confirmation |
+| **Ambiguous requirement** | User's intent unclear after reading all context | Escalate with interpretation options |
+| **Repeated failure** | Same task failed 2+ times | Escalate with failure summary |
+| **Budget/cost concern** | Operation would consume significant resources | Escalate with cost estimate |
+| **Merge conflict** | PR has conflicts, `vcs_merge_pr` fails | Escalate with conflicting files list |
+| **Unmerged verified work** | Task verified but PR/branch not merged to master | Escalate to get merge approval |
+
+**Rule**: When in doubt, escalate. A 5-minute pause for human input is always cheaper than a wrong autonomous decision.
+
 ### Role Creation Decision Rules
 
 Before creating a new role, the Master Agent MUST verify:
