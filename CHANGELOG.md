@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.0] - 2026-03-15
+
+### Features
+- **Autonomous Memory Writing** — Agents now autonomously write to project/role memory when encountering non-trivial lessons (bug postmortems, tool gotchas, conventions). Removed the previous "MUST NOT write" restriction.
+- **User Memory auto-init** — `optimus init` now creates `~/.optimus/memory/user-memory.md` with a starter template. Also creates `.optimus/memory/roles/` directory for role-level memory.
+
 ## [2.0.0] - 2026-03-15
 
 ### Breaking Changes
