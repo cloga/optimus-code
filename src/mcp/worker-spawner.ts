@@ -26,6 +26,7 @@ import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
+import { TaskManifestManager } from "../managers/TaskManifestManager";
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -1321,6 +1322,13 @@ Please provide your complete execution result below.`;
                 try { fs.unlinkSync(currentT1); } catch (e: any) { console.error(`[Orchestrator] Warning: operation failed: ${e.message}`); }
             }
             console.error(`[Orchestrator] T1 finalized: '${role}' → ${path.basename(finalT1Path)}, session=${newSessionId || 'none'}, status=idle`);
+
+            // Backfill agent_id to task manifest for meta-cron session persistence
+            const agentId2 = `${role}_${sessionPrefix}`;
+            if (_fallbackSessionId.startsWith('async_')) {
+                const taskId = _fallbackSessionId.replace('async_', '');
+                TaskManifestManager.updateTask(workspacePath, taskId, { agent_id: agentId2 });
+            }
         }
 
         const dir = path.dirname(outputPath);

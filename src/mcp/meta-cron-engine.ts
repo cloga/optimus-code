@@ -22,6 +22,7 @@ interface CronEntry {
     run_count: number;
     fail_count: number;
     created_at: string;
+    last_agent_id?: string;
 }
 
 interface CrontabData {
@@ -245,6 +246,7 @@ export class MetaCronEngine {
             workspacePath: this.workspacePath,
             required_skills: entry.required_skills,
             delegation_depth: 0,
+            agent_id: entry.last_agent_id,
         });
 
         // Capture child stdout/stderr to a log file for diagnostics (was stdio:'ignore' — Issue #326).
@@ -304,6 +306,10 @@ export class MetaCronEngine {
                         if (freshEntry) {
                             freshEntry.last_status = task.status;
                             if (task.status === 'failed') freshEntry.fail_count++;
+                            // Session persistence: save agent_id for next cron cycle
+                            if (task.agent_id) {
+                                freshEntry.last_agent_id = task.agent_id;
+                            }
                             saveCrontab(ws, freshCrontab);
                         }
                     }
