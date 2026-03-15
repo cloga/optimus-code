@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.1] - 2026-03-15
+
+### Features
+- **`optimus init` auto-creates Health Log Issue** — Detects GitHub repo from git remote, creates a "[Optimus] System Health Log" issue, and links it in `meta-crontab.json`. Patrol reports are appended as comments. Requires `GITHUB_TOKEN` in `.env`; skips gracefully if unavailable.
+
+### Improvements
+- **Scaffold default cron → `hourly-patrol`** — New workspaces get `hourly-patrol` (patrol-manager + project-patrol skill) instead of `night-steward`. No dry-run, `max_actions=999`.
+- **VCS tools graceful degradation** — All 7 VCS tools (`vcs_create_work_item`, `vcs_create_pr`, `vcs_merge_pr`, `vcs_add_comment`, `vcs_update_work_item`, `vcs_list_work_items`, `vcs_list_pull_requests`) now return `⚠️ VCS unavailable` warning instead of crashing when no token or config is present. Agents continue working without Issue/PR tracking.
+
 ## [2.3.0] - 2026-03-15
 
 ### Features
