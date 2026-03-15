@@ -564,8 +564,13 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const hasExplicitDescription = !!masterInfo?.description && masterInfo.description.trim().length > 0;
 
     if (!hasExplicitDescription) {
-        // Master didn't provide role_description and no T2 exists — reject the delegation.
-        // This forces the calling agent to self-correct by providing a role_description.
+        // If a T2 already exists (even thin), don't reject — use what we have.
+        // Only reject when there's truly NO T2 and no description to create one.
+        if (fs.existsSync(t2Path)) {
+            console.error(`[T2 Guard] No role_description provided for '${safeRole}', but existing T2 found (thin). Continuing with existing template.`);
+            return t2Path;
+        }
+        // No T2 exists AND no description — reject the delegation.
         throw new Error(
             `Missing role_description for new role '${safeRole}'. ` +
             `No existing T2 role template found at .optimus/roles/${safeRole}.md. ` +

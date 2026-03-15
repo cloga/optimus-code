@@ -29116,6 +29116,10 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
   }
   const hasExplicitDescription = !!masterInfo?.description && masterInfo.description.trim().length > 0;
   if (!hasExplicitDescription) {
+    if (import_fs3.default.existsSync(t2Path)) {
+      console.error(`[T2 Guard] No role_description provided for '${safeRole}', but existing T2 found (thin). Continuing with existing template.`);
+      return t2Path;
+    }
     throw new Error(
       `Missing role_description for new role '${safeRole}'. No existing T2 role template found at .optimus/roles/${safeRole}.md. Please re-call delegate_task with a role_description parameter describing this role's expertise, or use role-creator to pre-create the role before delegation.`
     );
