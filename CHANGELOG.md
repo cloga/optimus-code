@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0] - 2026-03-15
+
+### Features
+- **Configurable Task Timeouts** — Engine-level and per-task timeout overrides via `available-agents.json` `timeout` block and `timeout_ms` parameter on `delegate_task`. Resolution order: per-task > per-engine > hardcoded fallback. (#407)
+- **AcpAdapter Claude Code Compatibility** — AcpAdapter now supports `claude-agent-acp` (Zed's Claude ACP bridge). Handles `cwd`/`mcpServers` in `session/new`, array prompt format, and `agent_message_chunk` streaming. (#413)
+- **Patrol Auto-Close Task Issues** — Patrol PM now correlates open `swarm-task`/`swarm-council` Issues with `task-manifest.json` and auto-closes verified ones. Issue lineage cascade notifies parent Issues. (#415)
+- **Competitive Intelligence Agent** — New `competitive-intel` meta-skill + `competitive-watchlist.json` config. Daily cron monitors competitor repos for releases, star velocity, and architectural changes. Escalates notable findings via `human-input-needed`. (#419)
+- **Human Escalation Protocol** — Agents now have explicit rules for when to call `request_human_input`: strategic decisions, merge conflicts, repeated failures, missing credentials, destructive operations, and unmerged verified work. (#425)
+
+### Fixes
+- **Council role_descriptions not passed to manifest** — `dispatch_council_async` was not storing `role_descriptions` in the task manifest, causing new council roles (without pre-existing T2 templates) to consistently fail T3→T2 precipitation. (#428)
+
 ## [1.1.0] - 2026-03-15
 
 ### Features
