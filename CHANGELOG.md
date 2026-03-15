@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.1] - 2026-03-15
+
+### Fixes
+- **Scaffold model name alignment** — Scaffold `available-agents.json` claude-code models changed from ACP-native names (`default`, `opus`, etc.) to standard identifiers (`claude-opus-4.6-1m`, `gpt-5.4`, `gemini-3-pro-preview`) matching project config.
+
 ## [2.1.0] - 2026-03-15
 
 ### Features
