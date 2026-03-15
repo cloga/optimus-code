@@ -17,11 +17,15 @@ Determine your execution mode using these checks, evaluated in order. Use **posi
 
 ```
 Mode Resolution Order:
-1. BOOTSTRAP — if watchlist file is missing, OR competitors[] is empty, OR search_strategy is null/missing
-2. DISCOVERY — if today's day_of_week matches search_strategy.discovery_day (default: 1 = Monday)
+1. BOOTSTRAP — if watchlist file is missing, OR competitors[] is empty
+2. UPGRADE — if watchlist has competitors but search_strategy is null/missing
+   (v1→v2 migration: add metadata only, do NOT run discovery or modify competitors)
+3. DISCOVERY — if today's day_of_week matches search_strategy.discovery_day (default: 1 = Monday)
    AND last_discovery_run in session memory is > 6 days ago (or has never run)
-3. MONITOR — all other cases (the default lightweight path)
+4. MONITOR — all other cases (the default lightweight path)
 ```
+
+**IMPORTANT**: UPGRADE mode is distinct from BOOTSTRAP. An existing populated watchlist should never trigger full discovery just because it was created under v1. UPGRADE only adds `_version`, `search_strategy`, and `source: "user"` tags to existing entries, then falls through to MONITOR.
 
 After resolving mode, log it: `"Mode: BOOTSTRAP|DISCOVERY|MONITOR — reason: <why>"`.
 
@@ -45,7 +49,7 @@ These apply to ALL modes and are non-negotiable:
 
 ## BOOTSTRAP MODE
 
-Bootstrap runs when the watchlist is empty or has no `search_strategy`. Its job: read project context, extract a structured profile, generate search queries, discover initial competitors, and seed the watchlist.
+Bootstrap runs when the watchlist is missing or has no competitors. Its job: read project context, extract a structured profile, generate search queries, discover initial competitors, and seed the watchlist.
 
 ### Step B1: Read Project Context
 
@@ -71,11 +75,11 @@ From the context files, produce a structured **Project Profile**:
 ```
 
 **Extraction Rules:**
-- If confidence is `low` — create a `human-input-needed` issue with the partial profile and **stop bootstrap**. Do not guess.
-- If confidence is `medium` — proceed but tag all discovered entries with `"confidence": "medium"`.
-- If confidence is `high` — proceed normally.
+- If confidence is `low` — call `request_human_input` with the partial profile and **stop bootstrap**. Do not guess. Include the extracted profile in the context summary and ask the user to confirm or correct the domain keywords.
+- If confidence is `medium` — proceed but **flag all discovered entries for human review** by adding them to `pending_human_review` in session memory instead of auto-adding. Create a `human-input-needed` issue listing the candidates for the user to approve.
+- If confidence is `high` — proceed normally with auto-add for qualifying candidates.
 
-**Failure path:** If no README or package metadata exists, create a `human-input-needed` issue explaining bootstrap cannot proceed and asking the user to either write a README or manually populate the watchlist. Do NOT hallucinate a project profile from directory structure alone.
+**Failure path:** If no README or package metadata exists, call `request_human_input` explaining bootstrap cannot proceed and asking the user to either write a README or manually populate the watchlist. Do NOT hallucinate a project profile from directory structure alone.
 
 ### Step B3: Generate Search Queries
 
@@ -119,6 +123,43 @@ bootstrap_state:
 
 ---
 
+## UPGRADE MODE (v1 → v2 Migration)
+
+Upgrade runs when the watchlist has competitors but no `search_strategy`. This is a non-destructive metadata migration — it does NOT modify competitor entries or run discovery.
+
+### Step U1: Extract Project Profile
+
+Follow the same extraction process as Bootstrap Step B2 (read README/package metadata, produce a Project Profile).
+
+### Step U2: Apply v2 Metadata
+
+Write the following changes to the watchlist file:
+- Add `_version: 2`
+- Add `search_strategy` with the extracted project profile and defaults (`discovery_day: 1`, `max_auto_competitors: 10`)
+- Add `source: "user"` to all existing competitor entries that lack a `source` field
+- Add `exclusions: []` if not present
+- **Do NOT add, remove, or modify any competitor entries**
+
+After writing, **re-read the file and validate JSON**. Restore pre-mutation version on parse failure.
+
+### Step U3: Persist Bootstrap State
+
+Write to session memory:
+```
+bootstrap_state:
+  completed_at: <ISO timestamp>
+  project_profile: <the extracted profile>
+  confidence: high | medium | low
+  initial_competitors_seeded: 0  (upgrade, not bootstrap)
+  upgraded_from_v1: true
+```
+
+### Step U4: Fall Through to Monitor
+
+After upgrade completes, execute the MONITOR protocol for this cycle's monitoring pass.
+
+---
+
 ## DISCOVERY MODE
 
 Discovery runs weekly on the configured day (default: Monday). Its job: search for new competitors using the established project profile, score candidates, and update the watchlist with qualifying entries.
@@ -158,7 +199,7 @@ Apply the **Candidate Qualification Rubric** to each remaining candidate:
 | Score | Action |
 |-------|--------|
 | 0-2 | **Reject** — add to `rejected_fingerprints`, do not track |
-| 3-4 | **Recommend to human** — add to `pending_human_review`, create `human-input-needed` issue |
+| 3-4 | **Recommend to human** — add to `pending_human_review`, call `request_human_input` or create `human-input-needed` issue |
 | 5-8 | **Auto-add** to watchlist as `source: "auto-discovered"` |
 
 ### Step D5: Update Watchlist
@@ -350,12 +391,14 @@ Dispatch a specialist using `delegate_task_async` with the Specialist Dispatch T
 
 #### If Human Escalation is Warranted
 
-Call `request_human_input` with:
+**Primary mechanism**: Call `request_human_input` with:
 - A clear question with a small decision set (not an essay)
 - Context summary of what was detected and why it matters
 - Suggested options if applicable
 
-Alternatively, create a GitHub Issue with the escalation labels from the reporting config.
+This transitions the task to `awaiting_input` status and pauses execution until a human responds. Use this for all in-cycle escalations.
+
+**Fallback** (if `request_human_input` is unavailable or the escalation is informational rather than blocking): Create a GitHub Issue with the escalation labels from the reporting config. Note: this is a side-band notification that does NOT pause the cycle.
 
 #### If No Threshold is Met
 
@@ -443,10 +486,11 @@ These rules govern ALL writes to `competitive-watchlist.json`:
 ### v1 Backward Compatibility
 
 When loading a watchlist without `_version`:
-- Treat as v1 — all existing entries are `source: "user"` implicitly
-- Bootstrap mode triggers because `search_strategy` is missing
+- If competitors[] is populated → UPGRADE mode (metadata-only migration, no discovery)
+- If competitors[] is empty → BOOTSTRAP mode (full auto-discovery)
+- All existing entries are treated as `source: "user"` implicitly
 - Agent adds `_version: 2` and `search_strategy` on first write
-- All existing fields are preserved verbatim
+- All existing competitor fields are preserved verbatim — agent MUST NOT modify them
 
 ---
 
