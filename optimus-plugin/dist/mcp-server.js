@@ -31856,7 +31856,8 @@ Use check_task_status tool periodically with this task ID to check its completio
       output_path: reviewsPath,
       workspacePath: workspace_path,
       delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10),
-      parent_issue_number: parentIssueNumber
+      parent_issue_number: parentIssueNumber,
+      role_descriptions
     });
     let issueInfo = "";
     const remote = parseGitRemote(workspace_path);

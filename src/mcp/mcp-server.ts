@@ -774,7 +774,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     TaskManifestManager.createTask(workspace_path, {
         taskId, type: "dispatch_council", roles, proposal_path, output_path: reviewsPath, workspacePath: workspace_path,
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
-        parent_issue_number: parentIssueNumber
+        parent_issue_number: parentIssueNumber,
+        role_descriptions: role_descriptions
     });
 
     // Best-effort: auto-create GitHub Issue for traceability
