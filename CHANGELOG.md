@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.0.0] - 2026-03-15
+
+### Breaking Changes
+- **Claude Code defaults to ACP protocol** — `claude-code` engine now uses `claude-agent-acp` (ACP protocol) instead of legacy CLI text parsing. `optimus init` and `optimus upgrade` auto-install `@zed-industries/claude-agent-acp`. No Anthropic API key needed — uses existing Claude Code OAuth session.
+
+### Features
+- **ACP Lean Prompt** — ACP engines receive a minimal prompt (role + task only). System instructions, memory, and skills are referenced by file path instead of inline injection. Reduces prompt from 40K+ chars to ~2K chars.
+- **AcpAdapter Permission Auto-Approve** — Automatically approves `session/request_permission` requests from agents in headless mode. Fixes tool calls (file reads, etc.) hanging indefinitely.
+- **AcpAdapter Windows PATH Resolution** — `shell: true` on Windows for ACP spawn, enabling simple command names like `claude-agent-acp` instead of absolute paths.
+- **10-min Heartbeat Timeout Default** — All engines in scaffold now default to 600,000ms heartbeat timeout.
+- **Competitive Intelligence v2** — Autonomous discovery with three-frequency model (daily monitor, weekly discovery, first-run bootstrap).
+
+### Fixes
+- **ACP complex task stall** — Root cause: `session/request_permission` from agent was unhandled, causing indefinite hang on any task involving tool calls. (#440)
+
 ## [1.2.0] - 2026-03-15
 
 ### Features
