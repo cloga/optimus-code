@@ -1,6 +1,9 @@
 {
-  "_comment": "Competitive intelligence watchlist. Add competitors to monitor. See .optimus/skills/competitive-intel/SKILL.md for details.",
+  "_comment": "Competitive intelligence watchlist. Auto-populated on first run, or add competitors manually. See .optimus/skills/competitive-intel/SKILL.md for details.",
+  "_version": 2,
+  "search_strategy": null,
   "competitors": [],
+  "exclusions": [],
   "thresholds": {
     "star_absolute_min": 25,
     "star_relative_min_pct": 2,
