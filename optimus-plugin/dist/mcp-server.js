@@ -29161,6 +29161,20 @@ function loadValidEnginesAndModels(workspacePath) {
   }
   return { engines: [], models: {} };
 }
+function loadEngineHeartbeatTimeout(workspacePath, engine) {
+  const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+  try {
+    if (import_fs3.default.existsSync(configPath)) {
+      const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
+      const engineConfig = config2.engines?.[engine];
+      const heartbeatMs = engineConfig?.timeout?.heartbeat_ms;
+      if (typeof heartbeatMs === "number") return heartbeatMs;
+    }
+  } catch (e) {
+    console.error(`[Config] Warning: failed to read engine timeout for '${engine}': ${e.message}`);
+  }
+  return null;
+}
 function isValidEngine(engine, validEngines) {
   return validEngines.length === 0 || validEngines.includes(engine);
 }
@@ -31361,6 +31375,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "array",
               items: { type: "string" },
               description: "Optional array of task IDs that must complete (status: verified) before this task starts execution."
+            },
+            heartbeat_timeout_ms: {
+              type: "number",
+              description: "Optional heartbeat staleness timeout in ms. Overrides engine default. Range: 1-1800000 (30 min max)."
             }
           },
           required: ["role", "task_description", "output_path", "workspace_path"]

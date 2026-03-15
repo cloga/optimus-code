@@ -12,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
+import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, loadEngineHeartbeatTimeout, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
 import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
@@ -315,6 +315,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "array",
               items: { type: "string" },
               description: "Optional array of task IDs that must complete (status: verified) before this task starts execution."
+            },
+            heartbeat_timeout_ms: {
+              type: "number",
+              description: "Optional heartbeat staleness timeout in ms. Overrides engine default. Range: 1-1800000 (30 min max)."
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
