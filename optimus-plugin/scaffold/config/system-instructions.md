@@ -393,7 +393,13 @@ Agents MAY include a `## Self-Assessment` section at the end of their output rep
 ### Rules
 - Self-assessment is ADVISORY, not mandatory — agents should include it when they identify meaningful gaps or lessons, not for routine tasks
 - Agents MUST NOT autonomously modify their own Role templates (`.optimus/roles/`)
-- Agents MUST NOT autonomously write retrospective entries to project memory via `append_memory` — the PM/Master decides what merits promotion
+- Agents SHOULD write to memory via `append_memory` when they encounter non-obvious lessons:
+  - Bug fix with non-trivial root cause → `level: "project"`, `category: "bug-postmortem"`
+  - Task failed then succeeded after retry → `level: "role"`, `category: "lesson-learned"`
+  - Discovered project convention not in docs → `level: "project"`, `category: "convention"`
+  - Tool/config gotcha that cost time → `level: "role"`, `category: "tool-gotcha"`
+  - Do NOT write memory for routine successful tasks — only when something unexpected happened
+  - Do NOT duplicate existing memory entries — read memory first before writing
 - The PM or Master reads Self-Assessment sections during review phases and decides whether to invoke `role-creator` or `skill-creator` to evolve the team
 - Self-assessment proposals feed into the existing T3→T2→T1 evolution mechanisms, not a parallel path
 
