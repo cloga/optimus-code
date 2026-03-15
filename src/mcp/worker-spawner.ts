@@ -443,6 +443,21 @@ export function loadValidEnginesAndModels(workspacePath: string): { engines: str
     return { engines: [], models: {} };
 }
 
+export function loadEngineHeartbeatTimeout(workspacePath: string, engine: string): number | null {
+    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    try {
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const engineConfig = config.engines?.[engine];
+            const heartbeatMs = engineConfig?.timeout?.heartbeat_ms;
+            if (typeof heartbeatMs === 'number') return heartbeatMs;
+        }
+    } catch (e: any) {
+        console.error(`[Config] Warning: failed to read engine timeout for '${engine}': ${e.message}`);
+    }
+    return null;
+}
+
 export function isValidEngine(engine: string, validEngines: string[]): boolean {
     return validEngines.length === 0 || validEngines.includes(engine);
 }

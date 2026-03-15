@@ -28809,7 +28809,8 @@ var TaskManifestManager = class {
       for (const taskId in manifest) {
         const task = manifest[taskId];
         if (task.status === "running") {
-          if (now - task.heartbeatTime > TIMEOUT_MS) {
+          const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
+          if (now - task.heartbeatTime > effectiveTimeout) {
             task.status = "failed";
             task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
             changed = true;
@@ -30871,7 +30872,8 @@ var MetaCronEngine = class _MetaCronEngine {
         const manifest = TaskManifestManager.loadManifest(ws);
         const task = manifest[taskId];
         if (!task) return;
-        if (task.status === "pending" && Date.now() - fireTime > 2 * 60 * 1e3) {
+        const startupTimeout = entry.startup_timeout_ms || 2 * 60 * 1e3;
+        if (task.status === "pending" && Date.now() - fireTime > startupTimeout) {
           console.error(`[Meta-Cron] Task '${taskId}' still pending after 2 minutes \u2014 child process likely failed to start. Marking as failed.`);
           TaskManifestManager.updateTask(ws, taskId, { status: "failed", error_message: "Child process failed to start (task remained pending)" });
           clearInterval(checkInterval);
@@ -31531,6 +31533,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             concurrency_policy: { type: "string", enum: ["Forbid", "Allow"], description: "Concurrent run policy (default: Forbid)" },
             max_actions: { type: "number", description: "Max actions per trigger (default: 5)" },
             dry_run_remaining: { type: "number", description: "Dry-run ticks before live (default: 3)" },
+            startup_timeout_ms: { type: "number", description: "Optional startup timeout in ms for stuck-pending detection. Range: 1-600000 (10 min max)." },
             workspace_path: { type: "string", description: "Absolute path to workspace root." }
           },
           required: ["id", "cron_expression", "role", "required_skills", "capability_tier", "workspace_path"]
@@ -31679,6 +31682,31 @@ Human input request expired without a response. ${task.error_message || ""}`;
     const optimusDir = import_path7.default.join(workspace_path, ".optimus");
     const resolvedOutputPath = import_path7.default.resolve(workspace_path, output_path);
     output_path = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path7.default.join(optimusDir, "results", import_path7.default.basename(output_path));
+    const DEFAULT_HEARTBEAT_MS = 18e4;
+    const MAX_HEARTBEAT_MS = 18e5;
+    let resolvedHeartbeatTimeout;
+    if (heartbeat_timeout_ms !== void 0) {
+      if (typeof heartbeat_timeout_ms !== "number" || heartbeat_timeout_ms <= 0 || heartbeat_timeout_ms > MAX_HEARTBEAT_MS) {
+        throw new McpError(ErrorCode.InvalidParams, `heartbeat_timeout_ms must be a number between 1 and ${MAX_HEARTBEAT_MS} (30 min). Got: ${heartbeat_timeout_ms}`);
+      }
+      resolvedHeartbeatTimeout = heartbeat_timeout_ms;
+    } else {
+      const resolvedEngine = role_engine || (() => {
+        const { engines } = loadValidEnginesAndModels(workspace_path);
+        return engines.includes("claude-code") ? "claude-code" : engines[0] || "";
+      })();
+      const engineTimeout = resolvedEngine ? loadEngineHeartbeatTimeout(workspace_path, resolvedEngine) : null;
+      if (engineTimeout !== null) {
+        if (engineTimeout <= 0 || engineTimeout > MAX_HEARTBEAT_MS) {
+          console.error(`[Config] Warning: invalid engine heartbeat timeout ${engineTimeout} for '${resolvedEngine}'. Using default.`);
+          resolvedHeartbeatTimeout = DEFAULT_HEARTBEAT_MS;
+        } else {
+          resolvedHeartbeatTimeout = engineTimeout;
+        }
+      } else {
+        resolvedHeartbeatTimeout = DEFAULT_HEARTBEAT_MS;
+      }
+    }
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     TaskManifestManager.createTask(workspace_path, {
       taskId,
@@ -31695,7 +31723,8 @@ Human input request expired without a response. ${task.error_message || ""}`;
       delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || "0", 10),
       parent_issue_number: parentIssueNumber,
       agent_id: agent_id || void 0,
-      depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : void 0
+      depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : void 0,
+      heartbeat_timeout_ms: resolvedHeartbeatTimeout
     });
     let isBlocked = false;
     let blockedBy = [];
@@ -32427,10 +32456,16 @@ Fix the build errors and try again.`
     }
   }
   if (request.params.name === "register_meta_cron") {
-    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments;
+    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, startup_timeout_ms, workspace_path } = request.params.arguments;
     requireParams("register_meta_cron", request.params.arguments, ["id", "cron_expression", "role", "workspace_path"]);
     if (process.env.OPTIMUS_CRON_TRIGGERED === "true") {
       return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
+    }
+    const MAX_STARTUP_TIMEOUT_MS = 6e5;
+    if (startup_timeout_ms !== void 0) {
+      if (typeof startup_timeout_ms !== "number" || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_STARTUP_TIMEOUT_MS) {
+        throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
+      }
     }
     const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
     if (crontab.crons.find((cr) => cr.id === id)) {
@@ -32450,7 +32485,8 @@ Fix the build errors and try again.`
       last_status: null,
       run_count: 0,
       fail_count: 0,
-      created_at: (/* @__PURE__ */ new Date()).toISOString()
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      ...startup_timeout_ms !== void 0 ? { startup_timeout_ms } : {}
     });
     saveCrontab(workspace_path, crontab);
     return { content: [{ type: "text", text: `Registered Meta-Cron '${id}' (cron: ${cron_expression}) -> role '${role}'. Dry-run for ${dry_run_remaining ?? 3} ticks.` }] };

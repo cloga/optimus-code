@@ -487,6 +487,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             concurrency_policy: { type: "string", enum: ["Forbid", "Allow"], description: "Concurrent run policy (default: Forbid)" },
             max_actions: { type: "number", description: "Max actions per trigger (default: 5)" },
             dry_run_remaining: { type: "number", description: "Dry-run ticks before live (default: 3)" },
+            startup_timeout_ms: { type: "number", description: "Optional startup timeout in ms for stuck-pending detection. Range: 1-600000 (10 min max)." },
             workspace_path: { type: "string", description: "Absolute path to workspace root." }
           },
           required: ["id", "cron_expression", "role", "required_skills", "capability_tier", "workspace_path"]
@@ -608,7 +609,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
     // Resolve role alias to canonical name before validation
@@ -631,6 +632,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ? resolvedOutputPath
       : path.join(optimusDir, "results", path.basename(output_path));
 
+    // Resolve heartbeat timeout: explicit param > engine config > hardcoded default
+    const DEFAULT_HEARTBEAT_MS = 180000; // 3 minutes
+    const MAX_HEARTBEAT_MS = 1800000; // 30 minutes
+    let resolvedHeartbeatTimeout: number;
+
+    if (heartbeat_timeout_ms !== undefined) {
+        if (typeof heartbeat_timeout_ms !== 'number' || heartbeat_timeout_ms <= 0 || heartbeat_timeout_ms > MAX_HEARTBEAT_MS) {
+            throw new McpError(ErrorCode.InvalidParams, `heartbeat_timeout_ms must be a number between 1 and ${MAX_HEARTBEAT_MS} (30 min). Got: ${heartbeat_timeout_ms}`);
+        }
+        resolvedHeartbeatTimeout = heartbeat_timeout_ms;
+    } else {
+        // Try engine config
+        const resolvedEngine = role_engine || (() => {
+            const { engines } = loadValidEnginesAndModels(workspace_path);
+            return engines.includes('claude-code') ? 'claude-code' : engines[0] || '';
+        })();
+        const engineTimeout = resolvedEngine ? loadEngineHeartbeatTimeout(workspace_path, resolvedEngine) : null;
+        if (engineTimeout !== null) {
+            if (engineTimeout <= 0 || engineTimeout > MAX_HEARTBEAT_MS) {
+                console.error(`[Config] Warning: invalid engine heartbeat timeout ${engineTimeout} for '${resolvedEngine}'. Using default.`);
+                resolvedHeartbeatTimeout = DEFAULT_HEARTBEAT_MS;
+            } else {
+                resolvedHeartbeatTimeout = engineTimeout;
+            }
+        } else {
+            resolvedHeartbeatTimeout = DEFAULT_HEARTBEAT_MS;
+        }
+    }
+
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     TaskManifestManager.createTask(workspace_path, {
         taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [],
@@ -638,7 +668,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
         parent_issue_number: parentIssueNumber,
         agent_id: agent_id || undefined,
-        depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : undefined
+        depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : undefined,
+        heartbeat_timeout_ms: resolvedHeartbeatTimeout
     });
 
     // Dependency check: determine if task should be blocked
@@ -1420,11 +1451,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 
   if (request.params.name === "register_meta_cron") {
-    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, workspace_path } = request.params.arguments as any;
+    const { id, cron_expression, role, required_skills, capability_tier, concurrency_policy, max_actions, dry_run_remaining, startup_timeout_ms, workspace_path } = request.params.arguments as any;
     requireParams("register_meta_cron", request.params.arguments as any, ["id", "cron_expression", "role", "workspace_path"]);
     if (process.env.OPTIMUS_CRON_TRIGGERED === 'true') {
       return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
     }
+
+    // Validate startup_timeout_ms if provided
+    const MAX_STARTUP_TIMEOUT_MS = 600000; // 10 minutes
+    if (startup_timeout_ms !== undefined) {
+        if (typeof startup_timeout_ms !== 'number' || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_STARTUP_TIMEOUT_MS) {
+            throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
+        }
+    }
+
     const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
     if (crontab.crons.find((cr: any) => cr.id === id)) {
       return { content: [{ type: "text", text: `Cron entry '${id}' already exists. Remove it first.` }] };
@@ -1439,6 +1479,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       enabled: true, last_run: null, last_status: null,
       run_count: 0, fail_count: 0,
       created_at: new Date().toISOString(),
+      ...(startup_timeout_ms !== undefined ? { startup_timeout_ms } : {}),
     });
     saveCrontab(workspace_path, crontab);
     return { content: [{ type: "text", text: `Registered Meta-Cron '${id}' (cron: ${cron_expression}) -> role '${role}'. Dry-run for ${dry_run_remaining ?? 3} ticks.` }] };
