@@ -1,6 +1,6 @@
 ---
 name: project-patrol
-description: Structured patrol protocol for the patrol-manager role. Provides a 6-phase inspection framework (Observe, Judge, Diagnose, Act, Track, Report) covering Issues, PRs, branches, tasks, and agent health. Includes a decision matrix mapping findings to direct actions or specialist delegations, and a diagnose-and-re-delegate phase that correlates open Issues with task-manifest records to automatically retry failed tasks with session continuity.
+description: Structured patrol protocol for the patrol-manager role. Provides a 6-phase inspection framework (Observe, Judge, Diagnose, Act, Track, Report) covering Issues, PRs, branches, tasks, and agent health. Includes a decision matrix mapping findings to direct actions or specialist delegations, a diagnose-and-re-delegate phase that correlates open Issues with task-manifest records to automatically retry failed tasks with session continuity, and auto-close of swarm-task/swarm-council tracker Issues via manifest correlation with parent lineage cascade.
 ---
 
 # Project Patrol — Patrol Protocol
@@ -16,6 +16,39 @@ Read the following state sources and note anything anomalous:
 - For each Issue, note: number, title, labels, last activity date
 - Cross-reference with `git log --oneline --all` for `fixes #N`, `closes #N`, `resolves #N` references
 - Identify: Issues already implemented (commit reference exists), Issues without priority labels, stale Issues (no activity > 30 days)
+
+#### 1.1.1 Task-Tracking Issues (`swarm-task` / `swarm-council`)
+
+Issues labeled `swarm-task` or `swarm-council` are auto-created tracker Issues for delegated tasks and council reviews. They have a 1:1 mapping to task-manifest records via `github_issue_number`. Handle these separately from "real" Issues:
+
+1. **Collect**: Filter open Issues with label `swarm-task` or `swarm-council`
+2. **Correlate**: Read `.optimus/state/task-manifest.json` and match each Issue's number against `github_issue_number` on task records
+3. **Classify** each matched task by status:
+
+| Task Status | Action |
+|-------------|--------|
+| `verified` | Close Issue via `github_update_issue(state: "closed")`. Add comment: `[patrol-manager] ✅ Task completed. Output: {output_path}` |
+| `failed` or `timeout` | Add `failed` label via `github_update_issue`. Add comment: `[patrol-manager] ❌ Task failed: {error_message}` |
+| `running` + heartbeat fresh (< 10 min) | Skip — task still active |
+| `running` + heartbeat stale | Skip — handled by Phase 2.5 (Diagnose) |
+| No manifest match | Skip — orphan Issue, report for manual review |
+
+4. **Budget batching**: If > 10 task-tracking Issues need closing in a single cycle, process only 10 (oldest first by `startTime`). Remaining Issues will be processed in subsequent patrol cycles. This prevents API rate saturation.
+5. **Delta tracking**: Closed and failed task Issues are recorded in `known_findings.closed_task_issues` and `known_findings.failed_task_issues` respectively to prevent re-processing.
+
+**IMPORTANT**: Task-tracking Issue closures are direct actions (self/depth-1). They do NOT count against the delegation budget but DO count against the `max_actions` budget.
+
+#### 1.1.2 Issue Lineage Cascade
+
+After processing task-tracking Issues, check for parent cascade effects:
+
+1. For each closed child task Issue, read the `parent_issue_number` from its task-manifest record
+2. Group all child tasks by `parent_issue_number`
+3. For each parent Issue that had children processed:
+   - Fetch ALL tasks with that `parent_issue_number` from the manifest
+   - If ALL child tasks have status `verified` → add comment to parent: `[patrol-manager] ✅ All sub-tasks completed successfully.`
+   - If SOME children have status `failed`/`timeout` → add comment to parent: `[patrol-manager] ⚠️ Sub-task status: {X} verified, {Y} failed. Failed tasks: [list with task IDs and error summaries]`
+   - Do NOT close the parent Issue — parent Issues are "real" Issues managed by the standard triage flow
 
 ### 1.2 Open PRs
 - Check for open PRs via `git log --remotes` or VCS tools
@@ -58,6 +91,8 @@ Schema for `known_findings` in `patrol-ledger.json`:
   "known_findings": {
     "implemented_issues": ["#123", "#456"],
     "unlabeled_issues_triaged": ["#789"],
+    "closed_task_issues": ["#200", "#201"],
+    "failed_task_issues": ["#202"],
     "stale_prs": ["#101"],
     "stuck_tasks": ["task_xyz"],
     "stale_branches": ["feature/old-branch"],
@@ -85,6 +120,9 @@ Apply this decision framework to each finding:
 | Task stuck in running (> 2h) | Mark as failed in task manifest | Self (depth-1) | Low |
 | Task failed (systemic pattern) | Analyze, delegate fix to specialist | Specialist (depth-2) | Medium |
 | Agent zombie (active, no heartbeat > 1h) | Mark as completed | Self (depth-1) | Low |
+| Task-tracking Issue (`swarm-task`/`swarm-council`) with task `verified` | Close Issue with completion comment (see §1.1.1) | Self (depth-1) | Low |
+| Task-tracking Issue with task `failed`/`timeout` | Add `failed` label + error comment (see §1.1.1) | Self (depth-1) | Low |
+| All children of a parent Issue verified | Add "all sub-tasks completed" comment to parent (see §1.1.2) | Self (depth-1) | Low |
 
 ### CRITICAL RULE: Never Close Unimplemented Ideas
 An Issue that describes an unimplemented feature, enhancement request, investigation, or design idea must NEVER be closed — regardless of its age, priority level, or activity. Low priority does not mean "won't do". Only close Issues where a commit with `fixes/closes/resolves #N` is confirmed in the git history.
@@ -101,6 +139,7 @@ The following actions are MANDATORY on every patrol — not optional, not deferr
 
 1. **Issue Triage**: Every unlabeled open Issue MUST be assessed and labeled P0-P3. No exceptions. If you're unsure of priority, default to P2.
 2. **Issue Closing**: Every Issue where a `fixes/closes/resolves #N` commit exists in git history MUST be closed with a comment citing the commit SHA. No exceptions.
+3. **Task-Tracking Issue Correlation**: Every open `swarm-task`/`swarm-council` Issue MUST be correlated with `task-manifest.json` and acted upon per §1.1.1. Verified tasks get their Issues closed; failed tasks get labeled.
 
 Failure to perform mandatory actions is a protocol violation. These actions do NOT count against the delegation budget — they are free direct actions.
 
