@@ -468,7 +468,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
             item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
-            comment: { type: "string", description: "Comment text" },
+            comment: { type: "string", description: "Comment text (Markdown supported — auto-converted to HTML for ADO)" },
             workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
             agent_role: { type: "string", description: "The role of the agent posting this comment. Used for attribution signature." }
           },

@@ -319,7 +319,8 @@ export class AdoProvider implements IVcsProvider {
 
         try {
             if (itemType === 'workitem') {
-                // Add comment to work item
+                // Add comment to work item — convert Markdown to HTML for ADO rendering
+                const htmlComment = await marked.parse(comment);
                 const response = await fetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0-preview.3`,
                     {
@@ -330,7 +331,7 @@ export class AdoProvider implements IVcsProvider {
                             'Accept': 'application/json',
                             'User-Agent': 'Optimus-Agent'
                         },
-                        body: JSON.stringify({ text: comment })
+                        body: JSON.stringify({ text: htmlComment })
                     }
                 );
 
@@ -364,6 +365,7 @@ export class AdoProvider implements IVcsProvider {
                 const repos = await repoResponse.json() as any;
                 const repositoryId = repos.value[0].id;
 
+                const htmlPrComment = await marked.parse(comment);
                 const response = await fetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullRequests/${id}/threads?api-version=7.0`,
                     {
@@ -377,7 +379,7 @@ export class AdoProvider implements IVcsProvider {
                         body: JSON.stringify({
                             comments: [{
                                 parentCommentId: 0,
-                                content: comment,
+                                content: htmlPrComment,
                                 commentType: 'text'
                             }],
                             status: 'active'

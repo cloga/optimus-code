@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.6.1] - 2026-03-16
+
+### Fixes
+- **`vcs_add_comment` Markdown→HTML for ADO** — Comments on ADO work items and PRs now auto-convert Markdown to HTML, matching `vcs_create_work_item` behavior. Fixes broken rendering of tables, headings, and formatting in ADO comments.
+
 ## [2.6.0] - 2026-03-16
 
 ### Features

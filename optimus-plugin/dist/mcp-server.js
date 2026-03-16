@@ -12645,6 +12645,7 @@ var init_AdoProvider = __esm({
         const id = typeof itemId === "string" ? parseInt(itemId) : itemId;
         try {
           if (itemType === "workitem") {
+            const htmlComment = await g.parse(comment);
             const response = await fetch(
               `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0-preview.3`,
               {
@@ -12655,7 +12656,7 @@ var init_AdoProvider = __esm({
                   "Accept": "application/json",
                   "User-Agent": "Optimus-Agent"
                 },
-                body: JSON.stringify({ text: comment })
+                body: JSON.stringify({ text: htmlComment })
               }
             );
             if (!response.ok) {
@@ -12682,6 +12683,7 @@ var init_AdoProvider = __esm({
             }
             const repos = await repoResponse.json();
             const repositoryId = repos.value[0].id;
+            const htmlPrComment = await g.parse(comment);
             const response = await fetch(
               `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullRequests/${id}/threads?api-version=7.0`,
               {
@@ -12695,7 +12697,7 @@ var init_AdoProvider = __esm({
                 body: JSON.stringify({
                   comments: [{
                     parentCommentId: 0,
-                    content: comment,
+                    content: htmlPrComment,
                     commentType: "text"
                   }],
                   status: "active"
@@ -31806,7 +31808,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             item_type: { type: "string", enum: ["workitem", "pullrequest"], description: "Type of item" },
             item_id: { type: ["string", "number"], description: "Work item or PR ID/number" },
-            comment: { type: "string", description: "Comment text" },
+            comment: { type: "string", description: "Comment text (Markdown supported \u2014 auto-converted to HTML for ADO)" },
             workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
             agent_role: { type: "string", description: "The role of the agent posting this comment. Used for attribution signature." }
           },
