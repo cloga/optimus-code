@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0] - 2026-03-16
+
+### Features
+- **`get_user_memory` MCP tool** — Master Agent can now read the same user preferences that sub-agents see. Single source of truth at `~/.optimus/memory/user-memory.md`.
+- **ACP activity-based timeout** — Detects live-but-stuck ACP sessions (process alive but zero output). Default 20 min, configurable per-engine via `timeout.activity_ms`. Fixes 5+ hour zombie tasks (#433).
+- **Delegation Scope Decision Matrix** — Added to system-instructions and delegate-task skill. Master now knows when to delegate to PM vs dev vs specialist (#393).
+- **Competitive Discovery skill rewrite** — Now auto-adds high-confidence competitors (score ≥5) to watchlist via Read-Modify-Write protocol. Medium-confidence candidates go through `request_human_input`.
+- **Auto-release skill + cron** — New `auto-release` skill with `release-gate` cron (every 4h). Conventional commits determine semver. `max_auto_bump: minor`. Scaffold default: `enabled: false` (opt-in).
+
+### Improvements  
+- **Master onboarding Step 0** — User Memory loading is now the first numbered step in master-onboarding skill for more reliable execution.
+
 ## [2.4.0] - 2026-03-16
 
 ### Features

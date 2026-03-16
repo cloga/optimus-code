@@ -28046,11 +28046,15 @@ var AcpAdapter = class {
   nextRequestId = 1;
   pendingRequests = /* @__PURE__ */ new Map();
   notificationHandlers = /* @__PURE__ */ new Map();
-  constructor(id, name, executable, defaultArgs = []) {
+  activityTimeoutMs;
+  lastUpdateTime = 0;
+  activityTimer;
+  constructor(id, name, executable, defaultArgs = [], activityTimeoutMs = 0) {
     this.id = id;
     this.name = name;
     this.executable = executable;
     this.defaultArgs = defaultArgs;
+    this.activityTimeoutMs = activityTimeoutMs;
   }
   // ─── Low-level transport ───
   sendMessage(msg) {
@@ -28155,7 +28159,14 @@ var AcpAdapter = class {
     }
     this.pendingRequests.clear();
   }
+  stopActivityTimer() {
+    if (this.activityTimer) {
+      clearInterval(this.activityTimer);
+      this.activityTimer = void 0;
+    }
+  }
   cleanup() {
+    this.stopActivityTimer();
     this.notificationHandlers.clear();
     this.pendingRequests.clear();
     if (this.process) {
@@ -28191,6 +28202,7 @@ var AcpAdapter = class {
       this.lastSessionId = currentSessionId;
       const outputChunks = [];
       this.notificationHandlers.set("session/update", (params) => {
+        this.lastUpdateTime = Date.now();
         const update = params?.update;
         if (!update) return;
         if (update.sessionUpdate === "agent_message_chunk") {
@@ -28209,10 +28221,27 @@ var AcpAdapter = class {
           }
         }
       });
+      this.lastUpdateTime = Date.now();
+      if (this.activityTimeoutMs > 0) {
+        const checkInterval = Math.min(this.activityTimeoutMs / 4, 3e4);
+        this.activityTimer = setInterval(() => {
+          const elapsed = Date.now() - this.lastUpdateTime;
+          if (elapsed >= this.activityTimeoutMs) {
+            const timeoutErr = new Error(
+              `[AcpAdapter] Activity timeout: no session/update received for ${Math.round(elapsed / 1e3)}s (limit: ${Math.round(this.activityTimeoutMs / 1e3)}s)`
+            );
+            debugLog("[AcpAdapter]", timeoutErr.message);
+            this.stopActivityTimer();
+            this.rejectAllPending(timeoutErr);
+            this.cleanup();
+          }
+        }, checkInterval);
+      }
       const promptResult = await this.sendRequest("session/prompt", {
         sessionId: currentSessionId,
         prompt: [{ type: "text", text: prompt }]
       });
+      this.stopActivityTimer();
       const fullOutput = outputChunks.join("");
       this.lastDebugInfo.endTime = Date.now();
       debugLog("[AcpAdapter]", `Done. Output length: ${fullOutput.length}, stop: ${promptResult?.stopReason}`);
@@ -29361,6 +29390,20 @@ function loadEngineHeartbeatTimeout(workspacePath, engine) {
   }
   return null;
 }
+function loadEngineActivityTimeout(workspacePath, engine) {
+  const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+  try {
+    if (import_fs3.default.existsSync(configPath)) {
+      const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
+      const engineConfig = config2.engines?.[engine];
+      const activityMs = engineConfig?.timeout?.activity_ms;
+      if (typeof activityMs === "number") return activityMs;
+    }
+  } catch (e) {
+    console.error(`[Config] Warning: failed to read engine activity timeout for '${engine}': ${e.message}`);
+  }
+  return 0;
+}
 function isValidEngine(engine, validEngines) {
   return validEngines.length === 0 || validEngines.includes(engine);
 }
@@ -29735,7 +29778,8 @@ function getAdapterForEngine(engine, sessionId, model, workspacePath) {
     if (engineConfig?.cli_flags && model) {
       args.push(engineConfig.cli_flags, model);
     }
-    return new AcpAdapter(`acp-${engine}`, `\u{1F680} ${engine}`, executable, args);
+    const activityMs = workspacePath ? loadEngineActivityTimeout(workspacePath, engine) : 0;
+    return new AcpAdapter(`acp-${engine}`, `\u{1F680} ${engine}`, executable, args, activityMs);
   }
   if (engine === "copilot-cli" || engine === "github-copilot") {
     return new GitHubCopilotAdapter(void 0, "\u{1F6F8} GitHub Copilot", model || "");

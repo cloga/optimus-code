@@ -29,7 +29,19 @@ You cannot command an army blindly.
 
 ### Step 2: Manpower Assessment
 
-Analyze the user's task request against the roster you just retrieved. Follow the `role-creator` meta-skill for detailed guidance on role selection and creation.
+Analyze the user's task request against the roster you just retrieved. **First, classify the task scope using the Decision Matrix below, then select the appropriate role.**
+
+#### Step 2.0: Scope Classification (Do This First)
+
+Before picking a T1/T2/T3 role, decide *which category of role* the task requires:
+
+| If the task is… | Delegate to… |
+|-----------------|--------------|
+| Vague scope, multi-file, needs decomposition, feature request without exact file/location, or needs PR review coordination | **pm** — PM runs the full feature-dev workflow |
+| Specific, single-file or well-scoped change, bug fix with known root cause, "quick fix" or "just change X in file Y" | **dev** directly — no PM decomposition needed |
+| Review/audit, security scan, QA verification, or domain expertise request | matching **specialist** (security, qa-engineer, etc.) |
+
+**Anti-patterns:** Never send an entire Epic directly to `dev`. Never route a one-liner fix through PM.
 
 * **T1 Priority (Local Project Experts)**: If the task requires deep domain knowledge of this specific project, and there is a matching T1 Expert, they MUST be your first choice.
 * **T2 Priority (Project Roles)**: If it's a general architectural, security, or universal pattern task, and a T2 Role exists, use them.

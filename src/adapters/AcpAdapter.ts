@@ -49,12 +49,16 @@ export class AcpAdapter implements AgentAdapter {
     private nextRequestId = 1;
     private pendingRequests = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
     private notificationHandlers = new Map<string, (params: any) => void>();
+    private activityTimeoutMs: number;
+    private lastUpdateTime: number = 0;
+    private activityTimer?: ReturnType<typeof setInterval>;
 
-    constructor(id: string, name: string, executable: string, defaultArgs: string[] = []) {
+    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0) {
         this.id = id;
         this.name = name;
         this.executable = executable;
         this.defaultArgs = defaultArgs;
+        this.activityTimeoutMs = activityTimeoutMs;
     }
 
     // ─── Low-level transport ───
@@ -183,7 +187,15 @@ export class AcpAdapter implements AgentAdapter {
         this.pendingRequests.clear();
     }
 
+    private stopActivityTimer(): void {
+        if (this.activityTimer) {
+            clearInterval(this.activityTimer);
+            this.activityTimer = undefined;
+        }
+    }
+
     private cleanup(): void {
+        this.stopActivityTimer();
         this.notificationHandlers.clear();
         this.pendingRequests.clear();
         if (this.process) {
@@ -237,6 +249,9 @@ export class AcpAdapter implements AgentAdapter {
 
             // Register notification handler for streaming updates
             this.notificationHandlers.set('session/update', (params: any) => {
+                // Reset activity timer on every update
+                this.lastUpdateTime = Date.now();
+
                 const update = params?.update;
                 if (!update) return;
 
@@ -262,10 +277,28 @@ export class AcpAdapter implements AgentAdapter {
             });
 
             // Send prompt as ACP content array format: [{type: "text", text: "..."}]
+            // Start activity watchdog before sending — any session/update resets the clock
+            this.lastUpdateTime = Date.now();
+            if (this.activityTimeoutMs > 0) {
+                const checkInterval = Math.min(this.activityTimeoutMs / 4, 30000);
+                this.activityTimer = setInterval(() => {
+                    const elapsed = Date.now() - this.lastUpdateTime;
+                    if (elapsed >= this.activityTimeoutMs) {
+                        const timeoutErr = new Error(
+                            `[AcpAdapter] Activity timeout: no session/update received for ${Math.round(elapsed / 1000)}s (limit: ${Math.round(this.activityTimeoutMs / 1000)}s)`
+                        );
+                        debugLog('[AcpAdapter]', timeoutErr.message);
+                        this.stopActivityTimer();
+                        this.rejectAllPending(timeoutErr);
+                        this.cleanup();
+                    }
+                }, checkInterval);
+            }
             const promptResult = await this.sendRequest('session/prompt', {
                 sessionId: currentSessionId,
                 prompt: [{ type: 'text', text: prompt }]
             });
+            this.stopActivityTimer();
 
             // Combine streaming chunks into full output
             const fullOutput = outputChunks.join('');

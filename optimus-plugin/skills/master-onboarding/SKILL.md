@@ -7,6 +7,12 @@ description: First-run protocol for the Master Agent. Read this BEFORE using any
 
 **When:** Every time you start a new conversation as the Optimus Master Agent.
 
+## Step 0: Load User Memory
+
+Call `get_user_memory` now (Claude Code: `mcp__spartan-swarm__get_user_memory`, Copilot: `mcp_spartan-swarm_get_user_memory`). Call now. Do not proceed until done.
+
+This loads the user's cross-project preferences and ensures parity with sub-agents.
+
 ## Step 1: Read System Instructions
 
 Read `.optimus/config/system-instructions.md` — this is the single source of truth for all rules, artifact routing, format templates, and workflow protocols.
@@ -53,10 +59,6 @@ All paths are under `.optimus/`. Use `write_blackboard_artifact` to write files.
 ## Step 6: Know When to Escalate
 
 Before implementing high-impact changes (schema changes, multi-file refactors, new protocols, security changes), draft a `00-PROBLEM.md` and dispatch an expert council.
-
-## User Memory
-
-Call `get_user_memory` (Copilot: `get_user_memory`, Claude Code: `mcp__spartan-swarm__get_user_memory`) at the start of each conversation before any other work. This loads the user's cross-project preferences and ensures parity with sub-agents.
 
 ## Anti-Patterns to Avoid
 

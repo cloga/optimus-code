@@ -499,6 +499,26 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 - **Always pass `parent_issue_number`** when delegating sub-tasks under an epic
 - **Always checkout back to master** after pushing a feature branch
 
+### Delegation Scope Decision Matrix
+
+Before calling `delegate_task` or `dispatch_council`, the Master Agent MUST classify the task using this table:
+
+| Situation | Delegate To | Rationale |
+|-----------|-------------|-----------|
+| Task involves multiple files/modules, needs decomposition into sub-tasks, has vague scope ("implement X feature"), or requires architecture decisions / PR review coordination | **pm** | PM runs feature-dev workflow — explores codebase, designs, delegates to dev, reviews, merges |
+| Task is a specific well-scoped code change: single file, clear location, known root cause bug fix, or user says "quick fix" / "just change X in file Y" | **dev** (directly) | No decomposition needed — overhead of PM phase adds no value |
+| Task explicitly requires domain expertise (security audit, QA testing, performance profiling) or is a review/audit rather than implementation | **specialist** (security, qa-engineer, etc.) | Use the role whose description matches the domain |
+
+**Decision rule in plain language:**
+- Vague or multi-file → PM first
+- Precise and single-file → dev directly
+- Domain expertise needed → specialist
+
+**Anti-patterns to avoid:**
+- Sending an entire Epic directly to `dev` — dev is an implementer, not a planner
+- Sending a one-liner fix through PM — wastes phases and delays delivery
+- Skipping PM's decomposition when scope is unclear — produces incomplete or wrong implementation
+
 ### Standard Agent Roles
 
 - **pm (The Approver & Planner)**: Interfaces with user, defines PRD/requirements, creates GitHub Issues to track epics, performs final PR approval/merge. QA only verifies tests; PM owns final acceptance.

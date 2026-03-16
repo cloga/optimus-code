@@ -458,6 +458,21 @@ export function loadEngineHeartbeatTimeout(workspacePath: string, engine: string
     return null;
 }
 
+export function loadEngineActivityTimeout(workspacePath: string, engine: string): number {
+    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    try {
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const engineConfig = config.engines?.[engine];
+            const activityMs = engineConfig?.timeout?.activity_ms;
+            if (typeof activityMs === 'number') return activityMs;
+        }
+    } catch (e: any) {
+        console.error(`[Config] Warning: failed to read engine activity timeout for '${engine}': ${e.message}`);
+    }
+    return 0;
+}
+
 export function isValidEngine(engine: string, validEngines: string[]): boolean {
     return validEngines.length === 0 || validEngines.includes(engine);
 }
@@ -922,7 +937,8 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
         if (engineConfig?.cli_flags && model) {
             args.push(engineConfig.cli_flags, model);
         }
-        return new AcpAdapter(`acp-${engine}`, `🚀 ${engine}`, executable, args);
+        const activityMs = workspacePath ? loadEngineActivityTimeout(workspacePath, engine) : 0;
+        return new AcpAdapter(`acp-${engine}`, `🚀 ${engine}`, executable, args, activityMs);
     }
 
     // CLI protocol: route by engine name
