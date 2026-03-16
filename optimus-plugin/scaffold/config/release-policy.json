@@ -1,0 +1,7 @@
+{
+  "_comment": "Auto-release gate configuration. Set enabled:true to allow the release-gate cron to cut releases autonomously. Scaffold default is disabled — opt-in per project.",
+  "enabled": false,
+  "max_auto_bump": "minor",
+  "cooldown_minutes": 30,
+  "extra_gates": []
+}
