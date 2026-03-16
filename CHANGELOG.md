@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.5.1] - 2026-03-16
+
+### Fixes
+- **Scaffold `release-policy.json` missing from v2.5.0** — The auto-release opt-in config template (`enabled: false`) was referenced in the v2.5.0 release notes but was not included in the release commit. Added to `optimus-plugin/scaffold/config/`.
+
 ## [2.5.0] - 2026-03-16
 
 ### Features

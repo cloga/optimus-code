@@ -1,6 +1,6 @@
 {
   "name": "@cloga/optimus-swarm-mcp",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Spartan Swarm Orchestrator — a universal multi-agent MCP plugin",
   "main": "dist/mcp-server.js",
   "bin": {
