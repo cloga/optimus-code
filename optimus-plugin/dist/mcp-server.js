@@ -28259,7 +28259,7 @@ var AcpAdapter = class {
    * VS Code uses: { "server-name": { type, command, args, env: {KEY: VALUE} } }
    */
   loadMcpServers() {
-    const cwd = process.cwd();
+    const cwd = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
     const mcpPath = path2.join(cwd, ".vscode", "mcp.json");
     if (!fs2.existsSync(mcpPath)) {
       debugLog("[AcpAdapter]", "No .vscode/mcp.json found, mcpServers=[]");

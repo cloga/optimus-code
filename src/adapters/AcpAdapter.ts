@@ -321,7 +321,7 @@ export class AcpAdapter implements AgentAdapter {
      * VS Code uses: { "server-name": { type, command, args, env: {KEY: VALUE} } }
      */
     private loadMcpServers(): any[] {
-        const cwd = process.cwd();
+        const cwd = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
         const mcpPath = path.join(cwd, '.vscode', 'mcp.json');
 
         if (!fs.existsSync(mcpPath)) {
