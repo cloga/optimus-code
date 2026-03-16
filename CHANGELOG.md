@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.5.2] - 2026-03-16
+
+### Fixes
+- **AcpAdapter path resolution** — `loadMcpServers` now uses `OPTIMUS_WORKSPACE_ROOT` env var for reliable path resolution, fixing issues where the workspace root was incorrectly inferred.
+
 ## [2.5.1] - 2026-03-16
 
 ### Fixes
