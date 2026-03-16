@@ -11,8 +11,7 @@
     "build": "node esbuild.plugin.js",
     "build:production": "node esbuild.plugin.js --production",
     "prepublishOnly": "npm run build:production",
-    "postinstall": "node scripts/postinstall.js",
-    "prepare": "npm run build:production"
+    "postinstall": "node scripts/postinstall.js"
   },
   "files": [
     "dist/",
