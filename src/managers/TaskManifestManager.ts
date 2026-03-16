@@ -166,6 +166,51 @@ export class TaskManifestManager {
     }
 
     /**
+     * Archive task manifest entries older than the given age and in terminal status.
+     * Terminal statuses: verified, failed, timeout, completed, partial, degraded.
+     * Archived entries are appended to task-manifest-archive.json.
+     * Returns count of archived entries.
+     */
+    static trimManifest(workspacePath: string, maxAgeDays: number = 30): { archived: number } {
+        const manifest = this.loadManifest(workspacePath);
+        const now = Date.now();
+        const cutoffMs = maxAgeDays * 24 * 60 * 60 * 1000;
+        const TERMINAL_STATUSES = new Set(['verified', 'failed', 'timeout', 'completed', 'partial', 'degraded']);
+
+        const archivePath = path.join(workspacePath, '.optimus', 'state', 'task-manifest-archive.json');
+        let archive: Record<string, TaskRecord> = {};
+        try {
+            if (fs.existsSync(archivePath)) {
+                archive = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+            }
+        } catch { /* start fresh archive */ }
+
+        const toArchive: string[] = [];
+        for (const [taskId, task] of Object.entries(manifest)) {
+            if (TERMINAL_STATUSES.has(task.status) && (now - task.startTime) > cutoffMs) {
+                toArchive.push(taskId);
+            }
+        }
+
+        if (toArchive.length === 0) return { archived: 0 };
+
+        for (const taskId of toArchive) {
+            archive[taskId] = manifest[taskId];
+            delete manifest[taskId];
+        }
+
+        // Write archive (not under mutex — archive is append-only, lower risk)
+        const archiveDir = path.dirname(archivePath);
+        if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
+        fs.writeFileSync(archivePath, JSON.stringify(archive, null, 2), 'utf8');
+
+        // Write trimmed manifest (synchronous, same as createTask pattern)
+        this.saveManifest(workspacePath, manifest);
+
+        return { archived: toArchive.length };
+    }
+
+    /**
      * Unblock dependent tasks after a task completes with 'verified' status.
      * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
      * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).

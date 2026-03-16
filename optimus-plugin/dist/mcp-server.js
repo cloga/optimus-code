@@ -29056,6 +29056,42 @@ var TaskManifestManager = class {
     return Object.values(manifest).filter((t) => t.github_issue_number === issueNumber || t.parent_issue_number === issueNumber);
   }
   /**
+   * Archive task manifest entries older than the given age and in terminal status.
+   * Terminal statuses: verified, failed, timeout, completed, partial, degraded.
+   * Archived entries are appended to task-manifest-archive.json.
+   * Returns count of archived entries.
+   */
+  static trimManifest(workspacePath, maxAgeDays = 30) {
+    const manifest = this.loadManifest(workspacePath);
+    const now = Date.now();
+    const cutoffMs = maxAgeDays * 24 * 60 * 60 * 1e3;
+    const TERMINAL_STATUSES = /* @__PURE__ */ new Set(["verified", "failed", "timeout", "completed", "partial", "degraded"]);
+    const archivePath = path5.join(workspacePath, ".optimus", "state", "task-manifest-archive.json");
+    let archive = {};
+    try {
+      if (fs5.existsSync(archivePath)) {
+        archive = JSON.parse(fs5.readFileSync(archivePath, "utf8"));
+      }
+    } catch {
+    }
+    const toArchive = [];
+    for (const [taskId, task] of Object.entries(manifest)) {
+      if (TERMINAL_STATUSES.has(task.status) && now - task.startTime > cutoffMs) {
+        toArchive.push(taskId);
+      }
+    }
+    if (toArchive.length === 0) return { archived: 0 };
+    for (const taskId of toArchive) {
+      archive[taskId] = manifest[taskId];
+      delete manifest[taskId];
+    }
+    const archiveDir = path5.dirname(archivePath);
+    if (!fs5.existsSync(archiveDir)) fs5.mkdirSync(archiveDir, { recursive: true });
+    fs5.writeFileSync(archivePath, JSON.stringify(archive, null, 2), "utf8");
+    this.saveManifest(workspacePath, manifest);
+    return { archived: toArchive.length };
+  }
+  /**
    * Unblock dependent tasks after a task completes with 'verified' status.
    * MUST be synchronous (same as createTask) to prevent double-spawn race conditions.
    * Returns the list of task IDs that were unblocked (transitioned from blocked → pending).
