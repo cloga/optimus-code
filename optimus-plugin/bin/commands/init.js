@@ -152,12 +152,24 @@ module.exports = function init() {
   if (!fs.existsSync(vscodeMcpDir)) {
     fs.mkdirSync(vscodeMcpDir, { recursive: true });
   }
-  // Resolve the actual dist path relative to this CLI package
-  const distPath = path.resolve(pluginRoot, 'dist', 'mcp-server.js');
+  // Copy mcp-server dist files to workspace .optimus/dist/
+  const srcDistPath = path.resolve(pluginRoot, 'dist', 'mcp-server.js');
+  const destDistDir = path.join(optimusDir, 'dist');
+  const destDistPath = path.join(destDistDir, 'mcp-server.js');
+  if (!fs.existsSync(destDistDir)) {
+    fs.mkdirSync(destDistDir, { recursive: true });
+  }
+  if (fs.existsSync(srcDistPath)) {
+    fs.copyFileSync(srcDistPath, destDistPath);
+    const srcMapPath = srcDistPath + '.map';
+    if (fs.existsSync(srcMapPath)) {
+      fs.copyFileSync(srcMapPath, destDistPath + '.map');
+    }
+  }
   const spartanEntry = {
     type: "stdio",
     command: "node",
-    args: [distPath],
+    args: ["${workspaceFolder}/.optimus/dist/mcp-server.js"],
     env: {
       "OPTIMUS_WORKSPACE_ROOT": "${workspaceFolder}",
       "DOTENV_PATH": "${workspaceFolder}/.env",
@@ -185,7 +197,7 @@ module.exports = function init() {
     fs.writeFileSync(vscodeMcpPath, JSON.stringify(mcpConfig, null, 4), 'utf8');
     console.log('\n🔌 Generated .vscode/mcp.json (MCP server config for VS Code / Copilot)');
   }
-  console.log(`   📍 MCP server path: ${distPath}`);
+  console.log('   📍 MCP server path: ${workspaceFolder}/.optimus/dist/mcp-server.js');
   console.log('   💡 Users can change DOTENV_PATH to point to a different env file.');
 
   // 4. Append to .gitignore if needed
