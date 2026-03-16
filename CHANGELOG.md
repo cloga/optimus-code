@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.6.0] - 2026-03-16
+
+### Features
+- **Agent/Role Lifecycle GC** — Patrol new Phase 6.5: Agent Hygiene. Auto-cleans stale T1 agents (>7 days), orphaned lock files, and unused T2 roles (>30 days). Task manifest auto-trimmed to 30 days. (#475)
+
+### Fixes
+- **MCP server path resolution** — `optimus init`/`upgrade` now copies `mcp-server.js` to `.optimus/dist/` and uses `${workspaceFolder}` relative path in `mcp.json`. Fixes MCP server not starting after running from npx/temp directory. (#477)
+- **npx ECOMPROMISED** — Removed `prepare` lifecycle scripts that triggered cascading builds during npx install, exceeding npm v11 lock timeout. (#471)
+
 ## [2.5.2] - 2026-03-16
 
 ### Fixes
