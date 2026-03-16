@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.2] - 2026-03-16
+
+### Fixes
+- **`optimus init` auto-fills GitHub owner/repo from git remote** — No longer leaves owner/repo empty in `vcs.json`. Parses `git remote get-url origin` and fills `github.owner` and `github.repo` automatically. Fixes wrong-owner issue when init is run in org-owned repos.
+- **SAML SSO 403 errors get clear remediation message** — GitHub 403 responses containing "SAML enforcement" now produce: "GitHub token is valid but NOT authorized for this organization via SAML SSO. Action required: authorize your token for the organization." Instead of generic "VCS unavailable". Applied to all 8 GitHub API call paths in GitHubProvider.
+
 ## [2.6.1] - 2026-03-16
 
 ### Fixes

@@ -71,6 +71,27 @@ module.exports = function init() {
     copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
   }
 
+  // 2.0.1 Auto-fill vcs.json owner/repo from git remote
+  const vcsConfigPath = path.join(optimusDir, 'config', 'vcs.json');
+  if (fs.existsSync(vcsConfigPath)) {
+    try {
+      const { execSync } = require('child_process');
+      const vcsConfig = JSON.parse(fs.readFileSync(vcsConfigPath, 'utf8'));
+      if (vcsConfig.github && (!vcsConfig.github.owner || !vcsConfig.github.repo)) {
+        try {
+          const remote = execSync('git remote get-url origin', { encoding: 'utf8', timeout: 5000, cwd }).trim();
+          const repoMatch = remote.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
+          if (repoMatch) {
+            vcsConfig.github.owner = repoMatch[1];
+            vcsConfig.github.repo = repoMatch[2];
+            fs.writeFileSync(vcsConfigPath, JSON.stringify(vcsConfig, null, 2), 'utf8');
+            console.log(`  🔗 Auto-detected GitHub repo: ${repoMatch[1]}/${repoMatch[2]}`);
+          }
+        } catch { /* not a git repo or no remote — leave empty */ }
+      }
+    } catch { /* parse error — skip */ }
+  }
+
 
   // 2.1 Copy scaffold system config (meta-crontab, cron-locks)
   const systemSrc = path.join(scaffoldDir, 'system');

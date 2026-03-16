@@ -1,6 +1,23 @@
 import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
 
 /**
+ * Parse GitHub API error responses with special handling for SAML/SSO 403s.
+ */
+function parseGitHubError(status: number, body: string): string {
+    if (status === 403 && body.includes('SAML enforcement')) {
+        try {
+            const parsed = JSON.parse(body);
+            const msg = parsed.message || body;
+            return `GitHub token is valid but NOT authorized for this organization via SAML SSO. ` +
+                `Action required: go to GitHub Settings > Developer settings > Personal access tokens, ` +
+                `click "Configure SSO" next to your token, and authorize it for the organization. ` +
+                `Original: ${msg}`;
+        } catch { /* fall through */ }
+    }
+    return `GitHub API error: ${status} ${body}`;
+}
+
+/**
  * GitHub VCS Provider Implementation
  *
  * Implements the unified VCS interface using GitHub's REST API.
@@ -51,7 +68,7 @@ export class GitHubProvider implements IVcsProvider {
             });
 
             if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                throw new Error(parseGitHubError(response.status, await response.text()));
             }
 
             const data = await response.json() as any;
@@ -99,7 +116,7 @@ export class GitHubProvider implements IVcsProvider {
             });
 
             if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                throw new Error(parseGitHubError(response.status, await response.text()));
             }
 
             const data = await response.json() as any;
@@ -231,7 +248,7 @@ export class GitHubProvider implements IVcsProvider {
             });
 
             if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                throw new Error(parseGitHubError(response.status, await response.text()));
             }
 
             const data = await response.json() as any;
@@ -275,7 +292,7 @@ export class GitHubProvider implements IVcsProvider {
                 });
 
                 if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                    throw new Error(parseGitHubError(response.status, await response.text()));
                 }
 
                 const data = await response.json() as any[];
@@ -332,7 +349,7 @@ export class GitHubProvider implements IVcsProvider {
             });
 
             if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                throw new Error(parseGitHubError(response.status, await response.text()));
             }
         } catch (error: any) {
             throw new Error(`Failed to add GitHub labels: ${error.message}`);
@@ -367,7 +384,7 @@ export class GitHubProvider implements IVcsProvider {
         });
 
         if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
         }
 
         const data = await response.json() as any;
@@ -426,7 +443,7 @@ export class GitHubProvider implements IVcsProvider {
             });
 
             if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+                throw new Error(parseGitHubError(response.status, await response.text()));
             }
 
             const data = await response.json() as any[];
@@ -476,7 +493,7 @@ export class GitHubProvider implements IVcsProvider {
         });
 
         if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
         }
 
         const data = await response.json() as any[];

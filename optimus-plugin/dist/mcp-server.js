@@ -10801,6 +10801,17 @@ var GitHubProvider_exports = {};
 __export(GitHubProvider_exports, {
   GitHubProvider: () => GitHubProvider
 });
+function parseGitHubError(status, body) {
+  if (status === 403 && body.includes("SAML enforcement")) {
+    try {
+      const parsed = JSON.parse(body);
+      const msg = parsed.message || body;
+      return `GitHub token is valid but NOT authorized for this organization via SAML SSO. Action required: go to GitHub Settings > Developer settings > Personal access tokens, click "Configure SSO" next to your token, and authorize it for the organization. Original: ${msg}`;
+    } catch {
+    }
+  }
+  return `GitHub API error: ${status} ${body}`;
+}
 var GitHubProvider;
 var init_GitHubProvider = __esm({
   "../src/adapters/vcs/GitHubProvider.ts"() {
@@ -10838,7 +10849,7 @@ var init_GitHubProvider = __esm({
             })
           });
           if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
           }
           const data = await response.json();
           return {
@@ -10874,7 +10885,7 @@ var init_GitHubProvider = __esm({
             })
           });
           if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
           }
           const data = await response.json();
           try {
@@ -10976,7 +10987,7 @@ var init_GitHubProvider = __esm({
             body: JSON.stringify({ body: comment })
           });
           if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
           }
           const data = await response.json();
           return {
@@ -11008,7 +11019,7 @@ var init_GitHubProvider = __esm({
               }
             });
             if (!response.ok) {
-              throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+              throw new Error(parseGitHubError(response.status, await response.text()));
             }
             const data = await response.json();
             for (const comment of data) {
@@ -11053,7 +11064,7 @@ var init_GitHubProvider = __esm({
             body: JSON.stringify({ labels })
           });
           if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
           }
         } catch (error2) {
           throw new Error(`Failed to add GitHub labels: ${error2.message}`);
@@ -11080,7 +11091,7 @@ var init_GitHubProvider = __esm({
           body: JSON.stringify(payload)
         });
         if (!response.ok) {
-          throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+          throw new Error(parseGitHubError(response.status, await response.text()));
         }
         const data = await response.json();
         if (updates.labels_add && updates.labels_add.length > 0) {
@@ -11126,7 +11137,7 @@ var init_GitHubProvider = __esm({
             }
           });
           if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+            throw new Error(parseGitHubError(response.status, await response.text()));
           }
           const data = await response.json();
           for (const item of data) {
@@ -11166,7 +11177,7 @@ var init_GitHubProvider = __esm({
           }
         });
         if (!response.ok) {
-          throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+          throw new Error(parseGitHubError(response.status, await response.text()));
         }
         const data = await response.json();
         return data.map((pr) => ({
