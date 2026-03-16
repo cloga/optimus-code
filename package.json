@@ -16,7 +16,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "prepare": "cd optimus-plugin && npm install && npm run build:production"
+    "build": "cd optimus-plugin && npm install && npm run build:production"
   },
   "devDependencies": {
     "@types/marked": "^5.0.2",
