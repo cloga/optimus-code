@@ -170,6 +170,16 @@ module.exports = function upgrade() {
     if (fs.existsSync(srcMapPath)) {
       fs.copyFileSync(srcMapPath, destDistPath + '.map');
     }
+    // Patch self-reference path: compiled bundle uses __dirname-relative path written
+    // for optimus-plugin/dist/ — fix it to resolve correctly from .optimus/dist/
+    let distContent = fs.readFileSync(destDistPath, 'utf8');
+    const patchedContent = distContent.replace(
+      /join\(__dirname,\s*"\.\."\s*,\s*"\.\."\s*,\s*"dist"\s*,\s*"mcp-server\.js"\)/g,
+      'join(__dirname, "mcp-server.js")'
+    );
+    if (patchedContent !== distContent) {
+      fs.writeFileSync(destDistPath, patchedContent, 'utf8');
+    }
   }
   const spartanEntry = {
     type: "stdio",
