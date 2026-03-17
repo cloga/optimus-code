@@ -14,16 +14,17 @@ describe('mcp-server bundle', () => {
       encoding: 'utf8',
     });
 
-    // SIGTERM = killed by timeout (server started and was running) = success
-    // status 0 = clean exit = success
-    const isSuccess = result.signal === 'SIGTERM' || result.status === 0;
+    // Primary check: no module resolution errors (ERR_REQUIRE_ESM, Cannot find module, SyntaxError)
     const stderr = result.stderr || '';
     const hasModuleError =
       stderr.includes('ERR_REQUIRE_ESM') ||
       stderr.includes('Cannot find module') ||
       stderr.includes('SyntaxError');
 
+    // SIGTERM = server started and was killed by timeout = success
+    // status 0 = clean exit = success
+    // status 1 = runtime error (e.g. missing config/env) — acceptable for headless test
+    // The critical failure mode is module errors, not runtime config errors
     expect(hasModuleError).toBe(false);
-    expect(isSuccess || !hasModuleError).toBe(true);
   });
 });
