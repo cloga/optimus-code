@@ -88,6 +88,26 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
     TaskManifestManager.updateTask(workspacePath, taskId, { status: 'running', pid: process.pid });
     TaskManifestManager.heartbeat(workspacePath, taskId);  // Immediate first heartbeat
 
+    // Update STATUS.md to 'running' — users can distinguish queued vs. active execution
+    if (task.type === 'dispatch_council' && task.output_path) {
+        try {
+            const statusRunning = [
+                `# Council Status`,
+                ``,
+                `**council_id:** ${taskId}`,
+                `**phase:** running`,
+                `**roles:** ${(task.roles || []).join(', ')}`,
+                `**proposal:** ${task.proposal_path || ''}`,
+                `**pid:** ${process.pid}`,
+                `**started_at:** ${new Date().toISOString()}`,
+                ``,
+                `_Workers are executing. Per-role placeholder files are present in this directory._`,
+                `_Check individual \`<role>_review.md\` files to see per-role progress._`,
+            ].join('\n') + '\n';
+            fs.writeFileSync(path.join(task.output_path, 'STATUS.md'), statusRunning, 'utf8');
+        } catch { /* best-effort — don't fail the task */ }
+    }
+
     // Set up heartbeat every 15 seconds
     const heartbeatInterval = setInterval(() => {
         TaskManifestManager.heartbeat(workspacePath, taskId);
@@ -254,6 +274,27 @@ Here is the synthesis report:\n\n${synthesisContent}`;
         if (errorMessage) statusUpdate.error_message = errorMessage;
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
+
+        // Update STATUS.md to final phase
+        if (task.type === 'dispatch_council' && task.output_path) {
+            try {
+                const statusEmoji = verificationStatus === 'verified' ? '✅' : (verificationStatus === 'partial' ? '⚠️' : '❌');
+                const statusFinal = [
+                    `# Council Status`,
+                    ``,
+                    `**council_id:** ${taskId}`,
+                    `**phase:** ${verificationStatus}`,
+                    `**roles:** ${(task.roles || []).join(', ')}`,
+                    `**proposal:** ${task.proposal_path || ''}`,
+                    `**completed_at:** ${new Date().toISOString()}`,
+                    `**result:** ${statusEmoji} ${verificationStatus}`,
+                    ...(errorMessage ? [`**error:** ${errorMessage}`] : []),
+                    ``,
+                    `_See COUNCIL_SYNTHESIS.md and VERDICT.md for full results._`,
+                ].join('\n') + '\n';
+                fs.writeFileSync(path.join(task.output_path, 'STATUS.md'), statusFinal, 'utf8');
+            } catch { /* best-effort */ }
+        }
 
         // Unblock dependent tasks if this task was verified
         if (verificationStatus === 'verified') {

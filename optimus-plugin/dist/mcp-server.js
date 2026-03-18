@@ -12426,6 +12426,12 @@ function adoHttpRecoveryHint(status) {
   };
   return hints[status] || "Unexpected HTTP " + status + ". Check ADO service health at https://status.dev.azure.com.";
 }
+function isGuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+function trimTrailingSlash(value) {
+  return value.replace(/\/+$/, "");
+}
 var AdoProvider;
 var init_AdoProvider = __esm({
   "../src/adapters/vcs/AdoProvider.ts"() {
@@ -12434,11 +12440,59 @@ var init_AdoProvider = __esm({
     AdoProvider = class {
       organization;
       project;
+      webBaseUrl;
+      projectDisplayName;
       defaults;
-      constructor(organization, project, defaults) {
+      constructor(organization, project, defaults, webBaseUrl) {
         this.organization = organization;
         this.project = project;
         this.defaults = defaults;
+        this.webBaseUrl = trimTrailingSlash(webBaseUrl || `https://${organization}.visualstudio.com`);
+      }
+      async resolveProjectDisplayName() {
+        if (this.projectDisplayName) {
+          return this.projectDisplayName;
+        }
+        if (!isGuidLike(this.project)) {
+          this.projectDisplayName = this.project;
+          return this.projectDisplayName;
+        }
+        const token = this.getToken();
+        if (!token) {
+          this.projectDisplayName = this.project;
+          return this.projectDisplayName;
+        }
+        try {
+          const response = await fetch(
+            `https://dev.azure.com/${this.organization}/_apis/projects/${this.project}?api-version=7.0`,
+            {
+              headers: {
+                "Authorization": `Basic ${Buffer.from(`:${token}`).toString("base64")}`,
+                "Accept": "application/json",
+                "User-Agent": "Optimus-Agent"
+              }
+            }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (typeof data?.name === "string" && data.name.trim().length > 0) {
+              const displayName = data.name.trim();
+              this.projectDisplayName = displayName;
+              return displayName;
+            }
+          } else {
+            console.error(`[AdoProvider] Project metadata lookup failed (${response.status}). Falling back to configured project identifier.`);
+          }
+        } catch (error2) {
+          console.error(`[AdoProvider] Project metadata lookup failed: ${error2.message}`);
+        }
+        this.projectDisplayName = this.project;
+        return this.projectDisplayName;
+      }
+      async buildWorkItemUiUrl(workItemId, commentId) {
+        const projectDisplayName = await this.resolveProjectDisplayName();
+        const baseUrl = `${this.webBaseUrl}/${encodeURIComponent(projectDisplayName)}/_workitems/edit/${workItemId}`;
+        return commentId === void 0 ? baseUrl : `${baseUrl}#${commentId}`;
       }
       async createWorkItem(title, body, labels, workItemType, adoOptions) {
         const token = this.getToken();
@@ -12506,7 +12560,7 @@ var init_AdoProvider = __esm({
           return {
             id: data.id.toString(),
             number: data.id,
-            url: data._links.html.href,
+            url: await this.buildWorkItemUiUrl(data.id),
             title: data.fields["System.Title"]
           };
         } catch (error2) {
@@ -12676,7 +12730,7 @@ var init_AdoProvider = __esm({
             const data = await response.json();
             return {
               id: data.id.toString(),
-              url: data.url || `https://dev.azure.com/${this.organization}/${this.project}/_workitems/edit/${id}`
+              url: await this.buildWorkItemUiUrl(id, data.id)
             };
           } else {
             const repoResponse = await fetch(
@@ -28069,6 +28123,10 @@ var AcpAdapter = class {
     this.defaultArgs = defaultArgs;
     this.activityTimeoutMs = activityTimeoutMs;
   }
+  isInvalidParamsError(err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return message.includes("ACP error -32602") || /invalid params/i.test(message);
+  }
   // ─── Low-level transport ───
   sendMessage(msg) {
     if (!this.process?.stdin?.writable) return;
@@ -28192,6 +28250,33 @@ var AcpAdapter = class {
     debugLog("[AcpAdapter]", `Invoking for ${this.name} (mode=${mode}, resume=${!!sessionId})`);
     this.spawnProcess(extraEnv);
     try {
+      const createSession = async () => {
+        const mcpServers = this.loadMcpServers();
+        const newResult = await this.sendRequest("session/new", {
+          cwd: process.cwd(),
+          mcpServers
+        });
+        const freshSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
+        debugLog("[AcpAdapter]", `New session created: ${freshSessionId}`);
+        return freshSessionId;
+      };
+      const sendPromptWithCompatibility = async (currentSessionId2) => {
+        try {
+          return await this.sendRequest("session/prompt", {
+            sessionId: currentSessionId2,
+            text: prompt
+          });
+        } catch (err) {
+          if (!this.isInvalidParamsError(err)) {
+            throw err;
+          }
+          debugLog("[AcpAdapter]", `session/prompt rejected text params; retrying content-array params for session ${currentSessionId2}`);
+          return await this.sendRequest("session/prompt", {
+            sessionId: currentSessionId2,
+            prompt: [{ type: "text", text: prompt }]
+          });
+        }
+      };
       const initResult = await this.sendRequest("initialize", {
         protocolVersion: 1,
         capabilities: {},
@@ -28200,17 +28285,19 @@ var AcpAdapter = class {
       debugLog("[AcpAdapter]", `Initialize OK: ${JSON.stringify(initResult)?.substring(0, 200)}`);
       let currentSessionId;
       if (sessionId) {
-        const loadResult = await this.sendRequest("session/load", { sessionId });
-        currentSessionId = loadResult?.sessionId || sessionId;
-        debugLog("[AcpAdapter]", `Session loaded: ${currentSessionId}`);
+        try {
+          const loadResult = await this.sendRequest("session/load", { sessionId });
+          currentSessionId = loadResult?.sessionId || sessionId;
+          debugLog("[AcpAdapter]", `Session loaded: ${currentSessionId}`);
+        } catch (err) {
+          if (!this.isInvalidParamsError(err)) {
+            throw err;
+          }
+          debugLog("[AcpAdapter]", `session/load rejected persisted session ${sessionId}; falling back to a fresh ACP session`);
+          currentSessionId = await createSession();
+        }
       } else {
-        const mcpServers = this.loadMcpServers();
-        const newResult = await this.sendRequest("session/new", {
-          cwd: process.cwd(),
-          mcpServers
-        });
-        currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
-        debugLog("[AcpAdapter]", `New session created: ${currentSessionId}`);
+        currentSessionId = await createSession();
       }
       this.lastSessionId = currentSessionId;
       const outputChunks = [];
@@ -28250,10 +28337,18 @@ var AcpAdapter = class {
           }
         }, checkInterval);
       }
-      const promptResult = await this.sendRequest("session/prompt", {
-        sessionId: currentSessionId,
-        prompt: [{ type: "text", text: prompt }]
-      });
+      let promptResult;
+      try {
+        promptResult = await sendPromptWithCompatibility(currentSessionId);
+      } catch (err) {
+        if (!sessionId || !this.isInvalidParamsError(err)) {
+          throw err;
+        }
+        debugLog("[AcpAdapter]", `Persisted session ${currentSessionId} rejected prompt params; creating a fresh session and retrying once`);
+        currentSessionId = await createSession();
+        this.lastSessionId = currentSessionId;
+        promptResult = await sendPromptWithCompatibility(currentSessionId);
+      }
       this.stopActivityTimer();
       const fullOutput = outputChunks.join("");
       this.lastDebugInfo.endTime = Date.now();
@@ -29154,6 +29249,70 @@ function parseFrontmatter(content) {
   }
   return { frontmatter, body };
 }
+function scoreRoleTemplateCandidate(role, candidatePath, preferredPath, frontmatter, body) {
+  const bodyLines = body.split("\n").filter((line) => line.trim().length > 0).length;
+  let score = Math.min(bodyLines, 50);
+  if (frontmatter.role === role) score += 100;
+  if (frontmatter.tier === "T2") score += 30;
+  if (frontmatter.description) score += 20;
+  if (frontmatter.engine) score += 20;
+  if (frontmatter.model) score += 5;
+  if (frontmatter.base_tier === "T1") score -= 20;
+  if (candidatePath === preferredPath) score += 1;
+  return score;
+}
+function extractBestFrontmatterDocument(content, role, candidatePath, preferredPath) {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const startIndices = [...normalized.matchAll(/^---\n/gm)].map((match) => match.index ?? 0);
+  let best = null;
+  for (let i = 0; i < startIndices.length; i++) {
+    const start = startIndices[i];
+    const document = normalized.slice(start).trim();
+    const parsed = parseFrontmatter(document);
+    if (Object.keys(parsed.frontmatter).length === 0) continue;
+    const candidate = {
+      content: document,
+      frontmatter: parsed.frontmatter,
+      body: parsed.body,
+      score: scoreRoleTemplateCandidate(role, candidatePath, preferredPath, parsed.frontmatter, parsed.body)
+    };
+    if (!best || candidate.score > best.score) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+function loadBestRoleTemplate(workspacePath, role) {
+  const rolesDir = import_path3.default.join(workspacePath, ".optimus", "roles");
+  const flatPath = import_path3.default.join(rolesDir, `${role}.md`);
+  const candidatePaths = [
+    flatPath,
+    import_path3.default.join(rolesDir, role, "ROLE.md")
+  ];
+  const candidates = [];
+  for (const candidatePath of candidatePaths) {
+    if (!import_fs3.default.existsSync(candidatePath)) continue;
+    try {
+      const rawContent = import_fs3.default.readFileSync(candidatePath, "utf8");
+      const extracted = extractBestFrontmatterDocument(rawContent, role, candidatePath, flatPath);
+      const parsed = extracted ? { frontmatter: extracted.frontmatter, body: extracted.body } : parseFrontmatter(rawContent);
+      const canonicalContent = extracted?.content ?? rawContent;
+      candidates.push({
+        path: candidatePath,
+        rawContent,
+        content: canonicalContent,
+        frontmatter: parsed.frontmatter,
+        body: parsed.body,
+        score: extracted?.score ?? scoreRoleTemplateCandidate(role, candidatePath, flatPath, parsed.frontmatter, parsed.body)
+      });
+    } catch (e) {
+      console.error(`[T2 Guard] Warning: failed to read role template '${candidatePath}': ${e.message}`);
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b2) => b2.score - a.score);
+  return candidates[0];
+}
 function updateFrontmatter(content, updates) {
   const parsed = parseFrontmatter(content);
   const newFm = { ...parsed.frontmatter, ...updates };
@@ -29471,9 +29630,14 @@ async function ensureT2Role(workspacePath, role, engine, model, masterInfo, dele
   const desc = rawDesc.replace(/\\n/g, "\n");
   const eng = masterInfo?.engine || engine;
   const mod = masterInfo?.model || model || "";
-  if (import_fs3.default.existsSync(t2Path)) {
-    const existing = import_fs3.default.readFileSync(t2Path, "utf8");
-    const existingFm = parseFrontmatter(existing);
+  const existingTemplate = loadBestRoleTemplate(workspacePath, safeRole);
+  if (existingTemplate) {
+    const existing = existingTemplate.content;
+    const existingFm = { frontmatter: existingTemplate.frontmatter, body: existingTemplate.body };
+    if (existingTemplate.path !== t2Path || existingTemplate.content !== existingTemplate.rawContent) {
+      import_fs3.default.writeFileSync(t2Path, existing, "utf8");
+      console.error(`[T2 Guard] Canonicalized role '${safeRole}' template from ${import_path3.default.relative(workspacePath, existingTemplate.path)} to .optimus/roles/${safeRole}.md`);
+    }
     const contentLines = existingFm.body.split("\n").filter((l) => l.trim().length > 0);
     const isThin = contentLines.length < 25 && existingFm.frontmatter.source !== "plugin";
     if (isThin) {
@@ -29654,11 +29818,13 @@ ${roleCreatorSkillContent}
     OPTIMUS_DELEGATION_DEPTH: String(childDepth)
   };
   const response = await adapter.invoke(prompt, "agent", void 0, void 0, extraEnv);
-  const fmStart = response.indexOf("---");
+  const extracted = extractBestFrontmatterDocument(response, safeRole, t2Path, t2Path);
+  const roleContent = extracted?.content ?? response;
+  const fmStart = roleContent.indexOf("---");
   if (fmStart === -1) {
     throw new Error("role-creator response did not contain valid frontmatter (no --- found)");
   }
-  const content = response.slice(fmStart).trim();
+  const content = roleContent.slice(fmStart).trim();
   const secondDash = content.indexOf("---", 3);
   if (secondDash === -1) {
     throw new Error("role-creator response had opening --- but no closing frontmatter delimiter");
@@ -29792,6 +29958,20 @@ function parseRoleSpec(roleArg) {
   const model = segments.slice(engineIndex + 1).join("_");
   return { role, engine, model };
 }
+function getEngineProtocol(engine, workspacePath) {
+  let engineConfig = null;
+  if (workspacePath) {
+    try {
+      const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
+      if (import_fs3.default.existsSync(configPath)) {
+        const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
+        engineConfig = config2.engines?.[engine];
+      }
+    } catch {
+    }
+  }
+  return engineConfig?.protocol || (engine === "acp" || engine.startsWith("acp-") ? "acp" : "cli");
+}
 function getAdapterForEngine(engine, sessionId, model, workspacePath) {
   let engineConfig = null;
   if (workspacePath) {
@@ -29804,7 +29984,7 @@ function getAdapterForEngine(engine, sessionId, model, workspacePath) {
     } catch {
     }
   }
-  const protocol = engineConfig?.protocol || (engine === "acp" || engine.startsWith("acp-") ? "acp" : "cli");
+  const protocol = getEngineProtocol(engine, workspacePath);
   if (protocol === "acp") {
     let executable = engineConfig?.path || "copilot";
     let args = engineConfig?.args ? [...engineConfig.args] : ["--acp"];
@@ -29862,6 +30042,8 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
   let activeModel = masterInfo?.model || parsedRole.model;
   let activeMode = masterInfo?.mode || "agent";
   let activeSessionId = void 0;
+  let storedEngineForSession = void 0;
+  let storedProtocolForSession = void 0;
   let t1Content = "";
   let t1Path = "";
   let shouldLocalize = false;
@@ -29879,14 +30061,18 @@ async function delegateTaskSingle(roleArg, taskPath, outputPath, _fallbackSessio
       console.error(`[Orchestrator] agent_id="${agentId}" not found at ${exactPath} \u2014 falling back to T2 role template`);
     }
   }
-  if (!t1Content && import_fs3.default.existsSync(t2Path)) {
-    t1Content = import_fs3.default.readFileSync(t2Path, "utf8");
+  const bestRoleTemplate = loadBestRoleTemplate(workspacePath, role);
+  if (!t1Content && bestRoleTemplate) {
+    t1Content = bestRoleTemplate.content;
     shouldLocalize = true;
-    resolvedTier = `T2 (Role Template -> ${role}.md)`;
-    personaProof = `Found globally promoted Role template: ${t2Path}`;
+    const relativeTemplatePath = import_path3.default.relative(workspacePath, bestRoleTemplate.path).replace(/\\/g, "/");
+    resolvedTier = `T2 (Role Template -> ${relativeTemplatePath})`;
+    personaProof = `Found globally promoted Role template: ${bestRoleTemplate.path}`;
   }
   if (t1Content) {
     const fm = parseFrontmatter(t1Content);
+    storedEngineForSession = fm.frontmatter.engine;
+    storedProtocolForSession = fm.frontmatter.adapter_protocol;
     if (fm.frontmatter.engine && !activeEngine) activeEngine = fm.frontmatter.engine;
     if (fm.frontmatter.session_id) activeSessionId = fm.frontmatter.session_id;
     if (fm.frontmatter.model && !activeModel) activeModel = fm.frontmatter.model;
@@ -29964,6 +30150,7 @@ Please re-delegate with a valid \`role_model\` or omit it to use the default.`
     }
   }
   let wasFallback = false;
+  const engineBeforeFallback = activeEngine;
   if (activeModel) {
     const resolved = resolveHealthyModel(workspacePath, activeEngine, activeModel);
     if (resolved.engine !== activeEngine || resolved.model !== activeModel) {
@@ -29971,6 +30158,24 @@ Please re-delegate with a valid \`role_model\` or omit it to use the default.`
       activeEngine = resolved.engine;
       activeModel = resolved.model;
       wasFallback = true;
+    }
+  }
+  if (wasFallback && activeEngine !== engineBeforeFallback && activeSessionId) {
+    console.error(
+      `[Orchestrator] Session cleared for ${role}: engine changed from ${engineBeforeFallback} to ${activeEngine} during health fallback. Starting a fresh session.`
+    );
+    activeSessionId = void 0;
+  }
+  const activeProtocol = getEngineProtocol(activeEngine, workspacePath);
+  if (activeSessionId) {
+    const engineChanged = !!storedEngineForSession && storedEngineForSession !== activeEngine;
+    const protocolChanged = !!storedProtocolForSession && storedProtocolForSession !== activeProtocol;
+    const legacyUnknownProtocol = activeProtocol === "acp" && !storedProtocolForSession;
+    if (engineChanged || protocolChanged || legacyUnknownProtocol) {
+      console.error(
+        `[Orchestrator] Session reuse disabled for ${role}: stored engine/protocol ${storedEngineForSession || "unknown"}/${storedProtocolForSession || "unknown"} is incompatible with active ${activeEngine}/${activeProtocol}. Starting a fresh session.`
+      );
+      activeSessionId = void 0;
     }
   }
   let skillContent = "";
@@ -30137,6 +30342,7 @@ Please provide your complete execution result below.`;
         role,
         base_tier: "T1",
         engine: activeEngine,
+        adapter_protocol: activeProtocol,
         ...activeModel ? { model: activeModel } : {},
         session_id: "",
         status: "running",
@@ -30197,9 +30403,14 @@ ${firstLines.trim()}
     if (currentT1 && import_fs3.default.existsSync(currentT1)) {
       const currentStr = import_fs3.default.readFileSync(currentT1, "utf8");
       const updates = {
+        engine: activeEngine,
+        adapter_protocol: activeProtocol,
         status: "idle",
         last_invoked: (/* @__PURE__ */ new Date()).toISOString()
       };
+      if (activeModel) {
+        updates.model = activeModel;
+      }
       const newSessionId = adapter.lastSessionId;
       if (newSessionId) {
         updates.session_id = newSessionId;
@@ -30285,52 +30496,149 @@ Provide your expert critique from the perspective of your role (${role}). Identi
     return `\u274C ${role}: exited with errors (${err.message}).`;
   }
 }
+function classifyComboReadiness(entry, now) {
+  if (!entry) return "unverified";
+  if (entry.status === "unhealthy" && now - new Date(entry.last_failure).getTime() < ENGINE_HEALTH_TTL_MS) {
+    return "unhealthy";
+  }
+  if (entry.successes > 0) return "confirmed_healthy";
+  return "unverified";
+}
+function isStaticallyValid(eng, mdl, configPath) {
+  try {
+    const config2 = JSON.parse(import_fs3.default.readFileSync(configPath, "utf8"));
+    const engineConfig = config2.engines?.[eng];
+    if (!engineConfig) return false;
+    const p = engineConfig.path;
+    if (p !== void 0 && p !== "auto" && typeof p === "string" && p.trim() === "") return false;
+    if (Array.isArray(engineConfig.available_models) && mdl !== "" && mdl.trim() === "") return false;
+  } catch {
+  }
+  return true;
+}
 function computeDiversityAssignments(roles, workspacePath) {
   const health = loadEngineHealth(workspacePath);
   const { engines, models } = loadValidEnginesAndModels(workspacePath);
+  const configPath = import_path3.default.join(workspacePath, ".optimus", "config", "available-agents.json");
   if (engines.length === 0) {
+    console.error("[Council Diversity] No available-agents.json config \u2014 each role will use engine defaults");
     return roles.map(() => ({}));
   }
-  const combos = [];
+  const now = Date.now();
+  const configuredPool = [];
   for (const eng of engines) {
     const engineModels = models[eng] || [];
     if (engineModels.length === 0) {
-      const key = `${eng}:default`;
-      const entry = health[key];
-      const isUnhealthy = entry?.status === "unhealthy" && Date.now() - new Date(entry.last_failure).getTime() < ENGINE_HEALTH_TTL_MS;
-      if (!isUnhealthy) {
-        combos.push({ engine: eng, model: "" });
-      }
-      continue;
-    }
-    for (const mdl of engineModels) {
-      const key = `${eng}:${mdl}`;
-      const entry = health[key];
-      const isUnhealthy = entry?.status === "unhealthy" && Date.now() - new Date(entry.last_failure).getTime() < ENGINE_HEALTH_TTL_MS;
-      if (!isUnhealthy) {
-        combos.push({ engine: eng, model: mdl });
+      configuredPool.push({ engine: eng, model: "" });
+    } else {
+      for (const mdl of engineModels) {
+        configuredPool.push({ engine: eng, model: mdl });
       }
     }
   }
-  if (combos.length === 0) {
-    console.error("[Council Diversity] All engine:model combos unhealthy \u2014 falling back to defaults");
+  console.error(`[Council Diversity] Configured pool (${configuredPool.length}): ${configuredPool.map((c) => `${c.engine}:${c.model || "default"}`).join(", ")}`);
+  const confirmedHealthy = [];
+  const unverified = [];
+  let unhealthyCount = 0;
+  let staticRejectedCount = 0;
+  for (const combo of configuredPool) {
+    if (!isStaticallyValid(combo.engine, combo.model, configPath)) {
+      staticRejectedCount++;
+      console.error(`[Council Diversity] Static validation rejected: ${combo.engine}:${combo.model || "default"} (empty path or empty model string)`);
+      continue;
+    }
+    const key = combo.model ? `${combo.engine}:${combo.model}` : `${combo.engine}:default`;
+    const readiness = classifyComboReadiness(health[key], now);
+    if (readiness === "unhealthy") {
+      unhealthyCount++;
+    } else if (readiness === "confirmed_healthy") {
+      confirmedHealthy.push(combo);
+    } else {
+      unverified.push(combo);
+    }
+  }
+  const runnablePool = [...confirmedHealthy, ...unverified];
+  console.error(
+    `[Council Diversity] Validated pool: ${runnablePool.length} runnable (${confirmedHealthy.length} confirmed_healthy, ${unverified.length} unverified, ${unhealthyCount} unhealthy, ${staticRejectedCount} static-rejected)`
+  );
+  if (runnablePool.length === 0) {
+    console.error("[Council Diversity] \u26A0\uFE0F  All engine:model combos excluded (unhealthy or invalid) \u2014 each role will use engine defaults (degraded mode)");
     return roles.map(() => ({}));
   }
   const assignments = [];
   for (let i = 0; i < roles.length; i++) {
-    const combo = combos[i % combos.length];
+    const combo = runnablePool[i % runnablePool.length];
     assignments.push({ engine: combo.engine, model: combo.model || void 0 });
   }
   const summary = assignments.map((a, i) => `${roles[i]} \u2192 ${a.engine}:${a.model || "default"}`).join(", ");
-  console.error(`[Council Diversity] ${combos.length} healthy combos, ${roles.length} roles. Assignments: ${summary}`);
+  console.error(`[Council Diversity] Assigned pool (${roles.length} roles): ${summary}`);
   return assignments;
 }
-async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath, parentDepth, parentIssueNumber, roleDescriptions) {
+async function dispatchCouncilConcurrent(roles, proposalPath, reviewsPath, timestampId, workspacePath, parentDepth, parentIssueNumber, roleDescriptions, _spawnOverride) {
+  if (!import_fs3.default.existsSync(reviewsPath)) {
+    import_fs3.default.mkdirSync(reviewsPath, { recursive: true });
+  }
   const diversityAssignments = computeDiversityAssignments(roles, workspacePath);
+  const isDegraded = diversityAssignments.every((a) => !a.engine && !a.model);
+  const manifestLines = [
+    `# Council Dispatch Manifest`,
+    ``,
+    `**Timestamp:** ${(/* @__PURE__ */ new Date()).toISOString()}`,
+    `**Proposal:** \`${proposalPath}\``,
+    `**Roles (${roles.length}):** ${roles.map((r) => `\`${r}\``).join(", ")}`,
+    `**Mode:** ${isDegraded ? "\u26A0\uFE0F  DEGRADED (all combos excluded, using engine defaults)" : "normal"}`,
+    ``,
+    `## Role Assignments`,
+    ``,
+    ...diversityAssignments.map(
+      (a, i) => `- \`${roles[i]}\` \u2192 engine: \`${a.engine || "default"}\`, model: \`${a.model || "default"}\``
+    ),
+    ``,
+    `## Status`,
+    ``,
+    `pre-spawn (workers not yet started)`
+  ];
+  import_fs3.default.writeFileSync(import_path3.default.join(reviewsPath, "DISPATCH_MANIFEST.md"), manifestLines.join("\n") + "\n", "utf8");
+  for (let i = 0; i < roles.length; i++) {
+    const role = roles[i];
+    const assignment = diversityAssignments[i];
+    const placeholderPath = import_path3.default.join(reviewsPath, `${role}_review.md`);
+    const placeholder = [
+      `# Review: ${role}`,
+      ``,
+      `**status:** in-progress`,
+      `**engine:** ${assignment.engine || "default"}`,
+      `**model:** ${assignment.model || "default"}`,
+      `**started_at:** ${(/* @__PURE__ */ new Date()).toISOString()}`,
+      ``,
+      `_Worker execution in progress. This file will be overwritten with the actual review output._`
+    ].join("\n") + "\n";
+    import_fs3.default.writeFileSync(placeholderPath, placeholder, "utf8");
+  }
+  console.error(`[Council] Pre-spawn artifacts written: DISPATCH_MANIFEST.md + ${roles.length} role placeholders`);
+  const spawnFn = _spawnOverride ?? spawnWorker;
   const promises = roles.map((role, i) => {
     const outputPath = import_path3.default.join(reviewsPath, `${role}_review.md`);
     const assignment = diversityAssignments[i];
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
+    const p = spawnFn(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2, 8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
+    return p.catch((err) => {
+      const failureArtifact = [
+        `# Review: ${role}`,
+        ``,
+        `**status:** failed`,
+        `**engine:** ${assignment.engine || "default"}`,
+        `**model:** ${assignment.model || "default"}`,
+        `**failed_at:** ${(/* @__PURE__ */ new Date()).toISOString()}`,
+        `**error:** ${err?.message || "Unknown spawn error"}`,
+        ``,
+        `_Worker failed to produce a review. Check .optimus/agents/ for T1 instance logs._`
+      ].join("\n") + "\n";
+      try {
+        import_fs3.default.writeFileSync(outputPath, failureArtifact, "utf8");
+      } catch (_2) {
+      }
+      throw err;
+    });
   });
   const results = await Promise.allSettled(promises);
   const succeeded = [];
@@ -30532,6 +30840,25 @@ async function runAsyncWorker(taskId, workspacePath) {
   }
   TaskManifestManager.updateTask(workspacePath, taskId, { status: "running", pid: process.pid });
   TaskManifestManager.heartbeat(workspacePath, taskId);
+  if (task.type === "dispatch_council" && task.output_path) {
+    try {
+      const statusRunning = [
+        `# Council Status`,
+        ``,
+        `**council_id:** ${taskId}`,
+        `**phase:** running`,
+        `**roles:** ${(task.roles || []).join(", ")}`,
+        `**proposal:** ${task.proposal_path || ""}`,
+        `**pid:** ${process.pid}`,
+        `**started_at:** ${(/* @__PURE__ */ new Date()).toISOString()}`,
+        ``,
+        `_Workers are executing. Per-role placeholder files are present in this directory._`,
+        `_Check individual \`<role>_review.md\` files to see per-role progress._`
+      ].join("\n") + "\n";
+      import_fs4.default.writeFileSync(import_path4.default.join(task.output_path, "STATUS.md"), statusRunning, "utf8");
+    } catch {
+    }
+  }
   const heartbeatInterval = setInterval(() => {
     TaskManifestManager.heartbeat(workspacePath, taskId);
   }, 15e3);
@@ -30712,6 +31039,26 @@ ${synthesisContent}`;
     if (errorMessage) statusUpdate.error_message = errorMessage;
     TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
     console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
+    if (task.type === "dispatch_council" && task.output_path) {
+      try {
+        const statusEmoji = verificationStatus === "verified" ? "\u2705" : verificationStatus === "partial" ? "\u26A0\uFE0F" : "\u274C";
+        const statusFinal = [
+          `# Council Status`,
+          ``,
+          `**council_id:** ${taskId}`,
+          `**phase:** ${verificationStatus}`,
+          `**roles:** ${(task.roles || []).join(", ")}`,
+          `**proposal:** ${task.proposal_path || ""}`,
+          `**completed_at:** ${(/* @__PURE__ */ new Date()).toISOString()}`,
+          `**result:** ${statusEmoji} ${verificationStatus}`,
+          ...errorMessage ? [`**error:** ${errorMessage}`] : [],
+          ``,
+          `_See COUNCIL_SYNTHESIS.md and VERDICT.md for full results._`
+        ].join("\n") + "\n";
+        import_fs4.default.writeFileSync(import_path4.default.join(task.output_path, "STATUS.md"), statusFinal, "utf8");
+      } catch {
+      }
+    }
     if (verificationStatus === "verified") {
       try {
         const unblockedTasks = TaskManifestManager.unblockDependents(workspacePath, taskId);
@@ -30803,10 +31150,10 @@ var VcsProviderFactory = class {
       const { GitHubProvider: GitHubProvider2 } = await Promise.resolve().then(() => (init_GitHubProvider(), GitHubProvider_exports));
       provider = new GitHubProvider2(owner, repo);
     } else if (providerType === "azure-devops") {
-      const { organization, project } = this.getAdoInfo(config2, resolvedWorkspacePath);
+      const { organization, project, webBaseUrl } = this.getAdoInfo(config2, resolvedWorkspacePath);
       const { AdoProvider: AdoProvider2 } = await Promise.resolve().then(() => (init_AdoProvider(), AdoProvider_exports));
       const adoDefaults = config2.ado?.defaults;
-      provider = new AdoProvider2(organization, project, adoDefaults);
+      provider = new AdoProvider2(organization, project, adoDefaults, webBaseUrl);
     } else {
       throw new Error(`Unsupported or undetectable VCS provider: ${providerType}`);
     }
@@ -30887,7 +31234,8 @@ var VcsProviderFactory = class {
     if (config2.ado?.organization && config2.ado?.project) {
       return {
         organization: config2.ado.organization,
-        project: config2.ado.project
+        project: config2.ado.project,
+        webBaseUrl: config2.ado.web_base_url || `https://${config2.ado.organization}.visualstudio.com`
       };
     }
     try {
@@ -30899,14 +31247,16 @@ var VcsProviderFactory = class {
       if (match) {
         return {
           organization: match[1],
-          project: match[2]
+          project: decodeURIComponent(match[2]),
+          webBaseUrl: `https://dev.azure.com/${match[1]}`
         };
       }
       match = remoteUrl.match(/([^.]+)\.visualstudio\.com[\/:]([^\/_]+)/);
       if (match) {
         return {
           organization: match[1],
-          project: match[2]
+          project: decodeURIComponent(match[2]),
+          webBaseUrl: `https://${match[1]}.visualstudio.com`
         };
       }
       throw new Error("Unable to parse Azure DevOps repository info from remote URL");
@@ -31010,28 +31360,63 @@ function getLockDir(workspacePath) {
 function getLockPath(workspacePath, id) {
   return import_path5.default.join(getLockDir(workspacePath), `${id}.lock`);
 }
+function isPidRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function isLockStale(lockPath) {
+  try {
+    const content = import_fs5.default.readFileSync(lockPath, "utf8");
+    const data = JSON.parse(content);
+    if (typeof data.pid === "number" && !isPidRunning(data.pid)) {
+      return true;
+    }
+    if (data.locked_at) {
+      const ageMs = Date.now() - new Date(data.locked_at).getTime();
+      if (ageMs >= 60 * 60 * 1e3) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
 function isLocked(workspacePath, id) {
   const lockPath = getLockPath(workspacePath, id);
   try {
     if (!import_fs5.default.existsSync(lockPath)) return false;
-    const stat = import_fs5.default.statSync(lockPath);
-    const ageMs = Date.now() - stat.mtimeMs;
-    return ageMs < 60 * 60 * 1e3;
+    return !isLockStale(lockPath);
   } catch (e) {
     console.error(`[Meta-Cron] Warning: failed to check lock for '${id}': ${e.message}. Treating as unlocked.`);
     return false;
   }
 }
 function createLock(workspacePath, id) {
+  const lockDir = getLockDir(workspacePath);
+  const lockPath = getLockPath(workspacePath, id);
   try {
-    const lockDir = getLockDir(workspacePath);
     if (!import_fs5.default.existsSync(lockDir)) import_fs5.default.mkdirSync(lockDir, { recursive: true });
-    import_fs5.default.writeFileSync(getLockPath(workspacePath, id), JSON.stringify({
+    const lockFd = import_fs5.default.openSync(lockPath, "wx");
+    import_fs5.default.writeFileSync(lockFd, JSON.stringify({
       pid: process.pid,
       locked_at: (/* @__PURE__ */ new Date()).toISOString()
     }), "utf8");
+    import_fs5.default.closeSync(lockFd);
     return true;
   } catch (e) {
+    if (e?.code === "EEXIST") {
+      try {
+        if (isLockStale(lockPath)) {
+          import_fs5.default.unlinkSync(lockPath);
+          return createLock(workspacePath, id);
+        }
+      } catch {
+      }
+      return false;
+    }
     console.error(`[Meta-Cron] Warning: failed to create lock for '${id}': ${e.message}. Entry will run unguarded.`);
     return false;
   }
@@ -32161,6 +32546,19 @@ Use check_task_status tool periodically with this task ID to check its completio
     const parentIssueNumber = request.params.arguments.parent_issue_number ?? (Number.isNaN(rawParentAsync2) ? void 0 : rawParentAsync2);
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const reviewsPath = import_path7.default.join(workspace_path, ".optimus", "reviews", taskId);
+    import_fs6.default.mkdirSync(reviewsPath, { recursive: true });
+    const statusQueued = [
+      `# Council Status`,
+      ``,
+      `**council_id:** ${taskId}`,
+      `**phase:** queued`,
+      `**roles:** ${roles.join(", ")}`,
+      `**proposal:** ${proposal_path}`,
+      `**queued_at:** ${(/* @__PURE__ */ new Date()).toISOString()}`,
+      ``,
+      `_Background worker has been spawned and will update this file when execution starts._`
+    ].join("\n") + "\n";
+    import_fs6.default.writeFileSync(import_path7.default.join(reviewsPath, "STATUS.md"), statusQueued, "utf8");
     TaskManifestManager.createTask(workspace_path, {
       taskId,
       type: "dispatch_council",
