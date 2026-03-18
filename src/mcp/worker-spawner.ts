@@ -51,6 +51,88 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
     return { frontmatter, body };
 }
 
+interface RoleTemplateCandidate {
+    path: string;
+    rawContent: string;
+    content: string;
+    frontmatter: Record<string, string>;
+    body: string;
+    score: number;
+}
+
+function scoreRoleTemplateCandidate(role: string, candidatePath: string, preferredPath: string, frontmatter: Record<string, string>, body: string): number {
+    const bodyLines = body.split('\n').filter(line => line.trim().length > 0).length;
+    let score = Math.min(bodyLines, 50);
+    if (frontmatter.role === role) score += 100;
+    if (frontmatter.tier === 'T2') score += 30;
+    if (frontmatter.description) score += 20;
+    if (frontmatter.engine) score += 20;
+    if (frontmatter.model) score += 5;
+    if (frontmatter.base_tier === 'T1') score -= 20;
+    if (candidatePath === preferredPath) score += 1;
+    return score;
+}
+
+function extractBestFrontmatterDocument(content: string, role: string, candidatePath: string, preferredPath: string): Omit<RoleTemplateCandidate, 'path' | 'rawContent'> | null {
+    const normalized = content.replace(/\r\n/g, '\n');
+    const startIndices = [...normalized.matchAll(/^---\n/gm)].map(match => match.index ?? 0);
+    let best: Omit<RoleTemplateCandidate, 'path' | 'rawContent'> | null = null;
+
+    for (let i = 0; i < startIndices.length; i++) {
+        const start = startIndices[i];
+        const document = normalized.slice(start).trim();
+        const parsed = parseFrontmatter(document);
+        if (Object.keys(parsed.frontmatter).length === 0) continue;
+
+        const candidate: Omit<RoleTemplateCandidate, 'path' | 'rawContent'> = {
+            content: document,
+            frontmatter: parsed.frontmatter,
+            body: parsed.body,
+            score: scoreRoleTemplateCandidate(role, candidatePath, preferredPath, parsed.frontmatter, parsed.body)
+        };
+
+        if (!best || candidate.score > best.score) {
+            best = candidate;
+        }
+    }
+
+    return best;
+}
+
+function loadBestRoleTemplate(workspacePath: string, role: string): RoleTemplateCandidate | null {
+    const rolesDir = path.join(workspacePath, '.optimus', 'roles');
+    const flatPath = path.join(rolesDir, `${role}.md`);
+    const candidatePaths = [
+        flatPath,
+        path.join(rolesDir, role, 'ROLE.md')
+    ];
+
+    const candidates: RoleTemplateCandidate[] = [];
+    for (const candidatePath of candidatePaths) {
+        if (!fs.existsSync(candidatePath)) continue;
+        try {
+            const rawContent = fs.readFileSync(candidatePath, 'utf8');
+            const extracted = extractBestFrontmatterDocument(rawContent, role, candidatePath, flatPath);
+            const parsed = extracted ? { frontmatter: extracted.frontmatter, body: extracted.body } : parseFrontmatter(rawContent);
+            const canonicalContent = extracted?.content ?? rawContent;
+            candidates.push({
+                path: candidatePath,
+                rawContent,
+                content: canonicalContent,
+                frontmatter: parsed.frontmatter,
+                body: parsed.body,
+                score: extracted?.score ?? scoreRoleTemplateCandidate(role, candidatePath, flatPath, parsed.frontmatter, parsed.body)
+            });
+        } catch (e: any) {
+            console.error(`[T2 Guard] Warning: failed to read role template '${candidatePath}': ${e.message}`);
+        }
+    }
+
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0];
+}
+
 export function updateFrontmatter(content: string, updates: Record<string, string>): string {
     const parsed = parseFrontmatter(content);
     const newFm = { ...parsed.frontmatter, ...updates };
@@ -505,9 +587,15 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const eng = masterInfo?.engine || engine;
     const mod = masterInfo?.model || model || '';
 
-    if (fs.existsSync(t2Path)) {
-        const existing = fs.readFileSync(t2Path, 'utf8');
-        const existingFm = parseFrontmatter(existing);
+    const existingTemplate = loadBestRoleTemplate(workspacePath, safeRole);
+    if (existingTemplate) {
+        const existing = existingTemplate.content;
+        const existingFm = { frontmatter: existingTemplate.frontmatter, body: existingTemplate.body };
+
+        if (existingTemplate.path !== t2Path || existingTemplate.content !== existingTemplate.rawContent) {
+            fs.writeFileSync(t2Path, existing, 'utf8');
+            console.error(`[T2 Guard] Canonicalized role '${safeRole}' template from ${path.relative(workspacePath, existingTemplate.path)} to .optimus/roles/${safeRole}.md`);
+        }
 
         // Quality gate: check if existing T2 is thin (< 25 content lines)
         const contentLines = existingFm.body.split('\n').filter(l => l.trim().length > 0);
@@ -734,13 +822,15 @@ ${roleCreatorSkillContent ? `=== SKILL REFERENCE ===\n${roleCreatorSkillContent}
         OPTIMUS_DELEGATION_DEPTH: String(childDepth)
     };
     const response = await adapter.invoke(prompt, 'agent', undefined, undefined, extraEnv);
+    const extracted = extractBestFrontmatterDocument(response, safeRole, t2Path, t2Path);
+    const roleContent = extracted?.content ?? response;
 
     // 4. Parse the response — look for frontmatter start
-    const fmStart = response.indexOf('---');
+    const fmStart = roleContent.indexOf('---');
     if (fmStart === -1) {
         throw new Error('role-creator response did not contain valid frontmatter (no --- found)');
     }
-    const content = response.slice(fmStart).trim();
+    const content = roleContent.slice(fmStart).trim();
 
     // Validate that we have a closing frontmatter delimiter
     const secondDash = content.indexOf('---', 3);
@@ -891,6 +981,23 @@ function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?
     return { role, engine, model };
 }
 
+function getEngineProtocol(engine: string, workspacePath?: string): 'cli' | 'acp' {
+    let engineConfig: any = null;
+    if (workspacePath) {
+        try {
+            const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+            if (fs.existsSync(configPath)) {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                engineConfig = config.engines?.[engine];
+            }
+        } catch {
+            // Fall through to heuristic.
+        }
+    }
+
+    return engineConfig?.protocol || (engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli');
+}
+
 function getAdapterForEngine(engine: string, sessionId?: string, model?: string, workspacePath?: string): AgentAdapter {
     // Read engine config to determine protocol
     let engineConfig: any = null;
@@ -905,8 +1012,7 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
     }
 
     // Determine protocol: explicit field > engine name heuristic > default 'cli'
-    const protocol = engineConfig?.protocol
-        || (engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli');
+    const protocol = getEngineProtocol(engine, workspacePath);
 
     if (protocol === 'acp') {
         // Resolve executable and args from config
@@ -983,6 +1089,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     let activeModel = masterInfo?.model || parsedRole.model;
     let activeMode: 'agent' | 'plan' = masterInfo?.mode || 'agent';
     let activeSessionId: string | undefined = undefined;
+    let storedEngineForSession: string | undefined = undefined;
+    let storedProtocolForSession: string | undefined = undefined;
 
     let t1Content = '';
     let t1Path = '';  // Will be resolved dynamically based on role+engine match
@@ -1007,16 +1115,20 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     }
     // Without agent_id: skip T1 glob lookup — go straight to T2 template for a fresh session
 
-    if (!t1Content && fs.existsSync(t2Path)) {
-        t1Content = fs.readFileSync(t2Path, 'utf8');
+    const bestRoleTemplate = loadBestRoleTemplate(workspacePath, role);
+    if (!t1Content && bestRoleTemplate) {
+        t1Content = bestRoleTemplate.content;
         shouldLocalize = true;
-        resolvedTier = `T2 (Role Template -> ${role}.md)`;
-        personaProof = `Found globally promoted Role template: ${t2Path}`;
+        const relativeTemplatePath = path.relative(workspacePath, bestRoleTemplate.path).replace(/\\/g, '/');
+        resolvedTier = `T2 (Role Template -> ${relativeTemplatePath})`;
+        personaProof = `Found globally promoted Role template: ${bestRoleTemplate.path}`;
     }
 
     if (t1Content) {
         const fm = parseFrontmatter(t1Content);
         // Frontmatter values are defaults; caller-supplied masterInfo takes priority
+        storedEngineForSession = fm.frontmatter.engine;
+        storedProtocolForSession = fm.frontmatter.adapter_protocol;
         if (fm.frontmatter.engine && !activeEngine) activeEngine = fm.frontmatter.engine;
         if (fm.frontmatter.session_id) activeSessionId = fm.frontmatter.session_id;
         if (fm.frontmatter.model && !activeModel) activeModel = fm.frontmatter.model;
@@ -1109,6 +1221,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
 
     // --- Engine Health Check & Fallback ---
     let wasFallback = false;
+    const engineBeforeFallback = activeEngine;
     if (activeModel) {
         const resolved = resolveHealthyModel(workspacePath, activeEngine, activeModel);
         if (resolved.engine !== activeEngine || resolved.model !== activeModel) {
@@ -1116,6 +1229,29 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
             activeEngine = resolved.engine;
             activeModel = resolved.model;
             wasFallback = true;
+        }
+    }
+    // If the engine changed during fallback, clear any stored session ID — it belongs to the old engine.
+    if (wasFallback && activeEngine !== engineBeforeFallback && activeSessionId) {
+        console.error(
+            `[Orchestrator] Session cleared for ${role}: engine changed from ${engineBeforeFallback} to ${activeEngine} during health fallback. Starting a fresh session.`
+        );
+        activeSessionId = undefined;
+    }
+
+    const activeProtocol = getEngineProtocol(activeEngine, workspacePath);
+    if (activeSessionId) {
+        const engineChanged = !!storedEngineForSession && storedEngineForSession !== activeEngine;
+        const protocolChanged = !!storedProtocolForSession && storedProtocolForSession !== activeProtocol;
+        const legacyUnknownProtocol = activeProtocol === 'acp' && !storedProtocolForSession;
+
+        if (engineChanged || protocolChanged || legacyUnknownProtocol) {
+            console.error(
+                `[Orchestrator] Session reuse disabled for ${role}: stored engine/protocol ` +
+                `${storedEngineForSession || 'unknown'}/${storedProtocolForSession || 'unknown'} ` +
+                `is incompatible with active ${activeEngine}/${activeProtocol}. Starting a fresh session.`
+            );
+            activeSessionId = undefined;
         }
     }
 
@@ -1284,6 +1420,7 @@ Please provide your complete execution result below.`;
                 role: role,
                 base_tier: 'T1',
                 engine: activeEngine,
+                adapter_protocol: activeProtocol,
                 ...(activeModel ? { model: activeModel } : {}),
                 session_id: '',
                 status: 'running',
@@ -1348,9 +1485,14 @@ Please provide your complete execution result below.`;
         if (currentT1 && fs.existsSync(currentT1)) {
             const currentStr = fs.readFileSync(currentT1, 'utf8');
             const updates: Record<string, string> = {
+                engine: activeEngine,
+                adapter_protocol: activeProtocol,
                 status: 'idle',
                 last_invoked: new Date().toISOString()
             };
+            if (activeModel) {
+                updates.model = activeModel;
+            }
             const newSessionId = adapter.lastSessionId;
             if (newSessionId) {
                 updates.session_id = newSessionId;
@@ -1449,75 +1591,232 @@ Provide your expert critique from the perspective of your role (${role}). Identi
 }
 
 /**
+ * Three-state readiness classification for a configured engine:model combo.
+ *
+ *   confirmed_healthy — has recorded successes (status: healthy or degraded)
+ *   unverified        — no health history (never been invoked)
+ *   unhealthy         — recorded failures within TTL
+ */
+type ComboReadiness = 'confirmed_healthy' | 'unverified' | 'unhealthy';
+
+function classifyComboReadiness(entry: EngineHealthEntry | undefined, now: number): ComboReadiness {
+    if (!entry) return 'unverified';
+    if (entry.status === 'unhealthy' && (now - new Date(entry.last_failure).getTime()) < ENGINE_HEALTH_TTL_MS) {
+        return 'unhealthy';
+    }
+    // Has at least one recorded success → confirmed healthy
+    if (entry.successes > 0) return 'confirmed_healthy';
+    return 'unverified';
+}
+
+/**
+ * Static validation: reject combos that cannot possibly work before any health
+ * check. This catches "phantom capacity" from malformed config entries.
+ *
+ * Rules:
+ *   - Engine path must be non-empty (checked via available-agents.json)
+ *   - If an engine lists available_models, each model string must be non-empty
+ */
+function isStaticallyValid(eng: string, mdl: string, configPath: string): boolean {
+    try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const engineConfig = config.engines?.[eng];
+        if (!engineConfig) return false;
+        // An engine with path '' or missing path is not runnable
+        const p = engineConfig.path;
+        if (p !== undefined && p !== 'auto' && typeof p === 'string' && p.trim() === '') return false;
+        // If the engine declares available_models, each listed model must be a non-empty string
+        if (Array.isArray(engineConfig.available_models) && mdl !== '' && mdl.trim() === '') return false;
+    } catch {
+        // Can't read config — treat as valid (permissive fallback)
+    }
+    return true;
+}
+
+/**
  * Compute cross-model diversity assignments for council roles.
- * Greedy round-robin: distribute roles across available engine:model combos.
+ * Greedy round-robin: distribute roles across runnable engine:model combos.
  * Handles edge cases: 1 engine, 1 model, or more roles than combos.
+ *
+ * Combo classification (three-state):
+ *   confirmed_healthy — prior successful invocations recorded
+ *   unverified        — no health history but passes static validation
+ *   unhealthy         — recorded failures within TTL; excluded from pool
+ *
+ * Pool priority: confirmed_healthy first, then unverified as fallback.
+ * Logged distinctly: configured pool, validated pool, actual assigned pool.
  */
 function computeDiversityAssignments(roles: string[], workspacePath: string): Array<{ engine?: string; model?: string }> {
     const health = loadEngineHealth(workspacePath);
     const { engines, models } = loadValidEnginesAndModels(workspacePath);
+    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
 
     if (engines.length === 0) {
         // No config — let each role use its default
+        console.error('[Council Diversity] No available-agents.json config — each role will use engine defaults');
         return roles.map(() => ({}));
     }
 
-    // Build list of healthy engine:model combos
-    const combos: Array<{ engine: string; model: string }> = [];
+    const now = Date.now();
+
+    // Enumerate all configured combos
+    const configuredPool: Array<{ engine: string; model: string }> = [];
     for (const eng of engines) {
         const engineModels = models[eng] || [];
         if (engineModels.length === 0) {
-            // Engine with no models listed — still usable with default model
-            const key = `${eng}:default`;
-            const entry = health[key];
-            const isUnhealthy = entry?.status === 'unhealthy' &&
-                (Date.now() - new Date(entry.last_failure).getTime()) < ENGINE_HEALTH_TTL_MS;
-            if (!isUnhealthy) {
-                combos.push({ engine: eng, model: '' });
-            }
-            continue;
-        }
-        for (const mdl of engineModels) {
-            const key = `${eng}:${mdl}`;
-            const entry = health[key];
-            const isUnhealthy = entry?.status === 'unhealthy' &&
-                (Date.now() - new Date(entry.last_failure).getTime()) < ENGINE_HEALTH_TTL_MS;
-            if (!isUnhealthy) {
-                combos.push({ engine: eng, model: mdl });
+            configuredPool.push({ engine: eng, model: '' });
+        } else {
+            for (const mdl of engineModels) {
+                configuredPool.push({ engine: eng, model: mdl });
             }
         }
     }
+    console.error(`[Council Diversity] Configured pool (${configuredPool.length}): ${configuredPool.map(c => `${c.engine}:${c.model || 'default'}`).join(', ')}`);
 
-    if (combos.length === 0) {
-        // All combos unhealthy — let defaults handle it (escape hatch)
-        console.error('[Council Diversity] All engine:model combos unhealthy — falling back to defaults');
+    // Classify each configured combo
+    const confirmedHealthy: Array<{ engine: string; model: string }> = [];
+    const unverified: Array<{ engine: string; model: string }> = [];
+    let unhealthyCount = 0;
+    let staticRejectedCount = 0;
+
+    for (const combo of configuredPool) {
+        // Static validation first — reject phantom combos
+        if (!isStaticallyValid(combo.engine, combo.model, configPath)) {
+            staticRejectedCount++;
+            console.error(`[Council Diversity] Static validation rejected: ${combo.engine}:${combo.model || 'default'} (empty path or empty model string)`);
+            continue;
+        }
+        const key = combo.model ? `${combo.engine}:${combo.model}` : `${combo.engine}:default`;
+        const readiness = classifyComboReadiness(health[key], now);
+        if (readiness === 'unhealthy') {
+            unhealthyCount++;
+        } else if (readiness === 'confirmed_healthy') {
+            confirmedHealthy.push(combo);
+        } else {
+            unverified.push(combo);
+        }
+    }
+
+    const runnablePool = [...confirmedHealthy, ...unverified];
+    console.error(
+        `[Council Diversity] Validated pool: ${runnablePool.length} runnable` +
+        ` (${confirmedHealthy.length} confirmed_healthy, ${unverified.length} unverified,` +
+        ` ${unhealthyCount} unhealthy, ${staticRejectedCount} static-rejected)`
+    );
+
+    if (runnablePool.length === 0) {
+        // All combos excluded — fall back to defaults with explicit notice
+        console.error('[Council Diversity] ⚠️  All engine:model combos excluded (unhealthy or invalid) — each role will use engine defaults (degraded mode)');
         return roles.map(() => ({}));
     }
 
-    // Round-robin assignment
+    // Round-robin assignment across runnable pool (confirmed_healthy prioritized)
     const assignments: Array<{ engine?: string; model?: string }> = [];
     for (let i = 0; i < roles.length; i++) {
-        const combo = combos[i % combos.length];
+        const combo = runnablePool[i % runnablePool.length];
         assignments.push({ engine: combo.engine, model: combo.model || undefined });
     }
 
     const summary = assignments.map((a, i) => `${roles[i]} → ${a.engine}:${a.model || 'default'}`).join(', ');
-    console.error(`[Council Diversity] ${combos.length} healthy combos, ${roles.length} roles. Assignments: ${summary}`);
+    console.error(`[Council Diversity] Assigned pool (${roles.length} roles): ${summary}`);
 
     return assignments;
 }
 
 /**
  * Dispatches the council of experts concurrently with automatic cross-model diversity.
+ *
+ * Pre-spawn artifacts (written before any worker starts):
+ *   DISPATCH_MANIFEST.md — audit record of configured vs. validated vs. assigned pools
+ *   <role>_review.md     — per-role "in-progress" placeholder (overwritten by real output)
+ *
+ * Post-spawn artifacts:
+ *   FAILURES.md          — partial failure report (if any workers fail)
+ *
+ * Injectable _spawnOverride allows tests to mock worker execution without real process spawns.
  */
-export async function dispatchCouncilConcurrent(roles: string[], proposalPath: string, reviewsPath: string, timestampId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescriptions?: Record<string, string>): Promise<string[]> {
-  // Compute diversity assignments — greedy round-robin across healthy engine:model combos
+export async function dispatchCouncilConcurrent(
+    roles: string[],
+    proposalPath: string,
+    reviewsPath: string,
+    timestampId: string,
+    workspacePath: string,
+    parentDepth?: number,
+    parentIssueNumber?: number,
+    roleDescriptions?: Record<string, string>,
+    _spawnOverride?: (role: string, proposalPath: string, outputPath: string, sessionId: string, workspacePath: string, parentDepth?: number, parentIssueNumber?: number, roleDescription?: string, engine?: string, model?: string) => Promise<string>
+): Promise<string[]> {
+  // Ensure reviews directory exists before writing any artifacts
+  if (!fs.existsSync(reviewsPath)) {
+      fs.mkdirSync(reviewsPath, { recursive: true });
+  }
+
+  // Compute diversity assignments — three-state pool with explicit logging
   const diversityAssignments = computeDiversityAssignments(roles, workspacePath);
+  const isDegraded = diversityAssignments.every(a => !a.engine && !a.model);
+
+  // --- Pre-spawn: Write DISPATCH_MANIFEST.md ---
+  const manifestLines: string[] = [
+      `# Council Dispatch Manifest`,
+      ``,
+      `**Timestamp:** ${new Date().toISOString()}`,
+      `**Proposal:** \`${proposalPath}\``,
+      `**Roles (${roles.length}):** ${roles.map(r => `\`${r}\``).join(', ')}`,
+      `**Mode:** ${isDegraded ? '⚠️  DEGRADED (all combos excluded, using engine defaults)' : 'normal'}`,
+      ``,
+      `## Role Assignments`,
+      ``,
+      ...diversityAssignments.map((a, i) =>
+          `- \`${roles[i]}\` → engine: \`${a.engine || 'default'}\`, model: \`${a.model || 'default'}\``
+      ),
+      ``,
+      `## Status`,
+      ``,
+      `pre-spawn (workers not yet started)`,
+  ];
+  fs.writeFileSync(path.join(reviewsPath, 'DISPATCH_MANIFEST.md'), manifestLines.join('\n') + '\n', 'utf8');
+
+  // --- Pre-spawn: Write per-role placeholder files ---
+  for (let i = 0; i < roles.length; i++) {
+      const role = roles[i];
+      const assignment = diversityAssignments[i];
+      const placeholderPath = path.join(reviewsPath, `${role}_review.md`);
+      const placeholder = [
+          `# Review: ${role}`,
+          ``,
+          `**status:** in-progress`,
+          `**engine:** ${assignment.engine || 'default'}`,
+          `**model:** ${assignment.model || 'default'}`,
+          `**started_at:** ${new Date().toISOString()}`,
+          ``,
+          `_Worker execution in progress. This file will be overwritten with the actual review output._`,
+      ].join('\n') + '\n';
+      fs.writeFileSync(placeholderPath, placeholder, 'utf8');
+  }
+  console.error(`[Council] Pre-spawn artifacts written: DISPATCH_MANIFEST.md + ${roles.length} role placeholders`);
+
+  const spawnFn = _spawnOverride ?? spawnWorker;
 
   const promises = roles.map((role, i) => {
     const outputPath = path.join(reviewsPath, `${role}_review.md`);
     const assignment = diversityAssignments[i];
-    return spawnWorker(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
+    const p = spawnFn(role, proposalPath, outputPath, `${timestampId}_${Math.random().toString(36).slice(2,8)}`, workspacePath, parentDepth, parentIssueNumber, roleDescriptions?.[role], assignment.engine, assignment.model);
+    // On spawn failure, overwrite placeholder with a deterministic failure artifact
+    return p.catch((err: any) => {
+        const failureArtifact = [
+            `# Review: ${role}`,
+            ``,
+            `**status:** failed`,
+            `**engine:** ${assignment.engine || 'default'}`,
+            `**model:** ${assignment.model || 'default'}`,
+            `**failed_at:** ${new Date().toISOString()}`,
+            `**error:** ${err?.message || 'Unknown spawn error'}`,
+            ``,
+            `_Worker failed to produce a review. Check .optimus/agents/ for T1 instance logs._`,
+        ].join('\n') + '\n';
+        try { fs.writeFileSync(outputPath, failureArtifact, 'utf8'); } catch (_) {}
+        throw err;
+    });
   });
 
   const results = await Promise.allSettled(promises);

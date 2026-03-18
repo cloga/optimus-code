@@ -793,6 +793,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     const reviewsPath = path.join(workspace_path, ".optimus", "reviews", taskId);
+
+    // Create reviews directory + STATUS.md immediately — before background spawn.
+    // This gives users early visibility: the directory will not be empty while waiting.
+    fs.mkdirSync(reviewsPath, { recursive: true });
+    const statusQueued = [
+        `# Council Status`,
+        ``,
+        `**council_id:** ${taskId}`,
+        `**phase:** queued`,
+        `**roles:** ${roles.join(', ')}`,
+        `**proposal:** ${proposal_path}`,
+        `**queued_at:** ${new Date().toISOString()}`,
+        ``,
+        `_Background worker has been spawned and will update this file when execution starts._`,
+    ].join('\n') + '\n';
+    fs.writeFileSync(path.join(reviewsPath, 'STATUS.md'), statusQueued, 'utf8');
+
     TaskManifestManager.createTask(workspace_path, {
         taskId, type: "dispatch_council", roles, proposal_path, output_path: reviewsPath, workspacePath: workspace_path,
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
