@@ -1,20 +1,49 @@
 {
-  "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli' (default) or 'acp' (JSON-RPC over NDJSON).",
+  "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli', 'acp', or 'auto'. ACP is a transport choice; Copilot autopilot is a continuation policy under automation.continuation. 'automation.mode' uses normalized intent values, not raw vendor flags.",
   "engines": {
     "claude-code": {
-      "protocol": "acp",
-      "path": "claude-agent-acp",
+      "protocol": "auto",
+      "preferred_protocol": "acp",
       "available_models": ["claude-opus-4.6-1m", "gpt-5.4", "gemini-3-pro-preview"],
       "cli_flags": "--model",
-      "timeout": { "heartbeat_ms": 600000 },
-      "_comment": "Requires: npm install -g @zed-industries/claude-agent-acp"
+      "timeout": { "heartbeat_ms": 600000, "activity_ms": 1200000 },
+      "automation": { "mode": "auto-approve" },
+      "acp": {
+        "path": "claude-agent-acp",
+        "cli_flags": "--model",
+        "capabilities": { "automation_modes": ["auto-approve"] },
+        "_comment": "ACP-first transport. Optimus can satisfy auto-approve autonomy here because AcpAdapter auto-approves session/request_permission."
+      },
+      "cli": {
+        "path": "claude",
+        "cli_flags": "--model",
+        "capabilities": { "automation_modes": ["interactive", "plan", "accept-edits", "deny-unapproved", "auto-approve"] },
+        "_comment": "Native Claude CLI fallback when requested automation semantics are not sufficiently covered by ACP."
+      },
+      "_comment": "Claude engine with ACP-first auto protocol selection. Prefer ACP unless requested automation semantics require CLI-only behavior."
     },
     "github-copilot": {
-      "protocol": "cli",
-      "path": "copilot",
+      "protocol": "auto",
+      "preferred_protocol": "acp",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
-      "cli_flags": "-m",
-      "timeout": { "heartbeat_ms": 600000 }
+      "automation": { "mode": "auto-approve", "continuation": "autopilot", "max_continues": 8 },
+      "timeout": { "heartbeat_ms": 600000 },
+      "acp": {
+        "path": "copilot",
+        "args": ["--acp", "--stdio"],
+        "capabilities": { "automation_modes": ["auto-approve"], "automation_continuations": ["single"] },
+        "_comment": "Experimental Copilot ACP transport. Keep continuation at 'single'; Copilot autopilot is a CLI-only continuation mode."
+      },
+      "cli": {
+        "path": "copilot",
+        "cli_flags": "-m",
+        "capabilities": {
+          "automation_modes": ["interactive", "plan", "accept-edits", "deny-unapproved", "auto-approve"],
+          "automation_continuations": ["single", "autopilot"]
+        },
+        "_comment": "Native Copilot CLI path. Required whenever automation.continuation=autopilot."
+      },
+      "_comment": "ACP is a transport; autopilot is a Copilot CLI continuation policy. With protocol='auto', Optimus may use ACP only when the requested automation mode and continuation are both compatible with ACP."
     },
     "qwen-code": {
       "protocol": "acp",

@@ -17,9 +17,19 @@ function adoHttpRecoveryHint(status: number): string {
     return hints[status] || "Unexpected HTTP " + status + ". Check ADO service health at https://status.dev.azure.com.";
 }
 
+function isGuidLike(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function trimTrailingSlash(value: string): string {
+    return value.replace(/\/+$/, '');
+}
+
 export class AdoProvider implements IVcsProvider {
     private organization: string;
     private project: string;
+    private webBaseUrl: string;
+    private projectDisplayName?: string;
     private defaults?: {
         work_item_type?: string;
         area_path?: string;
@@ -34,10 +44,63 @@ export class AdoProvider implements IVcsProvider {
         iteration_path?: string;
         assigned_to?: string;
         auto_tags?: string[];
-    }) {
+    }, webBaseUrl?: string) {
         this.organization = organization;
         this.project = project;
         this.defaults = defaults;
+        this.webBaseUrl = trimTrailingSlash(webBaseUrl || `https://${organization}.visualstudio.com`);
+    }
+
+    private async resolveProjectDisplayName(): Promise<string> {
+        if (this.projectDisplayName) {
+            return this.projectDisplayName;
+        }
+
+        if (!isGuidLike(this.project)) {
+            this.projectDisplayName = this.project;
+            return this.projectDisplayName;
+        }
+
+        const token = this.getToken();
+        if (!token) {
+            this.projectDisplayName = this.project;
+            return this.projectDisplayName;
+        }
+
+        try {
+            const response = await fetch(
+                `https://dev.azure.com/${this.organization}/_apis/projects/${this.project}?api-version=7.0`,
+                {
+                    headers: {
+                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
+                        'Accept': 'application/json',
+                        'User-Agent': 'Optimus-Agent'
+                    }
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json() as any;
+                if (typeof data?.name === 'string' && data.name.trim().length > 0) {
+                    const displayName = data.name.trim();
+                    this.projectDisplayName = displayName;
+                    return displayName;
+                }
+            } else {
+                console.error(`[AdoProvider] Project metadata lookup failed (${response.status}). Falling back to configured project identifier.`);
+            }
+        } catch (error: any) {
+            console.error(`[AdoProvider] Project metadata lookup failed: ${error.message}`);
+        }
+
+        this.projectDisplayName = this.project;
+        return this.projectDisplayName;
+    }
+
+    private async buildWorkItemUiUrl(workItemId: string | number, commentId?: string | number): Promise<string> {
+        const projectDisplayName = await this.resolveProjectDisplayName();
+        const baseUrl = `${this.webBaseUrl}/${encodeURIComponent(projectDisplayName)}/_workitems/edit/${workItemId}`;
+        return commentId === undefined ? baseUrl : `${baseUrl}#${commentId}`;
     }
 
     async createWorkItem(
@@ -127,7 +190,7 @@ export class AdoProvider implements IVcsProvider {
             return {
                 id: data.id.toString(),
                 number: data.id,
-                url: data._links.html.href,
+                url: await this.buildWorkItemUiUrl(data.id),
                 title: data.fields['System.Title']
             };
         } catch (error: any) {
@@ -343,7 +406,7 @@ export class AdoProvider implements IVcsProvider {
 
                 return {
                     id: data.id.toString(),
-                    url: data.url || `https://dev.azure.com/${this.organization}/${this.project}/_workitems/edit/${id}`
+                    url: await this.buildWorkItemUiUrl(id, data.id)
                 };
             } else {
                 // Add comment to pull request - need repository ID

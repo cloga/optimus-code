@@ -12,6 +12,9 @@
     "skipLibCheck": true,
     "moduleResolution": "NodeNext"
   },
+  "include": [
+    "src/**/*.ts"
+  ],
   "exclude": [
     "node_modules",
     ".vscode-test"

@@ -106,6 +106,24 @@ initialize → session/new → session/prompt → session/update (streaming) →
 
 ACP coexists with the existing `ClaudeCodeAdapter` and `GitHubCopilotAdapter` through the factory pattern in `src/adapters/index.ts`. The `AdapterKind` union type (`'github-copilot' | 'claude-code' | 'acp'`) drives adapter selection via `available-agents.json` configuration.
 
+For GitHub Copilot specifically, do not infer the complete ACP launch contract from the top-level `copilot --help` summary alone. GitHub's ACP public-preview docs describe additional server modes such as `--stdio` and `--port` even when the summary help only surfaces `--acp`. Optimus therefore treats explicit transport config plus those documented preview capabilities as the source of truth, and defaults headless Copilot ACP launches to `copilot --acp --stdio` when no explicit ACP args are configured.
+
+#### ACP vs Copilot Autopilot
+
+These are orthogonal concepts and should stay separate in engine configuration:
+
+- **ACP** is a transport choice. It belongs to engine `protocol`, `preferred_protocol`, and the `acp` transport block.
+- **Copilot autopilot** is a continuation policy for the CLI agent. It belongs to `automation.continuation`.
+- **Approval policy** belongs to `automation.mode`.
+
+For GitHub Copilot, official documentation now exposes all three separately:
+
+- `copilot --acp` starts the ACP server in **public preview**.
+- The ACP reference also documents `--stdio` and `--port` server modes even when the top-level CLI help only surfaces `--acp`.
+- Autopilot is documented independently as the multi-turn continuation mode for Copilot CLI, typically paired with `--allow-all` and optionally `--max-autopilot-continues`.
+
+Implication for Optimus: do not treat `autopilot` as evidence of ACP support, and do not treat ACP availability as evidence that Copilot CLI continuation semantics are available on that transport.
+
 > **Status**: The AcpAdapter is fully implemented with NDJSON transport and JSON-RPC message handling. Verified with Qwen Code v0.12.3 and claude-agent-acp v0.21.0.
 
 ---

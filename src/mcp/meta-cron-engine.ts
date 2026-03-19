@@ -92,13 +92,41 @@ function getLockPath(workspacePath: string, id: string): string {
     return path.join(getLockDir(workspacePath), `${id}.lock`);
 }
 
+function isPidRunning(pid: number): boolean {
+    try {
+        // signal 0 checks process existence without sending a real signal
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function isLockStale(lockPath: string): boolean {
+    try {
+        const content = fs.readFileSync(lockPath, 'utf8');
+        const data = JSON.parse(content) as { pid?: number; locked_at?: string };
+        // PID-based staleness: if the owning process is gone, the lock is stale
+        if (typeof data.pid === 'number' && !isPidRunning(data.pid)) {
+            return true;
+        }
+        // Time-based fallback: treat locks older than 1 hour as stale regardless of PID
+        if (data.locked_at) {
+            const ageMs = Date.now() - new Date(data.locked_at).getTime();
+            if (ageMs >= 60 * 60 * 1000) return true;
+        }
+        return false;
+    } catch {
+        // Unreadable or malformed lock — treat as stale so we don't block forever
+        return true;
+    }
+}
+
 function isLocked(workspacePath: string, id: string): boolean {
     const lockPath = getLockPath(workspacePath, id);
     try {
         if (!fs.existsSync(lockPath)) return false;
-        const stat = fs.statSync(lockPath);
-        const ageMs = Date.now() - stat.mtimeMs;
-        return ageMs < 60 * 60 * 1000;
+        return !isLockStale(lockPath);
     } catch (e: any) {
         console.error(`[Meta-Cron] Warning: failed to check lock for '${id}': ${e.message}. Treating as unlocked.`);
         return false;
@@ -106,15 +134,33 @@ function isLocked(workspacePath: string, id: string): boolean {
 }
 
 function createLock(workspacePath: string, id: string): boolean {
+    const lockDir = getLockDir(workspacePath);
+    const lockPath = getLockPath(workspacePath, id);
     try {
-        const lockDir = getLockDir(workspacePath);
         if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
-        fs.writeFileSync(getLockPath(workspacePath, id), JSON.stringify({
+        // 'wx' flag: exclusive create — atomically fails with EEXIST if the file already exists.
+        // This guarantees that among N concurrent callers, exactly one succeeds.
+        const lockFd = fs.openSync(lockPath, 'wx');
+        fs.writeFileSync(lockFd, JSON.stringify({
             pid: process.pid,
             locked_at: new Date().toISOString()
         }), 'utf8');
+        fs.closeSync(lockFd);
         return true;
     } catch (e: any) {
+        if (e?.code === 'EEXIST') {
+            // Lock file exists — check if it belongs to a dead process (stale lock)
+            try {
+                if (isLockStale(lockPath)) {
+                    fs.unlinkSync(lockPath);
+                    return createLock(workspacePath, id);
+                }
+            } catch {
+                // If we can't read/delete the stale lock, another process may be cleaning it up
+                // concurrently. Treat as locked to avoid thundering herd on delete+retry.
+            }
+            return false;
+        }
         console.error(`[Meta-Cron] Warning: failed to create lock for '${id}': ${e.message}. Entry will run unguarded.`);
         return false;
     }

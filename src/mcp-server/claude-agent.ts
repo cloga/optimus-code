@@ -14,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as cp from "child_process";
+import { AUTOMATION_CONTINUATION_VALUES, AUTOMATION_MODE_VALUES, getClaudeCliAutomationArgs, getCopilotCliAutomationArgs } from "../utils/automationPolicy";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,6 +32,30 @@ interface CliResult {
     output: string;
     sessionId: string | null;
     error: string | null;
+}
+
+const automationModeSchema = z.enum(AUTOMATION_MODE_VALUES);
+const automationContinuationSchema = z.enum(AUTOMATION_CONTINUATION_VALUES);
+
+function getClaudeAutomationConfig(mode: "plan" | "agent", automationMode?: z.infer<typeof automationModeSchema>) {
+    return mode === "plan"
+        ? { mode: "plan" as const }
+        : { mode: automationMode || "auto-approve" };
+}
+
+function getCopilotAutomationConfig(
+    mode: "plan" | "agent",
+    automationMode?: z.infer<typeof automationModeSchema>,
+    automationContinuation?: z.infer<typeof automationContinuationSchema>,
+    maxContinues?: number,
+) {
+    return mode === "plan"
+        ? { mode: "plan" as const, continuation: "single" as const }
+        : {
+            mode: automationMode || "auto-approve",
+            continuation: automationContinuation || "autopilot",
+            max_continues: maxContinues,
+        };
 }
 
 function runCli(cmd: string, args: string[], cwd: string, timeoutMs = 300_000): Promise<CliResult> {
@@ -167,15 +192,15 @@ server.tool(
     {
         prompt: z.string().describe("Task or question for Claude"),
         mode: z.enum(["plan", "agent"]).default("agent").describe("plan = read-only, agent = full execution"),
+        automation_mode: automationModeSchema.optional().describe("Normalized automation policy. Prefer auto-approve / interactive / accept-edits / deny-unapproved over vendor-specific names."),
         model: z.string().optional().describe("Model override (e.g. 'opus', 'sonnet')"),
         session_id: z.string().optional().describe("Resume session by UUID"),
         workdir: z.string().optional().describe("Working directory"),
     },
-    async ({ prompt, mode, model, session_id, workdir }) => {
+    async ({ prompt, mode, automation_mode, model, session_id, workdir }) => {
         const cwd = workdir || getWorkspaceRoot();
         const args = ["-p", prompt, "--add-dir", cwd];
-        if (mode === "plan") { args.push("--permission-mode", "plan"); }
-        else { args.push("--dangerously-skip-permissions"); }
+        args.push(...getClaudeCliAutomationArgs(mode, getClaudeAutomationConfig(mode, automation_mode)));
         if (model) { args.push("--model", model); }
         if (session_id) { args.push("--resume", session_id); }
         args.push("--output-format", "stream-json", "--verbose");
@@ -193,12 +218,14 @@ server.tool(
     {
         prompt: z.string().describe("Follow-up message"),
         session_id: z.string().describe("Session UUID to resume"),
+        automation_mode: automationModeSchema.optional().describe("Normalized automation policy for the resumed Claude session."),
         model: z.string().optional().describe("Model override"),
         workdir: z.string().optional().describe("Working directory"),
     },
-    async ({ prompt, session_id, model, workdir }) => {
+    async ({ prompt, session_id, automation_mode, model, workdir }) => {
         const cwd = workdir || getWorkspaceRoot();
-        const args = ["-p", prompt, "--resume", session_id, "--dangerously-skip-permissions", "--add-dir", cwd];
+        const args = ["-p", prompt, "--resume", session_id, "--add-dir", cwd];
+        args.push(...getClaudeCliAutomationArgs("agent", getClaudeAutomationConfig("agent", automation_mode)));
         if (model) { args.push("--model", model); }
         args.push("--output-format", "stream-json", "--verbose");
 
@@ -217,14 +244,17 @@ server.tool(
     {
         prompt: z.string().describe("Task or question for Copilot"),
         mode: z.enum(["plan", "agent"]).default("agent").describe("plan = read-only, agent = full execution"),
+        automation_mode: automationModeSchema.optional().describe("Normalized approval policy. Copilot currently supports interactive and auto-approve best."),
+        automation_continuation: automationContinuationSchema.optional().describe("Continuation policy. Use autopilot to enable multi-step continuation in Copilot CLI."),
+        max_continues: z.number().int().min(0).optional().describe("Maximum autopilot continuations when automation_continuation=autopilot."),
         model: z.string().optional().describe("Model override (e.g. 'gpt-5.2', 'o3')"),
         session_id: z.string().optional().describe("Resume session by UUID"),
         workdir: z.string().optional().describe("Working directory"),
     },
-    async ({ prompt, mode, model, session_id, workdir }) => {
+    async ({ prompt, mode, automation_mode, automation_continuation, max_continues, model, session_id, workdir }) => {
         const cwd = workdir || getWorkspaceRoot();
         const args = ["-p", prompt, "--add-dir", cwd];
-        if (mode === "agent") { args.push("--allow-all-tools", "--no-ask-user"); }
+        args.push(...getCopilotCliAutomationArgs(mode, getCopilotAutomationConfig(mode, automation_mode, automation_continuation, max_continues)));
         if (model) { args.push("--model", model); }
         if (session_id) { args.push("--resume", session_id); }
         args.push("--output-format", "json", "--stream", "on");
@@ -242,12 +272,16 @@ server.tool(
     {
         prompt: z.string().describe("Follow-up message"),
         session_id: z.string().describe("Session UUID to resume"),
+        automation_mode: automationModeSchema.optional().describe("Normalized approval policy for the resumed Copilot session."),
+        automation_continuation: automationContinuationSchema.optional().describe("Continuation policy for the resumed Copilot session."),
+        max_continues: z.number().int().min(0).optional().describe("Maximum autopilot continuations when automation_continuation=autopilot."),
         model: z.string().optional().describe("Model override"),
         workdir: z.string().optional().describe("Working directory"),
     },
-    async ({ prompt, session_id, model, workdir }) => {
+    async ({ prompt, session_id, automation_mode, automation_continuation, max_continues, model, workdir }) => {
         const cwd = workdir || getWorkspaceRoot();
-        const args = ["-p", prompt, "--resume", session_id, "--allow-all-tools", "--no-ask-user", "--add-dir", cwd];
+        const args = ["-p", prompt, "--resume", session_id, "--add-dir", cwd];
+        args.push(...getCopilotCliAutomationArgs("agent", getCopilotAutomationConfig("agent", automation_mode, automation_continuation, max_continues)));
         if (model) { args.push("--model", model); }
         args.push("--output-format", "json", "--stream", "on");
 

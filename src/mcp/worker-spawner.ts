@@ -25,6 +25,7 @@ import { AcpAdapter } from "../adapters/AcpAdapter";
 import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
+import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normalizeAutomationPolicy } from "../utils/automationPolicy";
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 
@@ -512,8 +513,8 @@ function checkRequiredSkills(workspacePath: string, skills: string[]): { found: 
 export function loadValidEnginesAndModels(workspacePath: string): { engines: string[]; models: Record<string, string[]> } {
     const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
     try {
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const config = readAvailableAgentsConfigFile(configPath);
+        if (config) {
             const engines = Object.keys(config.engines || {});
             const models: Record<string, string[]> = {};
             for (const eng of engines) {
@@ -525,15 +526,258 @@ export function loadValidEnginesAndModels(workspacePath: string): { engines: str
     return { engines: [], models: {} };
 }
 
-export function loadEngineHeartbeatTimeout(workspacePath: string, engine: string): number | null {
+const AVAILABLE_AGENTS_WARNING_CACHE = new Set<string>();
+
+function emitAvailableAgentsConfigWarnings(configPath: string, config: any): void {
+    const engines = config?.engines;
+    if (!engines || typeof engines !== 'object') {
+        return;
+    }
+
+    for (const [engineName, engineConfig] of Object.entries<any>(engines)) {
+        const transports: Array<{ label: string; protocol: 'acp'; config: any }> = [];
+        if (engineConfig?.protocol === 'acp') {
+            transports.push({ label: 'protocol', protocol: 'acp', config: engineConfig });
+        }
+        if (engineConfig?.protocol === 'auto' && engineConfig?.acp && typeof engineConfig.acp === 'object') {
+            transports.push({ label: 'acp', protocol: 'acp', config: engineConfig.acp });
+        }
+
+        for (const transport of transports) {
+            const transportPath = typeof transport.config?.path === 'string' ? transport.config.path.trim().toLowerCase() : '';
+            const hasExplicitArgs = Array.isArray(transport.config?.args);
+            const looksLikeCopilot = engineName.toLowerCase().includes('copilot') || transportPath === 'copilot' || transportPath.endsWith('/copilot') || transportPath.endsWith('\\copilot');
+            if (!looksLikeCopilot || hasExplicitArgs) {
+                continue;
+            }
+
+            const warningKey = `${configPath}:${engineName}:${transport.label}:copilot-acp-default-stdio`;
+            if (AVAILABLE_AGENTS_WARNING_CACHE.has(warningKey)) {
+                continue;
+            }
+            AVAILABLE_AGENTS_WARNING_CACHE.add(warningKey);
+            console.error(
+                `[Config] Warning: engine '${engineName}' declares Copilot ACP via '${transport.label}' transport with path 'copilot' and no explicit args. ` +
+                `Optimus will default to '--acp --stdio'; do not infer ACP capability limits from the top-level 'copilot --help' summary alone.`
+            );
+        }
+    }
+}
+
+function readAvailableAgentsConfigFile(configPath: string): any | null {
+    if (!fs.existsSync(configPath)) return null;
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    emitAvailableAgentsConfigWarnings(configPath, config);
+    return config;
+}
+
+function loadAvailableAgentsConfig(workspacePath?: string): any | null {
+    if (!workspacePath) return null;
     const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
     try {
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            const engineConfig = config.engines?.[engine];
-            const heartbeatMs = engineConfig?.timeout?.heartbeat_ms;
-            if (typeof heartbeatMs === 'number') return heartbeatMs;
+        return readAvailableAgentsConfigFile(configPath);
+    } catch (e: any) {
+        console.error(`[EngineValidation] Warning: failed to read available-agents.json: ${e.message}`);
+    }
+    return null;
+}
+
+function getEngineConfig(engine: string, workspacePath?: string): any | null {
+    return loadAvailableAgentsConfig(workspacePath)?.engines?.[engine] || null;
+}
+
+function getConfiguredEngineNames(workspacePath?: string): string[] {
+    return Object.keys(loadAvailableAgentsConfig(workspacePath)?.engines || {});
+}
+
+function getTransportConfig(engineConfig: any, protocol: 'cli' | 'acp'): any {
+    if (!engineConfig) return null;
+    return engineConfig.protocol === 'auto' ? engineConfig[protocol] || null : engineConfig;
+}
+
+function getDocumentedDefaultAcpArgs(engine: string): string[] {
+    // GitHub Copilot ACP is a documented public-preview transport. The summary
+    // `copilot --help` output may only advertise `--acp`, while the ACP docs
+    // also document `--stdio` / `--port` server modes. Optimus runs ACP over
+    // stdio, so default Copilot ACP launches to `copilot --acp --stdio` unless
+    // config explicitly overrides the transport args.
+    if (engine.toLowerCase().includes('copilot')) {
+        return ['--acp', '--stdio'];
+    }
+    return ['--acp'];
+}
+
+function getRequestedAutomationMode(engineConfig: any): string | undefined {
+    if (!engineConfig?.automation || typeof engineConfig.automation !== 'object') {
+        return undefined;
+    }
+    return getAutomationCapabilityMode(engineConfig.automation);
+}
+
+function getRequestedAutomationContinuation(engineConfig: any): string | undefined {
+    if (!engineConfig?.automation || typeof engineConfig.automation !== 'object') {
+        return undefined;
+    }
+    return normalizeAutomationPolicy(engineConfig.automation).continuation;
+}
+
+function getSupportedAutomationModes(transportConfig: any): string[] {
+    if (!Array.isArray(transportConfig?.capabilities?.automation_modes)) {
+        return [];
+    }
+    return transportConfig.capabilities.automation_modes.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function getSupportedAutomationContinuations(transportConfig: any): string[] {
+    if (!Array.isArray(transportConfig?.capabilities?.automation_continuations)) {
+        return [];
+    }
+    return transportConfig.capabilities.automation_continuations.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function transportSupportsAutomationMode(protocol: 'cli' | 'acp', transportConfig: any, requestedMode: string | undefined): boolean {
+    if (!transportConfig) return false;
+    if (!requestedMode) return true;
+    const supportedModes = getSupportedAutomationModes(transportConfig);
+    if (supportedModes.length > 0) {
+        return supportedModes.includes(requestedMode);
+    }
+    if (protocol === 'acp') {
+        return requestedMode === 'auto-approve';
+    }
+    return true;
+}
+
+function transportSupportsAutomationContinuation(transportConfig: any, requestedContinuation: string | undefined): boolean {
+    if (!transportConfig) return false;
+    if (!requestedContinuation || requestedContinuation === 'single') {
+        return true;
+    }
+
+    const supportedContinuations = getSupportedAutomationContinuations(transportConfig);
+    if (supportedContinuations.length > 0) {
+        return supportedContinuations.includes(requestedContinuation);
+    }
+
+    return false;
+}
+
+function transportSupportsAutomationPolicy(
+    protocol: 'cli' | 'acp',
+    transportConfig: any,
+    requestedMode: string | undefined,
+    requestedContinuation: string | undefined,
+): boolean {
+    return transportSupportsAutomationMode(protocol, transportConfig, requestedMode)
+        && transportSupportsAutomationContinuation(transportConfig, requestedContinuation);
+}
+
+function hasRequestedAutomationPolicy(engineConfig: any): boolean {
+    return !!engineConfig?.automation && typeof engineConfig.automation === 'object';
+}
+
+function describeRequestedAutomationPolicy(requestedMode: string | undefined, requestedContinuation: string | undefined): string {
+    const mode = requestedMode || 'interactive';
+    const continuation = requestedContinuation || 'single';
+    return `mode='${mode}', continuation='${continuation}'`;
+}
+
+function getConfiguredTransportProtocols(engineConfig: any, preferredProtocol: 'cli' | 'acp'): Array<'cli' | 'acp'> {
+    if (!engineConfig) return [];
+    if (engineConfig.protocol !== 'auto') {
+        const explicitProtocol = engineConfig.protocol === 'acp' ? 'acp' : 'cli';
+        return getTransportConfig(engineConfig, explicitProtocol) ? [explicitProtocol] : [];
+    }
+
+    const candidates: Array<'cli' | 'acp'> = preferredProtocol === 'acp' ? ['acp', 'cli'] : ['cli', 'acp'];
+    return candidates.filter(protocol => !!getTransportConfig(engineConfig, protocol));
+}
+
+function buildAutomationCompatibilityFixHint(engine: string, protocol: 'cli' | 'acp' | 'auto', requestedContinuation: string | undefined): string {
+    if (requestedContinuation === 'autopilot') {
+        if (!engine.toLowerCase().includes('copilot')) {
+            return `Set automation.continuation to 'single' for engine '${engine}', or switch to a GitHub Copilot CLI engine if you need autopilot continuation.`;
         }
+        if (protocol === 'acp') {
+            return `Set protocol to 'cli' or 'auto' for engine '${engine}', or change automation.continuation to 'single'.`;
+        }
+    }
+    return `Adjust automation.mode / automation.continuation or update the declared transport capabilities in available-agents.json.`;
+}
+
+function validateAutomationPolicyForProtocol(
+    engine: string,
+    protocol: 'cli' | 'acp' | 'auto',
+    engineConfig: any,
+    requestedMode: string | undefined,
+    requestedContinuation: string | undefined,
+): void {
+    if (!engineConfig || !hasRequestedAutomationPolicy(engineConfig)) {
+        return;
+    }
+
+    const preferredProtocol: 'cli' | 'acp' = engineConfig.preferred_protocol === 'cli' ? 'cli' : 'acp';
+    const configuredProtocols = getConfiguredTransportProtocols(engineConfig, preferredProtocol);
+    const matchingProtocols = configuredProtocols.filter(candidate =>
+        transportSupportsAutomationPolicy(candidate, getTransportConfig(engineConfig, candidate), requestedMode, requestedContinuation)
+    );
+
+    if (protocol === 'auto') {
+        if (matchingProtocols.length > 0) {
+            return;
+        }
+        if (configuredProtocols.length === 0) {
+            return;
+        }
+
+        throw new Error(
+            `[Config] Invalid automation policy: engine '${engine}' cannot satisfy ${describeRequestedAutomationPolicy(requestedMode, requestedContinuation)} ` +
+            `with any configured transport (${configuredProtocols.join(', ')}). Suggested fix: ${buildAutomationCompatibilityFixHint(engine, protocol, requestedContinuation)}`
+        );
+    }
+
+    if (matchingProtocols.includes(protocol)) {
+        return;
+    }
+
+    throw new Error(
+        `[Config] Invalid automation policy: engine '${engine}' protocol '${protocol}' cannot satisfy ${describeRequestedAutomationPolicy(requestedMode, requestedContinuation)}. ` +
+        `Compatible configured transport(s): ${matchingProtocols.length > 0 ? matchingProtocols.join(', ') : 'none'}. Suggested fix: ${buildAutomationCompatibilityFixHint(engine, protocol, requestedContinuation)}`
+    );
+}
+
+function resolveProtocolFromEngineConfig(engine: string, engineConfig: any): 'cli' | 'acp' {
+    if (!engineConfig) {
+        return engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli';
+    }
+    const requestedMode = getRequestedAutomationMode(engineConfig);
+    const requestedContinuation = getRequestedAutomationContinuation(engineConfig);
+
+    if (engineConfig.protocol !== 'auto') {
+        const explicitProtocol = (engineConfig.protocol || (engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli')) === 'acp' ? 'acp' : 'cli';
+        validateAutomationPolicyForProtocol(engine, explicitProtocol, engineConfig, requestedMode, requestedContinuation);
+        return explicitProtocol;
+    }
+
+    const preferredProtocol: 'cli' | 'acp' = engineConfig.preferred_protocol === 'cli' ? 'cli' : 'acp';
+    validateAutomationPolicyForProtocol(engine, 'auto', engineConfig, requestedMode, requestedContinuation);
+    const candidates: Array<'cli' | 'acp'> = preferredProtocol === 'acp' ? ['acp', 'cli'] : ['cli', 'acp'];
+
+    for (const protocol of candidates) {
+        if (transportSupportsAutomationPolicy(protocol, getTransportConfig(engineConfig, protocol), requestedMode, requestedContinuation)) {
+            return protocol;
+        }
+    }
+
+    return candidates.find(protocol => !!getTransportConfig(engineConfig, protocol)) || preferredProtocol;
+}
+
+export function loadEngineHeartbeatTimeout(workspacePath: string, engine: string): number | null {
+    try {
+        const engineConfig = getEngineConfig(engine, workspacePath);
+        const protocol = resolveProtocolFromEngineConfig(engine, engineConfig);
+        const heartbeatMs = getTransportConfig(engineConfig, protocol)?.timeout?.heartbeat_ms ?? engineConfig?.timeout?.heartbeat_ms;
+        if (typeof heartbeatMs === 'number') return heartbeatMs;
     } catch (e: any) {
         console.error(`[Config] Warning: failed to read engine timeout for '${engine}': ${e.message}`);
     }
@@ -541,14 +785,11 @@ export function loadEngineHeartbeatTimeout(workspacePath: string, engine: string
 }
 
 export function loadEngineActivityTimeout(workspacePath: string, engine: string): number {
-    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
     try {
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            const engineConfig = config.engines?.[engine];
-            const activityMs = engineConfig?.timeout?.activity_ms;
-            if (typeof activityMs === 'number') return activityMs;
-        }
+        const engineConfig = getEngineConfig(engine, workspacePath);
+        const protocol = resolveProtocolFromEngineConfig(engine, engineConfig);
+        const activityMs = getTransportConfig(engineConfig, protocol)?.timeout?.activity_ms ?? engineConfig?.timeout?.activity_ms;
+        if (typeof activityMs === 'number') return activityMs;
     } catch (e: any) {
         console.error(`[Config] Warning: failed to read engine activity timeout for '${engine}': ${e.message}`);
     }
@@ -967,9 +1208,16 @@ export class ConcurrencyGovernor {
     }
 }
 
-function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?: string } {
+export function parseRoleSpec(roleArg: string, workspacePath?: string): { role: string, engine?: string, model?: string } {
     const segments = path.basename(roleArg).split('_').filter(Boolean);
-    const engineIndex = segments.findIndex(segment => segment === 'claude-code' || segment === 'copilot-cli' || segment === 'github-copilot' || segment === 'acp');
+    const knownEngines = new Set([
+        ...getConfiguredEngineNames(workspacePath),
+        'claude-code',
+        'copilot-cli',
+        'github-copilot',
+        'acp',
+    ]);
+    const engineIndex = segments.findIndex(segment => knownEngines.has(segment));
 
     if (engineIndex === -1) {
         return { role: path.basename(roleArg) };
@@ -981,84 +1229,100 @@ function parseRoleSpec(roleArg: string): { role: string, engine?: string, model?
     return { role, engine, model };
 }
 
-function getEngineProtocol(engine: string, workspacePath?: string): 'cli' | 'acp' {
-    let engineConfig: any = null;
-    if (workspacePath) {
-        try {
-            const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
-            if (fs.existsSync(configPath)) {
-                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                engineConfig = config.engines?.[engine];
-            }
-        } catch {
-            // Fall through to heuristic.
+export function getEngineProtocol(engine: string, workspacePath?: string): 'cli' | 'acp' {
+    return resolveProtocolFromEngineConfig(engine, getEngineConfig(engine, workspacePath));
+}
+
+export function resolveCliAdapterKind(engine: string, workspacePath?: string): 'github-copilot' | 'claude-code' {
+    const engineConfig = getEngineConfig(engine, workspacePath);
+    const protocol = resolveProtocolFromEngineConfig(engine, engineConfig);
+    const transportConfig = getTransportConfig(engineConfig, protocol);
+    const fingerprint = [engine, transportConfig?.path, ...(transportConfig?.args || [])]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .join(' ')
+        .toLowerCase();
+
+    return fingerprint.includes('copilot') ? 'github-copilot' : 'claude-code';
+}
+
+export function getResolvedEngineTransport(engine: string, workspacePath?: string, model?: string): { protocol: 'cli' | 'acp'; executable?: string; args: string[] } {
+    const engineConfig = getEngineConfig(engine, workspacePath);
+    const protocol = resolveProtocolFromEngineConfig(engine, engineConfig);
+    const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;
+
+    if (protocol !== 'acp') {
+        return {
+            protocol,
+            executable: transportConfig?.path,
+            args: Array.isArray(transportConfig?.args) ? [...transportConfig.args] : [],
+        };
+    }
+
+    let executable = transportConfig?.path || 'copilot';
+    let args: string[] = transportConfig?.args ? [...transportConfig.args] : getDocumentedDefaultAcpArgs(engine);
+
+    if (executable === 'auto') {
+        const discovered = discoverAcpCli(engine);
+        if (discovered) {
+            executable = discovered.executable;
+            args = [...discovered.args, ...args];
+        } else {
+            throw new Error(
+                `[Engine] Auto-discovery failed for '${engine}': Could not find CLI in VS Code extensions. ` +
+                `Install the Qwen Code extension in VS Code, or set an explicit 'path' in available-agents.json.`
+            );
+        }
+    } else if (!transportConfig?.args && transportConfig?.path && executable !== 'node') {
+        const parts = transportConfig.path.split(/\s+/);
+        executable = parts[0];
+        const pathArgs = parts.slice(1);
+        if (pathArgs.length > 0) {
+            args = pathArgs;
         }
     }
 
-    return engineConfig?.protocol || (engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli');
+    if (transportConfig?.cli_flags && model) {
+        args.push(transportConfig.cli_flags, model);
+    }
+
+    return { protocol, executable, args };
 }
 
 function getAdapterForEngine(engine: string, sessionId?: string, model?: string, workspacePath?: string): AgentAdapter {
-    // Read engine config to determine protocol
-    let engineConfig: any = null;
-    if (workspacePath) {
-        try {
-            const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
-            if (fs.existsSync(configPath)) {
-                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                engineConfig = config.engines?.[engine];
-            }
-        } catch { /* use heuristic fallback */ }
-    }
-
-    // Determine protocol: explicit field > engine name heuristic > default 'cli'
-    const protocol = getEngineProtocol(engine, workspacePath);
+    const engineConfig = getEngineConfig(engine, workspacePath);
+    const transport = getResolvedEngineTransport(engine, workspacePath, model);
+    const protocol = transport.protocol;
+    const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;
 
     if (protocol === 'acp') {
-        // Resolve executable and args from config
-        let executable = engineConfig?.path || 'copilot';
-        let args: string[] = engineConfig?.args ? [...engineConfig.args] : ['--acp'];
-
-        // Auto-discovery: if path is 'auto', detect CLI from VS Code extensions
-        if (executable === 'auto') {
-            const discovered = discoverAcpCli(engine);
-            if (discovered) {
-                executable = discovered.executable;
-                // Prepend discovered args before config args (e.g., [cli.js] + [--acp])
-                args = [...discovered.args, ...args];
-                console.error(`[Engine] Auto-discovered ${engine} CLI: ${executable} ${discovered.args.join(' ')}`);
-            } else {
-                throw new Error(
-                    `[Engine] Auto-discovery failed for '${engine}': Could not find CLI in VS Code extensions. ` +
-                    `Install the Qwen Code extension in VS Code, or set an explicit 'path' in available-agents.json.`
-                );
-            }
-        } else if (!engineConfig?.args && engineConfig?.path && executable !== 'node') {
-            // Legacy compat: if no 'args' field, split 'path' on whitespace
-            const parts = engineConfig.path.split(/\s+/);
-            executable = parts[0];
-            args = parts.slice(1);
-        }
-
-        if (engineConfig?.cli_flags && model) {
-            args.push(engineConfig.cli_flags, model);
+        if (transportConfig?.path === 'auto' && transport.executable && transport.executable !== 'auto') {
+            const discoveredArgs = transport.args.slice(0, Math.max(transport.args.length - (transportConfig?.args?.length || 0), 0));
+            console.error(`[Engine] Auto-discovered ${engine} CLI: ${transport.executable} ${discoveredArgs.join(' ')}`);
         }
         const activityMs = workspacePath ? loadEngineActivityTimeout(workspacePath, engine) : 0;
-        return new AcpAdapter(`acp-${engine}`, `🚀 ${engine}`, executable, args, activityMs);
+        return new AcpAdapter(`acp-${engine}`, `🚀 ${engine}`, transport.executable || 'copilot', transport.args, activityMs);
     }
 
-    // CLI protocol: route by engine name
-    if (engine === 'copilot-cli' || engine === 'github-copilot') {
-        return new GitHubCopilotAdapter(undefined, '🛸 GitHub Copilot', model || '');
+    const hasAutomationConfig = !!engineConfig?.automation && typeof engineConfig.automation === 'object';
+    const automationPolicy = hasAutomationConfig ? normalizeAutomationPolicy(engineConfig.automation) : null;
+    if (resolveCliAdapterKind(engine, workspacePath) === 'github-copilot') {
+        return new GitHubCopilotAdapter(undefined, '🛸 GitHub Copilot', model || '', undefined, {
+            autoApprove: automationPolicy ? automationPolicy.mode === 'auto-approve' : undefined,
+            autopilot: automationPolicy ? automationPolicy.continuation === 'autopilot' : false,
+            maxAutopilotContinues: automationPolicy?.maxContinues,
+        });
     }
-    return new ClaudeCodeAdapter(undefined, '🦖 Claude Code', model || '');
+
+    return new ClaudeCodeAdapter(undefined, '🦖 Claude Code', model || '', undefined, {
+        permissionMode: automationPolicy ? getClaudePermissionModeForPolicy(automationPolicy) : undefined,
+    });
 }
 
 /**
  * Executes a single task delegation synchronously.
  */
 export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number, agentId?: string): Promise<string> {
-    const parsedRole = parseRoleSpec(roleArg);
+    const parsedRole = parseRoleSpec(roleArg, workspacePath);
     const role = sanitizeRoleName(parsedRole.role);
 
     const currentDepth = parentDepth !== undefined ? parentDepth : parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10);
@@ -1279,15 +1543,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     const adapter = getAdapterForEngine(activeEngine, activeSessionId, activeModel, workspacePath);
 
     // Detect if this engine uses ACP protocol (lean prompt mode)
-    let isAcpEngine = false;
-    try {
-        const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            const engConf = config.engines?.[activeEngine];
-            isAcpEngine = engConf?.protocol === 'acp' || activeEngine === 'acp' || activeEngine.startsWith('acp-');
-        }
-    } catch { /* fallback to false */ }
+    const isAcpEngine = activeProtocol === 'acp';
 
     console.error(`[Orchestrator] Resolving Identity for ${role}...`);
     console.error(`[Orchestrator] Selected Stratum: ${resolvedTier}`);
@@ -1619,14 +1875,19 @@ function classifyComboReadiness(entry: EngineHealthEntry | undefined, now: numbe
  */
 function isStaticallyValid(eng: string, mdl: string, configPath: string): boolean {
     try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const config = readAvailableAgentsConfigFile(configPath);
+        if (!config) return false;
         const engineConfig = config.engines?.[eng];
         if (!engineConfig) return false;
-        // An engine with path '' or missing path is not runnable
-        const p = engineConfig.path;
-        if (p !== undefined && p !== 'auto' && typeof p === 'string' && p.trim() === '') return false;
-        // If the engine declares available_models, each listed model must be a non-empty string
-        if (Array.isArray(engineConfig.available_models) && mdl !== '' && mdl.trim() === '') return false;
+        const protocol = resolveProtocolFromEngineConfig(eng, engineConfig);
+        const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;
+        // An engine with missing/non-string/blank path is not runnable.
+        const enginePath = transportConfig?.path;
+        if (enginePath !== 'auto' && (typeof enginePath !== 'string' || enginePath.trim() === '')) return false;
+        // If the engine declares concrete models, each combo model must be a non-empty string.
+        if (Array.isArray(engineConfig.available_models) && engineConfig.available_models.length > 0) {
+            if (typeof mdl !== 'string' || mdl.trim() === '') return false;
+        }
     } catch {
         // Can't read config — treat as valid (permissive fallback)
     }

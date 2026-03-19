@@ -354,6 +354,8 @@ footer{
 
 <p><strong>ACP 适配器</strong>（<code>src/adapters/AcpAdapter.ts</code>）实现了 Agent Client Protocol &mdash; 一种通用的基于 stdio 的 JSON-RPC 协议，使用 LSP 风格的 <code>Content-Length</code> 帧格式。会话生命周期：<code>initialize</code> &rarr; <code>session/new</code> &rarr; <code>session/prompt</code> &rarr; <code>session/update</code>（流式）&rarr; 响应。完整迁移路线图请参阅 <a href="https://github.com/cloga/optimus-code/issues/319" target="_blank" rel="noopener">Epic #319</a>。</p>
 
+<p>对 GitHub Copilot 而言，不要只根据顶层 <code>copilot --help</code> 摘要来推断完整的 ACP 启动契约。GitHub 的 ACP 公共预览文档还描述了 <code>--stdio</code>、<code>--port</code> 等额外服务模式，即使摘要帮助里只显示 <code>--acp</code>。因此 Optimus 把显式传输配置加上这些已文档化的预览能力视为可信来源；当配置未显式给出 ACP 参数时，默认使用 <code>copilot --acp --stdio</code> 作为无头 Copilot ACP 启动方式。</p>
+
 <!-- Section 3 -->
 <h2 id="self-evolving-agent-lifecycle" data-i18n-html="arch_s3_title">3. 自进化智能体生命周期 (T3→T2→T1)</h2>
 

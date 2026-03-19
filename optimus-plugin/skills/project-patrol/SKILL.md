@@ -299,6 +299,25 @@ Post a one-line health summary as a comment on the Health Log Issue:
    - `🔴 [critical findings]` — High severity findings
 4. Post via `vcs_add_comment` with `item_type: "workitem"`, `item_id: <health_log_issue>`
 
+## Phase 6.5: Agent Hygiene (GC)
+
+After completing the patrol report, perform workspace cleanup:
+
+### Step 1: T1 Agent Snapshots
+List `.optimus/agents/*.md` files. For each, check if the filename hash matches a task in `task-manifest.json` with terminal status (`verified`, `failed`, `timeout`, `completed`) AND `startTime` older than 7 days. If so, delete the file.
+
+### Step 2: Lock Files
+Delete all `.optimus/agents/*.lock` files where the associated task is not `running`.
+
+### Step 3: T2 Role Archival
+List `.optimus/roles/*.md` files. Exclude pre-installed roles (pm, dev, architect, qa-engineer, security, code-architect, code-reviewer, code-explorer, product-manager, system-steward, competitive-intel-analyst, patrol-manager, release-engineer). For remaining roles, check if any task in the manifest used this role in the last 30 days. If not, move to `.optimus/roles/_archive/`.
+
+### Step 4: Task Manifest Trim
+Run shell command to invoke trimManifest: check if task-manifest.json has entries older than 30 days in terminal status. If so, archive them to `task-manifest-archive.json`.
+
+### Step 5: Report GC Stats
+Append to patrol report: `## Agent Hygiene: deleted N T1 agents, M locks, archived K roles, trimmed J manifest entries`.
+
 ## Budget Enforcement
 Count each discrete action (delete branch, close Issue, merge PR, mark task failed). Stop when the `max_actions` budget is reached. Always reserve 1 action slot for writing the report.
 

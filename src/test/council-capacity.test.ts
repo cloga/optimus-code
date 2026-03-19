@@ -6,27 +6,20 @@
  *    configured vs runnable vs assigned pool logging
  *  - dispatchCouncilConcurrent: DISPATCH_MANIFEST.md pre-spawn, per-role placeholder
  *    files, failure artifact overwrite, FAILURES.md partial failure report
- *  - dispatch_council_async path: STATUS.md queued artifact created immediately
+ *  - async council queue helper used by dispatch_council_async: STATUS.md + manifest
+ *    entry created immediately
  *
- * Run: npx tsx src/test/council-capacity.test.ts
+ * Run: vitest src/test/council-capacity.test.ts
  */
+import { describe, expect, it } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
 // ─── Test Harness ───
 
-let passed = 0;
-let failed = 0;
-
 function assert(label: string, condition: boolean, detail?: string): void {
-    if (condition) {
-        console.log(`  ✅ PASS: ${label}`);
-        passed++;
-    } else {
-        console.log(`  ❌ FAIL: ${label}${detail ? ` — ${detail}` : ''}`);
-        failed++;
-    }
+    expect(condition, detail ? `${label} — ${detail}` : label).toBe(true);
 }
 
 function createTempWorkspace(): string {
@@ -65,11 +58,12 @@ import {
     loadValidEnginesAndModels,
     dispatchCouncilConcurrent,
 } from '../mcp/worker-spawner';
+import { prepareAsyncCouncilDispatch } from '../mcp/async-council-dispatch';
+import { TaskManifestManager } from '../managers/TaskManifestManager';
 
 // ─── Test Cases ───
 
 async function test_configured_vs_runnable_pool_logging(): Promise<void> {
-    console.log('\nTest 1: Configured vs. runnable pool — healthy + unverified combos');
     const ws = createTempWorkspace();
     try {
         writeAgentsConfig(ws, {
@@ -109,7 +103,6 @@ async function test_configured_vs_runnable_pool_logging(): Promise<void> {
 }
 
 async function test_unhealthy_combo_excluded_from_assignments(): Promise<void> {
-    console.log('\nTest 2: Unhealthy combo excluded from diversity assignments');
     const ws = createTempWorkspace();
     const spawnLog: Array<{ engine?: string; model?: string }> = [];
     try {
@@ -181,8 +174,69 @@ async function test_unhealthy_combo_excluded_from_assignments(): Promise<void> {
     }
 }
 
+async function test_static_validation_rejects_malformed_config_entries(): Promise<void> {
+    const ws = createTempWorkspace();
+    const spawnLog: Array<{ engine?: string; model?: string }> = [];
+    try {
+        writeAgentsConfig(ws, {
+            engines: {
+                'bad-path': {
+                    protocol: 'acp',
+                    path: '   ',
+                    available_models: ['ghost-model'],
+                    cli_flags: '--model'
+                },
+                'bad-models': {
+                    protocol: 'cli',
+                    path: 'copilot',
+                    available_models: ['', null, '   '],
+                    cli_flags: '-m'
+                },
+                'good-engine': {
+                    protocol: 'cli',
+                    path: 'copilot',
+                    available_models: ['gpt-x'],
+                    cli_flags: '-m'
+                }
+            }
+        });
+
+        const reviewsPath = path.join(ws, '.optimus', 'reviews', 'test_council_static_validation');
+        fs.mkdirSync(reviewsPath, { recursive: true });
+        const proposalPath = path.join(ws, 'proposal.md');
+        fs.writeFileSync(proposalPath, '# Test Proposal\nContent.', 'utf8');
+
+        const spawnOverride = async (
+            role: string, _proposalPath: string, outputPath: string,
+            _sessionId: string, _workspacePath: string,
+            _parentDepth?: number, _parentIssueNumber?: number,
+            _roleDescription?: string, engine?: string, model?: string
+        ): Promise<string> => {
+            spawnLog.push({ engine, model });
+            fs.writeFileSync(outputPath, `# Review: ${role}\n\nLooks good.`, 'utf8');
+            return `ok:${role}`;
+        };
+
+        await dispatchCouncilConcurrent(
+            ['reviewer-a', 'reviewer-b'],
+            proposalPath,
+            reviewsPath,
+            'ts_test3',
+            ws,
+            undefined, undefined, undefined,
+            spawnOverride
+        );
+
+        assert('Malformed configs do not crash dispatch', spawnLog.length === 2, `got ${spawnLog.length} assignments`);
+        assert('reviewer-a assigned to the only statically valid engine', spawnLog[0]?.engine === 'good-engine', `got ${spawnLog[0]?.engine}`);
+        assert('reviewer-a assigned to the only statically valid model', spawnLog[0]?.model === 'gpt-x', `got ${spawnLog[0]?.model}`);
+        assert('reviewer-b also assigned to the only statically valid model', spawnLog[1]?.model === 'gpt-x', `got ${spawnLog[1]?.model}`);
+    } finally {
+        cleanup(ws);
+    }
+}
+
 async function test_degraded_fallback_all_unhealthy(): Promise<void> {
-    console.log('\nTest 3: Degraded fallback — all combos unhealthy, assignments fall back to default {}');
     const ws = createTempWorkspace();
     const spawnLog: Array<{ engine?: string; model?: string }> = [];
     try {
@@ -244,7 +298,6 @@ async function test_degraded_fallback_all_unhealthy(): Promise<void> {
 }
 
 async function test_reviews_dir_created_immediately(): Promise<void> {
-    console.log('\nTest 4: Reviews directory created before workers start');
     const ws = createTempWorkspace();
     try {
         writeAgentsConfig(ws, {
@@ -288,7 +341,6 @@ async function test_reviews_dir_created_immediately(): Promise<void> {
 }
 
 async function test_placeholder_files_exist_before_spawn(): Promise<void> {
-    console.log('\nTest 5: Per-role placeholder files exist before workers start');
     const ws = createTempWorkspace();
     try {
         writeAgentsConfig(ws, {
@@ -339,7 +391,6 @@ async function test_placeholder_files_exist_before_spawn(): Promise<void> {
 }
 
 async function test_failure_artifact_overwrite(): Promise<void> {
-    console.log('\nTest 6: On spawn failure, placeholder is overwritten with status:failed artifact');
     const ws = createTempWorkspace();
     try {
         writeAgentsConfig(ws, {
@@ -386,60 +437,65 @@ async function test_failure_artifact_overwrite(): Promise<void> {
 }
 
 async function test_status_md_created_for_async_dispatch(): Promise<void> {
-    console.log('\nTest 7: STATUS.md with queued phase created immediately in reviews directory');
     const ws = createTempWorkspace();
     try {
-        // Simulate what dispatch_council_async MCP handler does
-        const taskId = `council_test_${Date.now()}`;
-        const reviewsPath = path.join(ws, '.optimus', 'reviews', taskId);
-
-        // This is the code path from the MCP handler
-        fs.mkdirSync(reviewsPath, { recursive: true });
         const roles = ['reviewer-1', 'reviewer-2'];
         const proposalPath = 'specs/test.md';
-        const statusQueued = [
-            `# Council Status`,
-            ``,
-            `**council_id:** ${taskId}`,
-            `**phase:** queued`,
-            `**roles:** ${roles.join(', ')}`,
-            `**proposal:** ${proposalPath}`,
-            `**queued_at:** ${new Date().toISOString()}`,
-            ``,
-            `_Background worker has been spawned and will update this file when execution starts._`,
-        ].join('\n') + '\n';
-        fs.writeFileSync(path.join(reviewsPath, 'STATUS.md'), statusQueued, 'utf8');
+        const taskId = `council_test_${Date.now()}`;
+        const { reviewsPath, statusPath } = prepareAsyncCouncilDispatch({
+            workspacePath: ws,
+            proposalPath,
+            roles,
+            taskId,
+            delegationDepth: 2,
+        });
 
         assert('Reviews directory exists after dispatch_council_async', fs.existsSync(reviewsPath));
-        assert('STATUS.md exists immediately after dispatch', fs.existsSync(path.join(reviewsPath, 'STATUS.md')));
+        assert('STATUS.md exists immediately after dispatch', fs.existsSync(statusPath));
 
-        const content = fs.readFileSync(path.join(reviewsPath, 'STATUS.md'), 'utf8');
+        const content = fs.readFileSync(statusPath, 'utf8');
         assert('STATUS.md contains phase:queued', content.includes('phase:** queued'));
         assert('STATUS.md contains council_id', content.includes(taskId));
         assert('STATUS.md not empty', content.trim().length > 0);
+
+        const manifest = TaskManifestManager.loadManifest(ws);
+        assert('Task manifest contains queued council task', manifest[taskId]?.type === 'dispatch_council');
+        assert('Task manifest records reviews path', manifest[taskId]?.output_path === reviewsPath, `got ${manifest[taskId]?.output_path}`);
     } finally {
         cleanup(ws);
     }
 }
 
-// ─── Run All Tests ───
+describe('Council capacity accounting and async observability', () => {
+    it('keeps configured engines/models visible to validation', async () => {
+        await test_configured_vs_runnable_pool_logging();
+    });
 
-async function main(): Promise<void> {
-    console.log('=== Council Capacity Accounting + Async Observability Tests ===\n');
+    it('excludes unhealthy combos from diversity assignments', async () => {
+        await test_unhealthy_combo_excluded_from_assignments();
+    });
 
-    await test_configured_vs_runnable_pool_logging();
-    await test_unhealthy_combo_excluded_from_assignments();
-    await test_degraded_fallback_all_unhealthy();
-    await test_reviews_dir_created_immediately();
-    await test_placeholder_files_exist_before_spawn();
-    await test_failure_artifact_overwrite();
-    await test_status_md_created_for_async_dispatch();
+    it('rejects malformed config entries before assignment', async () => {
+        await test_static_validation_rejects_malformed_config_entries();
+    });
 
-    console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
-    process.exit(failed > 0 ? 1 : 0);
-}
+    it('falls back to defaults when every combo is unhealthy', async () => {
+        await test_degraded_fallback_all_unhealthy();
+    });
 
-main().catch(err => {
-    console.error('Unexpected error:', err);
-    process.exit(1);
+    it('creates the reviews directory before workers start', async () => {
+        await test_reviews_dir_created_immediately();
+    });
+
+    it('creates placeholder review files before workers start', async () => {
+        await test_placeholder_files_exist_before_spawn();
+    });
+
+    it('overwrites placeholders with failure artifacts when a worker fails', async () => {
+        await test_failure_artifact_overwrite();
+    });
+
+    it('creates queued async dispatch artifacts immediately', async () => {
+        await test_status_md_created_for_async_dispatch();
+    });
 });

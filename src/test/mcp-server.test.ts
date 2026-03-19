@@ -1,13 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('mcp-server bundle', () => {
   it('loads without ERR_REQUIRE_ESM or module errors', () => {
-    const bundlePath = path.resolve(__dirname, '../../optimus-plugin/dist/mcp-server.js');
+    const bundlePath = path.resolve(process.cwd(), 'optimus-plugin/dist/mcp-server.js');
     const escapedPath = bundlePath.replace(/\\/g, '\\\\');
     const result = spawnSync('node', ['-e', `require('${escapedPath}')`], {
       timeout: 3000,

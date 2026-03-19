@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.7.0] - 2026-03-19
+
+### Features
+- **Copilot ACP transport is now first-class in engine config** — GitHub Copilot can be declared with `protocol: "auto"` and `preferred_protocol: "acp"`, with headless ACP launches defaulting to `copilot --acp --stdio` when ACP args are not explicitly provided.
+- **Automation policy is now normalized across engines** — `automation.mode` and `automation.continuation` are treated as separate, explicit policy axes. Copilot CLI autopilot and ACP transport selection now resolve from the same config surface and are exposed consistently in the MCP entrypoints.
+- **Async council dispatch gets immediate queued artifacts** — `dispatch_council_async` now creates `STATUS.md` and the task-manifest entry before background execution starts, improving observability for queued reviews.
+
+### Fixes
+- **Fail-fast automation/transport validation** — Invalid combinations such as Copilot ACP + `continuation: "autopilot"` or Claude + unsupported autopilot continuation are now rejected during engine resolution instead of failing later at runtime.
+- **ACP session compatibility retries** — `AcpAdapter` now retries `session/prompt` and `session/load` with compatibility fallbacks when ACP servers reject one parameter shape, and falls back to a fresh session when persisted session resume is not accepted.
+- **ADO links now resolve to browser URLs** — ADO work item creation/comment APIs now return stable web URLs, including GUID-backed project resolution and correct work item comment anchors.
+- **Meta-cron and council capacity hardening** — stale lock files are detected and cleaned more safely, malformed engine config entries are excluded earlier, and council async queue setup is covered by dedicated Vitest tests.
+
+### Compatibility
+- **Low-risk for default users; review custom engine configs** — Legacy vendor-specific automation aliases are still parsed, but new configs should use normalized values such as `auto-approve`, `deny-unapproved`, `single`, and `autopilot`.
+- **Copilot autopilot remains CLI-only** — ACP and autopilot are orthogonal concepts, but Copilot autopilot continuation is still only supported on the CLI transport. `protocol: "acp"` plus `continuation: "autopilot"` is intentionally rejected.
+
 ## [2.6.2] - 2026-03-16
 
 ### Fixes

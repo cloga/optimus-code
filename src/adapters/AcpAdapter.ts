@@ -61,6 +61,11 @@ export class AcpAdapter implements AgentAdapter {
         this.activityTimeoutMs = activityTimeoutMs;
     }
 
+    private isInvalidParamsError(err: unknown): boolean {
+        const message = err instanceof Error ? err.message : String(err);
+        return message.includes('ACP error -32602') || /invalid params/i.test(message);
+    }
+
     // ─── Low-level transport ───
 
     private sendMessage(msg: JsonRpcMessage): void {
@@ -219,6 +224,35 @@ export class AcpAdapter implements AgentAdapter {
         this.spawnProcess(extraEnv);
 
         try {
+            const createSession = async (): Promise<string> => {
+                const mcpServers = this.loadMcpServers();
+                const newResult = await this.sendRequest('session/new', {
+                    cwd: process.cwd(),
+                    mcpServers
+                });
+                const freshSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
+                debugLog('[AcpAdapter]', `New session created: ${freshSessionId}`);
+                return freshSessionId;
+            };
+
+            const sendPromptWithCompatibility = async (currentSessionId: string): Promise<any> => {
+                try {
+                    return await this.sendRequest('session/prompt', {
+                        sessionId: currentSessionId,
+                        text: prompt
+                    });
+                } catch (err) {
+                    if (!this.isInvalidParamsError(err)) {
+                        throw err;
+                    }
+                    debugLog('[AcpAdapter]', `session/prompt rejected text params; retrying content-array params for session ${currentSessionId}`);
+                    return await this.sendRequest('session/prompt', {
+                        sessionId: currentSessionId,
+                        prompt: [{ type: 'text', text: prompt }]
+                    });
+                }
+            };
+
             // Step 2: Initialize handshake (protocolVersion is a number per Qwen's ACP impl)
             const initResult = await this.sendRequest('initialize', {
                 protocolVersion: 1,
@@ -230,17 +264,19 @@ export class AcpAdapter implements AgentAdapter {
             // Step 3: Create or resume session
             let currentSessionId: string;
             if (sessionId) {
-                const loadResult = await this.sendRequest('session/load', { sessionId });
-                currentSessionId = loadResult?.sessionId || sessionId;
-                debugLog('[AcpAdapter]', `Session loaded: ${currentSessionId}`);
+                try {
+                    const loadResult = await this.sendRequest('session/load', { sessionId });
+                    currentSessionId = loadResult?.sessionId || sessionId;
+                    debugLog('[AcpAdapter]', `Session loaded: ${currentSessionId}`);
+                } catch (err) {
+                    if (!this.isInvalidParamsError(err)) {
+                        throw err;
+                    }
+                    debugLog('[AcpAdapter]', `session/load rejected persisted session ${sessionId}; falling back to a fresh ACP session`);
+                    currentSessionId = await createSession();
+                }
             } else {
-                const mcpServers = this.loadMcpServers();
-                const newResult = await this.sendRequest('session/new', {
-                    cwd: process.cwd(),
-                    mcpServers
-                });
-                currentSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
-                debugLog('[AcpAdapter]', `New session created: ${currentSessionId}`);
+                currentSessionId = await createSession();
             }
             this.lastSessionId = currentSessionId;
 
@@ -294,10 +330,18 @@ export class AcpAdapter implements AgentAdapter {
                     }
                 }, checkInterval);
             }
-            const promptResult = await this.sendRequest('session/prompt', {
-                sessionId: currentSessionId,
-                prompt: [{ type: 'text', text: prompt }]
-            });
+            let promptResult: any;
+            try {
+                promptResult = await sendPromptWithCompatibility(currentSessionId);
+            } catch (err) {
+                if (!sessionId || !this.isInvalidParamsError(err)) {
+                    throw err;
+                }
+                debugLog('[AcpAdapter]', `Persisted session ${currentSessionId} rejected prompt params; creating a fresh session and retrying once`);
+                currentSessionId = await createSession();
+                this.lastSessionId = currentSessionId;
+                promptResult = await sendPromptWithCompatibility(currentSessionId);
+            }
             this.stopActivityTimer();
 
             // Combine streaming chunks into full output

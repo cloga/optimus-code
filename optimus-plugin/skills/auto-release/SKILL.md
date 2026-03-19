@@ -1,7 +1,6 @@
 ---
 name: auto-release
 description: 'Autonomous release gate: runs on a schedule, inspects commits since the last tag, determines whether to release, and executes the release pipeline via the release-process skill.'
-version: 1.0.0
 ---
 
 # Auto-Release Skill

@@ -18,6 +18,7 @@ import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker, spawnAsyncWorker } from "./council-runner";
+import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
 import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
@@ -791,30 +792,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentAsync2) ? undefined : rawParentAsync2);
 
-    const taskId = `council_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
-    const reviewsPath = path.join(workspace_path, ".optimus", "reviews", taskId);
-
-    // Create reviews directory + STATUS.md immediately — before background spawn.
-    // This gives users early visibility: the directory will not be empty while waiting.
-    fs.mkdirSync(reviewsPath, { recursive: true });
-    const statusQueued = [
-        `# Council Status`,
-        ``,
-        `**council_id:** ${taskId}`,
-        `**phase:** queued`,
-        `**roles:** ${roles.join(', ')}`,
-        `**proposal:** ${proposal_path}`,
-        `**queued_at:** ${new Date().toISOString()}`,
-        ``,
-        `_Background worker has been spawned and will update this file when execution starts._`,
-    ].join('\n') + '\n';
-    fs.writeFileSync(path.join(reviewsPath, 'STATUS.md'), statusQueued, 'utf8');
-
-    TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "dispatch_council", roles, proposal_path, output_path: reviewsPath, workspacePath: workspace_path,
-        delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
-        parent_issue_number: parentIssueNumber,
-        role_descriptions: role_descriptions
+    const { taskId, reviewsPath } = prepareAsyncCouncilDispatch({
+      workspacePath: workspace_path,
+      proposalPath: proposal_path,
+      roles,
+      parentIssueNumber,
+      roleDescriptions: role_descriptions,
+      delegationDepth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
     });
 
     // Best-effort: auto-create GitHub Issue for traceability

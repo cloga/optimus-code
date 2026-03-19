@@ -1,14 +1,28 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
+import { getCopilotCliAutomationArgs } from '../utils/automationPolicy';
 import * as fs from 'fs';
 import * as path from 'path';
 // Copilot CLI uses ● (U+25CF filled circle) and tree-drawing chars for tool trace lines
 // Also handle ⏺ (U+23FA) and • (U+2022) for robustness
 const COPILOT_PROCESS_LINE_RE = /^[●⏺•└│├▶→↳✓✗]/;
 
+type GitHubCopilotAdapterOptions = {
+    autoApprove?: boolean;
+    autopilot?: boolean;
+    maxAutopilotContinues?: number;
+};
+
 export class GitHubCopilotAdapter extends PersistentAgentAdapter {
-    constructor(id: string = 'github-copilot', name: string = '🛸 GitHub Copilot', modelFlag: string = '', modes?: AgentMode[]) {
+    private readonly autoApproveEnabled: boolean;
+    private readonly autopilotEnabled: boolean;
+    private readonly maxAutopilotContinues?: number;
+
+    constructor(id: string = 'github-copilot', name: string = '🛸 GitHub Copilot', modelFlag: string = '', modes?: AgentMode[], options?: GitHubCopilotAdapterOptions) {
         super(id, name, modelFlag, '?>', modes);
+        this.autoApproveEnabled = options?.autoApprove !== false;
+        this.autopilotEnabled = options?.autopilot === true;
+        this.maxAutopilotContinues = options?.maxAutopilotContinues;
     }
 
     protected shouldUsePersistentSession(mode: AgentMode): boolean {
@@ -67,8 +81,11 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
         if (mode === 'plan') {
             // -p flag already prevents file modifications; no extra flags needed
         } else if (mode === 'agent') {
-            args.push('--allow-all');
-            args.push('--no-ask-user');
+            args.push(...getCopilotCliAutomationArgs('agent', {
+                mode: this.autoApproveEnabled ? 'auto-approve' : 'interactive',
+                continuation: this.autopilotEnabled ? 'autopilot' : 'single',
+                max_continues: this.maxAutopilotContinues,
+            }));
         }
 
         return { cmd: 'copilot', args };

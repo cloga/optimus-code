@@ -1,7 +1,6 @@
 ---
 name: release-process
 description: 'Generic, config-driven release process for any project type. Covers version bumping, changelog, build, documentation, tagging, and publishing with auto-detection for npm, Python, and Rust projects.'
-version: 2.0.0
 ---
 
 # Release Process Skill

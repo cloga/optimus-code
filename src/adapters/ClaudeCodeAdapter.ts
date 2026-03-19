@@ -1,11 +1,19 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
+import { ClaudePermissionMode, getClaudeCliAutomationArgs } from '../utils/automationPolicy';
 // Claude CLI process line prefixes: spinning indicator (⏺), bullets (•), tree chars (└│├)
 const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 
+type ClaudeCodeAdapterOptions = {
+    permissionMode?: ClaudePermissionMode;
+};
+
 export class ClaudeCodeAdapter extends PersistentAgentAdapter {
-    constructor(id: string = 'claude-code', name: string = '🦖 Claude Code', modelFlag: string = '', modes?: AgentMode[]) {
+    private readonly agentPermissionMode?: ClaudePermissionMode;
+
+    constructor(id: string = 'claude-code', name: string = '🦖 Claude Code', modelFlag: string = '', modes?: AgentMode[], options?: ClaudeCodeAdapterOptions) {
         super(id, name, modelFlag, '>', modes);
+        this.agentPermissionMode = options?.permissionMode;
     }
 
     protected shouldUsePersistentSession(mode: AgentMode): boolean {
@@ -91,9 +99,11 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
         }
 
         if (mode === 'plan') {
-            args.push('--permission-mode', 'plan');
+            args.push(...getClaudeCliAutomationArgs('plan'));
         } else if (mode === 'agent') {
-            args.push('--dangerously-skip-permissions');
+            args.push(...getClaudeCliAutomationArgs('agent', {
+                mode: this.agentPermissionMode || 'auto-approve'
+            }));
         }
 
         return { cmd: 'claude', args };

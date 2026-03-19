@@ -354,6 +354,8 @@ footer{
 
 <p>The <strong>ACP adapter</strong> (<code>src/adapters/AcpAdapter.ts</code>) implements the Agent Client Protocol &mdash; a universal JSON-RPC protocol over stdio using LSP-style <code>Content-Length</code> framing. Session lifecycle: <code>initialize</code> &rarr; <code>session/new</code> &rarr; <code>session/prompt</code> &rarr; <code>session/update</code> (streaming) &rarr; response. See <a href="https://github.com/cloga/optimus-code/issues/319" target="_blank" rel="noopener">Epic #319</a> for the full migration roadmap.</p>
 
+<p>For GitHub Copilot specifically, do not infer the complete ACP launch contract from the top-level <code>copilot --help</code> summary alone. GitHub&rsquo;s ACP public-preview docs describe additional server modes such as <code>--stdio</code> and <code>--port</code> even when the summary help only surfaces <code>--acp</code>. Optimus therefore treats explicit transport config plus those documented preview capabilities as the source of truth, and defaults headless Copilot ACP launches to <code>copilot --acp --stdio</code> when no explicit ACP args are configured.</p>
+
 <!-- Section 3 -->
 <h2 id="self-evolving-agent-lifecycle" data-i18n-html="arch_s3_title">3. Self-Evolving Agent Lifecycle (T3&rarr;T2&rarr;T1)</h2>
 

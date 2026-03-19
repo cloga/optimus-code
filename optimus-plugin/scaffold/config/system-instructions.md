@@ -269,6 +269,9 @@ Before creating a new role, the Master Agent MUST verify:
 Skills are domain-specific instruction manuals stored at `.optimus/skills/<name>/SKILL.md`.
 They teach agents **how to use specific MCP tools or follow specific workflows**.
 
+### Skill File Source of Truth
+When modifying any skill file, ALWAYS edit `optimus-plugin/skills/<name>/SKILL.md` first (the published source of truth), then sync to `.optimus/skills/<name>/SKILL.md`. Never edit only the `.optimus/skills/` copy — it's gitignored and will be overwritten on next upgrade.
+
 ### Skill Pre-Flight
 If `required_skills` is specified in `delegate_task`, the system verifies all skills exist before execution.
 Missing skills cause rejection with an actionable error — Master must create them first.

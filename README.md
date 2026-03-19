@@ -281,17 +281,29 @@ Engines are defined in `.optimus/config/available-agents.json`. The `protocol` f
 {
   "engines": {
     "claude-code": {
-      "protocol": "cli",
-      "path": "npx @anthropic-ai/claude-code",
+      "protocol": "auto",
+      "preferred_protocol": "acp",
       "available_models": ["claude-opus-4.6-1m"],
       "cli_flags": "--model",
-      "timeout": { "heartbeat_ms": 600000 }
+      "automation": { "mode": "auto-approve" },
+      "timeout": { "heartbeat_ms": 600000, "activity_ms": 1200000 },
+      "acp": {
+        "path": "claude-agent-acp",
+        "cli_flags": "--model",
+        "capabilities": { "automation_modes": ["auto-approve"] }
+      },
+      "cli": {
+        "path": "claude",
+        "cli_flags": "--model",
+        "capabilities": { "automation_modes": ["interactive", "plan", "accept-edits", "deny-unapproved", "auto-approve"] }
+      }
     },
     "github-copilot": {
       "protocol": "cli",
       "path": "copilot",
       "available_models": ["gemini-3-pro-preview", "gpt-5.4"],
       "cli_flags": "-m",
+      "automation": { "mode": "auto-approve", "continuation": "autopilot", "max_continues": 8 },
       "timeout": { "heartbeat_ms": 600000 }
     },
     "qwen-code": {
@@ -308,7 +320,40 @@ Engines are defined in `.optimus/config/available-agents.json`. The `protocol` f
 
 - **`cli`** (default) — Text-based structured output via CLI (Claude Code, GitHub Copilot)
 - **`acp`** — JSON-RPC 2.0 over NDJSON stdio (Qwen Code, and any future ACP-compliant agent)
+- **`auto`** — Choose ACP or CLI at runtime based on the declared automation intent and transport capabilities
 - **`timeout.heartbeat_ms`** — Engine-level heartbeat timeout (default: 10 min). Tasks with no heartbeat update beyond this threshold are marked failed. Can be overridden per-task via `heartbeat_timeout_ms` on `delegate_task_async`.
+
+### ACP vs Autopilot
+
+Do not conflate **ACP** with **autopilot**:
+
+- **ACP** is a transport protocol. In Optimus config it belongs to `protocol`, `preferred_protocol`, and transport blocks such as `acp.path`.
+- **`autopilot`** is a Copilot continuation policy. In Optimus config it belongs to `automation.continuation`, not `protocol`.
+- `auto-approve` controls approval behavior. `autopilot` controls whether Copilot keeps spending additional turns to continue the task.
+
+For GitHub Copilot specifically, the official docs separate these concerns too:
+
+- **Copilot CLI via ACP** is documented as a **public preview** server mode started with `copilot --acp`.
+- **Copilot autopilot** is documented as a CLI execution mode that keeps iterating until completion, typically combined with `--allow-all` and optionally `--max-autopilot-continues`.
+
+One practical nuance: the top-level `copilot --help` output may only show `--acp`, while the official ACP reference documents additional ACP server options such as `--stdio` and `--port`. Treat the GitHub ACP reference as the source of truth for Copilot ACP transport details rather than inferring capability limits from the summary help text alone.
+
+### Automation Policy
+
+`automation.mode` is an intent enum. Do not write raw vendor strings like `dontAsk`, `bypassPermissions`, or `autopilot` into new configs.
+
+- **`interactive`** — Use the vendor default approval flow
+- **`plan`** — Read-only planning mode
+- **`accept-edits`** — Auto-approve edits while keeping command side effects guarded where supported
+- **`deny-unapproved`** — Never ask interactively; reject tools unless pre-approved
+- **`auto-approve`** — Run autonomously by auto-approving or bypassing permission prompts where supported
+
+`automation.continuation` is separate from approval policy:
+
+- **`single`** — Execute one agent run without automatic continuation
+- **`autopilot`** — Enable Copilot CLI autopilot continuation when supported
+
+Legacy aliases such as `dontAsk`, `bypassPermissions`, and `autopilot` are still parsed for backward compatibility, but new configs should use the normalized enum values above.
 
 To add a new ACP vendor, just add an entry with `"protocol": "acp"` — zero code changes required.
 

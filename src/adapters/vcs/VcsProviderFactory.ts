@@ -15,6 +15,7 @@ export interface VcsConfig {
         auth?: string;
         organization: string;
         project: string;
+        web_base_url?: string;
         defaults?: {
             work_item_type?: string;
             area_path?: string;
@@ -74,13 +75,13 @@ export class VcsProviderFactory {
 
         if (providerType === 'github') {
             const { owner, repo } = this.getGitHubInfo(config, resolvedWorkspacePath);
-            const { GitHubProvider } = await import('./GitHubProvider');
+            const { GitHubProvider } = await import('./GitHubProvider.js');
             provider = new GitHubProvider(owner, repo);
         } else if (providerType === 'azure-devops') {
-            const { organization, project } = this.getAdoInfo(config, resolvedWorkspacePath);
-            const { AdoProvider } = await import('./AdoProvider');
+            const { organization, project, webBaseUrl } = this.getAdoInfo(config, resolvedWorkspacePath);
+            const { AdoProvider } = await import('./AdoProvider.js');
             const adoDefaults = config.ado?.defaults;
-            provider = new AdoProvider(organization, project, adoDefaults);
+            provider = new AdoProvider(organization, project, adoDefaults, webBaseUrl);
         } else {
             throw new Error(`Unsupported or undetectable VCS provider: ${providerType}`);
         }
@@ -181,12 +182,13 @@ export class VcsProviderFactory {
         }
     }
 
-    private static getAdoInfo(config: VcsConfig, workspacePath: string): { organization: string; project: string } {
+    private static getAdoInfo(config: VcsConfig, workspacePath: string): { organization: string; project: string; webBaseUrl: string } {
         // Use explicit config if available
         if (config.ado?.organization && config.ado?.project) {
             return {
                 organization: config.ado.organization,
-                project: config.ado.project
+                project: config.ado.project,
+                webBaseUrl: config.ado.web_base_url || `https://${config.ado.organization}.visualstudio.com`
             };
         }
 
@@ -204,7 +206,8 @@ export class VcsProviderFactory {
             if (match) {
                 return {
                     organization: match[1],
-                    project: match[2]
+                    project: decodeURIComponent(match[2]),
+                    webBaseUrl: `https://dev.azure.com/${match[1]}`
                 };
             }
 
@@ -212,7 +215,8 @@ export class VcsProviderFactory {
             if (match) {
                 return {
                     organization: match[1],
-                    project: match[2]
+                    project: decodeURIComponent(match[2]),
+                    webBaseUrl: `https://${match[1]}.visualstudio.com`
                 };
             }
 
