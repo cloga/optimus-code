@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.9.0] - 2026-03-19
+
+### Features
+- **Azure DevOps `updateWorkItem` is now implemented** — The unified VCS layer can now update ADO work items through JSON Patch, including title, description, state, assignee, and priority changes.
+- **`vcs_update_work_item` now exposes richer ADO fields** — MCP callers can pass `description`, `assigned_to`, and `priority`, while provider-specific workflow states are forwarded correctly for Azure DevOps.
+
+### Fixes
+- **GitHub update validation is stricter and clearer** — GitHub work-item updates now reject unsupported state values and unsupported field-only payloads with actionable errors instead of failing ambiguously.
+- **Label-only GitHub updates no longer require a redundant issue patch** — The provider now refetches issue data when only labels change, preserving the unified update flow without unnecessary PATCH requests.
+
+### Compatibility
+- **Backward compatible for existing GitHub workflows** — GitHub retains its existing `open`/`closed` state model and label handling.
+- **Recommended for mixed GitHub + ADO environments** — Teams using Azure DevOps now get parity for unified work-item updates without changing MCP tool names.
+
 ## [2.8.0] - 2026-03-19
 
 ### Features

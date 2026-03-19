@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment, WorkItemUpdate } from './IVcsProvider';
 
 /**
  * Parse GitHub API error responses with special handling for SAML/SSO 403s.
@@ -362,32 +362,46 @@ export class GitHubProvider implements IVcsProvider {
 
     async updateWorkItem(
         itemId: string | number,
-        updates: { state?: 'open' | 'closed'; title?: string; labels_add?: string[]; labels_remove?: string[] }
+        updates: WorkItemUpdate
     ): Promise<WorkItemResult> {
         const token = this.getToken();
         if (!token) throw new Error('GitHub token not found in environment variables');
 
         const id = typeof itemId === 'string' ? parseInt(itemId) : itemId;
         const payload: any = {};
-        if (updates.state) payload.state = updates.state;
+        if (updates.state) {
+            if (updates.state !== 'open' && updates.state !== 'closed') {
+                throw new Error(`GitHub work items only support state 'open' or 'closed'; received '${updates.state}'.`);
+            }
+            payload.state = updates.state;
+        }
         if (updates.title) payload.title = updates.title;
 
-        const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}`, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Optimus-Agent'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            throw new Error(parseGitHubError(response.status, await response.text()));
+        const hasGitHubFieldUpdate = Object.keys(payload).length > 0;
+        const hasLabelUpdate = !!((updates.labels_add && updates.labels_add.length > 0) || (updates.labels_remove && updates.labels_remove.length > 0));
+        if (!hasGitHubFieldUpdate && !hasLabelUpdate) {
+            throw new Error('GitHub updateWorkItem supports title, state, labels_add, and labels_remove only.');
         }
 
-        const data = await response.json() as any;
+        let data: any;
+        if (hasGitHubFieldUpdate) {
+            const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Optimus-Agent'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(parseGitHubError(response.status, await response.text()));
+            }
+
+            data = await response.json() as any;
+        }
 
         // Handle label additions
         if (updates.labels_add && updates.labels_add.length > 0) {
@@ -408,6 +422,22 @@ export class GitHubProvider implements IVcsProvider {
                     });
                 } catch { /* best-effort */ }
             }
+        }
+
+        if (!data) {
+            const response = await fetch(`https://api.github.com/repos/${this.owner}/${this.repo}/issues/${id}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Optimus-Agent'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(parseGitHubError(response.status, await response.text()));
+            }
+
+            data = await response.json() as any;
         }
 
         return {

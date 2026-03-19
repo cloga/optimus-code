@@ -71,6 +71,16 @@ export interface AdoWorkItemOptions {
     priority?: number;
 }
 
+export interface WorkItemUpdate {
+    state?: string;
+    title?: string;
+    description?: string;
+    assigned_to?: string;
+    priority?: number;
+    labels_add?: string[];
+    labels_remove?: string[];
+}
+
 /**
  * Unified VCS Provider Interface
  *
@@ -173,7 +183,7 @@ export interface IVcsProvider {
      */
     updateWorkItem(
         itemId: string | number,
-        updates: { state?: 'open' | 'closed'; title?: string; labels_add?: string[]; labels_remove?: string[] }
+        updates: WorkItemUpdate
     ): Promise<WorkItemResult>;
 
     /**

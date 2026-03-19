@@ -136,7 +136,7 @@ Once the server is running, your AI assistant gains these tools:
 | `vcs_create_pr` | Create a Pull Request via unified VCS abstraction |
 | `vcs_merge_pr` | Merge a Pull Request via unified VCS abstraction |
 | `vcs_add_comment` | Add a comment to a work item or PR (requires `item_type`) |
-| `vcs_update_work_item` | Update an existing work item (close, relabel, rename) |
+| `vcs_update_work_item` | Update an existing work item title/state/labels, plus ADO description, assignee, and priority |
 | `vcs_list_work_items` | List work items with state/label filters |
 | `vcs_list_pull_requests` | List pull requests with state filter, mergeable status |
 | `request_human_input` | Pause execution and ask the human for input |

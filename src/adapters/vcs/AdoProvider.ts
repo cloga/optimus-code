@@ -1,4 +1,4 @@
-import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment } from './IVcsProvider';
+import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment, WorkItemUpdate } from './IVcsProvider';
 import { marked } from 'marked';
 
 /**
@@ -101,6 +101,20 @@ export class AdoProvider implements IVcsProvider {
         const projectDisplayName = await this.resolveProjectDisplayName();
         const baseUrl = `${this.webBaseUrl}/${encodeURIComponent(projectDisplayName)}/_workitems/edit/${workItemId}`;
         return commentId === undefined ? baseUrl : `${baseUrl}#${commentId}`;
+    }
+
+    private buildAdoAuthHeaders(contentType?: string): Record<string, string> {
+        const token = this.getToken();
+        if (!token) {
+            throw new Error('ADO PAT token not found in environment variables');
+        }
+
+        return {
+            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
+            ...(contentType ? { 'Content-Type': contentType } : {}),
+            'Accept': 'application/json',
+            'User-Agent': 'Optimus-Agent'
+        };
     }
 
     async createWorkItem(
@@ -489,10 +503,59 @@ export class AdoProvider implements IVcsProvider {
     }
 
     async updateWorkItem(
-        _itemId: string | number,
-        _updates: { state?: 'open' | 'closed'; title?: string; labels_add?: string[]; labels_remove?: string[] }
+        itemId: string | number,
+        updates: WorkItemUpdate
     ): Promise<WorkItemResult> {
-        throw new Error('[AdoProvider] updateWorkItem() is not yet implemented for Azure DevOps.');
+        const id = typeof itemId === 'string' ? parseInt(itemId, 10) : itemId;
+        if (!Number.isFinite(id)) {
+            throw new Error(`Invalid ADO work item id '${itemId}'.`);
+        }
+
+        const patchDocument: Array<{ op: 'add'; path: string; value: string | number }> = [];
+        if (updates.title !== undefined) {
+            patchDocument.push({ op: 'add', path: '/fields/System.Title', value: updates.title });
+        }
+        if (updates.description !== undefined) {
+            patchDocument.push({ op: 'add', path: '/fields/System.Description', value: await marked.parse(updates.description) });
+        }
+        if (updates.state !== undefined) {
+            patchDocument.push({ op: 'add', path: '/fields/System.State', value: updates.state });
+        }
+        if (updates.assigned_to !== undefined) {
+            patchDocument.push({ op: 'add', path: '/fields/System.AssignedTo', value: updates.assigned_to });
+        }
+        if (updates.priority !== undefined) {
+            patchDocument.push({ op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: updates.priority });
+        }
+
+        if (patchDocument.length === 0) {
+            throw new Error('ADO updateWorkItem requires at least one of: title, description, state, assigned_to, priority.');
+        }
+
+        try {
+            const response = await fetch(
+                `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitems/${id}?api-version=7.0`,
+                {
+                    method: 'PATCH',
+                    headers: this.buildAdoAuthHeaders('application/json-patch+json'),
+                    body: JSON.stringify(patchDocument)
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`ADO API error: ${response.status} ${await response.text()}. Recovery hint: ${adoHttpRecoveryHint(response.status)}`);
+            }
+
+            const data = await response.json() as any;
+            return {
+                id: data.id.toString(),
+                number: data.id,
+                url: await this.buildWorkItemUiUrl(data.id),
+                title: data.fields?.['System.Title'] || updates.title || `Work item ${id}`
+            };
+        } catch (error: any) {
+            throw new Error(`Failed to update ADO work item: ${error.message}`);
+        }
     }
 
     async listWorkItems(

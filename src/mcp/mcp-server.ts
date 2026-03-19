@@ -156,13 +156,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
         {
           name: "vcs_update_work_item",
-          description: "Update an existing work item (GitHub Issue / ADO Work Item) — change state, title, or labels.",
+          description: "Update an existing work item (GitHub Issue / ADO Work Item) — change title, state, description, assignee, priority, or labels.",
           inputSchema: {
             type: "object",
             properties: {
               item_id: { type: ["string", "number"], description: "Work item ID or issue number" },
-              state: { type: "string", enum: ["open", "closed"], description: "New state for the work item" },
+              state: { type: "string", description: "New state for the work item. GitHub supports open/closed; ADO may use workflow-specific states like New, Active, or Closed." },
               title: { type: "string", description: "New title for the work item" },
+              description: { type: "string", description: "New description/body for the work item" },
+              assigned_to: { type: "string", description: "ADO only: identity to assign the work item to" },
+              priority: { type: "number", description: "ADO only: work item priority" },
               labels_add: { type: "array", items: { type: "string" }, description: "Labels to add" },
               labels_remove: { type: "array", items: { type: "string" }, description: "Labels to remove" },
               workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
@@ -1451,17 +1454,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to add comment: ${error.message}` }] };
     }
   } else if (request.params.name === "vcs_update_work_item") {
-    const { item_id, state, title, labels_add, labels_remove, workspace_path } = request.params.arguments as any;
+    const { item_id, state, title, description, assigned_to, priority, labels_add, labels_remove, workspace_path } = request.params.arguments as any;
     requireParams("vcs_update_work_item", request.params.arguments as any, ["item_id", "workspace_path"]);
 
     try {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
-      const result = await vcsProvider.updateWorkItem(item_id, { state, title, labels_add, labels_remove });
+      const result = await vcsProvider.updateWorkItem(item_id, { state, title, description, assigned_to, priority, labels_add, labels_remove });
+
+      const details = [
+        `✅ Work item #${item_id} updated on ${vcsProvider.getProviderName()}`,
+        '',
+        `**Title:** ${result.title}`,
+        `**URL:** ${result.url}`,
+        ...(state ? [`**State:** ${state}`] : []),
+        ...(assigned_to ? [`**Assigned To:** ${assigned_to}`] : []),
+        ...(priority !== undefined ? [`**Priority:** ${priority}`] : [])
+      ];
 
       return {
         content: [{
           type: "text",
-          text: `✅ Work item #${item_id} updated on ${vcsProvider.getProviderName()}\n\n**Title:** ${result.title}\n**URL:** ${result.url}${state ? `\n**State:** ${state}` : ''}`
+          text: details.join('\n')
         }]
       };
     } catch (error: any) {
