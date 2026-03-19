@@ -12,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { dispatchCouncilConcurrent, delegateTaskSingle, loadValidEnginesAndModels, loadEngineHeartbeatTimeout, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
+import { dispatchCouncilConcurrent, delegateTaskSingle, explainAvailableAgentsConfig, explainEngineResolution, loadAvailableAgentsConfig, loadValidEnginesAndModels, loadEngineHeartbeatTimeout, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
 import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory, loadUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
@@ -38,6 +38,21 @@ function requireParams(toolName: string, params: Record<string, any>, required: 
       `Received keys: [${Object.keys(params).join(', ')}]`
     );
   }
+}
+
+function formatAutomationForDisplay(requestedAutomation: any): string {
+  if (!requestedAutomation) {
+    return 'interactive/single';
+  }
+  const suffix = typeof requestedAutomation.maxContinues === 'number' ? `, max=${requestedAutomation.maxContinues}` : '';
+  const origin = requestedAutomation.declared ? '' : ' (default)';
+  return `${requestedAutomation.mode}/${requestedAutomation.continuation}${suffix}${origin}`;
+}
+
+function formatSelectionReason(reason: string | undefined): string {
+  return (reason || 'No resolution details available.')
+    .replace(/^\[Config\]\s*/i, '')
+    .trim();
 }
 
 // Load environment variables: prefer DOTENV_PATH from mcp.json env mount, fallback to cwd
@@ -224,6 +239,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
           required: ["workspace_path"],
+        }
+      },
+      {
+        name: "explain_available_agents",
+        description: "Explain how available-agents.json resolves at runtime, including requested automation policy, candidate transports, selected protocol, and fallback reasons.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root."
+            },
+            engine: {
+              type: "string",
+              description: "Optional engine name. When omitted, explains every configured engine."
+            },
+            model: {
+              type: "string",
+              description: "Optional model name to include in transport resolution for ACP transports that inject model flags."
+            }
+          },
+          required: ["workspace_path"]
         }
       },
       {
@@ -1029,19 +1066,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // --- Dynamic T3 Config Loading ---
-    const configPath = path.join(workspace_path, ".optimus", "config", "available-agents.json");
-    if (fs.existsSync(configPath)) {
+    const config = loadAvailableAgentsConfig(workspace_path);
+    if (config) {
       try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const explanations = explainAvailableAgentsConfig(workspace_path);
         roster += "\n### ⚙️ Engine & Model Spec (T3 configuration)\n";
-        roster += "**Available Execution Engines (Toolchains & Supported Models)**:\n";
+        roster += "**Available Execution Engines (Resolved Runtime View)**:\n";
         Object.keys(config.engines).forEach(engine => {
-          const eng = config.engines[engine];
-          const protocol = eng.protocol || 'cli';
-          const statusMatch = eng.status ? ` *[Status: ${eng.status}]*` : '';
-          roster += `- [Engine: ${engine}] Protocol: ${protocol} | Models: [${eng.available_models.join(', ')}]${statusMatch}\n`;
+          const explanation = explanations[engine];
+          const statusMatch = explanation?.status ? ` *[Status: ${explanation.status}]*` : '';
+          const models = Array.isArray(explanation?.availableModels) ? explanation.availableModels.join(', ') : '';
+          const resolvedProtocol = explanation?.selectedProtocol || 'invalid';
+          roster += `- [Engine: ${engine}] Protocol: ${explanation?.configuredProtocol || 'cli'} -> ${resolvedProtocol} | Automation: ${formatAutomationForDisplay(explanation?.requestedAutomation)} | Models: [${models}]${statusMatch}\n`;
+          roster += `  Why: ${formatSelectionReason(explanation?.error || explanation?.selectionReason)}\n`;
         });
-          roster += "*Note: Append these engine and model combinations to role names to spawn customized variants. Examples: `chief-architect_claude-code_claude-3-opus`, `security-auditor_copilot-cli_o1-preview`.*\n\n";
+          roster += "*Note: Use explain_available_agents for the full machine-readable candidate list. Append engine/model combinations to role names to spawn customized variants, for example `chief-architect_claude-code_claude-3-opus`.*\n\n";
         } catch (e: any) { console.error(`[RosterCheck] Warning: failed to read available-agents.json: ${e.message}`); }
     }
 
@@ -1164,6 +1203,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: "text", text: roster }]
     };
+  } else if (request.params.name === "explain_available_agents") {
+
+    const { workspace_path, engine, model } = request.params.arguments as any;
+    requireParams("explain_available_agents", request.params.arguments as any, ["workspace_path"]);
+
+    const payload = engine
+      ? explainEngineResolution(engine, workspace_path, model)
+      : explainAvailableAgentsConfig(workspace_path);
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }]
+    };
+
   } else if (request.params.name === "delegate_task") {
     let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills, agent_id } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;

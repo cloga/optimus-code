@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.8.0] - 2026-03-19
+
+### Features
+- **Available-agents resolution is now explainable at runtime** — Engine selection no longer lives only in `worker-spawner.ts`. Optimus now exports a resolved explanation view with requested automation policy, candidate transports, final protocol choice, and selection reason.
+- **New `explain_available_agents` MCP tool** — Agents and operators can query the fully resolved `available-agents.json` behavior directly, either for one engine or the full config, without re-implementing the resolver logic.
+- **`roster_check` now shows resolved runtime behavior** — The roster output surfaces configured protocol, resolved protocol, requested automation, and why each engine resolves the way it does.
+
+### Fixes
+- **Explicit transport configs no longer masquerade as both protocols** — Runtime transport selection now correctly distinguishes pinned `cli` versus pinned `acp` engine declarations instead of treating one top-level config as valid for both protocol branches.
+- **Engine resolution is now reusable instead of duplicated** — Transport preview, selection reason, and runtime adapter resolution now share a single explanation path, reducing drift between human-visible summaries and actual execution behavior.
+
+### Compatibility
+- **Backward compatible for existing configs** — Legacy `available-agents.json` shapes remain accepted, but the runtime surface is now more explicit and machine-readable.
+- **Recommended upgrade for agent-native workflows** — If you rely on `protocol: "auto"`, upgrade to get explainability and more accurate runtime introspection.
+
 ## [2.7.0] - 2026-03-19
 
 ### Features

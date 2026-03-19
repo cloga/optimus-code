@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "./available-agents.schema.json",
+  "title": "Optimus Available Agents Config",
+  "type": "object",
+  "required": ["engines"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor-facing schema reference for this config file."
+    },
+    "_schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "_comment": {
+      "type": "string"
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "fallback_engine": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "engines": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/engineConfig"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "timeoutConfig": {
+      "type": "object",
+      "properties": {
+        "heartbeat_ms": { "type": "number", "minimum": 0 },
+        "activity_ms": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "capabilityConfig": {
+      "type": "object",
+      "properties": {
+        "automation_modes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["interactive", "plan", "accept-edits", "deny-unapproved", "auto-approve", "default", "acceptEdits", "dontAsk", "bypassPermissions", "autopilot"]
+          }
+        },
+        "automation_continuations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["single", "autopilot"]
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "automationConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["interactive", "plan", "accept-edits", "deny-unapproved", "auto-approve", "default", "acceptEdits", "dontAsk", "bypassPermissions", "autopilot"]
+        },
+        "continuation": {
+          "type": "string",
+          "enum": ["single", "autopilot"]
+        },
+        "max_continues": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "transportConfig": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "cli_flags": { "type": "string" },
+        "capabilities": { "$ref": "#/$defs/capabilityConfig" },
+        "timeout": { "$ref": "#/$defs/timeoutConfig" },
+        "_comment": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "engineConfig": {
+      "allOf": [
+        { "$ref": "#/$defs/transportConfig" },
+        {
+          "type": "object",
+          "properties": {
+            "protocol": { "type": "string", "enum": ["cli", "acp", "auto"] },
+            "preferred_protocol": { "type": "string", "enum": ["cli", "acp"] },
+            "adapter": { "type": "string" },
+            "family": { "type": "string" },
+            "available_models": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "automation": { "$ref": "#/$defs/automationConfig" },
+            "acp": { "$ref": "#/$defs/transportConfig" },
+            "cli": { "$ref": "#/$defs/transportConfig" }
+          },
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

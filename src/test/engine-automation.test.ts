@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClaudeCodeAdapter } from '../adapters/ClaudeCodeAdapter';
 import { GitHubCopilotAdapter } from '../adapters/GitHubCopilotAdapter';
 import { PersistentAgentAdapter } from '../adapters/PersistentAgentAdapter';
-import { getEngineProtocol, getResolvedEngineTransport, parseRoleSpec, resolveCliAdapterKind } from '../mcp/worker-spawner';
+import { explainEngineResolution, getEngineProtocol, getResolvedEngineTransport, parseRoleSpec, resolveCliAdapterKind } from '../mcp/worker-spawner';
 import { getClaudeCliAutomationArgs, normalizeAutomationPolicy } from '../utils/automationPolicy';
 
 function createTempWorkspace(configOverride?: object): string {
@@ -156,6 +156,26 @@ describe('Engine automation integration', () => {
         }
     });
 
+    it('explains why Copilot auto protocol falls back from preferred ACP to CLI', () => {
+        const workspacePath = createTempWorkspace();
+        try {
+            const explanation = explainEngineResolution('github-copilot', workspacePath);
+            expect(explanation.configuredProtocol).toBe('auto');
+            expect(explanation.selectedProtocol).toBe('cli');
+            expect(explanation.selectionReason).toMatch(/preferred protocol 'acp'/i);
+            expect(explanation.selectionReason).toMatch(/autopilot/i);
+
+            const acpCandidate = explanation.candidates.find(candidate => candidate.protocol === 'acp');
+            const cliCandidate = explanation.candidates.find(candidate => candidate.protocol === 'cli');
+
+            expect(acpCandidate?.supportsRequestedPolicy).toBe(false);
+            expect(acpCandidate?.reason).toMatch(/does not support automation\.continuation 'autopilot'/i);
+            expect(cliCandidate?.supportsRequestedPolicy).toBe(true);
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
     it('chooses Copilot ACP when continuation is single and ACP supports the requested mode', () => {
         const workspacePath = createTempWorkspace({
             engines: {
@@ -183,6 +203,44 @@ describe('Engine automation integration', () => {
         try {
             expect(getEngineProtocol('github-copilot', workspacePath)).toBe('acp');
             expect(getResolvedEngineTransport('github-copilot', workspacePath)).toEqual({
+                protocol: 'acp',
+                executable: 'copilot',
+                args: ['--acp', '--stdio'],
+            });
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
+    it('explains when preferred ACP is selected and exposes the resolved transport', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'github-copilot': {
+                    protocol: 'auto',
+                    preferred_protocol: 'acp',
+                    available_models: ['gpt-5.4'],
+                    automation: { mode: 'auto-approve', continuation: 'single' },
+                    acp: {
+                        path: 'copilot',
+                        args: ['--acp', '--stdio'],
+                        capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single'] }
+                    },
+                    cli: {
+                        path: 'copilot',
+                        cli_flags: '-m',
+                        capabilities: {
+                            automation_modes: ['interactive', 'plan', 'accept-edits', 'deny-unapproved', 'auto-approve'],
+                            automation_continuations: ['single', 'autopilot']
+                        }
+                    }
+                }
+            }
+        });
+        try {
+            const explanation = explainEngineResolution('github-copilot', workspacePath);
+            expect(explanation.selectedProtocol).toBe('acp');
+            expect(explanation.selectionReason).toMatch(/selected preferred protocol 'acp'/i);
+            expect(explanation.selectedTransport).toEqual({
                 protocol: 'acp',
                 executable: 'copilot',
                 args: ['--acp', '--stdio'],

@@ -28,6 +28,43 @@ import { registerRole } from "../utils/resolveRoleName";
 import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normalizeAutomationPolicy } from "../utils/automationPolicy";
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
+import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
+
+export interface EngineAutomationExplanation {
+    declared: boolean;
+    mode: string;
+    continuation: string;
+    maxContinues?: number;
+}
+
+export interface EngineTransportExplanation {
+    protocol: 'cli' | 'acp';
+    configured: boolean;
+    executable?: string;
+    args: string[];
+    supportsRequestedMode: boolean;
+    supportsRequestedContinuation: boolean;
+    supportsRequestedPolicy: boolean;
+    capabilities: {
+        automation_modes: string[];
+        automation_continuations: string[];
+    };
+    reason: string;
+}
+
+export interface EngineResolutionExplanation {
+    engine: string;
+    configuredProtocol: 'cli' | 'acp' | 'auto';
+    preferredProtocol: 'cli' | 'acp';
+    requestedAutomation: EngineAutomationExplanation;
+    availableModels: string[];
+    status?: string;
+    selectedProtocol: 'cli' | 'acp' | null;
+    selectedTransport: { protocol: 'cli' | 'acp'; executable?: string; args: string[] } | null;
+    selectionReason: string;
+    candidates: EngineTransportExplanation[];
+    error?: string;
+}
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const normalized = content.replace(/\r\n/g, '\n');
@@ -564,14 +601,14 @@ function emitAvailableAgentsConfigWarnings(configPath: string, config: any): voi
     }
 }
 
-function readAvailableAgentsConfigFile(configPath: string): any | null {
+export function readAvailableAgentsConfigFile(configPath: string): AvailableAgentsConfig | null {
     if (!fs.existsSync(configPath)) return null;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const config = parseAvailableAgentsConfig(JSON.parse(fs.readFileSync(configPath, 'utf8')));
     emitAvailableAgentsConfigWarnings(configPath, config);
     return config;
 }
 
-function loadAvailableAgentsConfig(workspacePath?: string): any | null {
+export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgentsConfig | null {
     if (!workspacePath) return null;
     const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
     try {
@@ -592,7 +629,26 @@ function getConfiguredEngineNames(workspacePath?: string): string[] {
 
 function getTransportConfig(engineConfig: any, protocol: 'cli' | 'acp'): any {
     if (!engineConfig) return null;
-    return engineConfig.protocol === 'auto' ? engineConfig[protocol] || null : engineConfig;
+    if (engineConfig.protocol === 'auto') {
+        return engineConfig[protocol] || null;
+    }
+    const explicitProtocol = engineConfig.protocol === 'acp' ? 'acp' : 'cli';
+    return explicitProtocol === protocol ? engineConfig : null;
+}
+
+function getDefaultProtocolForEngine(engine: string): 'cli' | 'acp' {
+    return engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli';
+}
+
+function getConfiguredProtocol(engine: string, engineConfig: any): 'cli' | 'acp' | 'auto' {
+    if (engineConfig?.protocol === 'auto') {
+        return 'auto';
+    }
+    return (engineConfig?.protocol || getDefaultProtocolForEngine(engine)) === 'acp' ? 'acp' : 'cli';
+}
+
+function getPreferredProtocol(engineConfig: any): 'cli' | 'acp' {
+    return engineConfig?.preferred_protocol === 'cli' ? 'cli' : 'acp';
 }
 
 function getDocumentedDefaultAcpArgs(engine: string): string[] {
@@ -682,6 +738,16 @@ function describeRequestedAutomationPolicy(requestedMode: string | undefined, re
     return `mode='${mode}', continuation='${continuation}'`;
 }
 
+function getRequestedAutomationExplanation(engineConfig: any): EngineAutomationExplanation {
+    const normalized = normalizeAutomationPolicy(engineConfig?.automation);
+    return {
+        declared: hasRequestedAutomationPolicy(engineConfig),
+        mode: normalized.mode,
+        continuation: normalized.continuation,
+        ...(typeof normalized.maxContinues === 'number' ? { maxContinues: normalized.maxContinues } : {}),
+    };
+}
+
 function getConfiguredTransportProtocols(engineConfig: any, preferredProtocol: 'cli' | 'acp'): Array<'cli' | 'acp'> {
     if (!engineConfig) return [];
     if (engineConfig.protocol !== 'auto') {
@@ -703,6 +769,33 @@ function buildAutomationCompatibilityFixHint(engine: string, protocol: 'cli' | '
         }
     }
     return `Adjust automation.mode / automation.continuation or update the declared transport capabilities in available-agents.json.`;
+}
+
+function buildTransportCompatibilityReason(
+    protocol: 'cli' | 'acp',
+    transportConfig: any,
+    requestedMode: string | undefined,
+    requestedContinuation: string | undefined,
+): string {
+    if (!transportConfig) {
+        return `protocol '${protocol}' is not configured`;
+    }
+
+    const reasons: string[] = [];
+    if (requestedMode && !transportSupportsAutomationMode(protocol, transportConfig, requestedMode)) {
+        reasons.push(`does not support automation.mode '${requestedMode}'`);
+    }
+    if (requestedContinuation && !transportSupportsAutomationContinuation(transportConfig, requestedContinuation)) {
+        reasons.push(`does not support automation.continuation '${requestedContinuation}'`);
+    }
+
+    if (reasons.length === 0) {
+        return requestedMode || requestedContinuation
+            ? `satisfies ${describeRequestedAutomationPolicy(requestedMode, requestedContinuation)}`
+            : 'available transport';
+    }
+
+    return reasons.join('; ');
 }
 
 function validateAutomationPolicyForProtocol(
@@ -748,18 +841,18 @@ function validateAutomationPolicyForProtocol(
 
 function resolveProtocolFromEngineConfig(engine: string, engineConfig: any): 'cli' | 'acp' {
     if (!engineConfig) {
-        return engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli';
+        return getDefaultProtocolForEngine(engine);
     }
     const requestedMode = getRequestedAutomationMode(engineConfig);
     const requestedContinuation = getRequestedAutomationContinuation(engineConfig);
 
     if (engineConfig.protocol !== 'auto') {
-        const explicitProtocol = (engineConfig.protocol || (engine === 'acp' || engine.startsWith('acp-') ? 'acp' : 'cli')) === 'acp' ? 'acp' : 'cli';
+        const explicitProtocol = getConfiguredProtocol(engine, engineConfig) === 'acp' ? 'acp' : 'cli';
         validateAutomationPolicyForProtocol(engine, explicitProtocol, engineConfig, requestedMode, requestedContinuation);
         return explicitProtocol;
     }
 
-    const preferredProtocol: 'cli' | 'acp' = engineConfig.preferred_protocol === 'cli' ? 'cli' : 'acp';
+    const preferredProtocol = getPreferredProtocol(engineConfig);
     validateAutomationPolicyForProtocol(engine, 'auto', engineConfig, requestedMode, requestedContinuation);
     const candidates: Array<'cli' | 'acp'> = preferredProtocol === 'acp' ? ['acp', 'cli'] : ['cli', 'acp'];
 
@@ -1245,11 +1338,12 @@ export function resolveCliAdapterKind(engine: string, workspacePath?: string): '
     return fingerprint.includes('copilot') ? 'github-copilot' : 'claude-code';
 }
 
-export function getResolvedEngineTransport(engine: string, workspacePath?: string, model?: string): { protocol: 'cli' | 'acp'; executable?: string; args: string[] } {
-    const engineConfig = getEngineConfig(engine, workspacePath);
-    const protocol = resolveProtocolFromEngineConfig(engine, engineConfig);
-    const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;
-
+function buildResolvedTransportForProtocol(
+    engine: string,
+    protocol: 'cli' | 'acp',
+    transportConfig: any,
+    model?: string,
+): { protocol: 'cli' | 'acp'; executable?: string; args: string[] } {
     if (protocol !== 'acp') {
         return {
             protocol,
@@ -1286,6 +1380,146 @@ export function getResolvedEngineTransport(engine: string, workspacePath?: strin
     }
 
     return { protocol, executable, args };
+}
+
+function buildEngineSelectionReason(
+    engine: string,
+    engineConfig: any,
+    selectedProtocol: 'cli' | 'acp',
+    requestedMode: string | undefined,
+    requestedContinuation: string | undefined,
+    candidates: EngineTransportExplanation[],
+): string {
+    const configuredProtocol = getConfiguredProtocol(engine, engineConfig);
+    if (configuredProtocol !== 'auto') {
+        return `Protocol explicitly pinned to '${selectedProtocol}' and satisfies ${describeRequestedAutomationPolicy(requestedMode, requestedContinuation)}.`;
+    }
+
+    const preferredProtocol = getPreferredProtocol(engineConfig);
+    if (selectedProtocol === preferredProtocol) {
+        return `Selected preferred protocol '${selectedProtocol}' because it satisfies ${describeRequestedAutomationPolicy(requestedMode, requestedContinuation)}.`;
+    }
+
+    const preferredCandidate = candidates.find(candidate => candidate.protocol === preferredProtocol);
+    if (!preferredCandidate?.configured) {
+        return `Selected '${selectedProtocol}' because preferred protocol '${preferredProtocol}' is not configured.`;
+    }
+
+    return `Selected '${selectedProtocol}' because preferred protocol '${preferredProtocol}' ${preferredCandidate.reason}.`;
+}
+
+export function explainEngineResolution(engine: string, workspacePath?: string, model?: string): EngineResolutionExplanation {
+    const engineConfig = getEngineConfig(engine, workspacePath);
+    if (!engineConfig) {
+        return {
+            engine,
+            configuredProtocol: getDefaultProtocolForEngine(engine),
+            preferredProtocol: 'acp',
+            requestedAutomation: getRequestedAutomationExplanation(null),
+            availableModels: [],
+            selectedProtocol: null,
+            selectedTransport: null,
+            selectionReason: `Engine '${engine}' is not declared in available-agents.json.`,
+            candidates: [],
+            error: `[Config] Engine '${engine}' is not declared in available-agents.json. Suggested fix: add it under engines in .optimus/config/available-agents.json.`,
+        };
+    }
+
+    const requestedAutomation = getRequestedAutomationExplanation(engineConfig);
+    const requestedMode = getRequestedAutomationMode(engineConfig);
+    const requestedContinuation = getRequestedAutomationContinuation(engineConfig);
+    const configuredProtocol = getConfiguredProtocol(engine, engineConfig);
+    const preferredProtocol = getPreferredProtocol(engineConfig);
+    const candidateOrder: Array<'cli' | 'acp'> = configuredProtocol === 'auto'
+        ? (preferredProtocol === 'acp' ? ['acp', 'cli'] : ['cli', 'acp']) as Array<'cli' | 'acp'>
+        : [configuredProtocol, ...(configuredProtocol === 'acp' ? ['cli'] : ['acp'])] as Array<'cli' | 'acp'>;
+
+    const candidates = candidateOrder.map((protocol): EngineTransportExplanation => {
+        const transportConfig = getTransportConfig(engineConfig, protocol);
+        const supportsRequestedMode = transportSupportsAutomationMode(protocol, transportConfig, requestedMode);
+        const supportsRequestedContinuation = transportSupportsAutomationContinuation(transportConfig, requestedContinuation);
+        const supportsRequestedPolicy = transportSupportsAutomationPolicy(protocol, transportConfig, requestedMode, requestedContinuation);
+        let preview: { protocol: 'cli' | 'acp'; executable?: string; args: string[] } = {
+            protocol,
+            executable: transportConfig?.path,
+            args: Array.isArray(transportConfig?.args) ? [...transportConfig.args] : protocol === 'acp' && transportConfig ? getDocumentedDefaultAcpArgs(engine) : []
+        };
+
+        if (transportConfig) {
+            try {
+                preview = buildResolvedTransportForProtocol(engine, protocol, transportConfig, model);
+            } catch {
+                // Keep the raw preview for explain output; selected transport resolution will surface the real error.
+            }
+        }
+
+        return {
+            protocol,
+            configured: !!transportConfig,
+            executable: preview.executable,
+            args: preview.args,
+            supportsRequestedMode,
+            supportsRequestedContinuation,
+            supportsRequestedPolicy,
+            capabilities: {
+                automation_modes: getSupportedAutomationModes(transportConfig),
+                automation_continuations: getSupportedAutomationContinuations(transportConfig),
+            },
+            reason: buildTransportCompatibilityReason(protocol, transportConfig, requestedMode, requestedContinuation),
+        };
+    });
+
+    try {
+        const selectedProtocol = resolveProtocolFromEngineConfig(engine, engineConfig);
+        const selectedTransportConfig = getTransportConfig(engineConfig, selectedProtocol) || engineConfig;
+        const selectedTransport = buildResolvedTransportForProtocol(engine, selectedProtocol, selectedTransportConfig, model);
+
+        return {
+            engine,
+            configuredProtocol,
+            preferredProtocol,
+            requestedAutomation,
+            availableModels: Array.isArray(engineConfig.available_models) ? [...engineConfig.available_models] : [],
+            status: typeof engineConfig.status === 'string' ? engineConfig.status : undefined,
+            selectedProtocol,
+            selectedTransport,
+            selectionReason: buildEngineSelectionReason(engine, engineConfig, selectedProtocol, requestedMode, requestedContinuation, candidates),
+            candidates,
+        };
+    } catch (e: any) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+            engine,
+            configuredProtocol,
+            preferredProtocol,
+            requestedAutomation,
+            availableModels: Array.isArray(engineConfig.available_models) ? [...engineConfig.available_models] : [],
+            status: typeof engineConfig.status === 'string' ? engineConfig.status : undefined,
+            selectedProtocol: null,
+            selectedTransport: null,
+            selectionReason: message,
+            candidates,
+            error: message,
+        };
+    }
+}
+
+export function explainAvailableAgentsConfig(workspacePath?: string): Record<string, EngineResolutionExplanation> {
+    const config = loadAvailableAgentsConfig(workspacePath);
+    if (!config) {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.keys(config.engines).map(engine => [engine, explainEngineResolution(engine, workspacePath)])
+    );
+}
+
+export function getResolvedEngineTransport(engine: string, workspacePath?: string, model?: string): { protocol: 'cli' | 'acp'; executable?: string; args: string[] } {
+    const engineConfig = getEngineConfig(engine, workspacePath);
+    const protocol = resolveProtocolFromEngineConfig(engine, engineConfig);
+    const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;
+    return buildResolvedTransportForProtocol(engine, protocol, transportConfig, model);
 }
 
 function getAdapterForEngine(engine: string, sessionId?: string, model?: string, workspacePath?: string): AgentAdapter {
@@ -1429,10 +1663,9 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
 
     // Fallback: if engine/model still unset, try reading available-agents.json
     if (!activeEngine) {
-        const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
         try {
-            if (fs.existsSync(configPath)) {
-                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const config = loadAvailableAgentsConfig(workspacePath);
+            if (config) {
                 const engines = Object.keys(config.engines || {}).filter(
                     e => !config.engines[e].status?.includes('demo')
                 );
@@ -1462,20 +1695,16 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     // If a model was explicitly provided, validate it against available-agents.json whitelist.
     // Prevents invalid model names from silently passing through to CLI and failing late.
     if (activeModel) {
-        const modelConfigPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
         try {
-            if (fs.existsSync(modelConfigPath)) {
-                const config = JSON.parse(fs.readFileSync(modelConfigPath, 'utf8'));
-                const engineConfig = config.engines?.[activeEngine];
-                if (engineConfig?.available_models && Array.isArray(engineConfig.available_models)) {
-                    const allowedModels: string[] = engineConfig.available_models;
-                    if (!allowedModels.includes(activeModel)) {
-                        throw new Error(
-                            `⚠️ **Model Pre-Flight Failed**: Model \`${activeModel}\` is not in the allowed list for engine \`${activeEngine}\`.\n\n` +
-                            `**Allowed models**: ${allowedModels.map(m => `\`${m}\``).join(', ')}\n\n` +
-                            `Please re-delegate with a valid \`role_model\` or omit it to use the default.`
-                        );
-                    }
+            const engineConfig = getEngineConfig(activeEngine, workspacePath);
+            if (engineConfig?.available_models && Array.isArray(engineConfig.available_models)) {
+                const allowedModels: string[] = engineConfig.available_models;
+                if (!allowedModels.includes(activeModel)) {
+                    throw new Error(
+                        `⚠️ **Model Pre-Flight Failed**: Model \`${activeModel}\` is not in the allowed list for engine \`${activeEngine}\`.\n\n` +
+                        `**Allowed models**: ${allowedModels.map(m => `\`${m}\``).join(', ')}\n\n` +
+                        `Please re-delegate with a valid \`role_model\` or omit it to use the default.`
+                    );
                 }
             }
         } catch (e: any) {

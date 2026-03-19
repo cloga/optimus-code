@@ -124,6 +124,7 @@ Once the server is running, your AI assistant gains these tools:
 | Tool | Description |
 |---|---|
 | `roster_check` | List all available agent roles (T1 local + T2 project + T3 dynamic) and engine/model bindings |
+| `explain_available_agents` | Show the resolved runtime behavior of `available-agents.json`, including candidate transports, selected protocol, and fallback reasons |
 | `delegate_task` | Assign a task to a specialized agent with structured role info |
 | `delegate_task_async` | Same as above, non-blocking (preferred) |
 | `dispatch_council` | Spawn parallel expert review (Map-Reduce pattern) |
@@ -317,6 +318,10 @@ Engines are defined in `.optimus/config/available-agents.json`. The `protocol` f
   }
 }
 ```
+
+When `protocol` is set to `auto`, Optimus evaluates the requested `automation.mode` and `automation.continuation` against each configured transport's declared capabilities, then selects the first compatible protocol in the preferred order.
+
+To inspect the resolved behavior directly, use `explain_available_agents`. This returns the requested automation policy, each candidate transport, the selected protocol, and the fallback reason when a preferred transport is rejected.
 
 - **`cli`** (default) — Text-based structured output via CLI (Claude Code, GitHub Copilot)
 - **`acp`** — JSON-RPC 2.0 over NDJSON stdio (Qwen Code, and any future ACP-compliant agent)
