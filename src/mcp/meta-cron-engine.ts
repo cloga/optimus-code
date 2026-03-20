@@ -237,13 +237,19 @@ function getSchedulerLockPath(workspacePath: string): string {
 function tryAcquireSchedulerLock(workspacePath: string): boolean {
     const lockDir = getLockDir(workspacePath);
     const lockPath = getSchedulerLockPath(workspacePath);
+    // Generate a unique nonce so we can verify we still own the lock after creation.
+    // This defends against a TOCTOU race where two processes both detect a stale leader,
+    // both unlink + create, and one deletes the other's freshly created lock (Issue #511).
+    const nonce = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const lockData = JSON.stringify({
+        pid: process.pid,
+        nonce,
+        acquired_at: new Date().toISOString()
+    });
     try {
         if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
         const fd = fs.openSync(lockPath, 'wx');
-        fs.writeFileSync(fd, JSON.stringify({
-            pid: process.pid,
-            acquired_at: new Date().toISOString()
-        }), 'utf8');
+        fs.writeFileSync(fd, lockData, 'utf8');
         fs.closeSync(fd);
         return true;
     } catch (e: any) {
@@ -257,11 +263,18 @@ function tryAcquireSchedulerLock(workspacePath: string): boolean {
                     try { fs.unlinkSync(lockPath); } catch { return false; }
                     try {
                         const fd = fs.openSync(lockPath, 'wx');
-                        fs.writeFileSync(fd, JSON.stringify({
-                            pid: process.pid,
-                            acquired_at: new Date().toISOString()
-                        }), 'utf8');
+                        fs.writeFileSync(fd, lockData, 'utf8');
                         fs.closeSync(fd);
+                        // Post-acquisition verification: re-read and confirm our nonce is still there.
+                        // Guards against a concurrent process that also detected stale leader,
+                        // deleted our freshly created lock, and created its own.
+                        try {
+                            const verify = JSON.parse(fs.readFileSync(lockPath, 'utf8')) as { nonce?: string };
+                            if (verify.nonce !== nonce) {
+                                console.error('[Meta-Cron] Leader lock stolen by concurrent process — backing off');
+                                return false;
+                            }
+                        } catch { return false; }
                         return true;
                     } catch { return false; }
                 }
