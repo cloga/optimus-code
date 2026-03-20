@@ -110,10 +110,13 @@ function isLockStale(lockPath: string): boolean {
         if (typeof data.pid === 'number' && !isPidRunning(data.pid)) {
             return true;
         }
-        // Time-based fallback: treat locks older than 1 hour as stale regardless of PID
+        // Time-based fallback: treat locks older than 2 hours as stale regardless of PID.
+        // Must be strictly greater than the longest cron period (1 hour for hourly-patrol)
+        // to prevent the time-based check from treating an active lock as stale at the
+        // exact boundary when the next cron tick fires (Issue #511).
         if (data.locked_at) {
             const ageMs = Date.now() - new Date(data.locked_at).getTime();
-            if (ageMs >= 60 * 60 * 1000) return true;
+            if (ageMs >= 2 * 60 * 60 * 1000) return true;
         }
         return false;
     } catch {
@@ -166,6 +169,28 @@ function createLock(workspacePath: string, id: string): boolean {
     }
 }
 
+/**
+ * Update existing lock with a new PID (e.g., after spawning the actual worker child process).
+ * This ensures isPidRunning() checks the worker, not the parent MCP server.
+ */
+function updateLockPid(workspacePath: string, id: string, childPid: number): void {
+    const lockPath = getLockPath(workspacePath, id);
+    try {
+        const content = fs.readFileSync(lockPath, 'utf8');
+        const data = JSON.parse(content);
+        data.pid = childPid;
+        // Atomic write: tmp + rename to avoid partial reads by concurrent isLockStale() callers
+        const tmpPath = lockPath + '.tmp';
+        fs.writeFileSync(tmpPath, JSON.stringify(data), 'utf8');
+        fs.renameSync(tmpPath, lockPath);
+    } catch (e: any) {
+        console.error(`[Meta-Cron] Warning: failed to update lock PID for '${id}': ${e.message}`);
+    }
+}
+
+// Exported for testing (Issue #511)
+export { createLock, isLocked, updateLockPid, getLockPath, getLockDir };
+
 export function deleteLock(workspacePath: string, id: string): void {
     try {
         const lockPath = getLockPath(workspacePath, id);
@@ -201,15 +226,87 @@ export function saveCrontab(workspacePath: string, data: CrontabData): void {
     fs.renameSync(tmpPath, crontabPath);
 }
 
+// ─── Scheduler Leader Election ───
+// Only one MCP server process should run the cron scheduler per workspace.
+// We use an exclusive-create lock file with PID to elect a single leader.
+
+function getSchedulerLockPath(workspacePath: string): string {
+    return path.join(workspacePath, '.optimus', 'system', 'cron-locks', 'scheduler-leader.lock');
+}
+
+function tryAcquireSchedulerLock(workspacePath: string): boolean {
+    const lockDir = getLockDir(workspacePath);
+    const lockPath = getSchedulerLockPath(workspacePath);
+    try {
+        if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
+        const fd = fs.openSync(lockPath, 'wx');
+        fs.writeFileSync(fd, JSON.stringify({
+            pid: process.pid,
+            acquired_at: new Date().toISOString()
+        }), 'utf8');
+        fs.closeSync(fd);
+        return true;
+    } catch (e: any) {
+        if (e?.code === 'EEXIST') {
+            // Check if the existing leader is still alive
+            try {
+                const content = fs.readFileSync(lockPath, 'utf8');
+                const data = JSON.parse(content) as { pid?: number; acquired_at?: string };
+                if (typeof data.pid === 'number' && !isPidRunning(data.pid)) {
+                    // Stale leader — remove and retry exactly once
+                    try { fs.unlinkSync(lockPath); } catch { return false; }
+                    try {
+                        const fd = fs.openSync(lockPath, 'wx');
+                        fs.writeFileSync(fd, JSON.stringify({
+                            pid: process.pid,
+                            acquired_at: new Date().toISOString()
+                        }), 'utf8');
+                        fs.closeSync(fd);
+                        return true;
+                    } catch { return false; }
+                }
+            } catch {
+                // Unreadable lock — another process may be writing it; back off
+            }
+            return false;
+        }
+        return false;
+    }
+}
+
+export function releaseSchedulerLock(workspacePath: string): void {
+    const lockPath = getSchedulerLockPath(workspacePath);
+    try {
+        // Only delete if we own it
+        const content = fs.readFileSync(lockPath, 'utf8');
+        const data = JSON.parse(content) as { pid?: number };
+        if (data.pid === process.pid) {
+            fs.unlinkSync(lockPath);
+        }
+    } catch {
+        // Best-effort cleanup
+    }
+}
+
 // ─── Core Engine ───
 
 export class MetaCronEngine {
     private static interval: ReturnType<typeof setInterval> | null = null;
     private static workspacePath: string = '';
     private static runningCount: number = 0;
+    private static isLeader: boolean = false;
 
     static init(workspacePath: string): void {
         this.workspacePath = workspacePath;
+
+        // Single-leader election: only one MCP server process per workspace runs the scheduler.
+        if (!tryAcquireSchedulerLock(workspacePath)) {
+            console.error('[Meta-Cron] Another process is the scheduler leader — skipping init');
+            return;
+        }
+        this.isLeader = true;
+        console.error(`[Meta-Cron] This process (PID ${process.pid}) elected as scheduler leader`);
+
         const crontab = loadCrontab(workspacePath);
         if (!crontab) {
             console.error('[Meta-Cron] No crontab found — engine idle');
@@ -228,10 +325,30 @@ export class MetaCronEngine {
             this.interval = null;
             console.error('[Meta-Cron] Engine shut down');
         }
+        if (this.isLeader) {
+            releaseSchedulerLock(this.workspacePath);
+            this.isLeader = false;
+        }
     }
 
     private static tick(): void {
         try {
+            // Clean up old tick dedup files (older than 2 hours)
+            try {
+                const lockDir = getLockDir(this.workspacePath);
+                if (fs.existsSync(lockDir)) {
+                    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+                    for (const file of fs.readdirSync(lockDir)) {
+                        if (!file.startsWith('tick_')) continue;
+                        const filePath = path.join(lockDir, file);
+                        try {
+                            const stat = fs.statSync(filePath);
+                            if (stat.mtimeMs < cutoff) fs.unlinkSync(filePath);
+                        } catch { /* best effort */ }
+                    }
+                }
+            } catch { /* tick dedup cleanup is non-critical */ }
+
             const crontab = loadCrontab(this.workspacePath);
             if (!crontab) return;
             const now = new Date();
@@ -243,9 +360,15 @@ export class MetaCronEngine {
                     console.error(`[Meta-Cron] Skipping '${entry.id}' — max concurrent reached`);
                     continue;
                 }
-                if (entry.concurrency_policy === 'Forbid' && isLocked(this.workspacePath, entry.id)) {
-                    console.error(`[Meta-Cron] Skipping '${entry.id}' — still locked (Forbid)`);
-                    continue;
+                // Concurrency guard: use atomic createLock() as the single point of truth.
+                // Previous code used isLocked() here then createLock() later in fire(), creating
+                // a TOCTOU gap where two ticks could both see isLocked()=false before either locked.
+                if (entry.concurrency_policy === 'Forbid') {
+                    if (!createLock(this.workspacePath, entry.id)) {
+                        console.error(`[Meta-Cron] Skipping '${entry.id}' — lock held (Forbid)`);
+                        continue;
+                    }
+                    // Lock acquired — fire() will use it; if fire() fails early, we clean up below
                 }
                 if (entry.dry_run_remaining > 0) {
                     console.error(
@@ -253,6 +376,8 @@ export class MetaCronEngine {
                         `Would fire '${entry.id}' -> role '${entry.role}'`
                     );
                     entry.dry_run_remaining--;
+                    // Release the lock acquired above — dry runs don't actually fire
+                    if (entry.concurrency_policy === 'Forbid') deleteLock(this.workspacePath, entry.id);
                     mutated = true;
                     continue;
                 }
@@ -266,10 +391,31 @@ export class MetaCronEngine {
     }
 
     private static fire(entry: CronEntry, _crontab: CrontabData): void {
-        if (!createLock(this.workspacePath, entry.id)) {
-            console.error(`[Meta-Cron] Failed to create lock for '${entry.id}'. Check permissions on .optimus/system/cron-locks/ directory.`);
-            return;
+        // Defense-in-depth: per-tick deduplication prevents duplicate tasks even if
+        // leader election is somehow bypassed (e.g., stale leader lock cleanup race).
+        // The tick key is based on cron minute granularity — one fire per ID per minute.
+        const now = new Date();
+        const tickKey = `${entry.id}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+        const tickLockPath = path.join(getLockDir(this.workspacePath), `tick_${tickKey}.lock`);
+        try {
+            const tickDir = getLockDir(this.workspacePath);
+            if (!fs.existsSync(tickDir)) fs.mkdirSync(tickDir, { recursive: true });
+            const fd = fs.openSync(tickLockPath, 'wx');
+            fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, tick: tickKey }), 'utf8');
+            fs.closeSync(fd);
+        } catch (e: any) {
+            if (e?.code === 'EEXIST') {
+                console.error(`[Meta-Cron] Tick dedup: '${entry.id}' already fired for this minute — skipping`);
+                // Release the concurrency lock since we won't actually run
+                if (entry.concurrency_policy === 'Forbid') deleteLock(this.workspacePath, entry.id);
+                return;
+            }
+            // Non-EEXIST errors: log but proceed (don't block the cron on dedup failures)
+            console.error(`[Meta-Cron] Tick dedup warning for '${entry.id}': ${e?.message}`);
         }
+
+        // Note: concurrency lock was already acquired in tick() before calling fire().
+        // No need to createLock() here — that caused the TOCTOU race (Issue #511).
         entry.last_run = new Date().toISOString();
         entry.last_status = 'running';
         entry.run_count++;
@@ -312,6 +458,13 @@ export class MetaCronEngine {
         });
         child.unref();
         fs.closeSync(logFd);
+
+        // Update the lock with the child's PID so isPidRunning() checks the actual worker,
+        // not the MCP server. This prevents stale-lock false positives when the server
+        // restarts but the worker child is still alive (root cause of Issue #511).
+        if (child.pid) {
+            updateLockPid(this.workspacePath, entry.id, child.pid);
+        }
 
         const entryId = entry.id;
         const ws = this.workspacePath;
