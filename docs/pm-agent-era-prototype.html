@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PM在Agent时代的挑战与机会</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0c14;
+  --surface:#13131e;
+  --surface-alt:#1a1a2a;
+  --surface-hover:#222236;
+  --border:rgba(255,255,255,.08);
+  --border-active:rgba(255,255,255,.2);
+  --text:#e8e6f0;
+  --text-dim:#9896a8;
+  --text-muted:#6e6c7e;
+  --accent-warm:#ff6b4a;
+  --accent-warm-soft:rgba(255,107,74,.15);
+  --accent-cool:#6c5ce7;
+  --accent-cool-soft:rgba(108,92,231,.15);
+  --accent-gold:#f0c040;
+  --accent-gold-soft:rgba(240,192,64,.12);
+  --accent-teal:#20c9a0;
+  --accent-teal-soft:rgba(32,201,160,.12);
+  --gradient-hero:linear-gradient(135deg,#1a0a2e 0%,#0c0c14 40%,#0c1420 100%);
+  --gradient-warm:linear-gradient(135deg,var(--accent-warm),#e84393);
+  --gradient-cool:linear-gradient(135deg,var(--accent-cool),#4a69ff);
+  --gradient-gold:linear-gradient(135deg,var(--accent-gold),#e08a1e);
+  --radius:12px;
+  --radius-sm:8px;
+  --shadow:0 4px 24px rgba(0,0,0,.4);
+  --font-zh:'Noto Sans SC',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-zh);
+  line-height:1.7;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--accent-cool);color:#fff}
+
+/* ====== TYPOGRAPHY ====== */
+h1,h2,h3,h4{font-weight:700;line-height:1.3;letter-spacing:-.02em}
+h1{font-size:clamp(2rem,5vw,3.2rem)}
+h2{font-size:clamp(1.5rem,3.5vw,2.2rem);margin-bottom:.6em}
+h3{font-size:1.15rem;margin-bottom:.4em}
+p{margin-bottom:1em}
+.accent-warm{color:var(--accent-warm)}
+.accent-cool{color:var(--accent-cool)}
+.accent-gold{color:var(--accent-gold)}
+.accent-teal{color:var(--accent-teal)}
+
+.container{max-width:960px;margin:0 auto;padding:0 24px}
+
+/* ====== FLOATING NAV ====== */
+.topnav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  background:rgba(12,12,20,.8);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  padding:12px 24px;
+  transition:transform .3s;
+}
+.topnav-inner{
+  max-width:960px;margin:0 auto;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.topnav-title{
+  font-size:.85rem;font-weight:700;color:var(--text-dim);
+  text-transform:uppercase;letter-spacing:.08em;
+}
+.topnav-links{display:flex;gap:4px}
+.topnav-links a{
+  font-size:.78rem;color:var(--text-muted);
+  padding:6px 12px;border-radius:6px;
+  transition:all .2s;text-decoration:none;
+}
+.topnav-links a:hover,.topnav-links a.active{
+  color:var(--text);background:var(--surface-alt);
+}
+
+/* ====== HERO ====== */
+.hero{
+  min-height:100vh;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;
+  text-align:center;
+  padding:120px 24px 80px;
+  background:var(--gradient-hero);
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;
+  width:600px;height:600px;
+  background:radial-gradient(circle,rgba(108,92,231,.15) 0%,transparent 70%);
+  top:-100px;right:-200px;
+  pointer-events:none;
+}
+.hero::after{
+  content:'';position:absolute;
+  width:500px;height:500px;
+  background:radial-gradient(circle,rgba(255,107,74,.1) 0%,transparent 70%);
+  bottom:-100px;left:-150px;
+  pointer-events:none;
+}
+.hero-badge{
+  display:inline-block;
+  font-size:.75rem;font-weight:600;
+  color:var(--accent-cool);
+  background:var(--accent-cool-soft);
+  border:1px solid rgba(108,92,231,.3);
+  padding:6px 16px;border-radius:100px;
+  margin-bottom:24px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.hero h1{
+  max-width:700px;
+  margin-bottom:20px;
+  background:linear-gradient(135deg,#fff 30%,var(--accent-warm) 100%);
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+.hero-subtitle{
+  font-size:clamp(1rem,2.5vw,1.3rem);
+  color:var(--text-dim);
+  max-width:560px;
+  margin-bottom:36px;
+  line-height:1.8;
+}
+.hero-quote{
+  font-size:clamp(1.1rem,2.8vw,1.5rem);
+  font-weight:700;
+  color:var(--accent-warm);
+  max-width:600px;
+  padding:20px 32px;
+  border-left:3px solid var(--accent-warm);
+  background:var(--accent-warm-soft);
+  border-radius:0 var(--radius) var(--radius) 0;
+  text-align:left;
+  margin-bottom:40px;
+}
+.hero-cta{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:14px 32px;
+  background:var(--gradient-cool);
+  color:#fff;font-weight:600;font-size:.95rem;
+  border:none;border-radius:100px;
+  cursor:pointer;text-decoration:none;
+  transition:transform .2s,box-shadow .2s;
+  box-shadow:0 4px 20px rgba(108,92,231,.4);
+}
+.hero-cta:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(108,92,231,.5)}
+.hero-cta svg{width:18px;height:18px}
+
+/* ====== SECTION COMMON ====== */
+section{padding:80px 0}
+section:nth-child(even){background:var(--surface)}
+.section-label{
+  font-size:.7rem;font-weight:700;
+  color:var(--accent-cool);
+  text-transform:uppercase;
+  letter-spacing:.15em;
+  margin-bottom:12px;
+}
+
+/* ====== CORE INSIGHT CARDS ====== */
+.insight-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  gap:20px;
+  margin-top:32px;
+}
+.insight-card{
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:28px 24px;
+  transition:all .3s;
+  cursor:default;
+  position:relative;
+  overflow:hidden;
+}
+.insight-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  border-radius:var(--radius) var(--radius) 0 0;
+  opacity:0;transition:opacity .3s;
+}
+.insight-card:hover{
+  border-color:var(--border-active);
+  transform:translateY(-3px);
+  box-shadow:var(--shadow);
+}
+.insight-card:hover::before{opacity:1}
+.insight-card:nth-child(1)::before{background:var(--gradient-warm)}
+.insight-card:nth-child(2)::before{background:var(--gradient-cool)}
+.insight-card:nth-child(3)::before{background:var(--gradient-gold)}
+.insight-icon{
+  font-size:1.8rem;margin-bottom:12px;
+  width:48px;height:48px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:12px;
+}
+.insight-card:nth-child(1) .insight-icon{background:var(--accent-warm-soft);color:var(--accent-warm)}
+.insight-card:nth-child(2) .insight-icon{background:var(--accent-cool-soft);color:var(--accent-cool)}
+.insight-card:nth-child(3) .insight-icon{background:var(--accent-gold-soft);color:var(--accent-gold)}
+.insight-card h3{font-size:1.05rem}
+.insight-card p{font-size:.88rem;color:var(--text-dim);margin-bottom:0}
+
+/* ====== THREE LAYERS (TABBED) ====== */
+.layers-tabs{
+  display:flex;gap:4px;
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:100px;
+  padding:4px;
+  margin-bottom:32px;
+  overflow-x:auto;
+}
+.layers-tab{
+  flex:1;min-width:0;
+  padding:12px 20px;
+  font-size:.85rem;font-weight:600;
+  color:var(--text-muted);
+  background:transparent;
+  border:none;border-radius:100px;
+  cursor:pointer;
+  transition:all .3s;
+  font-family:var(--font-zh);
+  white-space:nowrap;
+  text-align:center;
+}
+.layers-tab:hover{color:var(--text)}
+.layers-tab.active{
+  color:#fff;
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
+}
+.layers-tab[data-layer="0"].active{background:var(--accent-warm)}
+.layers-tab[data-layer="1"].active{background:var(--accent-cool)}
+.layers-tab[data-layer="2"].active{background:var(--accent-gold)}
+
+.layer-panel{
+  display:none;
+  animation:fadeSlideIn .4s ease;
+}
+.layer-panel.active{display:block}
+
+@keyframes fadeSlideIn{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.layer-content{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+  align-items:start;
+}
+.layer-narrative{
+  font-size:.95rem;
+  color:var(--text-dim);
+  line-height:1.9;
+}
+.layer-narrative strong{color:var(--text)}
+.layer-examples{
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;
+}
+.layer-examples h4{
+  font-size:.8rem;font-weight:600;
+  color:var(--text-muted);text-transform:uppercase;
+  letter-spacing:.1em;margin-bottom:16px;
+}
+.layer-example-item{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:10px 0;
+  border-bottom:1px solid var(--border);
+  font-size:.88rem;
+  color:var(--text-dim);
+}
+.layer-example-item:last-child{border-bottom:none}
+.layer-example-bullet{
+  width:8px;height:8px;border-radius:50%;
+  margin-top:7px;flex-shrink:0;
+}
+.layer-panel[data-layer="0"] .layer-example-bullet{background:var(--accent-warm)}
+.layer-panel[data-layer="1"] .layer-example-bullet{background:var(--accent-cool)}
+.layer-panel[data-layer="2"] .layer-example-bullet{background:var(--accent-gold)}
+
+/* ====== CHALLENGES SECTION ====== */
+.challenge-list{
+  display:flex;flex-direction:column;gap:12px;
+  margin-top:24px;
+}
+.challenge-item{
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  overflow:hidden;
+  transition:border-color .3s;
+}
+.challenge-item.open{border-color:var(--border-active)}
+.challenge-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 24px;
+  cursor:pointer;
+  transition:background .2s;
+  user-select:none;
+}
+.challenge-header:hover{background:var(--surface-hover)}
+.challenge-header-left{display:flex;align-items:center;gap:16px}
+.challenge-number{
+  font-size:.7rem;font-weight:700;
+  color:var(--accent-teal);
+  background:var(--accent-teal-soft);
+  padding:4px 10px;border-radius:100px;
+  letter-spacing:.06em;
+}
+.challenge-title{font-size:1rem;font-weight:600}
+.challenge-arrow{
+  color:var(--text-muted);
+  transition:transform .3s;
+  flex-shrink:0;
+}
+.challenge-item.open .challenge-arrow{transform:rotate(180deg)}
+.challenge-body{
+  max-height:0;overflow:hidden;
+  transition:max-height .4s ease;
+}
+.challenge-body-inner{
+  padding:0 24px 24px;
+  font-size:.9rem;color:var(--text-dim);
+  line-height:1.8;
+}
+.challenge-body-inner strong{color:var(--text)}
+.challenge-severity{
+  display:inline-block;
+  font-size:.7rem;font-weight:700;
+  padding:3px 10px;border-radius:100px;
+  margin-bottom:12px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.severity-high{background:rgba(255,107,74,.15);color:var(--accent-warm)}
+.severity-medium{background:rgba(240,192,64,.15);color:var(--accent-gold)}
+.severity-structural{background:rgba(108,92,231,.15);color:var(--accent-cool)}
+
+/* ====== SCENARIO SWITCHER ====== */
+.scenario-controls{
+  display:flex;gap:12px;
+  margin-bottom:28px;
+  flex-wrap:wrap;
+}
+.scenario-btn{
+  padding:10px 20px;
+  font-size:.85rem;font-weight:600;
+  color:var(--text-dim);
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:100px;
+  cursor:pointer;
+  transition:all .25s;
+  font-family:var(--font-zh);
+}
+.scenario-btn:hover{border-color:var(--border-active);color:var(--text)}
+.scenario-btn.active{
+  color:#fff;
+  border-color:var(--accent-teal);
+  background:var(--accent-teal);
+  box-shadow:0 4px 16px rgba(32,201,160,.3);
+}
+.scenario-content{
+  display:none;
+  animation:fadeSlideIn .4s ease;
+}
+.scenario-content.active{display:block}
+.scenario-card{
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:32px;
+  position:relative;
+}
+.scenario-role{
+  font-size:.7rem;font-weight:700;
+  color:var(--accent-teal);
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  margin-bottom:8px;
+}
+.scenario-card h3{margin-bottom:16px;font-size:1.1rem}
+.scenario-card p{font-size:.9rem;color:var(--text-dim)}
+.scenario-actions{
+  display:flex;flex-wrap:wrap;gap:8px;
+  margin-top:20px;
+}
+.scenario-tag{
+  display:inline-block;
+  font-size:.75rem;font-weight:500;
+  color:var(--text-dim);
+  background:var(--bg);
+  border:1px solid var(--border);
+  padding:5px 14px;border-radius:100px;
+}
+
+/* ====== FORMULA SECTION ====== */
+.formula-box{
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:40px 32px;
+  text-align:center;
+  margin:32px 0;
+}
+.formula-equation{
+  font-size:clamp(1.1rem,3vw,1.6rem);
+  font-weight:700;
+  font-family:var(--font-mono);
+  margin-bottom:16px;
+  letter-spacing:-.01em;
+}
+.formula-operator{color:var(--text-muted);margin:0 8px}
+.formula-caption{font-size:.88rem;color:var(--text-dim)}
+
+/* ====== SEARCHABLE EVIDENCE SECTION ====== */
+.evidence-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:16px;
+  margin-top:24px;
+}
+.evidence-card{
+  background:var(--surface-alt);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:20px;
+  transition:all .3s;
+}
+.evidence-card:hover{border-color:var(--border-active);transform:translateY(-2px)}
+.evidence-source{
+  font-size:.7rem;font-weight:600;
+  color:var(--accent-gold);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:8px;
+}
+.evidence-card h4{font-size:.95rem;margin-bottom:8px}
+.evidence-card p{font-size:.82rem;color:var(--text-dim);margin-bottom:0}
+
+/* ====== TAKEAWAY ====== */
+.takeaway{
+  padding:100px 0;
+  text-align:center;
+  background:var(--gradient-hero);
+  position:relative;
+}
+.takeaway::before{
+  content:'';position:absolute;
+  top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent-cool),transparent);
+}
+.takeaway-headline{
+  font-size:clamp(1.6rem,4vw,2.6rem);
+  font-weight:800;
+  max-width:700px;
+  margin:0 auto 24px;
+  line-height:1.4;
+}
+.takeaway-sub{
+  font-size:1rem;
+  color:var(--text-dim);
+  max-width:500px;
+  margin:0 auto;
+}
+
+/* ====== PROGRESS INDICATOR ====== */
+.progress-bar{
+  position:fixed;top:0;left:0;
+  height:3px;z-index:200;
+  background:var(--gradient-warm);
+  width:0%;
+  transition:width .15s linear;
+}
+
+/* ====== FOOTER ====== */
+footer{
+  padding:32px;
+  text-align:center;
+  font-size:.75rem;
+  color:var(--text-muted);
+  border-top:1px solid var(--border);
+}
+
+/* ====== RESPONSIVE ====== */
+@media(max-width:768px){
+  .topnav-links{display:none}
+  .layer-content{grid-template-columns:1fr}
+  .hero{padding:100px 20px 60px}
+  .hero-quote{padding:16px 20px;font-size:1rem}
+  .formula-equation{font-size:1rem}
+  .scenario-controls{gap:8px}
+  .scenario-btn{padding:8px 14px;font-size:.78rem}
+  section{padding:60px 0}
+  .insight-grid{grid-template-columns:1fr}
+  .evidence-grid{grid-template-columns:1fr}
+}
+
+/* ====== SCROLL ANIMATIONS ====== */
+.reveal{
+  opacity:0;transform:translateY(30px);
+  transition:opacity .6s ease,transform .6s ease;
+}
+.reveal.visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar" id="progressBar"></div>
+
+<!-- Navigation -->
+<nav class="topnav" id="topnav">
+  <div class="topnav-inner">
+    <span class="topnav-title">PM &times; Agent Era</span>
+    <div class="topnav-links">
+      <a href="#insight" data-section="insight">核心洞察</a>
+      <a href="#layers" data-section="layers">三层跃迁</a>
+      <a href="#challenges" data-section="challenges">真实挑战</a>
+      <a href="#scenarios" data-section="scenarios">实战场景</a>
+      <a href="#evidence" data-section="evidence">外部参照</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== HERO ===== -->
+<section class="hero" id="hero">
+  <span class="hero-badge">Interactive Prototype &middot; v0.1</span>
+  <h1>PM在Agent时代的<br>挑战与机会</h1>
+  <p class="hero-subtitle">
+    当执行成本趋近于零，<strong class="accent-warm">判断力</strong>成为最稀缺的杠杆。<br>
+    PM的角色不是被替代，而是被重新定义。
+  </p>
+  <div class="hero-quote">
+    "Agent让执行免费，但判断力从来不打折。"
+  </div>
+  <a href="#insight" class="hero-cta">
+    开始探索
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+  </a>
+</section>
+
+<!-- ===== CORE INSIGHT ===== -->
+<section id="insight">
+  <div class="container reveal">
+    <div class="section-label">Core Shift / 核心转变</div>
+    <h2>从执行者到<span class="accent-cool">判断力枢纽</span></h2>
+    <p style="color:var(--text-dim);max-width:640px;font-size:.95rem;">
+      在Agent时代，执行能力被极大地民主化了。但三件事变得更加稀缺，也更加重要——它们恰好是PM的核心能力。
+    </p>
+
+    <div class="insight-grid">
+      <div class="insight-card">
+        <div class="insight-icon">D</div>
+        <h3>Delegate <span style="color:var(--text-dim);font-weight:400;font-size:.85rem">/ 委派</span></h3>
+        <p>知道把什么任务分配给什么Agent，如何拆解目标，如何组合专家——这是编排能力，不是执行能力。</p>
+      </div>
+      <div class="insight-card">
+        <div class="insight-icon">P</div>
+        <h3>Prioritize <span style="color:var(--text-dim);font-weight:400;font-size:.85rem">/ 排序</span></h3>
+        <p>Agent可以并行处理一切，但什么值得做、什么先做、什么不做——这种判断只能来自对用户和市场的深度理解。</p>
+      </div>
+      <div class="insight-card">
+        <div class="insight-icon">I</div>
+        <h3>Ideate <span style="color:var(--text-dim);font-weight:400;font-size:.85rem">/ 构想</span></h3>
+        <p>Agent执行速度快100倍也无法弥补方向错误的代价。找到正确的问题和正确的切入角度，是PM独有的价值。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== THREE LAYERS ===== -->
+<section id="layers" style="background:var(--surface)">
+  <div class="container reveal">
+    <div class="section-label">Productivity Layers / 生产力三层跃迁</div>
+    <h2>Agent能帮PM做到什么？</h2>
+    <p style="color:var(--text-dim);max-width:600px;font-size:.95rem;margin-bottom:28px;">
+      不同层级的生产力释放，对应不同的认知和组织准备度。点击切换查看每一层的具体表现。
+    </p>
+
+    <div class="layers-tabs" role="tablist">
+      <button class="layers-tab active" data-layer="0" role="tab" aria-selected="true">第一层 · 现有工作提效</button>
+      <button class="layers-tab" data-layer="1" role="tab" aria-selected="false">第二层 · 想得到做不到</button>
+      <button class="layers-tab" data-layer="2" role="tab" aria-selected="false">第三层 · 想不到</button>
+    </div>
+
+    <!-- Layer 0 -->
+    <div class="layer-panel active" data-layer="0">
+      <div class="layer-content">
+        <div class="layer-narrative">
+          <p>
+            <strong>这是最容易理解也最容易落地的一层。</strong>现有工作流程中那些重复的、标准化的环节被Agent加速。
+          </p>
+          <p>PM不需要改变思考方式，只需要<strong>学会使用新工具</strong>。这一层的核心价值是"同样的事做得更快"。</p>
+          <p>风险在于止步于此——如果只把Agent当作效率工具，就浪费了它重新定义产品开发方式的潜力。</p>
+        </div>
+        <div class="layer-examples">
+          <h4>典型场景</h4>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>用Agent自动生成竞品分析初稿，PM只做判断和补充</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>需求文档写作从3小时缩短到30分钟:先让Agent起草,PM做审核和修正</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>日常会议纪要和项目状态更新的自动化整理</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>数据查询和报表生成——从等DBA到自己就能做</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 1 -->
+    <div class="layer-panel" data-layer="1">
+      <div class="layer-content">
+        <div class="layer-narrative">
+          <p>
+            <strong>这一层是真正的分水岭。</strong>某些事情，PM一直知道应该做，但受限于资源、技能门槛或组织流程，从来没能实现。
+          </p>
+          <p>Agent打破了这些约束。<strong>PM以前需要提ticket排期的事，现在可以直接实现原型。</strong>这不是提效——这是能力边界的扩展。</p>
+          <p>关键前提：PM需要学习如何用自然语言描述技术目标，以及如何评估Agent产出的质量。</p>
+        </div>
+        <div class="layer-examples">
+          <h4>典型场景</h4>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>PM直接用Agent搭建交互原型,不再等设计排期</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>让Agent做5个不同方案的A/B测试模拟,数据驱动决策前置</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>跨国竞品的实时监控——以前要养团队,现在Agent就够了</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>用Agent组织异构专家评审(multi-agent council),突破单一视角局限</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 2 -->
+    <div class="layer-panel" data-layer="2">
+      <div class="layer-content">
+        <div class="layer-narrative">
+          <p>
+            <strong>这是最激动人心的一层，也是最难预测的。</strong>Agent的组合和涌现能力会带来PM自己也没想到的产品形态和工作方式。
+          </p>
+          <p>类比：没有人在发明电力前"想到"要发明冰箱。<strong>Agent不是在现有框架里优化，而是在创造新框架。</strong></p>
+          <p>PM在这一层的核心角色是"感知和重新定义"——保持敏感度，一旦发现涌现可能，立刻把它转化为产品机会。</p>
+        </div>
+        <div class="layer-examples">
+          <h4>可能的涌现</h4>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>Agent之间形成的协作模式衍生出全新的产品交付方式</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>持续监控发现的信号被Agent自动合成为新的产品假设</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>Agent自我进化(T3→T2→T1)带来的组织学习方式变革</span>
+          </div>
+          <div class="layer-example-item">
+            <div class="layer-example-bullet"></div>
+            <span>用户反馈→功能上线的闭环从周级缩短到小时级</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Formula -->
+    <div class="formula-box reveal" style="margin-top:40px">
+      <div class="formula-equation">
+        <span class="accent-warm">PM价值</span>
+        <span class="formula-operator">=</span>
+        <span class="accent-cool">判断力</span>
+        <span class="formula-operator">&times;</span>
+        <span class="accent-gold">Agent杠杆率</span>
+      </div>
+      <p class="formula-caption">
+        判断力是分子——它决定方向的正确性；Agent的能力是乘数——但乘以零还是零。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CHALLENGES ===== -->
+<section id="challenges">
+  <div class="container reveal">
+    <div class="section-label">Real Challenges / 真实挑战</div>
+    <h2>落地路上的<span class="accent-warm">三座山</span></h2>
+    <p style="color:var(--text-dim);max-width:600px;font-size:.95rem;">
+      Agent技术的潜力和落地之间存在真实的鸿沟。以下是团队推进中最常遇到的三个结构性挑战。点击展开详情。
+    </p>
+
+    <div class="challenge-list">
+      <!-- Challenge 1 -->
+      <div class="challenge-item">
+        <div class="challenge-header" onclick="toggleChallenge(this)">
+          <div class="challenge-header-left">
+            <span class="challenge-number">01</span>
+            <span class="challenge-title">接受意愿 — 不是不会，是不想</span>
+          </div>
+          <svg class="challenge-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="challenge-body">
+          <div class="challenge-body-inner">
+            <span class="challenge-severity severity-high">影响度: 高</span>
+            <p>
+              <strong>核心矛盾：</strong>Agent改变的不只是工具，而是"谁有权做什么"的权力结构。当PM可以直接生成代码原型，开发的角色感受到威胁；当Agent能做竞品分析，分析师担心被替代。
+            </p>
+            <p>
+              解决路径不是"培训"——培训解决的是能力问题。接受意愿是利益和身份认同问题。需要的是<strong>重新定义角色边界</strong>，让人看到Agent释放了什么空间，而不只是替代了什么。
+            </p>
+            <p style="color:var(--text-muted);font-size:.82rem;font-style:italic;margin-bottom:0">
+              类比：Excel没有让会计消失，但改变了会计做什么——Spreadsheet从计算工具变成分析工具。Agent之于PM也需要同样的叙事转型。
+            </p>
+          </div>
+        </div>
+      </div>
+      <!-- Challenge 2 -->
+      <div class="challenge-item">
+        <div class="challenge-header" onclick="toggleChallenge(this)">
+          <div class="challenge-header-left">
+            <span class="challenge-number">02</span>
+            <span class="challenge-title">技术成熟度差异 — 同一团队，不同时代</span>
+          </div>
+          <svg class="challenge-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="challenge-body">
+          <div class="challenge-body-inner">
+            <span class="challenge-severity severity-medium">影响度: 中-高</span>
+            <p>
+              <strong>核心矛盾：</strong>Agent技术本身在快速迭代。一个月前的最佳实践可能已经过时。团队成员对Agent的理解程度差异巨大——有人已经在用multi-agent编排做复杂任务，有人还在犹豫要不要试GPT。
+            </p>
+            <p>
+              这意味着一个标准化的Agent工作流几乎不可能在全团队同步推进。<strong>更现实的方式是分层引入</strong>：先在愿意接受的小组中验证，再扩展到全团队。
+            </p>
+            <p>
+              另一个维度：不同的Agent平台成熟度也不一样。Anthropic的Building Effective Agents指南指出，最有效的agent系统往往是最简单的——但"简单"在不同团队意味着完全不同的东西。
+            </p>
+          </div>
+        </div>
+      </div>
+      <!-- Challenge 3 -->
+      <div class="challenge-item">
+        <div class="challenge-header" onclick="toggleChallenge(this)">
+          <div class="challenge-header-left">
+            <span class="challenge-number">03</span>
+            <span class="challenge-title">个人背景差异 — 同样的工具，不同的天花板</span>
+          </div>
+          <svg class="challenge-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="challenge-body">
+          <div class="challenge-body-inner">
+            <span class="challenge-severity severity-structural">影响度: 结构性</span>
+            <p>
+              <strong>核心矛盾：</strong>Agent放大的是使用者的判断力和提问能力。背景越丰富、思维模型越多的PM，从Agent获得的杠杆越大。这创造了一种"能力马太效应"——强者越强，差距加速拉开。
+            </p>
+            <p>
+              <strong>外部搜索作为核心专家行为</strong>是一个关键拉平机制。当我们要求每个专家都必须做外部搜索、引用外部证据，就把"信息获取能力"从个人禀赋变成了标准流程。这让背景差异对准的影响减少。
+            </p>
+            <p>
+              但搜索不能完全替代经验积累形成的直觉——只是能缩小起点差距。长期来看，组织需要投资<strong>"判断力的可复用框架"</strong>，把优秀PM的决策模式显式化、可传授。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SCENARIO SWITCHER ===== -->
+<section id="scenarios" style="background:var(--surface)">
+  <div class="container reveal">
+    <div class="section-label">Audience Perspectives / 听众视角</div>
+    <h2>不同角色看到的<span class="accent-teal">不同风景</span></h2>
+    <p style="color:var(--text-dim);max-width:600px;font-size:.95rem;margin-bottom:28px;">
+      同一场分享中的三类典型听众。切换看看他们各自最关心什么。
+    </p>
+
+    <div class="scenario-controls">
+      <button class="scenario-btn active" data-scenario="0">积极实践者</button>
+      <button class="scenario-btn" data-scenario="1">观望者</button>
+      <button class="scenario-btn" data-scenario="2">管理决策者</button>
+    </div>
+
+    <!-- Scenario 0 -->
+    <div class="scenario-content active" data-scenario="0">
+      <div class="scenario-card">
+        <div class="scenario-role">Profile: 已经在用Agent的PM</div>
+        <h3>他们想知道：下一步往哪走？</h3>
+        <p>
+          这类听众已经体验过Agent带来的加速感，甚至已经在做multi-agent编排。他们的核心问题不是"要不要用"，而是"<strong>怎么用得更系统化</strong>"。
+        </p>
+        <p>
+          对他们来说，最有价值的内容是：方法论框架（如三层跃迁），以及真实的组织落地经验——不是技术demo，而是"在真实团队里遇到了什么阻力，怎么解决的"。
+        </p>
+        <div class="scenario-actions">
+          <span class="scenario-tag">已有Agent使用经验</span>
+          <span class="scenario-tag">寻求体系化方法</span>
+          <span class="scenario-tag">关注组织推广挑战</span>
+          <span class="scenario-tag">希望看到高阶用法</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 1 -->
+    <div class="scenario-content" data-scenario="1">
+      <div class="scenario-card">
+        <div class="scenario-role">Profile: 知道Agent但还没真正用的PM</div>
+        <h3>他们想知道：值不值得现在投入？</h3>
+        <p>
+          这类听众了解Agent概念，可能试过ChatGPT/Claude做简单任务，但还没有在正式工作流中使用。他们的核心犹豫是<strong>不确定ROI</strong>。
+        </p>
+        <p>
+          对他们来说，最有杀伤力的内容是：具体的before/after对比——来一个PM原来花3天的任务，用Agent变成3小时。以及一个"最小可行起点"——第一周可以做什么。
+        </p>
+        <div class="scenario-actions">
+          <span class="scenario-tag">概念上认可</span>
+          <span class="scenario-tag">行动上犹豫</span>
+          <span class="scenario-tag">需要具体ROI证据</span>
+          <span class="scenario-tag">想要低门槛起步路径</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 2 -->
+    <div class="scenario-content" data-scenario="2">
+      <div class="scenario-card">
+        <div class="scenario-role">Profile: 负责团队或产品方向的Leader</div>
+        <h3>他们想知道：如何在团队层面推进？</h3>
+        <p>
+          管理者关心的不是个人效率，而是<strong>组织能力建设</strong>。他们的问题是：如何评估团队的Agent准备度？应该先投资哪个方向？怎么避免只有几个人会用，其他人原地踏步？
+        </p>
+        <p>
+          对他们来说，最核心的frame是：Agent不是一个工具采购决策，而是一个<strong>组织变革议题</strong>。需要讨论能力梯队、知识管理、和衡量标准。
+        </p>
+        <div class="scenario-actions">
+          <span class="scenario-tag">关注组织投入策略</span>
+          <span class="scenario-tag">需要评估框架</span>
+          <span class="scenario-tag">担忧团队差距扩大</span>
+          <span class="scenario-tag">寻求可衡量的成果</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== EXTERNAL EVIDENCE ===== -->
+<section id="evidence">
+  <div class="container reveal">
+    <div class="section-label">External References / 外部参照</div>
+    <h2>不止内部经验——<span class="accent-gold">外部视角</span>同样重要</h2>
+    <p style="color:var(--text-dim);max-width:600px;font-size:.95rem;">
+      外部搜索不是辅助动作，而是专家工作的<strong>核心行为</strong>。以下是当前讨论中已参考的外部信号。
+    </p>
+
+    <div class="evidence-grid">
+      <div class="evidence-card">
+        <div class="evidence-source">Anthropic</div>
+        <h4>Building Effective Agents</h4>
+        <p>最有效的agent系统往往是最简单的。关键不是构建复杂的multi-agent架构，而是为任务选择最小够用的编排模式。</p>
+      </div>
+      <div class="evidence-card">
+        <div class="evidence-source">LangChain</div>
+        <h4>Multi-agent System Design</h4>
+        <p>多Agent系统设计需要明确的任务边界和通信协议。过度耦合的Agent网络比单Agent更脆弱。</p>
+      </div>
+      <div class="evidence-card">
+        <div class="evidence-source">Council Review</div>
+        <h4>竞争叙事 Benchmark</h4>
+        <p>当前缺少与竞品的叙事对标。需要回答：其他团队对PM+Agent的叙事是什么？我们的差异化立场是什么？</p>
+      </div>
+      <div class="evidence-card">
+        <div class="evidence-source">PM Review</div>
+        <h4>证据分层与搜索分工</h4>
+        <p>外部搜索需要按象限分工（学术/实践/框架/反面）。每位专家应有独立的搜索领域，避免重复和低质量引用。</p>
+      </div>
+      <div class="evidence-card">
+        <div class="evidence-source">DX Expert</div>
+        <h4>工作流改造建议</h4>
+        <p>证据与观点需要显式分层。每个claim都应标注[已验证]、[推断]、或[假设]，降低综合成本。</p>
+      </div>
+      <div class="evidence-card">
+        <div class="evidence-source">Insight</div>
+        <h4>能力马太效应</h4>
+        <p>Agent放大既有能力——背景和判断力更强的PM获得更大杠杆。外部搜索作为标准流程可部分拉平起点差距。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== TAKEAWAY ===== -->
+<section class="takeaway" id="takeaway">
+  <div class="container reveal">
+    <p class="section-label" style="color:var(--accent-warm)">Takeaway / 最后一句</p>
+    <h2 class="takeaway-headline">
+      Agent让<span class="accent-warm">执行</span>免费，<br>
+      但<span class="accent-cool">判断力</span>从来不打折。
+    </h2>
+    <p class="takeaway-sub">
+      在这个时代，PM最重要的升级不是学会使用Agent，<br>而是学会用更好的判断力去驾驭更强的杠杆。
+    </p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  PM在Agent时代的挑战与机会 &middot; Interactive Prototype v0.1 &middot; Powered by Council Synthesis
+</footer>
+
+<script>
+// ===== Tab switching for Three Layers =====
+document.querySelectorAll('.layers-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const layer = tab.dataset.layer;
+    // Update tabs
+    document.querySelectorAll('.layers-tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    // Update panels
+    document.querySelectorAll('.layer-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector(`.layer-panel[data-layer="${layer}"]`).classList.add('active');
+  });
+});
+
+// ===== Accordion for Challenges =====
+function toggleChallenge(header) {
+  const item = header.parentElement;
+  const body = item.querySelector('.challenge-body');
+  const isOpen = item.classList.contains('open');
+
+  // Close all
+  document.querySelectorAll('.challenge-item').forEach(ci => {
+    ci.classList.remove('open');
+    ci.querySelector('.challenge-body').style.maxHeight = null;
+  });
+
+  // Open clicked if it was closed
+  if (!isOpen) {
+    item.classList.add('open');
+    body.style.maxHeight = body.scrollHeight + 'px';
+  }
+}
+
+// ===== Scenario switcher =====
+document.querySelectorAll('.scenario-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const scenario = btn.dataset.scenario;
+    document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.scenario-content').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.scenario-content[data-scenario="${scenario}"]`).classList.add('active');
+  });
+});
+
+// ===== Scroll progress bar =====
+window.addEventListener('scroll', () => {
+  const scrolled = window.scrollY;
+  const total = document.documentElement.scrollHeight - window.innerHeight;
+  const pct = total > 0 ? (scrolled / total) * 100 : 0;
+  document.getElementById('progressBar').style.width = pct + '%';
+});
+
+// ===== Active nav link tracking =====
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.topnav-links a');
+
+function updateActiveNav() {
+  const scrollY = window.scrollY + 120;
+  sections.forEach(section => {
+    const top = section.offsetTop;
+    const height = section.offsetHeight;
+    const id = section.getAttribute('id');
+    if (scrollY >= top && scrollY < top + height) {
+      navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.dataset.section === id) link.classList.add('active');
+      });
+    }
+  });
+}
+window.addEventListener('scroll', updateActiveNav);
+
+// ===== Reveal on scroll =====
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ===== Smooth anchor scrolling =====
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
+</script>
+</body>
+</html>
