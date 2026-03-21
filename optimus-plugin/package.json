@@ -4,7 +4,7 @@
   "description": "Spartan Swarm Orchestrator — a universal multi-agent MCP plugin",
   "main": "dist/mcp-server.js",
   "bin": {
-    "optimus": "./bin/cli.js"
+    "optimus": "bin/cli.js"
   },
   "type": "commonjs",
   "scripts": {
