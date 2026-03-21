@@ -1,6 +1,9 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import { ClaudePermissionMode, getClaudeCliAutomationArgs } from '../utils/automationPolicy';
+import * as fs from 'fs';
+import * as path from 'path';
+import { loadProjectMcpServers } from '../utils/mcpConfig';
 // Claude CLI process line prefixes: spinning indicator (⏺), bullets (•), tree chars (└│├)
 const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 
@@ -62,28 +65,16 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
     protected getSpawnCommand(mode: AgentMode): { cmd: string, args: string[] } {
         const args: string[] = [];
         const cwd = PersistentAgentAdapter.getWorkspacePath();
-        const fs = require('fs');
-        const path = require('path');
         
         args.push('--add-dir', cwd);
 
-        // Auto-detect and isolate local MCP context specifically for Claude-code -> prevents "128 tools" global bug
-        const localMcpPath = path.join(cwd, '.vscode', 'mcp.json');
-        if (fs.existsSync(localMcpPath)) {
+        // Prefer the canonical Optimus MCP config, then fall back to legacy client files.
+        const projectMcpServers = loadProjectMcpServers(cwd, 'claude');
+        if (projectMcpServers) {
             try {
-                let mcpContent = fs.readFileSync(localMcpPath, 'utf8');
-                // Replace VS Code specific macros with absolute paths so Claude can execute them
-                mcpContent = mcpContent.replace(/\$\{workspaceFolder\}/g, cwd.replace(/\\/g, '/'));
-                // Replace ${env:VAR} patterns with actual environment variable values
-                mcpContent = mcpContent.replace(/\$\{env:(\w+)\}/g, (_: string, varName: string) => {
-                    return (process.env[varName] || '').replace(/\\/g, '/');
-                });
-                const localMcp = JSON.parse(mcpContent);
-                // Normalize "servers" -> "mcpServers" for Claude
-                const claudeMcp = { mcpServers: localMcp.servers || localMcp.mcpServers || {} };
                 const proxyMcpPath = path.join(cwd, '.optimus', '.claude-mcp.json');
                 fs.mkdirSync(path.dirname(proxyMcpPath), { recursive: true });
-                fs.writeFileSync(proxyMcpPath, JSON.stringify(claudeMcp, null, 2));
+                fs.writeFileSync(proxyMcpPath, JSON.stringify({ mcpServers: projectMcpServers }, null, 2));
                 args.push('--mcp-config', proxyMcpPath);
             } catch (e) {
                 // Silently ignore parse errors

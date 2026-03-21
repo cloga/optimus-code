@@ -1,0 +1,15 @@
+{
+    "mcpServers": {
+        "spartan-swarm": {
+            "type": "stdio",
+            "command": "node",
+            "args": [
+                "./.optimus/dist/mcp-server.js"
+            ],
+            "env": {
+                "OPTIMUS_WORKSPACE_ROOT": ".",
+                "DOTENV_PATH": "./.env"
+            }
+        }
+    }
+}

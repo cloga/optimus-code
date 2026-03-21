@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeClientMcpConfigs } = require('../lib/mcp-config');
 
 function deepMergePreserveUser(template, user) {
   const result = { ...template };
@@ -152,12 +153,7 @@ module.exports = function upgrade() {
   // 5. State/Tasks/Reports/Reviews/Memory: NEVER TOUCH
   console.log('⏭️  Runtime data preserved');
 
-  // 6. .vscode/mcp.json: Re-generate spartan-swarm entry (always overwrite)
-  const vscodeMcpDir = path.join(cwd, '.vscode');
-  const vscodeMcpPath = path.join(vscodeMcpDir, 'mcp.json');
-  if (!fs.existsSync(vscodeMcpDir)) {
-    fs.mkdirSync(vscodeMcpDir, { recursive: true });
-  }
+  // 6. Refresh the local MCP bundle used by generated client configs
   const srcDistPath = path.resolve(pluginRoot, 'dist', 'mcp-server.js');
   const destDistDir = path.join(optimusDir, 'dist');
   const destDistPath = path.join(destDistDir, 'mcp-server.js');
@@ -181,34 +177,12 @@ module.exports = function upgrade() {
       fs.writeFileSync(destDistPath, patchedContent, 'utf8');
     }
   }
-  const spartanEntry = {
-    type: "stdio",
-    command: "node",
-    args: ["${workspaceFolder}/.optimus/dist/mcp-server.js"],
-    env: {
-      "OPTIMUS_WORKSPACE_ROOT": "${workspaceFolder}",
-      "DOTENV_PATH": "${workspaceFolder}/.env",
-      "PATH": "${env:PATH}"
-    }
-  };
-
-  if (fs.existsSync(vscodeMcpPath)) {
-    try {
-      const existing = JSON.parse(fs.readFileSync(vscodeMcpPath, 'utf8'));
-      const key = existing.servers ? 'servers' : 'mcpServers';
-      if (!existing[key]) existing[key] = {};
-      existing[key]['spartan-swarm'] = spartanEntry;
-      fs.writeFileSync(vscodeMcpPath, JSON.stringify(existing, null, 4), 'utf8');
-      console.log('\n🔌 Updated spartan-swarm entry in .vscode/mcp.json');
-    } catch (e) {
-      console.log('\n⚠️  Could not parse existing .vscode/mcp.json, skipping merge');
-    }
-  } else {
-    const mcpConfig = { servers: { "spartan-swarm": spartanEntry }, inputs: [] };
-    fs.writeFileSync(vscodeMcpPath, JSON.stringify(mcpConfig, null, 4), 'utf8');
-    console.log('\n🔌 Generated .vscode/mcp.json (MCP server config for VS Code / Copilot)');
-  }
-  console.log('   📍 MCP server path: ${workspaceFolder}/.optimus/dist/mcp-server.js');
+  writeClientMcpConfigs(cwd);
+  console.log('\n🔌 Regenerated MCP client configs from .optimus/config/mcp-servers.json');
+  console.log('   • VS Code / GitHub Copilot: .vscode/mcp.json');
+  console.log('   • GitHub Copilot CLI:       .copilot/mcp-config.json');
+  console.log('   • Claude Code:              .mcp.json');
+  console.log('   📍 MCP server path: .optimus/dist/mcp-server.js');
 
   // 7. Ensure system-instructions references exist in IDE instruction files
   const { injectSystemInstructions } = require('../lib/inject');

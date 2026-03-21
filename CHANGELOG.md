@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.10.0] - 2026-03-21
+
+### Features
+- **Unified project MCP config is now first-class** — Optimus now treats `.optimus/config/mcp-servers.json` as the single source of truth for workspace MCP server definitions instead of hardcoding `.vscode/mcp.json` as the canonical config.
+- **`optimus init` / `optimus upgrade` now generate multi-client MCP configs** — Workspaces now get synchronized project-local MCP files for VS Code / GitHub Copilot (`.vscode/mcp.json`), GitHub Copilot CLI (`.copilot/mcp-config.json`), and Claude Code (`.mcp.json`) from one shared definition.
+
+### Fixes
+- **Claude Code and ACP flows no longer depend on VS Code config layout** — Runtime adapters now prefer the canonical Optimus MCP config and only fall back to legacy client files, removing the old coupling to `.vscode/mcp.json`.
+- **Cross-platform workspace config is now portable across Windows and macOS** — Generated Claude and Copilot CLI config files use project-relative paths, while VS Code keeps its native workspace macro format.
+
+### Compatibility
+- **Existing VS Code-based workspaces remain supported** — Legacy `.vscode/mcp.json` workspaces still work as a fallback while newer workspaces can adopt the unified source config.
+- **Recommended for teams validating multiple MCP clients** — This release is intended for shared testing across Claude Code, VS Code Copilot, and Copilot CLI with one project-owned configuration model.
+
 ## [2.9.0] - 2026-03-19
 
 ### Features

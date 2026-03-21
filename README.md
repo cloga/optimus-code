@@ -30,13 +30,17 @@ It transforms a single AI assistant into a coordinated swarm of specialized agen
 npx -y github:cloga/optimus-code init
 ```
 
-This creates a `.optimus/` folder with agent definitions, skills, and config in the current directory. It also auto-generates `.vscode/mcp.json` for VS Code / GitHub Copilot users.
+This creates a `.optimus/` folder with agent definitions, skills, and config in the current directory. It also writes a canonical MCP source file at `.optimus/config/mcp-servers.json` and generates client configs for:
+
+- VS Code / GitHub Copilot: `.vscode/mcp.json`
+- GitHub Copilot CLI: `.copilot/mcp-config.json`
+- Claude Code: `.mcp.json`
 
 ### Step 2: (Optional) Configure MCP for non-VS-Code clients
 
-> **VS Code / GitHub Copilot users:** Skip this step. `optimus init` already configured your MCP server in `.vscode/mcp.json`.
+> **VS Code, Copilot CLI, and Claude Code users:** Skip this step. `optimus init` already generated the project-local MCP files those clients expect.
 
-For Cursor, Windsurf, Claude Code, or other MCP clients, configure manually:
+For Cursor, Windsurf, Roo Cline, or other MCP clients, configure manually:
 
 #### Cursor / Windsurf / Roo Cline
 
@@ -52,12 +56,6 @@ Create or edit `.cursor/mcp.json` (or equivalent) in the project root:
     }
   }
 }
-```
-
-#### Claude Code
-
-```bash
-claude mcp add optimus-swarm -- npx -y github:cloga/optimus-code serve
 ```
 
 #### Any other MCP client
@@ -79,7 +77,11 @@ If you've previously initialized and want to update to the latest skills, roles,
 npx -y github:cloga/optimus-code upgrade
 ```
 
-This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory.
+This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory. It also regenerates `.vscode/mcp.json`, `.copilot/mcp-config.json`, and `.mcp.json` from `.optimus/config/mcp-servers.json`.
+
+### MCP configuration model
+
+Optimus now treats `.optimus/config/mcp-servers.json` as the single source of truth for workspace MCP server definitions. Edit that file when you want to customize the local Optimus server entry, then run `optimus upgrade` (or regenerate via init in a fresh workspace) to project the same server into each supported client config.
 
 ### Step 3: (Optional) Enable GitHub integration
 
