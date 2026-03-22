@@ -23,6 +23,27 @@ Rules:
 This applies to: HTTP runtime, MCP tools, ACP adapter, worker-spawner, and any future error surfaces.
 
 ---
+id: mem_copilot_acp_auth_20260322
+category: architecture
+tags: [copilot, acp, authentication, gh-cli, engine-auth]
+created: 2026-03-22T10:57:00.000Z
+---
+## GitHub Copilot ACP Authentication Mechanism
+
+Copilot ACP (`copilot --acp`) uses the **`gh` CLI auth context**, NOT environment variables.
+
+- Auth is stored in `~/.config/gh/hosts.yml`, managed by `gh auth login`
+- The `copilot --acp` child process inherits the `gh` CLI session automatically
+- **Do NOT use** `GH_TOKEN` or `GITHUB_TOKEN` env vars for Copilot ACP auth
+- `.env` `GITHUB_TOKEN` is for **Optimus's own GitHub API operations** (issues, PRs, repo access) — completely separate
+
+**Setup:** `gh auth login` → verify with `gh auth status`
+
+**Common mistake:** setting `GH_TOKEN=$(gh auth token)` before starting the runtime. This works but is unnecessary — `copilot --acp` reads `gh` config directly. If `GH_TOKEN` is set, it may override the `gh` config and cause issues when the token expires.
+
+**Claude Code** is different: uses `claude login` or `ANTHROPIC_API_KEY` env var.
+
+---
 id: mem_1773295993057_419
 category: feature-completion
 tags: [write_blackboard_artifact, mcp-tool, security, symlink, plan-mode]
