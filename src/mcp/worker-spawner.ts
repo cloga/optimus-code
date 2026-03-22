@@ -22,6 +22,7 @@ import { AgentAdapter } from "../adapters/AgentAdapter";
 import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
 import { AcpAdapter } from "../adapters/AcpAdapter";
+import { AcpProcessPool } from "../utils/acpProcessPool";
 import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
@@ -1535,7 +1536,8 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
             console.error(`[Engine] Auto-discovered ${engine} CLI: ${transport.executable} ${discoveredArgs.join(' ')}`);
         }
         const activityMs = workspacePath ? loadEngineActivityTimeout(workspacePath, engine) : 0;
-        return new AcpAdapter(`acp-${engine}`, `🚀 ${engine}`, transport.executable || 'copilot', transport.args, activityMs);
+        // Use persistent process pool for warm ACP adapter reuse
+        return AcpProcessPool.getInstance().getOrCreateAdapter(engine, transport.executable || 'copilot', transport.args, activityMs);
     }
 
     const hasAutomationConfig = !!engineConfig?.automation && typeof engineConfig.automation === 'object';

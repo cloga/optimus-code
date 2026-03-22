@@ -31,6 +31,12 @@ type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification;
  * Supports both NDJSON (newline-delimited) and Content-Length framing,
  * auto-detected from agent responses.
  *
+ * Supports two lifecycle modes:
+ *   - **Ephemeral** (default): Process spawned per invoke(), killed in finally.
+ *   - **Persistent**: Process stays alive between invocations. Used by AcpProcessPool
+ *     to eliminate cold-start overhead (~1-2s per task). Process auto-recovers
+ *     from crashes on next invoke().
+ *
  * Verified working with: Qwen Code v0.12.3, claude-agent-acp v0.21.0
  */
 export class AcpAdapter implements AgentAdapter {
@@ -54,12 +60,44 @@ export class AcpAdapter implements AgentAdapter {
     private lastUpdateTime: number = 0;
     private activityTimer?: ReturnType<typeof setInterval>;
 
-    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0) {
+    // Persistent mode state
+    private _persistent: boolean;
+    private _initialized: boolean = false;
+    private _busy: boolean = false;
+    private _idleSince: number = 0;
+    private _invocationCount: number = 0;
+
+    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false) {
         this.id = id;
         this.name = name;
         this.executable = executable;
         this.defaultArgs = defaultArgs;
         this.activityTimeoutMs = activityTimeoutMs;
+        this._persistent = persistent;
+    }
+
+    // --- Pool management API ---
+
+    get persistent(): boolean { return this._persistent; }
+    get idleSince(): number { return this._idleSince; }
+    get invocationCount(): number { return this._invocationCount; }
+
+    /** Check if the adapter's process is alive and initialized */
+    isAlive(): boolean {
+        return !!this.process && this._initialized && !this.process.killed;
+    }
+
+    /** Check if the adapter is currently handling a task */
+    isBusy(): boolean {
+        return this._busy;
+    }
+
+    /** Graceful shutdown — kills process and resets state. Used by pool eviction. */
+    shutdown(): void {
+        debugLog('[AcpAdapter]', `Shutting down adapter ${this.id} (invocations: ${this._invocationCount})`);
+        this.cleanup();
+        this._initialized = false;
+        this._busy = false;
     }
 
     private isInvalidParamsError(err: unknown): boolean {
@@ -167,15 +205,23 @@ export class AcpAdapter implements AgentAdapter {
             debugLog('[AcpAdapter][stderr]', chunk.toString('utf8').trimEnd());
         });
 
+        // Track process identity for exit handler closure
+        const thisProcess = this.process;
+
         this.process.on('error', (err) => {
             debugLog('[AcpAdapter]', `Process error: ${err.message}`);
-            this.rejectAllPending(err);
+            if (this.process === thisProcess) {
+                this.rejectAllPending(err);
+            }
         });
 
         this.process.on('exit', (code, signal) => {
             debugLog('[AcpAdapter]', `Process exited: code=${code} signal=${signal}`);
+            // Only handle if this is still the current process (not replaced by respawn)
+            if (this.process !== thisProcess) return;
             this.rejectAllPending(new Error(`ACP process exited unexpectedly (code=${code}, signal=${signal})`));
             this.process = undefined;
+            this._initialized = false;
         });
 
         this.lastDebugInfo = {
@@ -205,14 +251,192 @@ export class AcpAdapter implements AgentAdapter {
         this.notificationHandlers.clear();
         this.pendingRequests.clear();
         if (this.process) {
-            this.process.kill('SIGTERM');
-            this.process = undefined;
+            const proc = this.process;
+            this.process = undefined; // Clear reference first to prevent stale exit handler from clobbering new process
+            proc.kill('SIGTERM');
         }
     }
 
     // ─── Core ACP Invocation flow ───
 
     async invoke(
+        prompt: string,
+        mode: AgentMode,
+        sessionId?: string,
+        onUpdate?: (chunk: string) => void,
+        extraEnv?: Record<string, string>
+    ): Promise<string> {
+        if (this._persistent) {
+            return this._invokePersistent(prompt, mode, sessionId, onUpdate, extraEnv);
+        }
+        return this._invokeEphemeral(prompt, mode, sessionId, onUpdate, extraEnv);
+    }
+
+    /**
+     * Ensure the ACP process is spawned and initialized. Idempotent.
+     * Auto-recovers from process crashes by respawning.
+     */
+    private async _ensureReady(extraEnv?: Record<string, string>): Promise<void> {
+        if (this.isAlive()) return;
+
+        // Clean up dead process if any
+        if (this.process) {
+            try { this.process.kill('SIGTERM'); } catch { /* already dead */ }
+            this.process = undefined;
+            this._initialized = false;
+        }
+
+        this.spawnProcess(extraEnv);
+
+        const initResult = await this.sendRequest('initialize', {
+            protocolVersion: 1,
+            capabilities: {},
+            clientInfo: { name: 'optimus', version: '0.4.0' }
+        });
+        debugLog('[AcpAdapter]', `Initialize OK (persistent): ${JSON.stringify(initResult)?.substring(0, 200)}`);
+        this._initialized = true;
+    }
+
+    /**
+     * Persistent mode: process stays alive between invocations.
+     * Each call creates a new session, sends prompt, collects output.
+     * Process is NOT killed after completion — reused by next invocation.
+     */
+    private async _invokePersistent(
+        prompt: string,
+        mode: AgentMode,
+        sessionId?: string,
+        onUpdate?: (chunk: string) => void,
+        extraEnv?: Record<string, string>
+    ): Promise<string> {
+        debugLog('[AcpAdapter]', `Invoking persistent for ${this.name} (mode=${mode}, resume=${!!sessionId}, invocation=#${this._invocationCount + 1})`);
+        this._busy = true;
+        this._invocationCount++;
+
+        try {
+            // Step 1: Ensure process is spawned and initialized (no-op if already warm)
+            await this._ensureReady(extraEnv);
+
+            // Step 2: Create or resume session (per-task, with per-task MCP env)
+            const createSession = async (): Promise<string> => {
+                const mcpServers = this.loadMcpServers(extraEnv);
+                const newResult = await this.sendRequest('session/new', {
+                    cwd: process.cwd(),
+                    mcpServers
+                });
+                const freshSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
+                debugLog('[AcpAdapter]', `New session created (persistent): ${freshSessionId}`);
+                return freshSessionId;
+            };
+
+            const sendPromptWithCompatibility = async (currentSessionId: string): Promise<any> => {
+                try {
+                    return await this.sendRequest('session/prompt', {
+                        sessionId: currentSessionId,
+                        text: prompt
+                    });
+                } catch (err) {
+                    if (!this.isInvalidParamsError(err)) throw err;
+                    debugLog('[AcpAdapter]', `session/prompt rejected text params; retrying content-array`);
+                    return await this.sendRequest('session/prompt', {
+                        sessionId: currentSessionId,
+                        prompt: [{ type: 'text', text: prompt }]
+                    });
+                }
+            };
+
+            let currentSessionId: string;
+            if (sessionId) {
+                try {
+                    const loadResult = await this.sendRequest('session/load', { sessionId });
+                    currentSessionId = loadResult?.sessionId || sessionId;
+                    debugLog('[AcpAdapter]', `Session loaded (persistent): ${currentSessionId}`);
+                } catch (err) {
+                    if (!this.isInvalidParamsError(err)) throw err;
+                    debugLog('[AcpAdapter]', `session/load rejected; falling back to fresh session`);
+                    currentSessionId = await createSession();
+                }
+            } else {
+                currentSessionId = await createSession();
+            }
+            this.lastSessionId = currentSessionId;
+
+            // Step 3: Register notification handler and send prompt
+            const outputChunks: string[] = [];
+            this.notificationHandlers.set('session/update', (params: any) => {
+                this.lastUpdateTime = Date.now();
+                const update = params?.update;
+                if (!update) return;
+
+                if (update.sessionUpdate === 'agent_message_chunk') {
+                    const text = update.content?.text || '';
+                    if (text) {
+                        outputChunks.push(text);
+                        if (onUpdate) onUpdate(text);
+                    }
+                    if (update._meta?.usage) {
+                        this.lastUsageLog = JSON.stringify(update._meta.usage);
+                    }
+                } else if (update.sessionUpdate === 'agent_thought_chunk') {
+                    const text = update.content?.text || '';
+                    if (text && onUpdate) onUpdate(`[thinking] ${text}`);
+                }
+            });
+
+            this.lastUpdateTime = Date.now();
+            if (this.activityTimeoutMs > 0) {
+                const checkInterval = Math.min(this.activityTimeoutMs / 4, 30000);
+                this.activityTimer = setInterval(() => {
+                    const elapsed = Date.now() - this.lastUpdateTime;
+                    if (elapsed >= this.activityTimeoutMs) {
+                        const timeoutErr = new Error(
+                            `[AcpAdapter] Activity timeout: no session/update for ${Math.round(elapsed / 1000)}s`
+                        );
+                        debugLog('[AcpAdapter]', timeoutErr.message);
+                        this.stopActivityTimer();
+                        this.rejectAllPending(timeoutErr);
+                    }
+                }, checkInterval);
+            }
+
+            let promptResult: any;
+            try {
+                promptResult = await sendPromptWithCompatibility(currentSessionId);
+            } catch (err) {
+                if (!sessionId || !this.isInvalidParamsError(err)) throw err;
+                debugLog('[AcpAdapter]', `Persisted session rejected; retrying with fresh session`);
+                currentSessionId = await createSession();
+                this.lastSessionId = currentSessionId;
+                promptResult = await sendPromptWithCompatibility(currentSessionId);
+            }
+            this.stopActivityTimer();
+
+            const fullOutput = outputChunks.join('');
+            if (!this.lastDebugInfo) this.lastDebugInfo = {};
+            this.lastDebugInfo.endTime = Date.now();
+            debugLog('[AcpAdapter]', `Done (persistent, #${this._invocationCount}). Output: ${fullOutput.length} chars`);
+            return fullOutput;
+
+        } catch (err: any) {
+            debugLog('[AcpAdapter]', `Error during persistent ACP flow: ${err.message}`);
+            // If process died, mark for re-init on next invoke
+            if (!this.process || this.process.killed) {
+                this._initialized = false;
+            }
+            throw err;
+        } finally {
+            this._busy = false;
+            this._idleSince = Date.now();
+            this.stopActivityTimer();
+            this.notificationHandlers.clear();
+            // Do NOT cleanup/kill process — keep alive for next invocation
+        }
+    }
+
+    /**
+     * Ephemeral mode (original behavior): spawn, work, kill.
+     */
+    private async _invokeEphemeral(
         prompt: string,
         mode: AgentMode,
         sessionId?: string,
@@ -363,8 +587,12 @@ export class AcpAdapter implements AgentAdapter {
     /**
      * Load project MCP server config and convert it to ACP array format.
      * ACP expects: [{ name, command, args, env: [{ name, value }] }]
+     *
+     * In persistent mode, per-task env vars (delegation depth, role, etc.)
+     * are injected into each MCP server's env config so child processes
+     * get the correct context even though the ACP process is reused.
      */
-    private loadMcpServers(): any[] {
+    private loadMcpServers(extraEnv?: Record<string, string>): any[] {
         const cwd = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
         const servers = loadProjectMcpServers(cwd, 'runtime');
 
@@ -373,12 +601,30 @@ export class AcpAdapter implements AgentAdapter {
             return [];
         }
 
-        const acpServers = Object.entries(servers).map(([name, config]: [string, any]) => ({
-            name,
-            command: config.command || '',
-            args: config.args || [],
-            env: Object.entries(config.env || {}).map(([k, v]) => ({ name: k, value: String(v) }))
-        }));
+        const acpServers = Object.entries(servers).map(([name, config]: [string, any]) => {
+            const envEntries = Object.entries(config.env || {}).map(([k, v]) => ({ name: k, value: String(v) }));
+
+            // Inject per-task env vars into MCP server configs
+            if (extraEnv) {
+                for (const [k, v] of Object.entries(extraEnv)) {
+                    if (v !== undefined && v !== '') {
+                        const existingIdx = envEntries.findIndex(e => e.name === k);
+                        if (existingIdx >= 0) {
+                            envEntries[existingIdx].value = v;
+                        } else {
+                            envEntries.push({ name: k, value: v });
+                        }
+                    }
+                }
+            }
+
+            return {
+                name,
+                command: config.command || '',
+                args: config.args || [],
+                env: envEntries
+            };
+        });
 
         debugLog('[AcpAdapter]', `Loaded ${acpServers.length} MCP servers: ${acpServers.map(s => s.name).join(', ')}`);
         return acpServers;

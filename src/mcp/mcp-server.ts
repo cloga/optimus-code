@@ -29,6 +29,7 @@ import { MetaCronEngine, loadCrontab, saveCrontab } from "./meta-cron-engine";
 import { checkAndResumeAwaitingTasks } from "./input-resume-checker";
 import { sanitizeExternalContent, wrapUntrusted } from "../utils/sanitizeExternalContent";
 import { resolveOptimusPath, ensureWorktreeStateDirs } from '../utils/worktree';
+import { AcpProcessPool } from '../utils/acpProcessPool';
 import { listWorktrees, createWorktree, removeWorktree, ensureWorktreeForBranch } from '../utils/worktreeManager';
 import {
   AgentRuntimeRequest,
@@ -2423,8 +2424,8 @@ if (process.argv.includes("--run-task")) {
     }, 5 * 60 * 1000); // every 5 minutes
     if (typeof resumeInterval.unref === 'function') resumeInterval.unref();
 
-    process.on('SIGTERM', () => MetaCronEngine.shutdown());
-    process.on('SIGINT', () => MetaCronEngine.shutdown());
+    process.on('SIGTERM', () => { MetaCronEngine.shutdown(); AcpProcessPool.getInstance().shutdownAll(); });
+    process.on('SIGINT', () => { MetaCronEngine.shutdown(); AcpProcessPool.getInstance().shutdownAll(); });
   }
 
   main().catch((error) => {

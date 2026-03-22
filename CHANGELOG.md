@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.14.0] - 2026-03-22
+
+### Features
+- **ACP persistent process pool** — Eliminates cold-start overhead (~1-2s) for ACP engine tasks by keeping agent processes alive between invocations:
+  - First task spawns the ACP process and performs the `initialize` handshake
+  - Subsequent tasks reuse the warm process — only `session/new` + `session/prompt` are needed
+  - Idle processes are automatically evicted after 5 minutes
+  - If a persistent process crashes, the next invocation auto-recovers (respawn + reinitialize)
+  - When the pool adapter is busy with a concurrent task, an ephemeral adapter is created as fallback
+
+### Architecture
+- **`AcpProcessPool` (`src/utils/acpProcessPool.ts`)** — Singleton pool managing warm ACP adapter instances, keyed by engine. Provides idle sweep, graceful shutdown, and usage stats (reuses/creations).
+- **`AcpAdapter` dual lifecycle** — Now supports both ephemeral (per-task spawn/kill, original behavior) and persistent (process stays alive) modes. New pool management API: `isAlive()`, `isBusy()`, `shutdown()`, `idleSince`, `invocationCount`.
+- **Per-task MCP env injection** — In persistent mode, per-task environment variables (delegation depth, role, etc.) are injected into MCP server configs via `session/new` params, ensuring child processes get correct context even though the ACP process is reused.
+- **Process crash safety** — Exit handler uses closure-captured process identity to prevent stale handlers from clobbering newly spawned processes during auto-recovery.
+
+### Compatibility
+- **Fully backward compatible** — Ephemeral adapters (non-pool) behave identically to before. The pool is transparent to the delegation system.
+
 ## [2.13.0] - 2026-03-22
 
 ### Features
