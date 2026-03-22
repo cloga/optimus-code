@@ -102,7 +102,10 @@ export class AcpAdapter implements AgentAdapter {
 
     private isInvalidParamsError(err: unknown): boolean {
         const message = err instanceof Error ? err.message : String(err);
-        return message.includes('ACP error -32602') || /invalid params/i.test(message);
+        return message.includes('ACP error -32602')
+            || message.includes('ACP error -32603')
+            || /invalid params/i.test(message)
+            || /invalid.?input/i.test(message);
     }
 
     // ─── Low-level transport ───
@@ -333,14 +336,14 @@ export class AcpAdapter implements AgentAdapter {
                 try {
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        text: prompt
+                        prompt: [{ type: 'text', text: prompt }]
                     });
                 } catch (err) {
                     if (!this.isInvalidParamsError(err)) throw err;
-                    debugLog('[AcpAdapter]', `session/prompt rejected text params; retrying content-array`);
+                    debugLog('[AcpAdapter]', `session/prompt rejected content-array params; retrying text param`);
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        prompt: [{ type: 'text', text: prompt }]
+                        text: prompt
                     });
                 }
             };
@@ -464,16 +467,16 @@ export class AcpAdapter implements AgentAdapter {
                 try {
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        text: prompt
+                        prompt: [{ type: 'text', text: prompt }]
                     });
                 } catch (err) {
                     if (!this.isInvalidParamsError(err)) {
                         throw err;
                     }
-                    debugLog('[AcpAdapter]', `session/prompt rejected text params; retrying content-array params for session ${currentSessionId}`);
+                    debugLog('[AcpAdapter]', `session/prompt rejected content-array params; retrying text param for session ${currentSessionId}`);
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        prompt: [{ type: 'text', text: prompt }]
+                        text: prompt
                     });
                 }
             };

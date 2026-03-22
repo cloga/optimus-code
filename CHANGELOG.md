@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.16.4] - 2026-03-22
+
+### Fixes
+- **ACP session/prompt uses array format first** — Copilot ACP requires `prompt: [{type:'text', text:...}]` (not `text` string). Swapped compatibility order: try content-array first, fallback to text for legacy agents.
+- **`isInvalidParamsError` matches -32603** — Copilot returns `-32603` (Internal error) with schema validation data instead of `-32602` (Invalid params). Error matcher now covers both codes.
+
+### Verified
+- HTTP runtime E2E: 4 consecutive tasks via `POST /api/v1/agent/run`
+- Warm pool reuse confirmed across all tasks (invocations 1→2→3→4)
+- Models tested: `gpt-5.4`, `claude-opus-4.6-1m`, `gemini-3-pro-preview`
+- All via Copilot ACP with warm pool — single process, multiple sessions
+
 ## [2.16.3] - 2026-03-22
 
 ### Fixes
