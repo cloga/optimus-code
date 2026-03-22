@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.16.6] - 2026-03-22
+
+### Features
+- **ACP autopilot mode & model selection** — ACP adapter now sends `configOptions` (mode + model) via `session/new`, attempts `session/configure` and `session/setConfiguration` with graceful fallback. Ensures delegated tasks run in autopilot mode when available.
+- **AgentAdapter options interface** — `invoke()` accepts optional `{ model, autopilot, maxContinues }` to control session behavior per-task.
+
 ## [2.16.5] - 2026-03-22
 
 ### Improvements

@@ -314,6 +314,63 @@ export class AcpAdapter implements AgentAdapter {
         }
     }
 
+    /**
+     * Configure ACP session mode (autopilot) and model after session creation.
+     * Tries session/configure first, then falls back to session/setConfiguration.
+     * Silently skips if the agent doesn't support configuration.
+     */
+    private async configureSession(
+        sessionId: string,
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
+    ): Promise<void> {
+        if (!options) return;
+
+        const configOptions: { id: string; value: string }[] = [];
+
+        if (options.autopilot) {
+            configOptions.push({
+                id: 'mode',
+                value: 'https://agentclientprotocol.com/protocol/session-modes#autopilot'
+            });
+        }
+
+        if (options.model) {
+            configOptions.push({ id: 'model', value: options.model });
+        }
+
+        if (configOptions.length === 0) return;
+
+        // Try session/configure (ACP standard)
+        try {
+            await this.sendRequest('session/configure', {
+                sessionId,
+                configOptions
+            });
+            debugLog('[AcpAdapter]', `Session configured: ${configOptions.map(o => `${o.id}=${o.value}`).join(', ')}`);
+            return;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // -32601 = Method not found — try alternative
+            if (!msg.includes('-32601')) {
+                debugLog('[AcpAdapter]', `session/configure failed (non-fatal): ${msg}`);
+                return;
+            }
+        }
+
+        // Fallback: try session/setConfiguration (some agents use this)
+        try {
+            const configMap: Record<string, string> = {};
+            for (const opt of configOptions) configMap[opt.id] = opt.value;
+            await this.sendRequest('session/setConfiguration', {
+                sessionId,
+                configuration: configMap
+            });
+            debugLog('[AcpAdapter]', `Session configured via setConfiguration: ${configOptions.map(o => `${o.id}=${o.value}`).join(', ')}`);
+        } catch (err) {
+            debugLog('[AcpAdapter]', `session/setConfiguration also not supported (non-fatal): ${err instanceof Error ? err.message : err}`);
+        }
+    }
+
     // ─── Core ACP Invocation flow ───
 
     async invoke(
@@ -321,12 +378,13 @@ export class AcpAdapter implements AgentAdapter {
         mode: AgentMode,
         sessionId?: string,
         onUpdate?: (chunk: string) => void,
-        extraEnv?: Record<string, string>
+        extraEnv?: Record<string, string>,
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
     ): Promise<string> {
         if (this._persistent) {
-            return this._invokePersistent(prompt, mode, sessionId, onUpdate, extraEnv);
+            return this._invokePersistent(prompt, mode, sessionId, onUpdate, extraEnv, options);
         }
-        return this._invokeEphemeral(prompt, mode, sessionId, onUpdate, extraEnv);
+        return this._invokeEphemeral(prompt, mode, sessionId, onUpdate, extraEnv, options);
     }
 
     /**
@@ -364,7 +422,8 @@ export class AcpAdapter implements AgentAdapter {
         mode: AgentMode,
         sessionId?: string,
         onUpdate?: (chunk: string) => void,
-        extraEnv?: Record<string, string>
+        extraEnv?: Record<string, string>,
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
     ): Promise<string> {
         debugLog('[AcpAdapter]', `Invoking persistent for ${this.name} (mode=${mode}, resume=${!!sessionId}, invocation=#${this._invocationCount + 1})`);
         this._busy = true;
@@ -377,10 +436,22 @@ export class AcpAdapter implements AgentAdapter {
             // Step 2: Create or resume session (per-task, with per-task MCP env)
             const createSession = async (): Promise<string> => {
                 const mcpServers = this.loadMcpServers(extraEnv);
-                const newResult = await this.sendRequest('session/new', {
+                const sessionParams: Record<string, any> = {
                     cwd: process.cwd(),
                     mcpServers
-                });
+                };
+                // Embed model/mode selection in session/new for agents that support it
+                if (options?.model || options?.autopilot) {
+                    const configOptions: { id: string; value: string }[] = [];
+                    if (options.autopilot) {
+                        configOptions.push({ id: 'mode', value: 'https://agentclientprotocol.com/protocol/session-modes#autopilot' });
+                    }
+                    if (options.model) {
+                        configOptions.push({ id: 'model', value: options.model });
+                    }
+                    sessionParams.configOptions = configOptions;
+                }
+                const newResult = await this.sendRequest('session/new', sessionParams);
                 const freshSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
                 debugLog('[AcpAdapter]', `New session created (persistent): ${freshSessionId}`);
                 return freshSessionId;
@@ -417,6 +488,9 @@ export class AcpAdapter implements AgentAdapter {
                 currentSessionId = await createSession();
             }
             this.lastSessionId = currentSessionId;
+
+            // Step 2.5: Configure session mode (autopilot) and model if requested
+            await this.configureSession(currentSessionId, options);
 
             // Step 3: Register notification handler and send prompt
             const outputChunks: string[] = [];
@@ -501,7 +575,8 @@ export class AcpAdapter implements AgentAdapter {
         mode: AgentMode,
         sessionId?: string,
         onUpdate?: (chunk: string) => void,
-        extraEnv?: Record<string, string>
+        extraEnv?: Record<string, string>,
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
     ): Promise<string> {
         debugLog('[AcpAdapter]', `Invoking for ${this.name} (mode=${mode}, resume=${!!sessionId})`);
 
@@ -511,10 +586,21 @@ export class AcpAdapter implements AgentAdapter {
         try {
             const createSession = async (): Promise<string> => {
                 const mcpServers = this.loadMcpServers();
-                const newResult = await this.sendRequest('session/new', {
+                const sessionParams: Record<string, any> = {
                     cwd: process.cwd(),
                     mcpServers
-                });
+                };
+                if (options?.model || options?.autopilot) {
+                    const configOptions: { id: string; value: string }[] = [];
+                    if (options.autopilot) {
+                        configOptions.push({ id: 'mode', value: 'https://agentclientprotocol.com/protocol/session-modes#autopilot' });
+                    }
+                    if (options.model) {
+                        configOptions.push({ id: 'model', value: options.model });
+                    }
+                    sessionParams.configOptions = configOptions;
+                }
+                const newResult = await this.sendRequest('session/new', sessionParams);
                 const freshSessionId = newResult?.sessionId || `acp-session-${Date.now()}`;
                 debugLog('[AcpAdapter]', `New session created: ${freshSessionId}`);
                 return freshSessionId;
@@ -564,6 +650,9 @@ export class AcpAdapter implements AgentAdapter {
                 currentSessionId = await createSession();
             }
             this.lastSessionId = currentSessionId;
+
+            // Step 3.5: Configure session mode and model
+            await this.configureSession(currentSessionId, options);
 
             // Step 4 + 5 + 6: Send prompt, collect streaming updates, await final response
             const outputChunks: string[] = [];

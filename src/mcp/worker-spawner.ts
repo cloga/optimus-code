@@ -1972,7 +1972,17 @@ Please provide your complete execution result below.`;
         if (autoIssueNumber !== undefined) {
             extraEnv.OPTIMUS_TRACKING_ISSUE = String(autoIssueNumber);
         }
-        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv);
+        // Build ACP session options (autopilot mode, model selection)
+        const engineConfig = getEngineConfig(activeEngine, workspacePath);
+        const hasAutomation = !!engineConfig?.automation && typeof engineConfig.automation === 'object';
+        const automationPolicy = hasAutomation ? normalizeAutomationPolicy(engineConfig.automation) : null;
+        const acpOptions = activeProtocol === 'acp' ? {
+            model: activeModel || undefined,
+            autopilot: automationPolicy ? automationPolicy.continuation === 'autopilot' : false,
+            maxContinues: automationPolicy?.maxContinues,
+        } : undefined;
+
+        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv, acpOptions);
 
         // --- Fail-Fast: Detect CLI-level errors in output ---
         // Some CLIs (e.g., Copilot) exit code 0 but output error text to stderr,
