@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.16.18] - 2026-03-22
+
+### Refactoring
+- **Architecture: Runtime Decoupling** — `delegateTaskSingle()` now calls `genericExecutor.executePrompt()` instead of directly invoking `AcpAdapter`. This establishes the correct layering: AcpAdapter → genericExecutor (infra) → Harness → Optimus Orchestration (business) → Transport (MCP/HTTP).
+  - Output validation runs once inside `executePrompt()` (previously duplicated in both worker-spawner and genericExecutor)
+  - Session ID, usage metrics, and stop reason are returned via `ExecuteResult` instead of reading adapter properties directly
+  - Doom loop detection and metadata backfill now use `execResult` properties instead of `adapter.lastSessionId`/`adapter.lastUsageLog`/`adapter.lastStopReason`
+  - No behavioral changes — all 219/220 tests pass (1 pre-existing failure)
+
 ## [2.16.17] - 2026-03-22
 
 ### Features

@@ -53,11 +53,19 @@ export function resolveEngineConfig(engine: string): EngineConfig {
 export interface ExecuteOptions {
     engine?: string;
     model?: string;
+    /** Agent mode: 'agent' (default) or 'plan' */
+    mode?: 'agent' | 'plan';
     sessionId?: string;
     autopilot?: boolean;
     maxContinues?: number;
     timeoutMs?: number;
     outputSchema?: unknown;
+    /** Extra environment variables passed to the adapter process */
+    extraEnv?: Record<string, string>;
+    /** Role name for validation context (defaults to 'generic') */
+    role?: string;
+    /** Verification strictness: 'strict' | 'normal' | 'skip' */
+    verificationLevel?: 'strict' | 'normal' | 'skip';
 }
 
 export interface ExecuteResult {
@@ -120,10 +128,10 @@ export async function executePrompt(
     try {
         const invokePromise = adapter.invoke(
             fullPrompt,
-            'agent',
+            options.mode || 'agent',
             options.sessionId,
             undefined,
-            undefined,
+            options.extraEnv,
             acpOptions
         );
 
@@ -150,14 +158,15 @@ export async function executePrompt(
         }
 
         // ── Harness: Output Validation Gate ──
+        const verifyLevel = options.verificationLevel || 'normal';
         const validation = validateOutput(
             parsed !== undefined ? JSON.stringify(parsed) : rawOutput,
             {
-                role: 'generic',
+                role: options.role || 'generic',
                 outputSchema: options.outputSchema,
                 outputPath: '',
                 engine,
-                verificationLevel: 'normal',
+                verificationLevel: verifyLevel,
             }
         );
         let validationWarnings: string[] | undefined;

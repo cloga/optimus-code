@@ -31,8 +31,8 @@ import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../manage
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord } from '../utils/agentRuntime';
-import { validateOutput, formatValidationIssues } from '../harness/outputValidator';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
+import { executePrompt } from '../runtime/genericExecutor';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
 
 export interface EngineAutomationExplanation {
@@ -2053,13 +2053,22 @@ Please provide your complete execution result below.${verifySuffix}`;
         const engineConfig = getEngineConfig(activeEngine, workspacePath);
         const hasAutomation = !!engineConfig?.automation && typeof engineConfig.automation === 'object';
         const automationPolicy = hasAutomation ? normalizeAutomationPolicy(engineConfig.automation) : null;
-        const acpOptions = activeProtocol === 'acp' ? {
+
+        // ── Core Execution: delegate to Agent Runtime (genericExecutor) ──
+        const execResult = await executePrompt(basePrompt, {
+            engine: activeEngine,
             model: activeModel || undefined,
+            mode: activeMode,
+            sessionId: activeSessionId,
+            extraEnv,
             autopilot: automationPolicy ? automationPolicy.continuation === 'autopilot' : false,
             maxContinues: automationPolicy?.maxContinues,
-        } : undefined;
+            role,
+            verificationLevel: 'normal',
+        });
 
-        const response = await adapter.invoke(basePrompt, activeMode, activeSessionId, undefined, extraEnv, acpOptions);
+        const response = execResult.output;
+        const newSessionId = execResult.sessionId;
 
         // --- Fail-Fast: Detect CLI-level errors in output ---
         // Some CLIs (e.g., Copilot) exit code 0 but output error text to stderr,
@@ -2108,21 +2117,21 @@ Please provide your complete execution result below.${verifySuffix}`;
             if (activeModel) {
                 updates.model = activeModel;
             }
-            const newSessionId = adapter.lastSessionId;
-            if (newSessionId) {
-                updates.session_id = newSessionId;
+            const newSessionIdForT1 = newSessionId;
+            if (newSessionIdForT1) {
+                updates.session_id = newSessionIdForT1;
             }
             const updated = updateFrontmatter(currentStr, updates);
 
             // Rename to final name: {role}_{session_id_prefix}.md
-            const sessionPrefix = (newSessionId || tempId).slice(0, 8);
+            const sessionPrefix = (newSessionIdForT1 || tempId).slice(0, 8);
             const finalT1Path = path.join(agentsDir, `${role}_${sessionPrefix}.md`);
             fs.writeFileSync(finalT1Path, updated, 'utf8');
             // Clean up temp/old file if path changed
             if (currentT1 !== finalT1Path && fs.existsSync(currentT1)) {
                 try { fs.unlinkSync(currentT1); } catch (e: any) { console.error(`[Orchestrator] Warning: operation failed: ${e.message}`); }
             }
-            console.error(`[Orchestrator] T1 finalized: '${role}' → ${path.basename(finalT1Path)}, session=${newSessionId || 'none'}, status=idle`);
+            console.error(`[Orchestrator] T1 finalized: '${role}' → ${path.basename(finalT1Path)}, session=${newSessionIdForT1 || 'none'}, status=idle`);
 
             // Backfill agent_id to task manifest for meta-cron session persistence
             const agentId2 = `${role}_${sessionPrefix}`;
@@ -2132,7 +2141,7 @@ Please provide your complete execution result below.${verifySuffix}`;
                     agent_id: agentId2,
                     resolved_engine: activeEngine,
                     resolved_model: activeModel,
-                    session_id: newSessionId || _fallbackSessionId
+                    session_id: newSessionIdForT1 || _fallbackSessionId
                 });
             }
         }
@@ -2143,28 +2152,14 @@ Please provide your complete execution result below.${verifySuffix}`;
         // Strip tool-call traces from output before writing to artifact file.
         const cleanResponse = stripTraceLines(response);
 
-        // ── Harness: Output Validation Gate ──
-        const validationResult = validateOutput(cleanResponse, {
-            role,
-            outputSchema: undefined, // v1 API doesn't pass schemas through here
-            taskDescription: originalInput,
-            outputPath,
-            engine: activeEngine,
-            verificationLevel: 'normal',
-        });
-        if (validationResult.severity === 'fail') {
-            throw new Error(
-                `⚠️ **Output Validation Failed** for role \`${role}\`:\n` +
-                formatValidationIssues(validationResult.issues) + '\n\n' +
-                `Fix: Re-delegate with clearer instructions or a different engine/model.`
-            );
-        }
-        if (validationResult.issues.length > 0) {
-            console.error(`[Harness] Output warnings for ${role}: ${validationResult.issues.map(i => i.rule).join(', ')}`);
+        // Output validation already runs inside executePrompt (harness gate).
+        // Log any warnings from the executor's validation pass.
+        if (execResult.validationWarnings && execResult.validationWarnings.length > 0) {
+            console.error(`[Harness] Output warnings for ${role}: ${execResult.validationWarnings.map(w => w.split('] ')[1] || w).join(', ')}`);
         }
 
         // ── Harness: Doom Loop Detection ──
-        const sessionForLoop = adapter.lastSessionId || _fallbackSessionId;
+        const sessionForLoop = newSessionId || _fallbackSessionId;
         const loopWarning = analyzeOutputForLoops(sessionForLoop, cleanResponse);
         if (loopWarning) {
             console.error(`[Harness] ${loopWarning.suggestion}`);
@@ -2172,7 +2167,7 @@ Please provide your complete execution result below.${verifySuffix}`;
 
         fs.writeFileSync(outputPath, cleanResponse, 'utf8');
 
-        // Backfill adapter metadata (usage, stop_reason) into runtime record
+        // Backfill execution metadata (usage, stop_reason) into runtime record
         if (_fallbackSessionId.startsWith('async_')) {
             const taskId = _fallbackSessionId.replace('async_', '');
             const task = TaskManifestManager.loadManifest(workspacePath)[taskId];
@@ -2180,27 +2175,12 @@ Please provide your complete execution result below.${verifySuffix}`;
                 const record = loadAgentRuntimeRecord(workspacePath, task.runtime_run_id);
                 if (record) {
                     let changed = false;
-                    // Parse usage from adapter's lastUsageLog (JSON string)
-                    if (adapter.lastUsageLog) {
-                        try {
-                            const raw = JSON.parse(adapter.lastUsageLog);
-                            // Handle both snake_case and camelCase field names
-                            const inputTokens = raw.input_tokens ?? raw.inputTokens;
-                            const outputTokens = raw.output_tokens ?? raw.outputTokens;
-                            if (typeof inputTokens === 'number' || typeof outputTokens === 'number') {
-                                record.usage = {
-                                    ...(typeof inputTokens === 'number' ? { input_tokens: inputTokens } : {}),
-                                    ...(typeof outputTokens === 'number' ? { output_tokens: outputTokens } : {})
-                                };
-                            } else {
-                                // Store raw usage if format is unexpected
-                                record.usage = raw;
-                            }
-                            changed = true;
-                        } catch { /* non-JSON usage log, skip */ }
+                    if (execResult.usage) {
+                        record.usage = execResult.usage;
+                        changed = true;
                     }
-                    if (adapter.lastStopReason) {
-                        record.stop_reason = adapter.lastStopReason;
+                    if (execResult.stopReason) {
+                        record.stop_reason = execResult.stopReason;
                         changed = true;
                     }
                     if (changed) {
@@ -2220,7 +2200,7 @@ Please provide your complete execution result below.${verifySuffix}`;
             trackEngineHealth(workspacePath, activeEngine, activeModel, true);
         }
 
-        return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${adapter.lastSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
+        return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${newSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
     } catch (e: any) {
         // Track T3 failures too
         if (isT3) {
