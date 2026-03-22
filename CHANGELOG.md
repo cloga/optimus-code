@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.16.1] - 2026-03-22
+
+### Fixes
+- **init/upgrade now copies all 3 dist bundles** — Previously only `mcp-server.js` was copied to `.optimus/dist/`, making `http-runtime.js` and `runtime-cli.js` unavailable in user workspaces. Now all 3 bundles are deployed on `optimus init` and `optimus upgrade`.
+
+### Additions
+- **runtime-integration skill** — Agent-discoverable documentation for HTTP REST, TypeScript SDK, and CLI contract integration. Agents find it via `list_knowledge()` or `.optimus/skills/` scan.
+
 ## [2.16.0] - 2026-03-22
 
 ### Features
