@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.16.13] - 2026-03-22
+
+### Features
+- **Runtime envelope metadata** — `runtime_metadata` now includes `usage` (token counts: `input_tokens`, `output_tokens`) and `stop_reason` (why the engine stopped, e.g. `end_turn`, `max_tokens`). Captured from ACP `promptResult` for both Copilot and Claude Code engines.
+- **ACP structured output preference** — ACP adapter now prefers `promptResult.content` (structured response) over streaming `agent_message_chunk` chunks. Falls back to streaming when engines don't populate content (current behavior for both Copilot and Claude Code).
+
 ## [2.16.12] - 2026-03-22
 
 ### Bug Fixes
