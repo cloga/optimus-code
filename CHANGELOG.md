@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.16.0] - 2026-03-22
+
+### Features
+- **Copilot CLI ACP Warm Pool** — GitHub Copilot now runs via ACP protocol (`copilot --acp`) with persistent process pooling. Every delegation reuses a warm Copilot process instead of spawning fresh `copilot -p "prompt"` subprocesses (~4s cold start eliminated).
+- **Agent Runtime In-Process Execution** — HTTP server, CLI, and SDK now execute tasks in-process, sharing the warm `AcpProcessPool` across runs. Previously each API call spawned a detached subprocess with its own pool (no warm reuse).
+- **Unified Warm Pool** — All transports (MCP `delegate_task`, HTTP `/agent/run`, CLI `optimus-runtime run`, SDK `runtime.runAgent()`) now share the same `AcpProcessPool` for both Claude and Copilot engines.
+
+### Changes
+- Copilot ACP capabilities updated to declare `autopilot` support — ACP protocol inherently supports continuation (agent runs to completion within `session/prompt`).
+- Protocol auto-resolution now correctly selects ACP (preferred) for Copilot instead of falling back to CLI.
+- Removed 5 Agent Runtime MCP tools (`run_agent`, `start_agent_run`, `get_agent_run_status`, `resume_agent_run`, `cancel_agent_run`) — replaced by native HTTP/CLI/SDK transports from v2.15.0.
+- Added `runWorkerInProcess()` in council-runner — process-safe variant that never calls `process.exit()`.
+- Removed redundant `--stdio` flag from Copilot ACP args.
+
 ## [2.15.1] - 2026-03-22
 
 ### Features
