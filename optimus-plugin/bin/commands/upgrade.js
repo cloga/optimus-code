@@ -120,8 +120,57 @@ module.exports = function upgrade() {
     configCount = mergeConfigFiles(configSrc, path.join(optimusDir, 'config'));
   }
 
-
-  // 4.5 System scaffold: ensure meta-crontab and cron-locks are present
+  // 3.5 Post-merge migration: ensure engine capability arrays include
+  // template values (deepMergePreserveUser treats arrays as atomic, so
+  // user's old ["single"] would suppress template's ["single","autopilot"]).
+  const agentsPath = path.join(optimusDir, 'config', 'available-agents.json');
+  const agentsTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.json');
+  if (fs.existsSync(agentsPath) && fs.existsSync(agentsTemplatePath)) {
+    try {
+      const agents = JSON.parse(fs.readFileSync(agentsPath, 'utf8'));
+      const template = JSON.parse(fs.readFileSync(agentsTemplatePath, 'utf8'));
+      let patched = false;
+      for (const engineName of Object.keys(template.engines || {})) {
+        const tplEngine = template.engines[engineName];
+        const userEngine = agents.engines?.[engineName];
+        if (!userEngine) continue;
+        for (const transport of ['acp', 'cli']) {
+          const tplCaps = tplEngine[transport]?.capabilities;
+          const userCaps = userEngine[transport]?.capabilities;
+          if (!tplCaps || !userCaps) continue;
+          for (const capKey of ['automation_modes', 'automation_continuations']) {
+            const tplArr = tplCaps[capKey];
+            const userArr = userCaps[capKey];
+            if (!Array.isArray(tplArr)) continue;
+            if (!Array.isArray(userArr)) {
+              userCaps[capKey] = [...tplArr];
+              patched = true;
+            } else {
+              const merged = [...new Set([...userArr, ...tplArr])];
+              if (merged.length !== userArr.length) {
+                userCaps[capKey] = merged;
+                patched = true;
+              }
+            }
+          }
+        }
+        // Also ensure ACP args don't contain stale flags
+        if (userEngine.acp?.args && Array.isArray(userEngine.acp.args)) {
+          const filtered = userEngine.acp.args.filter(a => a !== '--stdio');
+          if (filtered.length !== userEngine.acp.args.length) {
+            userEngine.acp.args = filtered;
+            patched = true;
+          }
+        }
+      }
+      if (patched) {
+        fs.writeFileSync(agentsPath, JSON.stringify(agents, null, 2), 'utf8');
+        console.log('  🔧 Patched engine capability arrays (union with template)');
+      }
+    } catch (e) {
+      console.log('  ⚠️  Capability migration skipped: ' + (e.message || e));
+    }
+  }
   const systemSrc = path.join(scaffoldDir, 'system');
   if (fs.existsSync(systemSrc)) {
     console.log('\n\u23f0 Upgrading system scheduler config...');

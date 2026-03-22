@@ -32,9 +32,9 @@
       "timeout": { "heartbeat_ms": 600000 },
       "acp": {
         "path": "copilot",
-        "args": ["--acp", "--stdio"],
-        "capabilities": { "automation_modes": ["auto-approve"], "automation_continuations": ["single"] },
-        "_comment": "Experimental Copilot ACP transport. Keep continuation at 'single'; Copilot autopilot is a CLI-only continuation mode."
+        "args": ["--acp"],
+        "capabilities": { "automation_modes": ["auto-approve"], "automation_continuations": ["single", "autopilot"] },
+        "_comment": "Copilot ACP transport. ACP inherently supports autopilot: agent runs to completion within session/prompt, permissions auto-approved via session/request_permission."
       },
       "cli": {
         "path": "copilot",
