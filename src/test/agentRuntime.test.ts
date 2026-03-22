@@ -301,6 +301,29 @@ describe('agent runtime — envelope construction', () => {
 
         expect(envelope.runtime_metadata.retries_attempted).toBe(2);
     });
+
+    it('includes usage metadata when present in record', () => {
+        const record = makeRecord({
+            usage: { input_tokens: 1500, output_tokens: 320 }
+        });
+        const envelope = buildAgentRuntimeEnvelope(record, makeTask());
+        expect(envelope.runtime_metadata.usage).toEqual({ input_tokens: 1500, output_tokens: 320 });
+    });
+
+    it('includes stop_reason when present in record', () => {
+        const record = makeRecord({
+            stop_reason: 'end_turn'
+        });
+        const envelope = buildAgentRuntimeEnvelope(record, makeTask());
+        expect(envelope.runtime_metadata.stop_reason).toBe('end_turn');
+    });
+
+    it('omits usage and stop_reason when not set', () => {
+        const record = makeRecord();
+        const envelope = buildAgentRuntimeEnvelope(record, makeTask());
+        expect(envelope.runtime_metadata.usage).toBeUndefined();
+        expect(envelope.runtime_metadata.stop_reason).toBeUndefined();
+    });
 });
 
 describe('agent runtime — record persistence', () => {

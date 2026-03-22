@@ -59,6 +59,11 @@ export interface AgentAdapter {
     lastUsageLog?: string;
 
     /**
+     * Stop reason from the most recent invocation (e.g., 'end_turn', 'max_tokens').
+     */
+    lastStopReason?: string;
+
+    /**
      * Optional per-adapter thinking/process extraction.
      * If provided, ChatViewProvider will delegate to this instead of the generic parser.
      * Returns thinking (tool trace / reasoning), output (final answer), and optional usageLog separately.

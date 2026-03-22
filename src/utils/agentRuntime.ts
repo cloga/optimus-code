@@ -42,6 +42,8 @@ export interface AgentRuntimeRecord {
     output_path: string;
     skill?: string;
     output_schema?: unknown;
+    usage?: Record<string, unknown>;
+    stop_reason?: string;
     request: {
         role: string;
         role_description?: string;
@@ -83,6 +85,8 @@ export interface AgentRuntimeEnvelope {
         retries_attempted: number;
         created_at: string;
         updated_at: string;
+        usage?: Record<string, unknown>;
+        stop_reason?: string;
     };
 }
 
@@ -365,7 +369,9 @@ export function buildAgentRuntimeEnvelope(
             output_path: record.output_path,
             retries_attempted: retriesAttempted,
             created_at: record.created_at,
-            updated_at: updatedAt
+            updated_at: updatedAt,
+            ...(record.usage ? { usage: record.usage } : {}),
+            ...(record.stop_reason ? { stop_reason: record.stop_reason } : {})
         }
     };
 }

@@ -71,6 +71,7 @@ export class AcpAdapter implements AgentAdapter {
     public lastSessionId?: string;
     public lastDebugInfo?: any = {};
     public lastUsageLog?: string;
+    public lastStopReason?: string;
 
     private process?: cp.ChildProcess;
     private executable: string;
@@ -574,6 +575,11 @@ export class AcpAdapter implements AgentAdapter {
             const structuredOutput = extractContentText(promptResult);
             const streamOutput = outputChunks.join('');
             const fullOutput = structuredOutput || streamOutput;
+            this.lastStopReason = promptResult?.stopReason;
+            // Capture usage from promptResult (e.g. Claude Code) or keep streaming-captured usage
+            if (promptResult?.usage && !this.lastUsageLog) {
+                this.lastUsageLog = JSON.stringify(promptResult.usage);
+            }
             if (!this.lastDebugInfo) this.lastDebugInfo = {};
             this.lastDebugInfo.endTime = Date.now();
             debugLog('[AcpAdapter]', `Done (persistent, #${this._invocationCount}). Output: ${fullOutput.length} chars (source: ${structuredOutput ? 'promptResult.content' : 'streaming chunks'})`);
@@ -753,6 +759,10 @@ export class AcpAdapter implements AgentAdapter {
             const structuredOutput = extractContentText(promptResult);
             const streamOutput = outputChunks.join('');
             const fullOutput = structuredOutput || streamOutput;
+            this.lastStopReason = promptResult?.stopReason;
+            if (promptResult?.usage && !this.lastUsageLog) {
+                this.lastUsageLog = JSON.stringify(promptResult.usage);
+            }
 
             this.lastDebugInfo.endTime = Date.now();
             debugLog('[AcpAdapter]', `Done. Output length: ${fullOutput.length}, stop: ${promptResult?.stopReason}, source: ${structuredOutput ? 'promptResult.content' : 'streaming'}`);

@@ -30,6 +30,7 @@ import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normaliz
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
+import { loadAgentRuntimeRecord, saveAgentRuntimeRecord } from '../utils/agentRuntime';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
 
 export interface EngineAutomationExplanation {
@@ -2131,6 +2132,45 @@ Please provide your complete execution result below.`;
         // only the clean content should be persisted.
         const cleanResponse = stripTraceLines(response);
         fs.writeFileSync(outputPath, cleanResponse, 'utf8');
+
+        // Backfill adapter metadata (usage, stop_reason) into runtime record
+        if (_fallbackSessionId.startsWith('async_')) {
+            const taskId = _fallbackSessionId.replace('async_', '');
+            const task = TaskManifestManager.loadManifest(workspacePath)[taskId];
+            if (task?.runtime_run_id) {
+                const record = loadAgentRuntimeRecord(workspacePath, task.runtime_run_id);
+                if (record) {
+                    let changed = false;
+                    // Parse usage from adapter's lastUsageLog (JSON string)
+                    if (adapter.lastUsageLog) {
+                        try {
+                            const raw = JSON.parse(adapter.lastUsageLog);
+                            // Handle both snake_case and camelCase field names
+                            const inputTokens = raw.input_tokens ?? raw.inputTokens;
+                            const outputTokens = raw.output_tokens ?? raw.outputTokens;
+                            if (typeof inputTokens === 'number' || typeof outputTokens === 'number') {
+                                record.usage = {
+                                    ...(typeof inputTokens === 'number' ? { input_tokens: inputTokens } : {}),
+                                    ...(typeof outputTokens === 'number' ? { output_tokens: outputTokens } : {})
+                                };
+                            } else {
+                                // Store raw usage if format is unexpected
+                                record.usage = raw;
+                            }
+                            changed = true;
+                        } catch { /* non-JSON usage log, skip */ }
+                    }
+                    if (adapter.lastStopReason) {
+                        record.stop_reason = adapter.lastStopReason;
+                        changed = true;
+                    }
+                    if (changed) {
+                        record.updated_at = new Date().toISOString();
+                        saveAgentRuntimeRecord(workspacePath, record);
+                    }
+                }
+            }
+        }
 
         // Track T3 success AFTER we know execution succeeded
         if (isT3) {
