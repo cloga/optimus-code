@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.16.10] - 2026-03-22
+
+### Improvements
+- **Simplified `available-agents.json`** — Config now only contains `available_models`, `acp.path`, and `timeout`. ACP protocol, warm pool, and autopilot mode are injected as system defaults by `applyEngineDefaults()` in code — no need for users to configure them.
+- Engine system defaults are defined per-engine in `ENGINE_SYSTEM_DEFAULTS` (worker-spawner.ts) and deep-merged at config load time.
+
 ## [2.16.9] - 2026-03-22
 
 ### Features

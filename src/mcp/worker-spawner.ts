@@ -621,8 +621,55 @@ export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgen
     return null;
 }
 
+/**
+ * System defaults for ACP + autopilot mode.
+ * These are injected into engine configs so the config file only needs
+ * engine names, models, and optionally ACP paths / timeouts.
+ */
+const ENGINE_SYSTEM_DEFAULTS: Record<string, any> = {
+    'github-copilot': {
+        protocol: 'acp',
+        automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
+        acp: {
+            path: 'copilot', args: ['--acp'],
+            capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
+        }
+    },
+    'claude-code': {
+        protocol: 'acp',
+        automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
+        acp: {
+            path: 'claude-agent-acp',
+            capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
+        }
+    },
+    '_default': {
+        protocol: 'acp',
+        automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
+        acp: { capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] } }
+    }
+};
+
+function applyEngineDefaults(engine: string, config: any): any {
+    if (!config) return config;
+    const defaults = ENGINE_SYSTEM_DEFAULTS[engine] || ENGINE_SYSTEM_DEFAULTS['_default'];
+    const merged = { ...defaults, ...config };
+    // Deep-merge automation and acp sub-objects
+    if (defaults.automation) {
+        merged.automation = { ...defaults.automation, ...(config.automation || {}) };
+    }
+    if (defaults.acp) {
+        merged.acp = { ...defaults.acp, ...(config.acp || {}) };
+        if (defaults.acp.capabilities && !config.acp?.capabilities) {
+            merged.acp.capabilities = defaults.acp.capabilities;
+        }
+    }
+    return merged;
+}
+
 function getEngineConfig(engine: string, workspacePath?: string): any | null {
-    return loadAvailableAgentsConfig(workspacePath)?.engines?.[engine] || null;
+    const raw = loadAvailableAgentsConfig(workspacePath)?.engines?.[engine] || null;
+    return raw ? applyEngineDefaults(engine, raw) : null;
 }
 
 function getConfiguredEngineNames(workspacePath?: string): string[] {
