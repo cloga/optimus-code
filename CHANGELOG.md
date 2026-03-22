@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.7] - 2026-03-22
+
+### Improvements
+- **Actionable HTTP runtime errors** — Every error response now includes a `fix` field with concrete recovery steps. Error JSON format: `{ error: { code, message, fix } }`. Covers all 15+ error codes across input validation, run lifecycle, engine errors, and route matching.
+- **`invalid_state` now shows actual status** — Resume errors include `current status: <status>` so callers know why the operation was rejected.
+- **3 new error classifications** — `role_quarantined`, `skill_preflight_failed`, `engine_resolution_failed` are now properly classified at the HTTP layer instead of falling through to generic `internal_error`.
+
 ## [2.16.6] - 2026-03-22
 
 ### Features

@@ -41,7 +41,8 @@ export class RuntimeError extends Error {
     constructor(
         message: string,
         public readonly code: string,
-        public readonly httpStatus: number = 400
+        public readonly httpStatus: number = 400,
+        public readonly fix?: string
     ) {
         super(message);
         this.name = 'RuntimeError';
@@ -61,7 +62,9 @@ export function resolveHeartbeatTimeout(workspacePath: string, requestedEngine: 
         if (typeof heartbeat_timeout_ms !== 'number' || heartbeat_timeout_ms <= 0 || heartbeat_timeout_ms > MAX_HEARTBEAT_MS) {
             throw new RuntimeError(
                 `heartbeat_timeout_ms must be between 1 and ${MAX_HEARTBEAT_MS}. Got: ${heartbeat_timeout_ms}`,
-                'invalid_timeout'
+                'invalid_timeout',
+                400,
+                `Set heartbeat_timeout_ms to a value between 1 and ${MAX_HEARTBEAT_MS} (30 minutes). Default is 180000ms (3 minutes). This controls how long the runtime waits for engine heartbeats.`
             );
         }
         return heartbeat_timeout_ms;
@@ -137,7 +140,9 @@ export function normalizeRuntimeRequest(args: any): AgentRuntimeRequest {
     if (missing.length > 0) {
         throw new RuntimeError(
             `Missing required parameter(s): ${missing.join(', ')}`,
-            'missing_params'
+            'missing_params',
+            400,
+            `Include all required fields in the JSON body: { "role": "<role-name>", "workspace_path": "<absolute-path>", "input": "<task-description>" }. Optional: role_engine, role_model, context_files, runtime_policy.`
         );
     }
 
@@ -209,7 +214,9 @@ export function createRun(request: AgentRuntimeRequest): { runId: string; traceI
 export function getRunStatus(workspacePath: string, runId: string): AgentRuntimeEnvelope {
     const record = loadAgentRuntimeRecord(workspacePath, runId);
     if (!record) {
-        throw new RuntimeError(`Agent Runtime run '${runId}' was not found.`, 'run_not_found', 404);
+        throw new RuntimeError(`Agent Runtime run '${runId}' was not found.`, 'run_not_found', 404,
+            `Verify the run ID is correct. Use POST /api/v1/agent/run or /agent/start to create a new run.`
+        );
     }
 
     const manifest = TaskManifestManager.loadManifest(workspacePath);
@@ -248,7 +255,9 @@ export async function runSync(request: AgentRuntimeRequest): Promise<AgentRuntim
     if (typeof timeoutMs !== 'number' || timeoutMs <= 0 || timeoutMs > MAX_HEARTBEAT_MS) {
         throw new RuntimeError(
             `runtime_policy.timeout_ms must be between 1 and ${MAX_HEARTBEAT_MS}. Got: ${timeoutMs}`,
-            'invalid_timeout'
+            'invalid_timeout',
+            400,
+            `Set runtime_policy.timeout_ms to a value between 1 and ${MAX_HEARTBEAT_MS} (30 minutes). Default is ${DEFAULT_AGENT_RUNTIME_TIMEOUT_MS}ms (2 minutes).`
         );
     }
 
@@ -287,13 +296,17 @@ export async function runSync(request: AgentRuntimeRequest): Promise<AgentRuntim
 export async function cancelRun(workspacePath: string, runId: string, reason?: string): Promise<AgentRuntimeEnvelope> {
     const record = loadAgentRuntimeRecord(workspacePath, runId);
     if (!record) {
-        throw new RuntimeError(`Agent Runtime run '${runId}' was not found.`, 'run_not_found', 404);
+        throw new RuntimeError(`Agent Runtime run '${runId}' was not found.`, 'run_not_found', 404,
+            `Verify the run ID is correct. Use POST /api/v1/agent/run or /agent/start to create a new run.`
+        );
     }
 
     const manifest = TaskManifestManager.loadManifest(workspacePath);
     const task = manifest[record.active_task_id];
     if (!task) {
-        throw new RuntimeError(`Active task '${record.active_task_id}' for run '${runId}' was not found.`, 'task_not_found', 404);
+        throw new RuntimeError(`Active task '${record.active_task_id}' for run '${runId}' was not found.`, 'task_not_found', 404,
+            `The task record was deleted or corrupted. Create a new run instead.`
+        );
     }
 
     const terminalStatuses = ['verified', 'completed', 'failed', 'partial', 'degraded', 'cancelled'];
@@ -335,13 +348,21 @@ export async function cancelRun(workspacePath: string, runId: string, reason?: s
 export function resumeRun(workspacePath: string, runId: string, humanAnswer: string): AgentRuntimeEnvelope {
     const record = loadAgentRuntimeRecord(workspacePath, runId);
     if (!record) {
-        throw new RuntimeError(`Agent Runtime run '${runId}' was not found.`, 'run_not_found', 404);
+        throw new RuntimeError(`Agent Runtime run '${runId}' was not found.`, 'run_not_found', 404,
+            `Verify the run ID is correct. Use POST /api/v1/agent/run or /agent/start to create a new run.`
+        );
     }
 
     const manifest = TaskManifestManager.loadManifest(workspacePath);
     const currentTask = manifest[record.active_task_id];
+    const actualStatus = currentTask?.status || 'unknown';
     if (!currentTask || (currentTask.status !== 'awaiting_input' && currentTask.status !== 'expired')) {
-        throw new RuntimeError(`Run '${runId}' is not waiting for manual intervention.`, 'invalid_state');
+        throw new RuntimeError(
+            `Run '${runId}' is not waiting for manual intervention (current status: ${actualStatus}).`,
+            'invalid_state',
+            400,
+            `Resume is only valid when run status is 'blocked_manual_intervention'. Current status: '${actualStatus}'. Use GET /api/v1/agent/runs/${runId} to check status before resuming.`
+        );
     }
 
     const { sanitized: sanitizedAnswer } = sanitizeExternalContent(humanAnswer, `agent-runtime:${runId}:human-answer`);

@@ -68,8 +68,10 @@ function sendJson(res: http.ServerResponse, statusCode: number, body: unknown): 
     res.end(json);
 }
 
-function sendError(res: http.ServerResponse, statusCode: number, code: string, message: string): void {
-    sendJson(res, statusCode, { error: { code, message } });
+function sendError(res: http.ServerResponse, statusCode: number, code: string, message: string, fix?: string): void {
+    const error: Record<string, string> = { code, message };
+    if (fix) error.fix = fix;
+    sendJson(res, statusCode, { error });
 }
 
 async function readBody(req: http.IncomingMessage): Promise<string> {
@@ -83,7 +85,8 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
             if (totalSize > maxSize) {
                 reject(new RuntimeError(
                     'Request body too large (limit: 10 MB). Reduce input size or use context_files references instead of inline content.',
-                    'body_too_large', 413
+                    'body_too_large', 413,
+                    'Reduce the request body size to under 10 MB. Move large content to files and reference them via context_files: [{ path: "file.txt" }] instead of inline.'
                 ));
                 req.destroy();
                 return;
@@ -99,7 +102,9 @@ function parseJsonBody(body: string): any {
     if (!body.trim()) {
         throw new RuntimeError(
             'Request body is empty. Send a JSON object with required fields: role, workspace_path, input.',
-            'empty_body'
+            'empty_body',
+            400,
+            'Send a JSON POST body: { "role": "<role-name>", "workspace_path": "<path>", "input": "<task>" }. Set Content-Type: application/json.'
         );
     }
     try {
@@ -107,37 +112,82 @@ function parseJsonBody(body: string): any {
     } catch (e: any) {
         throw new RuntimeError(
             `Invalid JSON in request body: ${e.message || 'parse error'}. Ensure Content-Type is application/json and body is valid JSON.`,
-            'invalid_json'
+            'invalid_json',
+            400,
+            'Verify the request body is valid JSON. Use a JSON validator or check for trailing commas, unquoted keys, or encoding issues.'
         );
     }
 }
 
 /**
- * Classify unhandled errors into specific error codes based on message patterns.
+ * Classify unhandled errors into actionable error responses.
+ * Each category includes a machine-readable `fix` with concrete recovery steps.
  */
-function classifyHttpError(msg: string): { code: string; status: number } {
+function classifyHttpError(msg: string): { code: string; status: number; fix: string } {
     if (/auth_failed/i.test(msg) || /authentication required/i.test(msg) || /unauthorized/i.test(msg)) {
-        return { code: 'auth_failed', status: 401 };
+        return {
+            code: 'auth_failed', status: 401,
+            fix: 'Set GH_TOKEN or GITHUB_TOKEN env var before starting the runtime. For Copilot: run `gh auth token` and export the value. For Claude: set ANTHROPIC_API_KEY.'
+        };
     }
     if (/rate_limit/i.test(msg) || /429/i.test(msg) || /too many requests/i.test(msg)) {
-        return { code: 'rate_limit', status: 429 };
+        return {
+            code: 'rate_limit', status: 429,
+            fix: 'Retry after a brief delay. Add `runtime_policy: { retries: 2 }` to your request for automatic retry with backoff.'
+        };
     }
     if (/task_timeout/i.test(msg) || /activity timeout/i.test(msg)) {
-        return { code: 'task_timeout', status: 504 };
+        return {
+            code: 'task_timeout', status: 504,
+            fix: 'The engine produced no output within the timeout window. Increase via `runtime_policy: { timeout_ms: 300000 }` in your request, or set `timeout.activity_ms` in .optimus/config/available-agents.json for the engine.'
+        };
     }
     if (/acp_process_crashed/i.test(msg) || /exited unexpectedly/i.test(msg)) {
-        return { code: 'acp_process_crashed', status: 500 };
+        return {
+            code: 'acp_process_crashed', status: 500,
+            fix: 'The engine process exited unexpectedly. The warm pool auto-recovers — retry the same request. If persistent, check engine installation (`copilot --version` or `claude --version`).'
+        };
     }
     if (/invalid_model/i.test(msg) || /Invalid model/i.test(msg)) {
-        return { code: 'invalid_model', status: 400 };
+        return {
+            code: 'invalid_model', status: 400,
+            fix: 'The specified role_model is not available for this engine. Remove role_model to use the default, or check valid models in .optimus/config/available-agents.json.'
+        };
     }
     if (/invalid.*engine/i.test(msg) || /engine.*not.*found/i.test(msg)) {
-        return { code: 'invalid_engine', status: 400 };
+        return {
+            code: 'invalid_engine', status: 400,
+            fix: 'The specified role_engine is not configured. Remove role_engine to use the default, or check .optimus/config/available-agents.json for valid engine names.'
+        };
     }
     if (/\.optimus.*not found/i.test(msg) || /workspace.*not.*initialized/i.test(msg)) {
-        return { code: 'workspace_not_initialized', status: 400 };
+        return {
+            code: 'workspace_not_initialized', status: 400,
+            fix: 'The workspace has no .optimus/ directory. Run `npx github:cloga/optimus-code upgrade` in your project root to initialize it.'
+        };
     }
-    return { code: 'internal_error', status: 500 };
+    if (/quarantine/i.test(msg)) {
+        return {
+            code: 'role_quarantined', status: 400,
+            fix: 'This role was quarantined after consecutive failures. Fix the role template at .optimus/roles/<role>.md, delete it to allow re-creation, or use the quarantine_role tool to unquarantine.'
+        };
+    }
+    if (/skill.*pre-?flight/i.test(msg) || /missing.*required.*skill/i.test(msg)) {
+        return {
+            code: 'skill_preflight_failed', status: 400,
+            fix: 'Required skill(s) not found in .optimus/skills/. Create the missing skill directory with a SKILL.md file, or remove the skill requirement from the request.'
+        };
+    }
+    if (/engine.*resolution.*failed/i.test(msg) || /unable to resolve.*engine/i.test(msg)) {
+        return {
+            code: 'engine_resolution_failed', status: 400,
+            fix: 'No engine could be resolved for this role. Specify role_engine explicitly (e.g. "github-copilot" or "claude-code"), or add a default engine in .optimus/config/available-agents.json.'
+        };
+    }
+    return {
+        code: 'internal_error', status: 500,
+        fix: 'An unexpected error occurred. Check the runtime stderr logs for details. If the error persists, retry the request or restart the runtime process.'
+    };
 }
 
 // ─── Route matching ───
@@ -230,7 +280,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         const body = parseJsonBody(await readBody(req));
         const workspacePath = body.workspace_path || defaultWorkspacePath;
         if (!body.human_answer) {
-            throw new RuntimeError('Missing required field: human_answer', 'missing_params');
+            throw new RuntimeError('Missing required field: human_answer', 'missing_params', 400,
+                'Include human_answer in the JSON body: { "human_answer": "<your-response>" }. This is the answer to the question the agent asked during the run.'
+            );
         }
         console.error(`[HTTP] POST /agent/runs/${params.id}/resume`);
         const envelope = resumeRun(workspacePath, params.id, body.human_answer);
@@ -250,7 +302,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     // 404
-    sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`);
+    sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`,
+        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, GET /api/v1/health'
+    );
 }
 
 // ─── Server ───
@@ -273,13 +327,13 @@ function startServer() {
             await handleRequest(req, res, workspacePath);
         } catch (err: any) {
             if (err instanceof RuntimeError) {
-                sendError(res, err.httpStatus, err.code, err.message);
+                sendError(res, err.httpStatus, err.code, err.message, err.fix);
             } else {
                 const msg = err.message || 'Internal server error';
                 console.error(`[HTTP] Unhandled error: ${msg}`);
-                // Classify common engine errors into actionable codes
-                const { code, status } = classifyHttpError(msg);
-                sendError(res, status, code, msg);
+                // Classify into actionable error with recovery guidance
+                const { code, status, fix } = classifyHttpError(msg);
+                sendError(res, status, code, msg, fix);
             }
         }
     });
