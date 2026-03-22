@@ -263,6 +263,11 @@ function readOutputArtifact(outputPath: string): { exists: boolean; rawText?: st
     // Try extracting JSON from markdown/prose wrapping
     const extracted = extractJsonFromText(rawText);
     if (extracted !== undefined) {
+        // Self-heal: write clean JSON back to artifact file so downstream
+        // consumers reading output_path directly get machine-readable JSON.
+        try {
+            fs.writeFileSync(outputPath, JSON.stringify(extracted, null, 2), 'utf8');
+        } catch { /* best-effort, don't fail if write fails */ }
         return { exists: true, rawText, parsed: extracted };
     }
 

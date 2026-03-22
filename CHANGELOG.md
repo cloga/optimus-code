@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.16.14] - 2026-03-22
+
+### Bug Fixes
+- **Artifact file normalization** — When structured output is extracted from prose/markdown wrapping, the clean JSON is now written back to the `output_path` artifact file. This ensures downstream consumers reading the file directly get machine-readable JSON, consistent with the API `result` field.
+
 ## [2.16.13] - 2026-03-22
 
 ### Features
