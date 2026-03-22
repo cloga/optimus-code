@@ -24,7 +24,7 @@ import {
     loadAgentRuntimeRecord,
     updateAgentRuntimeRecord,
 } from '../utils/agentRuntime';
-import { spawnAsyncWorker } from '../mcp/council-runner';
+import { spawnAsyncWorker, runWorkerInProcess } from '../mcp/council-runner';
 import { resolveRoleName } from '../utils/resolveRoleName';
 import { validateRoleNotModelName, validateEngineAndModel } from '../utils/validateMcpInput';
 import { loadValidEnginesAndModels, loadEngineHeartbeatTimeout } from '../mcp/worker-spawner';
@@ -219,18 +219,23 @@ export function getRunStatus(workspacePath: string, runId: string): AgentRuntime
 
 /**
  * Start an async run and return the initial envelope immediately.
+ * Uses in-process execution for warm ACP pool reuse.
  */
 export function startRun(request: AgentRuntimeRequest): AgentRuntimeEnvelope {
     if (request.role_engine) {
         validateEngineAndModel(request.role_engine, request.role_model, request.workspace_path);
     }
     const { runId } = createRun(request);
-    spawnAsyncWorker(runId, request.workspace_path);
+    // Fire-and-forget: run in-process for warm pool reuse, don't await
+    runWorkerInProcess(runId, request.workspace_path).catch(err =>
+        console.error(`[AgentRuntime] In-process run ${runId} failed:`, err.message)
+    );
     return getRunStatus(request.workspace_path, runId);
 }
 
 /**
- * Run synchronously: create run, spawn worker, poll until terminal status or timeout.
+ * Run synchronously: create run, execute in-process, await completion.
+ * Uses in-process execution for warm ACP pool reuse.
  * Supports retries and engine fallback.
  */
 export async function runSync(request: AgentRuntimeRequest): Promise<AgentRuntimeEnvelope> {
@@ -262,8 +267,9 @@ export async function runSync(request: AgentRuntimeRequest): Promise<AgentRuntim
             }
 
             const { runId } = createRun(requestForAttempt);
-            spawnAsyncWorker(runId, requestForAttempt.workspace_path);
-            const envelope = await waitForCompletion(requestForAttempt.workspace_path, runId, timeoutMs);
+            // Run in-process: warm ACP pool reuse, no subprocess overhead
+            await runWorkerInProcess(runId, requestForAttempt.workspace_path);
+            const envelope = getRunStatus(requestForAttempt.workspace_path, runId);
             lastEnvelope = envelope;
 
             if (envelope.status === 'completed' || envelope.status === 'blocked_manual_intervention') {
@@ -381,7 +387,10 @@ export function resumeRun(workspacePath: string, runId: string, humanAnswer: str
         ]
     }));
 
-    spawnAsyncWorker(resumeTaskId, workspacePath);
+    // Fire-and-forget: run in-process for warm pool reuse
+    runWorkerInProcess(resumeTaskId, workspacePath).catch(err =>
+        console.error(`[AgentRuntime] In-process resume ${resumeTaskId} failed:`, err.message)
+    );
     return getRunStatus(workspacePath, runId);
 }
 

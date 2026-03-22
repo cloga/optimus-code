@@ -21,6 +21,108 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
     child.unref();
 }
 
+/**
+ * Run a task in the current process (no subprocess spawn).
+ * Uses the shared AcpProcessPool for warm adapter reuse across runs.
+ * Safe for long-lived processes (HTTP server, CLI daemon) — never calls process.exit().
+ */
+export async function runWorkerInProcess(taskId: string, workspacePath: string): Promise<void> {
+    console.error(`[Runner] Starting in-process execution for task: ${taskId}`);
+    const manifest = TaskManifestManager.loadManifest(workspacePath);
+    const task = manifest[taskId];
+    if (!task) {
+        throw new Error(`[Runner] Task not found: ${taskId}`);
+    }
+
+    if (task.status !== 'pending') {
+        console.error(`[Runner] Task already running or completed: ${taskId}`);
+        return;
+    }
+
+    const parentDepth = task.delegation_depth !== undefined ? task.delegation_depth : undefined;
+    const parentIssueNumber = task.github_issue_number ?? task.parent_issue_number;
+
+    TaskManifestManager.updateTask(workspacePath, taskId, { status: 'running', pid: process.pid });
+    TaskManifestManager.heartbeat(workspacePath, taskId);
+
+    const heartbeatInterval = setInterval(() => {
+        TaskManifestManager.heartbeat(workspacePath, taskId);
+    }, 15000);
+
+    try {
+        if (task.type === 'delegate_task') {
+            await delegateTaskSingle(
+                task.role!,
+                task.task_description!,
+                task.output_path!,
+                `async_${taskId}`,
+                task.workspacePath,
+                task.context_files,
+                {
+                    description: task.role_description,
+                    engine: task.role_engine,
+                    model: task.role_model,
+                    requiredSkills: task.required_skills
+                },
+                parentDepth,
+                parentIssueNumber,
+                task.github_issue_number,
+                task.agent_id
+            );
+        } else if (task.type === 'dispatch_council') {
+            // Council tasks still use subprocess to avoid blocking the caller
+            throw new Error(`[Runner] dispatch_council not supported in-process; use spawnAsyncWorker`);
+        }
+
+        const verificationStatus = verifyOutputPath(task.output_path);
+        let errorMessage: string | undefined;
+        if (verificationStatus === 'failed') errorMessage = 'Agent produced no usable output.';
+        else if (verificationStatus === 'partial') errorMessage = 'Agent produced partial output.';
+
+        const statusUpdate: Partial<import('../managers/TaskManifestManager').TaskRecord> = {
+            status: verificationStatus,
+            completed_at: Date.now()
+        };
+        if (errorMessage) statusUpdate.error_message = errorMessage;
+        TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
+        console.error(`[Runner] Task ${taskId} finished in-process with status: ${verificationStatus}.`);
+
+        if (verificationStatus === 'verified') {
+            try {
+                const unblockedTasks = TaskManifestManager.unblockDependents(workspacePath, taskId);
+                for (const unblockedId of unblockedTasks) {
+                    console.error(`[Runner] Unblocked dependent task: ${unblockedId} — running in-process`);
+                    // Fire-and-forget: don't await dependents (they run concurrently)
+                    runWorkerInProcess(unblockedId, workspacePath).catch(e =>
+                        console.error(`[Runner] Dependent ${unblockedId} failed:`, e.message)
+                    );
+                }
+            } catch (depErr: any) {
+                console.error(`[Runner] Warning: failed to unblock dependents for ${taskId}: ${depErr.message}`);
+            }
+        }
+
+        await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
+    } catch (err: any) {
+        console.error(`[Runner] Task ${taskId} failed (in-process):`, err);
+        const latestManifest = TaskManifestManager.loadManifest(workspacePath);
+        const latestTask = latestManifest[taskId];
+        if (latestTask?.status !== 'cancelled') {
+            TaskManifestManager.updateTask(workspacePath, taskId, {
+                status: 'failed',
+                error_message: err.message,
+                completed_at: Date.now()
+            });
+        }
+        if (latestTask?.status !== 'cancelled') {
+            await updateTaskGitHubIssue(workspacePath, taskId, 'failed', undefined, err.message);
+        }
+    } finally {
+        clearInterval(heartbeatInterval);
+        // No process.exit() — caller stays alive
+    }
+}
+
 function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial' | 'failed' {
     if (!outputPath) return 'partial';
     try {
