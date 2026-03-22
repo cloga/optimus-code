@@ -155,8 +155,10 @@ export class AcpAdapter implements AgentAdapter {
             );
         }
 
-        // Default: include code and message for debugging
-        return new Error(`ACP error ${code}: ${msg}${data}`);
+        // Default: include code and message for debugging with recovery guidance
+        return new Error(
+            `ACP error ${code}: ${msg}${data}. Fix: verify engine is running (\`copilot --version\` or \`claude --version\`), check ACP protocol compatibility, or retry the request.`
+        );
     }
 
     // ─── Low-level transport ───

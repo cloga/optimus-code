@@ -207,6 +207,40 @@ export function mapTaskStatusToRuntimeStatus(task: TaskRecord | null | undefined
     }
 }
 
+/**
+ * Try to extract a JSON value from text that may contain markdown prose/code fences.
+ * Handles common patterns:
+ *   - ```json\n{...}\n```
+ *   - ```\n{...}\n```
+ *   - Prose before/after a JSON object or array
+ */
+function extractJsonFromText(text: string): unknown | undefined {
+    // Strategy 1: Extract from ```json ... ``` or ``` ... ``` code fences
+    const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (fenceMatch) {
+        try {
+            return JSON.parse(fenceMatch[1].trim());
+        } catch { /* fall through */ }
+    }
+
+    // Strategy 2: Find the outermost { } or [ ] and try parsing
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    const start = firstBrace >= 0 && (firstBracket < 0 || firstBrace < firstBracket) ? firstBrace : firstBracket;
+    if (start >= 0) {
+        const open = text[start];
+        const close = open === '{' ? '}' : ']';
+        const lastClose = text.lastIndexOf(close);
+        if (lastClose > start) {
+            try {
+                return JSON.parse(text.slice(start, lastClose + 1));
+            } catch { /* fall through */ }
+        }
+    }
+
+    return undefined;
+}
+
 function readOutputArtifact(outputPath: string): { exists: boolean; rawText?: string; parsed?: unknown; parseError?: string } {
     if (!fs.existsSync(outputPath)) {
         return { exists: false };
@@ -217,15 +251,23 @@ function readOutputArtifact(outputPath: string): { exists: boolean; rawText?: st
         return { exists: true, rawText: '' };
     }
 
+    // Try direct parse first
     try {
         return { exists: true, rawText, parsed: JSON.parse(rawText) };
-    } catch (e: any) {
-        return {
-            exists: true,
-            rawText,
-            parseError: e instanceof Error ? e.message : String(e)
-        };
+    } catch { /* fall through to extraction */ }
+
+    // Try extracting JSON from markdown/prose wrapping
+    const extracted = extractJsonFromText(rawText);
+    if (extracted !== undefined) {
+        return { exists: true, rawText, parsed: extracted };
     }
+
+    // All extraction attempts failed
+    return {
+        exists: true,
+        rawText,
+        parseError: 'Response contains non-JSON text. Tried extracting from markdown code fences and brace-matching but no valid JSON found.'
+    };
 }
 
 function buildFailureFields(task: TaskRecord | null | undefined, record: AgentRuntimeRecord, outputInfo: ReturnType<typeof readOutputArtifact>): Pick<AgentRuntimeEnvelope, 'error_code' | 'error_message' | 'action_required'> {

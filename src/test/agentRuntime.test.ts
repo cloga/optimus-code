@@ -185,6 +185,46 @@ describe('agent runtime — envelope construction', () => {
         expect(envelope.error_code).toBe('invalid_structured_output');
     });
 
+    it('extracts JSON from markdown-wrapped structured output', () => {
+        const tmpDir = makeTmpDir();
+        const outputPath = path.join(tmpDir, 'run_md.json');
+        fs.writeFileSync(outputPath, 'Info: result written.\n\n```json\n{"message": "pong"}\n```\n', 'utf8');
+
+        const record = makeRecord({
+            run_id: 'run_md',
+            output_path: outputPath,
+            output_schema: { type: 'object' }
+        });
+
+        const envelope = buildAgentRuntimeEnvelope(record, makeTask({
+            taskId: 'run_md',
+            output_path: outputPath
+        }));
+
+        expect(envelope.status).toBe('completed');
+        expect(envelope.result).toEqual({ message: 'pong' });
+    });
+
+    it('extracts JSON from prose-wrapped braces', () => {
+        const tmpDir = makeTmpDir();
+        const outputPath = path.join(tmpDir, 'run_prose.json');
+        fs.writeFileSync(outputPath, 'Here is the result:\n{"status": "ok", "count": 42}\nDone.', 'utf8');
+
+        const record = makeRecord({
+            run_id: 'run_prose',
+            output_path: outputPath,
+            output_schema: { type: 'object' }
+        });
+
+        const envelope = buildAgentRuntimeEnvelope(record, makeTask({
+            taskId: 'run_prose',
+            output_path: outputPath
+        }));
+
+        expect(envelope.status).toBe('completed');
+        expect(envelope.result).toEqual({ status: 'ok', count: 42 });
+    });
+
     it('marks missing output as failed with missing_output_artifact', () => {
         const record = makeRecord({ output_path: '/nonexistent/path.json' });
         const task = makeTask({ output_path: '/nonexistent/path.json' });

@@ -652,6 +652,12 @@ const ENGINE_SYSTEM_DEFAULTS: Record<string, any> = {
 
 function applyEngineDefaults(engine: string, config: any): any {
     if (!config) return config;
+    // Only apply system defaults for simplified configs (new format).
+    // Verbose configs with explicit protocol, cli section, or top-level capabilities
+    // manage their own transport/automation settings — skip defaults.
+    if (config.protocol !== undefined || config.cli || config.capabilities) {
+        return config;
+    }
     const defaults = ENGINE_SYSTEM_DEFAULTS[engine] || ENGINE_SYSTEM_DEFAULTS['_default'];
     const merged = { ...defaults, ...config };
     // Deep-merge automation and acp sub-objects
@@ -1783,8 +1789,8 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     if (!activeEngine) {
         throw new Error(
             `⚠️ **Engine Resolution Failed**: Unable to resolve a viable engine (e.g., 'github-copilot', 'claude-code') for role \`${role}\`.\n` +
-            `No engine was specified in the caller arguments, local frontmatter, or T2 metadata. ` +
-            `Please explicitly specify an engine or create the role with proper configurations first.`
+            `No engine was specified in the caller arguments, local frontmatter, or T2 metadata.\n\n` +
+            `**Fix**: Specify \`role_engine\` explicitly (e.g., \`role_engine: "github-copilot"\`), or check that .optimus/config/available-agents.json has at least one engine configured.`
         );
     }
 
@@ -1800,7 +1806,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
                     throw new Error(
                         `⚠️ **Model Pre-Flight Failed**: Model \`${activeModel}\` is not in the allowed list for engine \`${activeEngine}\`.\n\n` +
                         `**Allowed models**: ${allowedModels.map(m => `\`${m}\``).join(', ')}\n\n` +
-                        `Please re-delegate with a valid \`role_model\` or omit it to use the default.`
+                        `**Fix**: Re-delegate with a valid \`role_model\` from the list above, or omit \`role_model\` to use the engine default.`
                     );
                 }
             }

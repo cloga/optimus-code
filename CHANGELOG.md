@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.16.12] - 2026-03-22
+
+### Bug Fixes
+- **Structured output JSON extraction** — When engines return JSON wrapped in markdown prose/code fences, Optimus now extracts the JSON payload before validation. Supports `` ```json ``` `` code fences and brace-matching extraction. Previously this caused `invalid_structured_output` errors even when the engine produced correct JSON.
+- **100% agent-friendly error coverage** — All remaining error paths now include actionable `Fix:` guidance:
+  - Worker-spawner: engine resolution failure and model pre-flight errors
+  - ACP adapter: generic fallback error now suggests recovery steps
+- **System defaults skip verbose configs** — `applyEngineDefaults()` now detects old-format configs (with explicit `protocol`, `cli`, or `capabilities` fields) and skips default injection to avoid conflicts.
+
 ## [2.16.11] - 2026-03-22
 
 ### Bug Fixes
