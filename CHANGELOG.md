@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.16.17] - 2026-03-22
+
+### Features
+- **Harness Engineering: Mechanical Linter** — Deterministic (non-LLM) validation of Optimus artifacts. Lints role templates (frontmatter fields, naming, engine/model validity, thin template detection), skill files (structure, naming), artifact outputs (type/status/author/date format), and engine-model cross-consistency against `available-agents.json`. Includes `lintWorkspace()` for batch validation.
+- **Harness Engineering: Entropy Patrol** — Periodic workspace health checks designed for meta-cron execution. 5 built-in checks: structural lint (roles + skills), stale T1 agent detection (>7 days), orphaned skill references, quarantined role alerts, and memory file health. Generates formatted markdown reports.
+
 ## [2.16.16] - 2026-03-22
 
 ### Features
