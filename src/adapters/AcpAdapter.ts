@@ -7,6 +7,28 @@ import * as path from 'path';
 import { debugLog } from '../debugLogger';
 import { loadProjectMcpServers } from '../utils/mcpConfig';
 
+// ─── ACP Response Helpers ───
+
+/**
+ * Extract text from ACP session/prompt result.content array.
+ * ACP spec: result.content is an array of { type: 'text', text: '...' } blocks.
+ * Returns concatenated text, or empty string if content is not present/valid.
+ */
+function extractContentText(promptResult: any): string {
+    if (!promptResult?.content) return '';
+    if (typeof promptResult.content === 'string') return promptResult.content;
+    if (!Array.isArray(promptResult.content)) return '';
+
+    const texts: string[] = [];
+    for (const block of promptResult.content) {
+        if (typeof block === 'string') {
+            texts.push(block);
+        } else if (block?.type === 'text' && typeof block.text === 'string') {
+            texts.push(block.text);
+        }
+    }
+    return texts.join('');
+}
 // ─── JSON-RPC Types ───
 
 interface JsonRpcRequest {
@@ -547,10 +569,14 @@ export class AcpAdapter implements AgentAdapter {
             }
             this.stopActivityTimer();
 
-            const fullOutput = outputChunks.join('');
+            // Prefer structured content from promptResult over streaming chunks.
+            // ACP spec: promptResult.content is an array of { type, text } blocks.
+            const structuredOutput = extractContentText(promptResult);
+            const streamOutput = outputChunks.join('');
+            const fullOutput = structuredOutput || streamOutput;
             if (!this.lastDebugInfo) this.lastDebugInfo = {};
             this.lastDebugInfo.endTime = Date.now();
-            debugLog('[AcpAdapter]', `Done (persistent, #${this._invocationCount}). Output: ${fullOutput.length} chars`);
+            debugLog('[AcpAdapter]', `Done (persistent, #${this._invocationCount}). Output: ${fullOutput.length} chars (source: ${structuredOutput ? 'promptResult.content' : 'streaming chunks'})`);
             return fullOutput;
 
         } catch (err: any) {
@@ -723,11 +749,13 @@ export class AcpAdapter implements AgentAdapter {
             }
             this.stopActivityTimer();
 
-            // Combine streaming chunks into full output
-            const fullOutput = outputChunks.join('');
+            // Prefer structured content from promptResult over streaming chunks
+            const structuredOutput = extractContentText(promptResult);
+            const streamOutput = outputChunks.join('');
+            const fullOutput = structuredOutput || streamOutput;
 
             this.lastDebugInfo.endTime = Date.now();
-            debugLog('[AcpAdapter]', `Done. Output length: ${fullOutput.length}, stop: ${promptResult?.stopReason}`);
+            debugLog('[AcpAdapter]', `Done. Output length: ${fullOutput.length}, stop: ${promptResult?.stopReason}, source: ${structuredOutput ? 'promptResult.content' : 'streaming'}`);
             return fullOutput;
 
         } catch (err: any) {
