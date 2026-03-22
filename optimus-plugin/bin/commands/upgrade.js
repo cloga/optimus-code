@@ -153,28 +153,33 @@ module.exports = function upgrade() {
   // 5. State/Tasks/Reports/Reviews/Memory: NEVER TOUCH
   console.log('⏭️  Runtime data preserved');
 
-  // 6. Refresh the local MCP bundle used by generated client configs
-  const srcDistPath = path.resolve(pluginRoot, 'dist', 'mcp-server.js');
+  // 6. Refresh all dist bundles used by workspace
   const destDistDir = path.join(optimusDir, 'dist');
-  const destDistPath = path.join(destDistDir, 'mcp-server.js');
   if (!fs.existsSync(destDistDir)) {
     fs.mkdirSync(destDistDir, { recursive: true });
   }
-  if (fs.existsSync(srcDistPath)) {
-    fs.copyFileSync(srcDistPath, destDistPath);
-    const srcMapPath = srcDistPath + '.map';
-    if (fs.existsSync(srcMapPath)) {
-      fs.copyFileSync(srcMapPath, destDistPath + '.map');
+  const distBundles = ['mcp-server.js', 'http-runtime.js', 'runtime-cli.js'];
+  for (const bundle of distBundles) {
+    const srcDistPath = path.resolve(pluginRoot, 'dist', bundle);
+    const destDistPath = path.join(destDistDir, bundle);
+    if (fs.existsSync(srcDistPath)) {
+      fs.copyFileSync(srcDistPath, destDistPath);
+      const srcMapPath = srcDistPath + '.map';
+      if (fs.existsSync(srcMapPath)) {
+        fs.copyFileSync(srcMapPath, destDistPath + '.map');
+      }
     }
-    // Patch self-reference path: compiled bundle uses __dirname-relative path written
-    // for optimus-plugin/dist/ — fix it to resolve correctly from .optimus/dist/
-    let distContent = fs.readFileSync(destDistPath, 'utf8');
+  }
+  // Patch self-reference path in mcp-server.js
+  const mcpDestPath = path.join(destDistDir, 'mcp-server.js');
+  if (fs.existsSync(mcpDestPath)) {
+    let distContent = fs.readFileSync(mcpDestPath, 'utf8');
     const patchedContent = distContent.replace(
       /join\(__dirname,\s*"\.\."\s*,\s*"\.\."\s*,\s*"dist"\s*,\s*"mcp-server\.js"\)/g,
       'join(__dirname, "mcp-server.js")'
     );
     if (patchedContent !== distContent) {
-      fs.writeFileSync(destDistPath, patchedContent, 'utf8');
+      fs.writeFileSync(mcpDestPath, patchedContent, 'utf8');
     }
   }
   writeClientMcpConfigs(cwd);
@@ -182,7 +187,9 @@ module.exports = function upgrade() {
   console.log('   • VS Code / GitHub Copilot: .vscode/mcp.json');
   console.log('   • GitHub Copilot CLI:       .copilot/mcp-config.json');
   console.log('   • Claude Code:              .mcp.json');
-  console.log('   📍 MCP server path: .optimus/dist/mcp-server.js');
+  console.log('   📍 MCP server:   .optimus/dist/mcp-server.js');
+  console.log('   📍 HTTP runtime: .optimus/dist/http-runtime.js');
+  console.log('   📍 CLI runtime:  .optimus/dist/runtime-cli.js');
 
   // 7. Ensure system-instructions references exist in IDE instruction files
   const { injectSystemInstructions } = require('../lib/inject');
