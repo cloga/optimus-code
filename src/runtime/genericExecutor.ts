@@ -8,6 +8,7 @@
 import { AcpProcessPool } from '../utils/acpProcessPool';
 import { AcpAdapter } from '../adapters/AcpAdapter';
 import { extractJsonFromText } from '../utils/agentRuntime';
+import { validateOutput, formatValidationIssues } from '../harness/outputValidator';
 
 // ─── Engine Configuration ───
 
@@ -63,6 +64,7 @@ export interface ExecuteResult {
     output: string;
     parsed?: unknown;
     parseError?: string;
+    validationWarnings?: string[];
     sessionId?: string;
     stopReason?: string;
     usage?: Record<string, unknown>;
@@ -147,10 +149,30 @@ export async function executePrompt(
             }
         }
 
+        // ── Harness: Output Validation Gate ──
+        const validation = validateOutput(
+            parsed !== undefined ? JSON.stringify(parsed) : rawOutput,
+            {
+                role: 'generic',
+                outputSchema: options.outputSchema,
+                outputPath: '',
+                engine,
+                verificationLevel: 'normal',
+            }
+        );
+        let validationWarnings: string[] | undefined;
+        if (validation.severity === 'fail') {
+            parseError = (parseError ? parseError + '\n' : '') +
+                'Output validation failed:\n' + formatValidationIssues(validation.issues);
+        } else if (validation.issues.length > 0) {
+            validationWarnings = validation.issues.map(i => `[${i.severity}] ${i.rule}: ${i.message}`);
+        }
+
         return {
             output: parsed !== undefined ? JSON.stringify(parsed, null, 2) : rawOutput,
             parsed,
             parseError,
+            validationWarnings,
             sessionId: adapter.lastSessionId,
             stopReason: adapter.lastStopReason,
             usage: adapter.lastUsageLog ? tryParseJson(adapter.lastUsageLog) : undefined,

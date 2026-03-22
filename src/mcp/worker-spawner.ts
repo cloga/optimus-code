@@ -31,6 +31,8 @@ import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../manage
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord } from '../utils/agentRuntime';
+import { validateOutput, formatValidationIssues } from '../harness/outputValidator';
+import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
 
 export interface EngineAutomationExplanation {
@@ -1958,6 +1960,18 @@ let contextContent = "";
         ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
         : '';
 
+    // ── Harness: Self-Verification Prompt Suffix ──
+    const verifyLevel = frontmatter?.verification_level || 'normal';
+    const verifySuffix = verifyLevel !== 'skip' ? `
+
+## Verification Checklist (MANDATORY)
+Before finalizing your output, verify:
+1. Re-read the task description above — does your output address ALL requirements?
+2. If you wrote code: confirm it has no syntax errors and handles edge cases.
+3. If tests exist or are required: run them and include results.
+4. If a specific format was requested: validate your output matches it.
+Do NOT skip verification. Incomplete or unverified work will be rejected by the harness.` : '';
+
     const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
@@ -1976,7 +1990,7 @@ Task Description:
 ${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe following skills have been loaded for you to reference and follow:\n${skillContent}\n=== END SKILLS ===` : ''}
 
 CRITICAL: Your output MUST be written to this EXACT file: ${normalizePathForAgent(outputPath)}
-Please provide your complete execution result below.`;
+Please provide your complete execution result below.${verifySuffix}`;
 
     console.error(`[Orchestrator] Prompt size: ${basePrompt.length} chars (ACP lean: ${isAcpEngine})`);
     const isT3 = resolvedTier.startsWith('T3');
@@ -2127,10 +2141,35 @@ Please provide your complete execution result below.`;
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
         // Strip tool-call traces from output before writing to artifact file.
-        // PersistentAgentAdapter.combineStructuredDisplay() merges processText (traces)
-        // with assistantText (content). For artifact files consumed by other agents,
-        // only the clean content should be persisted.
         const cleanResponse = stripTraceLines(response);
+
+        // ── Harness: Output Validation Gate ──
+        const validationResult = validateOutput(cleanResponse, {
+            role,
+            outputSchema: undefined, // v1 API doesn't pass schemas through here
+            taskDescription: originalInput,
+            outputPath,
+            engine: activeEngine,
+            verificationLevel: 'normal',
+        });
+        if (validationResult.severity === 'fail') {
+            throw new Error(
+                `⚠️ **Output Validation Failed** for role \`${role}\`:\n` +
+                formatValidationIssues(validationResult.issues) + '\n\n' +
+                `Fix: Re-delegate with clearer instructions or a different engine/model.`
+            );
+        }
+        if (validationResult.issues.length > 0) {
+            console.error(`[Harness] Output warnings for ${role}: ${validationResult.issues.map(i => i.rule).join(', ')}`);
+        }
+
+        // ── Harness: Doom Loop Detection ──
+        const sessionForLoop = adapter.lastSessionId || _fallbackSessionId;
+        const loopWarning = analyzeOutputForLoops(sessionForLoop, cleanResponse);
+        if (loopWarning) {
+            console.error(`[Harness] ${loopWarning.suggestion}`);
+        }
+
         fs.writeFileSync(outputPath, cleanResponse, 'utf8');
 
         // Backfill adapter metadata (usage, stop_reason) into runtime record

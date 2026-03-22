@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.16] - 2026-03-22
+
+### Features
+- **Harness Engineering: Output Validation Gate** — Agent output is now validated before being written to artifact files. Built-in rules catch: empty output, schema non-compliance, premature completion declarations, unfinished code markers (TODO/FIXME), and error trace leaks. Validation runs on both v1 (delegate_task) and v2 (generic API) paths.
+- **Harness Engineering: Doom Loop Detection** — Tracks per-session file edit counts. When an agent edits the same file 3+ times, a warning is logged suggesting the agent reconsider its approach. Inspired by LangChain's LoopDetectionMiddleware.
+- **Harness Engineering: Self-Verification Prompt** — All delegated agents now receive a mandatory verification checklist appended to their prompt, requiring them to re-read the task spec, verify output completeness, and check for errors before submitting. Controllable via `verification_level` in role frontmatter (`strict` | `normal` | `skip`).
+
 ## [2.16.15] - 2026-03-22
 
 ### Features
