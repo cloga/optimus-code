@@ -270,7 +270,18 @@ Here is the synthesis report:\n\n${synthesisContent}`;
             else verificationStatus = status; // 'verified' or 'failed'
         }
 
-        const statusUpdate: Partial<import('../managers/TaskManifestManager').TaskRecord> = { status: verificationStatus };
+        const latestManifest = TaskManifestManager.loadManifest(workspacePath);
+        const latestTask = latestManifest[taskId];
+        if (latestTask?.status === 'cancelled') {
+            console.error(`[Runner] Task ${taskId} was cancelled while executing. Preserving cancelled status.`);
+            clearInterval(heartbeatInterval);
+            process.exit(0);
+        }
+
+        const statusUpdate: Partial<import('../managers/TaskManifestManager').TaskRecord> = {
+            status: verificationStatus,
+            completed_at: Date.now()
+        };
         if (errorMessage) statusUpdate.error_message = errorMessage;
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
@@ -313,10 +324,20 @@ Here is the synthesis report:\n\n${synthesisContent}`;
         await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
     } catch (err: any) {
         console.error(`[Runner] Task ${taskId} failed:`, err);
-        TaskManifestManager.updateTask(workspacePath, taskId, { status: 'failed', error_message: err.message });
+        const latestManifest = TaskManifestManager.loadManifest(workspacePath);
+        const latestTask = latestManifest[taskId];
+        if (latestTask?.status !== 'cancelled') {
+            TaskManifestManager.updateTask(workspacePath, taskId, {
+                status: 'failed',
+                error_message: err.message,
+                completed_at: Date.now()
+            });
+        }
 
         // Best-effort: comment failure on GitHub Issue
-        await updateTaskGitHubIssue(workspacePath, taskId, 'failed', undefined, err.message);
+        if (latestTask?.status !== 'cancelled') {
+            await updateTaskGitHubIssue(workspacePath, taskId, 'failed', undefined, err.message);
+        }
     } finally {
         clearInterval(heartbeatInterval);
         process.exit(0);

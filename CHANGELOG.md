@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.11.0] - 2026-03-22
+
+### Features
+- **First-class Agent Runtime abstraction** — New application-facing runtime layer above raw delegation and transport. Host applications can now call agents as domain services without coupling to `delegate_task`, CLI transport details, or task-manifest internals. Addresses #516.
+- **5 new Agent Runtime MCP tools** — `run_agent` (sync execution), `start_agent_run` (async), `get_agent_run_status` (normalized polling), `resume_agent_run` (unblock manual intervention), `cancel_agent_run` (graceful cancellation).
+- **Normalized result envelopes** — All runtime tools return a consistent `AgentRuntimeEnvelope` with `status`, `result`, `error_code`, `error_message`, `requires_manual_intervention`, `action_required`, and `runtime_metadata` (engine, model, session_id, duration_ms, retries_attempted).
+- **Structured output validation** — When `output_schema` is provided, the runtime detects malformed JSON output and returns `error_code: "invalid_structured_output"` instead of silently passing broken data.
+- **Engine fallback and retry policy** — `run_agent` supports `runtime_policy.retries` and `runtime_policy.fallback_engines` for automatic retry with engine rotation.
+- **Task cancellation support** — New `cancelled` status in the task manifest. Running tasks respect cancellation; the async runner checks cancellation before writing final status.
+
+### Fixes
+- **Async tasks now record resolved engine, model, and session_id** — Worker spawner backfills `resolved_engine`, `resolved_model`, and `session_id` into the task manifest after execution, enabling runtime metadata to surface actual execution details.
+- **`completed_at` timestamp added to task records** — Terminal task states now record completion time for accurate duration tracking.
+
+### Compatibility
+- **Backward compatible with existing orchestration tools** — `delegate_task`, `delegate_task_async`, `dispatch_council`, and `check_task_status` remain unchanged.
+- **Recommended for application-side integrations** — Teams building domain services (script generation, classification, extraction, structured content generation) on top of Optimus should adopt the runtime tools for a stable contract.
+
 ## [2.10.0] - 2026-03-21
 
 ### Features

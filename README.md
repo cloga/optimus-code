@@ -127,6 +127,11 @@ Once the server is running, your AI assistant gains these tools:
 |---|---|
 | `roster_check` | List all available agent roles (T1 local + T2 project + T3 dynamic) and engine/model bindings |
 | `explain_available_agents` | Show the resolved runtime behavior of `available-agents.json`, including candidate transports, selected protocol, and fallback reasons |
+| `run_agent` | Run an application-facing Agent Runtime request synchronously and return a normalized envelope |
+| `start_agent_run` | Start an application-facing Agent Runtime request asynchronously |
+| `get_agent_run_status` | Read the normalized status/result envelope for an Agent Runtime run |
+| `resume_agent_run` | Resume a run blocked on manual intervention by supplying the human answer directly |
+| `cancel_agent_run` | Cancel an active Agent Runtime run |
 | `delegate_task` | Assign a task to a specialized agent with structured role info |
 | `delegate_task_async` | Same as above, non-blocking (preferred) |
 | `dispatch_council` | Spawn parallel expert review (Map-Reduce pattern) |
@@ -146,6 +151,18 @@ Once the server is running, your AI assistant gains these tools:
 | `register_meta_cron` | Register a scheduled recurring task |
 | `list_meta_crons` | List all registered scheduled tasks |
 | `remove_meta_cron` | Remove a scheduled task |
+
+### Agent Runtime tools
+
+The Agent Runtime layer is the application-facing abstraction above raw delegation and transport. It is intended for host applications that want a stable runtime contract without coupling service code to `delegate_task`, CLI transport details, or task-manifest internals.
+
+Typical flow:
+
+1. `run_agent` for synchronous request/response execution
+2. `start_agent_run` for async execution
+3. `get_agent_run_status` to poll a normalized envelope
+4. `resume_agent_run` when status is `blocked_manual_intervention`
+5. `cancel_agent_run` to stop an active run
 
 ### delegate_task Extended Parameters
 

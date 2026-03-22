@@ -27,6 +27,17 @@ import { validateRoleNotModelName, validateEngineAndModel, looksLikeModelName } 
 import { resolveRoleName, resolveRoleNames, getRegisteredRoles } from "../utils/resolveRoleName";
 import { MetaCronEngine, loadCrontab, saveCrontab } from "./meta-cron-engine";
 import { checkAndResumeAwaitingTasks } from "./input-resume-checker";
+import { sanitizeExternalContent, wrapUntrusted } from "../utils/sanitizeExternalContent";
+import {
+  AgentRuntimeRequest,
+  AgentRuntimeRecord,
+  buildAgentRuntimeEnvelope,
+  buildAgentRuntimeTaskDescription,
+  getAgentRuntimeOutputPath,
+  loadAgentRuntimeRecord,
+  saveAgentRuntimeRecord,
+  updateAgentRuntimeRecord
+} from "../utils/agentRuntime";
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
 function requireParams(toolName: string, params: Record<string, any>, required: string[]): void {
@@ -64,6 +75,228 @@ function reloadEnv() {
   }
 }
 reloadEnv();
+
+const DEFAULT_AGENT_RUNTIME_TIMEOUT_MS = 120000;
+const MAX_HEARTBEAT_MS = 1800000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function resolveHeartbeatTimeout(workspacePath: string, requestedEngine: string | undefined, heartbeat_timeout_ms?: number): number {
+  const DEFAULT_HEARTBEAT_MS = 180000;
+
+  if (heartbeat_timeout_ms !== undefined) {
+    if (typeof heartbeat_timeout_ms !== 'number' || heartbeat_timeout_ms <= 0 || heartbeat_timeout_ms > MAX_HEARTBEAT_MS) {
+      throw new McpError(ErrorCode.InvalidParams, `heartbeat_timeout_ms must be a number between 1 and ${MAX_HEARTBEAT_MS} (30 min). Got: ${heartbeat_timeout_ms}`);
+    }
+    return heartbeat_timeout_ms;
+  }
+
+  const resolvedEngine = requestedEngine || (() => {
+    const { engines } = loadValidEnginesAndModels(workspacePath);
+    return engines.includes('claude-code') ? 'claude-code' : engines[0] || '';
+  })();
+  const engineTimeout = resolvedEngine ? loadEngineHeartbeatTimeout(workspacePath, resolvedEngine) : null;
+  if (engineTimeout !== null) {
+    if (engineTimeout <= 0 || engineTimeout > MAX_HEARTBEAT_MS) {
+      console.error(`[Config] Warning: invalid engine heartbeat timeout ${engineTimeout} for '${resolvedEngine}'. Using default.`);
+      return DEFAULT_HEARTBEAT_MS;
+    }
+    return engineTimeout;
+  }
+
+  return DEFAULT_HEARTBEAT_MS;
+}
+
+function buildRuntimeResumeContext(task: any, humanAnswer: string): string {
+  return `You are resuming a previously paused Agent Runtime request.
+
+## Original Runtime Request
+${task.task_description || '(no description available)'}
+
+## What You Were Working On
+${task.pause_context || '(no pause context available)'}
+
+## Question You Asked
+${task.pause_question || '(no question recorded)'}
+
+## Human Answer
+${wrapUntrusted(humanAnswer, 'human-answer')}
+
+## Instructions
+Continue the run and write the final result to the same output path.`;
+}
+
+function normalizeRuntimeRequest(args: any): AgentRuntimeRequest {
+  requireParams("agent_runtime", args, ["role", "workspace_path", "input"]);
+  return {
+    role: args.role,
+    workspace_path: args.workspace_path,
+    input: args.input,
+    skill: args.skill,
+    instructions: args.instructions,
+    output_schema: args.output_schema,
+    runtime_policy: args.runtime_policy,
+    role_description: args.role_description,
+    role_engine: args.role_engine,
+    role_model: args.role_model,
+    agent_id: args.agent_id,
+    context_files: Array.isArray(args.context_files) ? args.context_files : undefined
+  };
+}
+
+function createRuntimeRecord(request: AgentRuntimeRequest, runId: string, traceId: string, taskId: string, outputPath: string): AgentRuntimeRecord {
+  const now = new Date().toISOString();
+  return {
+    run_id: runId,
+    trace_id: traceId,
+    active_task_id: taskId,
+    created_at: now,
+    updated_at: now,
+    output_path: outputPath,
+    skill: request.skill,
+    output_schema: request.output_schema,
+    request: {
+      role: request.role,
+      role_description: request.role_description,
+      role_engine: request.role_engine,
+      role_model: request.role_model,
+      agent_id: request.agent_id,
+      instructions: request.instructions,
+      input: request.input,
+      context_files: request.context_files,
+      runtime_policy: request.runtime_policy
+    },
+    history: [
+      {
+        task_id: taskId,
+        status: 'pending',
+        at: now,
+        note: 'Run created'
+      }
+    ]
+  };
+}
+
+function buildAgentRuntimeResponse(workspacePath: string, runId: string) {
+  const record = loadAgentRuntimeRecord(workspacePath, runId);
+  if (!record) {
+    throw new McpError(ErrorCode.InvalidParams, `Agent Runtime run '${runId}' was not found in '${workspacePath}'.`);
+  }
+
+  const manifest = TaskManifestManager.loadManifest(workspacePath);
+  const task = manifest[record.active_task_id];
+  return buildAgentRuntimeEnvelope(record, task);
+}
+
+function createAgentRuntimeRun(request: AgentRuntimeRequest): { runId: string; traceId: string; taskId: string; outputPath: string } {
+  const workspacePath = request.workspace_path;
+  request.role = resolveRoleName(request.role, workspacePath);
+  validateRoleNotModelName(request.role);
+  if (request.role_engine) {
+    validateEngineAndModel(request.role_engine, request.role_model, workspacePath);
+  }
+  const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const traceId = crypto.randomUUID();
+  const taskId = runId;
+  const outputPath = getAgentRuntimeOutputPath(workspacePath, runId);
+  const taskDescription = buildAgentRuntimeTaskDescription(request);
+  const heartbeatTimeout = resolveHeartbeatTimeout(workspacePath, request.role_engine || request.runtime_policy?.fallback_engines?.[0], request.runtime_policy?.timeout_ms);
+  const requiredSkills = request.skill ? [request.skill] : undefined;
+
+  TaskManifestManager.createTask(workspacePath, {
+    taskId,
+    type: "delegate_task",
+    role: request.role,
+    task_description: taskDescription,
+    output_path: outputPath,
+    workspacePath,
+    context_files: request.context_files || [],
+    role_description: request.role_description,
+    role_engine: request.role_engine,
+    role_model: request.role_model,
+    required_skills: requiredSkills,
+    delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
+    agent_id: request.agent_id || undefined,
+    heartbeat_timeout_ms: heartbeatTimeout,
+    runtime_run_id: runId,
+    runtime_trace_id: traceId,
+    runtime_skill: request.skill
+  });
+
+  saveAgentRuntimeRecord(workspacePath, createRuntimeRecord(request, runId, traceId, taskId, outputPath));
+  return { runId, traceId, taskId, outputPath };
+}
+
+async function cancelAgentRuntimeRun(workspacePath: string, runId: string, reason?: string) {
+  const record = loadAgentRuntimeRecord(workspacePath, runId);
+  if (!record) {
+    throw new McpError(ErrorCode.InvalidParams, `Agent Runtime run '${runId}' was not found in '${workspacePath}'.`);
+  }
+
+  const manifest = TaskManifestManager.loadManifest(workspacePath);
+  const task = manifest[record.active_task_id];
+  if (!task) {
+    throw new McpError(ErrorCode.InvalidParams, `Active task '${record.active_task_id}' for run '${runId}' was not found.`);
+  }
+
+  if (task.status === 'verified' || task.status === 'completed' || task.status === 'failed' || task.status === 'partial' || task.status === 'degraded' || task.status === 'cancelled') {
+    return buildAgentRuntimeEnvelope(record, task);
+  }
+
+  if (task.pid) {
+    try {
+      process.kill(task.pid);
+    } catch (e: any) {
+      if (e && e.code !== 'ESRCH') {
+        throw e;
+      }
+    }
+  }
+
+  const now = Date.now();
+  const message = reason || 'Cancelled by application runtime request.';
+  TaskManifestManager.updateTask(workspacePath, task.taskId, {
+    status: 'cancelled',
+    error_message: message,
+    cancellation_reason: message,
+    cancelled_at: now,
+    completed_at: now
+  });
+
+  updateAgentRuntimeRecord(workspacePath, runId, (current) => ({
+    ...current,
+    updated_at: new Date(now).toISOString(),
+    history: [
+      ...current.history,
+      {
+        task_id: current.active_task_id,
+        status: 'cancelled',
+        at: new Date(now).toISOString(),
+        note: message
+      }
+    ]
+  }));
+
+  return buildAgentRuntimeResponse(workspacePath, runId);
+}
+
+async function waitForAgentRuntimeCompletion(workspacePath: string, runId: string, timeoutMs: number) {
+  const startedAt = Date.now();
+  while (true) {
+    const envelope = buildAgentRuntimeResponse(workspacePath, runId);
+    if (envelope.status === 'completed' || envelope.status === 'failed' || envelope.status === 'blocked_manual_intervention' || envelope.status === 'cancelled') {
+      return envelope;
+    }
+
+    if (Date.now() - startedAt > timeoutMs) {
+      return cancelAgentRuntimeRun(workspacePath, runId, `Run exceeded timeout of ${timeoutMs}ms.`);
+    }
+
+    await sleep(1000);
+  }
+}
 
 // 1. Initialize the MCP Server (The Marionette Controller)
 const server = new Server(
@@ -264,6 +497,100 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
           required: ["workspace_path"]
+        }
+      },
+      {
+        name: "run_agent",
+        description: "Run an application-facing Agent Runtime request synchronously and return a normalized result envelope.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            role: { type: "string", description: "Agent role to execute." },
+            skill: { type: "string", description: "Optional skill/playbook name to equip for this run." },
+            input: { description: "Application payload passed to the agent runtime." },
+            instructions: { type: "string", description: "Optional domain-specific instructions for this run." },
+            output_schema: { description: "Optional JSON schema that the result should match." },
+            runtime_policy: {
+              type: "object",
+              properties: {
+                timeout_ms: { type: "number", description: "Maximum runtime before the run is cancelled. Defaults to 120000." },
+                retries: { type: "number", description: "Number of additional attempts after the initial attempt. Defaults to 0." },
+                fallback_engines: { type: "array", items: { type: "string" }, description: "Ordered fallback engines to try after the primary engine." }
+              }
+            },
+            role_description: { type: "string", description: "Optional role description for dynamic/runtime-created roles." },
+            role_engine: { type: "string", description: "Optional primary engine to use." },
+            role_model: { type: "string", description: "Optional model to use." },
+            agent_id: { type: "string", description: "Optional existing T1 agent instance to resume." },
+            context_files: { type: "array", items: { type: "string" }, description: "Optional workspace-relative files that should be included as context." },
+            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
+          },
+          required: ["role", "input", "workspace_path"]
+        }
+      },
+      {
+        name: "start_agent_run",
+        description: "Start an application-facing Agent Runtime request asynchronously and return the run envelope immediately.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            role: { type: "string", description: "Agent role to execute." },
+            skill: { type: "string", description: "Optional skill/playbook name to equip for this run." },
+            input: { description: "Application payload passed to the agent runtime." },
+            instructions: { type: "string", description: "Optional domain-specific instructions for this run." },
+            output_schema: { description: "Optional JSON schema that the result should match." },
+            runtime_policy: {
+              type: "object",
+              properties: {
+                timeout_ms: { type: "number", description: "Heartbeat timeout for the async run." }
+              }
+            },
+            role_description: { type: "string", description: "Optional role description for dynamic/runtime-created roles." },
+            role_engine: { type: "string", description: "Optional primary engine to use." },
+            role_model: { type: "string", description: "Optional model to use." },
+            agent_id: { type: "string", description: "Optional existing T1 agent instance to resume." },
+            context_files: { type: "array", items: { type: "string" }, description: "Optional workspace-relative files that should be included as context." },
+            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
+          },
+          required: ["role", "input", "workspace_path"]
+        }
+      },
+      {
+        name: "get_agent_run_status",
+        description: "Return the normalized status/result envelope for an Agent Runtime run.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            run_id: { type: "string", description: "The Agent Runtime run ID returned by run_agent/start_agent_run." },
+            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
+          },
+          required: ["run_id", "workspace_path"]
+        }
+      },
+      {
+        name: "resume_agent_run",
+        description: "Resume a run that is blocked on manual intervention by providing the human answer directly.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            run_id: { type: "string", description: "The Agent Runtime run ID." },
+            human_answer: { type: "string", description: "The human answer that should unblock the run." },
+            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
+          },
+          required: ["run_id", "human_answer", "workspace_path"]
+        }
+      },
+      {
+        name: "cancel_agent_run",
+        description: "Cancel an active Agent Runtime run and mark it with a normalized cancelled status.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            run_id: { type: "string", description: "The Agent Runtime run ID." },
+            reason: { type: "string", description: "Optional cancellation reason." },
+            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
+          },
+          required: ["run_id", "workspace_path"]
         }
       },
       {
@@ -605,6 +932,135 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // 3. Handle Tool Execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
+  if (request.params.name === "run_agent") {
+    const baseRequest = normalizeRuntimeRequest(request.params.arguments as any);
+    const retries = Math.max(0, Math.trunc(baseRequest.runtime_policy?.retries || 0));
+    const fallbackEngines = Array.isArray(baseRequest.runtime_policy?.fallback_engines)
+      ? baseRequest.runtime_policy!.fallback_engines!.filter((engine): engine is string => typeof engine === 'string' && engine.trim().length > 0)
+      : [];
+    const timeoutMs = baseRequest.runtime_policy?.timeout_ms ?? DEFAULT_AGENT_RUNTIME_TIMEOUT_MS;
+    if (typeof timeoutMs !== 'number' || timeoutMs <= 0 || timeoutMs > MAX_HEARTBEAT_MS) {
+      throw new McpError(ErrorCode.InvalidParams, `runtime_policy.timeout_ms must be a number between 1 and ${MAX_HEARTBEAT_MS}. Got: ${timeoutMs}`);
+    }
+
+    const engineCandidates = [baseRequest.role_engine, ...fallbackEngines].filter((engine, index, arr): engine is string =>
+      typeof engine === 'string' && engine.trim().length > 0 && arr.indexOf(engine) === index
+    );
+    const attempts = engineCandidates.length > 0 ? engineCandidates : [undefined];
+    let lastEnvelope: any = null;
+
+    for (let engineIndex = 0; engineIndex < attempts.length; engineIndex++) {
+      const engine = attempts[engineIndex];
+      for (let retryIndex = 0; retryIndex <= retries; retryIndex++) {
+        const requestForAttempt: AgentRuntimeRequest = {
+          ...baseRequest,
+          role_engine: engine
+        };
+        if (requestForAttempt.role_engine) {
+          validateEngineAndModel(requestForAttempt.role_engine, requestForAttempt.role_model, requestForAttempt.workspace_path);
+        }
+
+        const { runId } = createAgentRuntimeRun(requestForAttempt);
+        spawnAsyncWorker(runId, requestForAttempt.workspace_path);
+        const envelope = await waitForAgentRuntimeCompletion(requestForAttempt.workspace_path, runId, timeoutMs);
+        lastEnvelope = envelope;
+        if (envelope.status === 'completed' || envelope.status === 'blocked_manual_intervention') {
+          return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
+        }
+      }
+    }
+
+    return { content: [{ type: "text", text: JSON.stringify(lastEnvelope, null, 2) }] };
+  }
+
+  if (request.params.name === "start_agent_run") {
+    const runtimeRequest = normalizeRuntimeRequest(request.params.arguments as any);
+    if (runtimeRequest.role_engine) {
+      validateEngineAndModel(runtimeRequest.role_engine, runtimeRequest.role_model, runtimeRequest.workspace_path);
+    }
+    const { runId } = createAgentRuntimeRun(runtimeRequest);
+    spawnAsyncWorker(runId, runtimeRequest.workspace_path);
+    return { content: [{ type: "text", text: JSON.stringify(buildAgentRuntimeResponse(runtimeRequest.workspace_path, runId), null, 2) }] };
+  }
+
+  if (request.params.name === "get_agent_run_status") {
+    const { run_id, workspace_path } = request.params.arguments as any;
+    requireParams("get_agent_run_status", request.params.arguments as any, ["run_id", "workspace_path"]);
+    return { content: [{ type: "text", text: JSON.stringify(buildAgentRuntimeResponse(workspace_path, run_id), null, 2) }] };
+  }
+
+  if (request.params.name === "resume_agent_run") {
+    const { run_id, human_answer, workspace_path } = request.params.arguments as any;
+    requireParams("resume_agent_run", request.params.arguments as any, ["run_id", "human_answer", "workspace_path"]);
+    const record = loadAgentRuntimeRecord(workspace_path, run_id);
+    if (!record) {
+      throw new McpError(ErrorCode.InvalidParams, `Agent Runtime run '${run_id}' was not found in '${workspace_path}'.`);
+    }
+    const manifest = TaskManifestManager.loadManifest(workspace_path);
+    const currentTask = manifest[record.active_task_id];
+    if (!currentTask || (currentTask.status !== 'awaiting_input' && currentTask.status !== 'expired')) {
+      throw new McpError(ErrorCode.InvalidParams, `Run '${run_id}' is not waiting for manual intervention.`);
+    }
+
+    const { sanitized: sanitizedAnswer } = sanitizeExternalContent(human_answer, `agent-runtime:${run_id}:human-answer`);
+    const resumeTaskId = `${run_id}_resume_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    TaskManifestManager.updateTask(workspace_path, currentTask.taskId, {
+      status: 'completed',
+      human_answer: sanitizedAnswer,
+      resume_task_id: resumeTaskId,
+      completed_at: Date.now()
+    });
+
+    TaskManifestManager.createTask(workspace_path, {
+      taskId: resumeTaskId,
+      type: 'delegate_task',
+      role: currentTask.role!,
+      task_description: buildRuntimeResumeContext(currentTask, sanitizedAnswer),
+      output_path: record.output_path,
+      workspacePath: workspace_path,
+      context_files: currentTask.context_files || [],
+      role_description: currentTask.role_description,
+      role_engine: currentTask.role_engine,
+      role_model: currentTask.role_model,
+      required_skills: currentTask.required_skills,
+      delegation_depth: currentTask.delegation_depth,
+      parent_issue_number: currentTask.parent_issue_number,
+      github_issue_number: currentTask.github_issue_number,
+      heartbeat_timeout_ms: currentTask.heartbeat_timeout_ms,
+      runtime_run_id: run_id,
+      runtime_trace_id: currentTask.runtime_trace_id,
+      runtime_skill: currentTask.runtime_skill,
+      agent_id: currentTask.agent_id
+    });
+
+    updateAgentRuntimeRecord(workspace_path, run_id, (existing) => ({
+      ...existing,
+      active_task_id: resumeTaskId,
+      updated_at: now,
+      history: [
+        ...existing.history,
+        {
+          task_id: resumeTaskId,
+          status: 'pending',
+          at: now,
+          note: 'Run resumed with direct human answer'
+        }
+      ]
+    }));
+
+    spawnAsyncWorker(resumeTaskId, workspace_path);
+    return { content: [{ type: "text", text: JSON.stringify(buildAgentRuntimeResponse(workspace_path, run_id), null, 2) }] };
+  }
+
+  if (request.params.name === "cancel_agent_run") {
+    const { run_id, reason, workspace_path } = request.params.arguments as any;
+    requireParams("cancel_agent_run", request.params.arguments as any, ["run_id", "workspace_path"]);
+    const envelope = await cancelAgentRuntimeRun(workspace_path, run_id, reason);
+    return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
+  }
+
   if (request.params.name === "check_task_status") {
     let { taskId, workspace_path } = request.params.arguments as any;
     requireParams("check_task_status", request.params.arguments as any, ["taskId", "workspace_path"]);
@@ -668,6 +1124,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       details = `Task ${taskId} status: **awaiting_input** ⏸️\n\nAgent is waiting for human input (${pauseAge}m elapsed).\n\n**Question:** ${task.pause_question || '(none)'}\n**Pause count:** ${task.pause_count || 0}/3${task.github_issue_number ? `\n**GitHub Issue:** #${task.github_issue_number}` : ''}`;
     } else if (task.status === 'expired') {
       details = `Task ${taskId} status: **expired** ⏰\n\nHuman input request expired without a response. ${task.error_message || ''}`;
+    } else if (task.status === 'cancelled') {
+      details = `Task ${taskId} status: **cancelled** 🛑\n\n${task.error_message || task.cancellation_reason || 'Task was cancelled.'}`;
     } else {
       details = `Task ${taskId} status: **${task.status}**`;
     }
@@ -699,34 +1157,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ? resolvedOutputPath
       : path.join(optimusDir, "results", path.basename(output_path));
 
-    // Resolve heartbeat timeout: explicit param > engine config > hardcoded default
-    const DEFAULT_HEARTBEAT_MS = 180000; // 3 minutes
-    const MAX_HEARTBEAT_MS = 1800000; // 30 minutes
-    let resolvedHeartbeatTimeout: number;
-
-    if (heartbeat_timeout_ms !== undefined) {
-        if (typeof heartbeat_timeout_ms !== 'number' || heartbeat_timeout_ms <= 0 || heartbeat_timeout_ms > MAX_HEARTBEAT_MS) {
-            throw new McpError(ErrorCode.InvalidParams, `heartbeat_timeout_ms must be a number between 1 and ${MAX_HEARTBEAT_MS} (30 min). Got: ${heartbeat_timeout_ms}`);
-        }
-        resolvedHeartbeatTimeout = heartbeat_timeout_ms;
-    } else {
-        // Try engine config
-        const resolvedEngine = role_engine || (() => {
-            const { engines } = loadValidEnginesAndModels(workspace_path);
-            return engines.includes('claude-code') ? 'claude-code' : engines[0] || '';
-        })();
-        const engineTimeout = resolvedEngine ? loadEngineHeartbeatTimeout(workspace_path, resolvedEngine) : null;
-        if (engineTimeout !== null) {
-            if (engineTimeout <= 0 || engineTimeout > MAX_HEARTBEAT_MS) {
-                console.error(`[Config] Warning: invalid engine heartbeat timeout ${engineTimeout} for '${resolvedEngine}'. Using default.`);
-                resolvedHeartbeatTimeout = DEFAULT_HEARTBEAT_MS;
-            } else {
-                resolvedHeartbeatTimeout = engineTimeout;
-            }
-        } else {
-            resolvedHeartbeatTimeout = DEFAULT_HEARTBEAT_MS;
-        }
-    }
+    const resolvedHeartbeatTimeout = resolveHeartbeatTimeout(workspace_path, role_engine, heartbeat_timeout_ms);
 
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     TaskManifestManager.createTask(workspace_path, {

@@ -1998,7 +1998,12 @@ Please provide your complete execution result below.`;
             const agentId2 = `${role}_${sessionPrefix}`;
             if (_fallbackSessionId.startsWith('async_')) {
                 const taskId = _fallbackSessionId.replace('async_', '');
-                TaskManifestManager.updateTask(workspacePath, taskId, { agent_id: agentId2 });
+                TaskManifestManager.updateTask(workspacePath, taskId, {
+                    agent_id: agentId2,
+                    resolved_engine: activeEngine,
+                    resolved_model: activeModel,
+                    session_id: newSessionId || _fallbackSessionId
+                });
             }
         }
 

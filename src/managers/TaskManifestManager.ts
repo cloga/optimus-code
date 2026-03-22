@@ -23,7 +23,7 @@ function withManifestLock<T>(fn: () => T): Promise<T> {
 export interface TaskRecord {
     taskId: string;
     type: 'delegate_task' | 'dispatch_council';
-    status: 'pending' | 'blocked' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired';
+    status: 'pending' | 'blocked' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired' | 'cancelled';
     role?: string;
     roles?: string[];
     task_description?: string;
@@ -58,6 +58,15 @@ export interface TaskRecord {
     blocked_by?: string[];   // Runtime: unresolved prerequisite task IDs
     // Configurable heartbeat timeout (overrides TIMEOUT_MS default per-task)
     heartbeat_timeout_ms?: number;
+    resolved_engine?: string;
+    resolved_model?: string;
+    session_id?: string;
+    completed_at?: number;
+    cancelled_at?: number;
+    cancellation_reason?: string;
+    runtime_run_id?: string;
+    runtime_trace_id?: string;
+    runtime_skill?: string;
 }
 
 export class TaskManifestManager {
@@ -175,7 +184,7 @@ export class TaskManifestManager {
         const manifest = this.loadManifest(workspacePath);
         const now = Date.now();
         const cutoffMs = maxAgeDays * 24 * 60 * 60 * 1000;
-        const TERMINAL_STATUSES = new Set(['verified', 'failed', 'timeout', 'completed', 'partial', 'degraded']);
+        const TERMINAL_STATUSES = new Set(['verified', 'failed', 'timeout', 'completed', 'partial', 'degraded', 'cancelled']);
 
         const archivePath = path.join(workspacePath, '.optimus', 'state', 'task-manifest-archive.json');
         let archive: Record<string, TaskRecord> = {};

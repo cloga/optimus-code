@@ -510,7 +510,7 @@ export class MetaCronEngine {
                     return;
                 }
 
-                if (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded') {
+                if (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded' || task.status === 'cancelled') {
                     clearInterval(checkInterval);
                     deleteLock(ws, entryId);
                     MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
