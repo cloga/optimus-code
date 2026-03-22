@@ -120,7 +120,7 @@ export class AcpAdapter implements AgentAdapter {
         // Authentication
         if (/auth/i.test(msg) || /unauthorized/i.test(msg) || /login/i.test(msg)) {
             return new Error(
-                `ACP auth_failed: ${msg}. Fix: set GH_TOKEN/GITHUB_TOKEN env var (for Copilot) or run the engine's login command before starting the runtime.`
+                `ACP auth_failed: ${msg}. Fix: for Copilot run \`gh auth login\` (uses gh CLI auth, not env vars). For Claude run \`claude login\` or set ANTHROPIC_API_KEY.`
             );
         }
 

@@ -1542,6 +1542,8 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
         return AcpProcessPool.getInstance().getOrCreateAdapter(engine, transport.executable || 'copilot', transport.args, activityMs);
     }
 
+    // CLI path — deprecated since v2.16.8. All engines should use protocol: "acp".
+    console.error(`[Engine] ⚠️ DEPRECATED: CLI adapter for '${engine}'. Set protocol: "acp" in .optimus/config/available-agents.json. CLI adapters will be removed in a future version.`);
     const hasAutomationConfig = !!engineConfig?.automation && typeof engineConfig.automation === 'object';
     const automationPolicy = hasAutomationConfig ? normalizeAutomationPolicy(engineConfig.automation) : null;
     if (resolveCliAdapterKind(engine, workspacePath) === 'github-copilot') {
@@ -1566,7 +1568,7 @@ function classifyWorkerError(role: string, engine: string, e: any): string {
 
     // Auth errors
     if (/auth_failed/i.test(msg) || /authentication required/i.test(msg) || /unauthorized/i.test(msg) || /No authentication/i.test(msg)) {
-        return `${prefix}: auth_failed — ${msg}. Fix: set GH_TOKEN (Copilot) or ANTHROPIC_API_KEY (Claude), or run the engine's login command.`;
+        return `${prefix}: auth_failed — ${msg}. Fix: for Copilot run \`gh auth login\` (uses gh CLI auth). For Claude run \`claude login\` or set ANTHROPIC_API_KEY.`;
     }
 
     // Rate limit
@@ -2012,7 +2014,7 @@ Please provide your complete execution result below.`;
                 `**Suggested actions**:\n` +
                 `- Re-delegate with a different engine (e.g., \`claude-code\` instead of \`github-copilot\`)\n` +
                 `- Check if the model name is valid for this engine\n` +
-                `- Verify CLI authentication (e.g., \`copilot login\`, \`claude auth\`)`
+                `- Verify engine authentication (e.g., \`gh auth login\` for Copilot, \`claude login\` for Claude)`
             );
         }
 

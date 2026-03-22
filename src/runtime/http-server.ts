@@ -127,7 +127,7 @@ function classifyHttpError(msg: string): { code: string; status: number; fix: st
     if (/auth_failed/i.test(msg) || /authentication required/i.test(msg) || /unauthorized/i.test(msg)) {
         return {
             code: 'auth_failed', status: 401,
-            fix: 'Set GH_TOKEN or GITHUB_TOKEN env var before starting the runtime. For Copilot: run `gh auth token` and export the value. For Claude: set ANTHROPIC_API_KEY.'
+            fix: 'For Copilot: run `gh auth login` (copilot uses gh CLI auth, not env vars). For Claude: run `claude login` or set ANTHROPIC_API_KEY. Note: .env GITHUB_TOKEN is for Optimus GitHub API operations, not engine auth.'
         };
     }
     if (/rate_limit/i.test(msg) || /429/i.test(msg) || /too many requests/i.test(msg)) {
@@ -239,29 +239,68 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             status: 'ok',
             version: typeof OPTIMUS_VERSION !== 'undefined' ? OPTIMUS_VERSION : 'dev',
             workspace: defaultWorkspacePath,
-            uptime_ms: Math.round(process.uptime() * 1000)
+            uptime_ms: Math.round(process.uptime() * 1000),
+            active_runs: activeRuns,
+            max_concurrent: MAX_CONCURRENT_RUNS
         });
         return;
     }
 
     // POST /api/v1/agent/run — synchronous run
     if ((params = matchRoute(method, url, '/api/v1/agent/run', 'POST'))) {
+        if (activeRuns >= MAX_CONCURRENT_RUNS) {
+            sendError(res, 429, 'concurrency_limit',
+                `Server is at capacity (${activeRuns}/${MAX_CONCURRENT_RUNS} concurrent runs). Try again shortly.`,
+                `Wait for an active run to complete, or increase the limit with OPTIMUS_MAX_CONCURRENT env var (default: 5). Alternatively, use POST /api/v1/agent/start for async execution.`
+            );
+            return;
+        }
         const body = parseJsonBody(await readBody(req));
         if (!body.workspace_path) body.workspace_path = defaultWorkspacePath;
         const request = normalizeRuntimeRequest(body);
-        console.error(`[HTTP] POST /agent/run role=${request.role} engine=${request.role_engine || 'default'}`);
-        const envelope = await runSync(request);
-        sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
+        console.error(`[HTTP] POST /agent/run role=${request.role} engine=${request.role_engine || 'default'} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
+        activeRuns++;
+        try {
+            const envelope = await runSync(request);
+            sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
+        } finally {
+            activeRuns--;
+        }
         return;
     }
 
     // POST /api/v1/agent/start — async start
     if ((params = matchRoute(method, url, '/api/v1/agent/start', 'POST'))) {
+        if (activeRuns >= MAX_CONCURRENT_RUNS) {
+            sendError(res, 429, 'concurrency_limit',
+                `Server is at capacity (${activeRuns}/${MAX_CONCURRENT_RUNS} concurrent runs). Try again shortly.`,
+                `Wait for an active run to complete, or increase the limit with OPTIMUS_MAX_CONCURRENT env var (default: 5).`
+            );
+            return;
+        }
         const body = parseJsonBody(await readBody(req));
         if (!body.workspace_path) body.workspace_path = defaultWorkspacePath;
         const request = normalizeRuntimeRequest(body);
-        console.error(`[HTTP] POST /agent/start role=${request.role}`);
+        console.error(`[HTTP] POST /agent/start role=${request.role} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
+        activeRuns++;
         const envelope = startRun(request);
+        // Track when async run completes to release the slot
+        const runId = envelope.run_id;
+        if (runId) {
+            const checkCompletion = setInterval(() => {
+                try {
+                    const status = getRunStatus(request.workspace_path, runId);
+                    const terminal = ['completed', 'failed', 'cancelled', 'verified', 'partial', 'degraded'];
+                    if (terminal.includes(status.status)) {
+                        activeRuns--;
+                        clearInterval(checkCompletion);
+                    }
+                } catch {
+                    activeRuns--;
+                    clearInterval(checkCompletion);
+                }
+            }, 5000);
+        }
         sendJson(res, 202, envelope);
         return;
     }
@@ -309,6 +348,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
 // ─── Server ───
 
+const MAX_CONCURRENT_RUNS = parseInt(process.env.OPTIMUS_MAX_CONCURRENT || '5', 10);
+let activeRuns = 0;
+
 function startServer() {
     const { port, workspacePath } = parseArgs();
 
@@ -338,10 +380,17 @@ function startServer() {
         }
     });
 
+    // Agent tasks are long-running (minutes to tens of minutes).
+    // Disable Node.js default timeouts that would kill connections prematurely.
+    server.timeout = 0;           // socket inactivity (default was 0 in recent Node)
+    server.requestTimeout = 0;    // total request lifetime (default 300s in Node 18+)
+    server.keepAliveTimeout = 620_000; // slightly over 10 min, for keep-alive between requests
+
     server.listen(port, () => {
         console.error(`\n🚀 Optimus Agent Runtime — HTTP Server`);
         console.error(`   Port:      ${port}`);
         console.error(`   Workspace: ${workspacePath}`);
+        console.error(`   Max concurrent: ${MAX_CONCURRENT_RUNS}`);
         console.error(`   Endpoints:`);
         console.error(`     POST /api/v1/agent/run             — Sync run`);
         console.error(`     POST /api/v1/agent/start           — Async start`);

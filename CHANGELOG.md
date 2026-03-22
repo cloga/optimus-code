@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.16.8] - 2026-03-22
+
+### Breaking Changes
+- **ACP-only mode** — All engines (`github-copilot`, `claude-code`, `qwen-code`) now use `protocol: "acp"` exclusively. CLI adapters (`GitHubCopilotAdapter`, `ClaudeCodeAdapter`) are deprecated and emit a warning if triggered. All agent interactions go through ACP warm pool with autopilot mode.
+
+### Features
+- **HTTP timeout protection** — `server.requestTimeout = 0` to prevent Node.js from killing long-running agent connections (default was 5 min, agent tasks can run 10-30 min).
+- **Concurrency control** — `MAX_CONCURRENT_RUNS = 5` (configurable via `OPTIMUS_MAX_CONCURRENT` env var). Returns `429 concurrency_limit` with actionable fix when at capacity.
+- **Health endpoint enhanced** — `/api/v1/health` now reports `active_runs` and `max_concurrent` for observability.
+
 ## [2.16.7] - 2026-03-22
 
 ### Improvements

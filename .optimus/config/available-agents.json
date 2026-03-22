@@ -1,11 +1,10 @@
 {
   "$schema": "./available-agents.schema.json",
   "_schema_version": 1,
-  "_comment": "T3 Engine & Model resource pool. Each engine key is a vendor name. The 'protocol' field determines which adapter to use: 'cli', 'acp', or 'auto' (ACP-first fallback to CLI based on requested automation capabilities). ACP is a transport choice; Copilot autopilot is a continuation policy under automation.continuation. 'automation.mode' uses normalized intent values, not raw vendor flags.",
+  "_comment": "T3 Engine & Model resource pool. All engines use ACP protocol with warm pool for persistent sessions and autopilot mode. CLI adapters are deprecated since v2.16.8.",
   "engines": {
     "claude-code": {
-      "protocol": "auto",
-      "preferred_protocol": "acp",
+      "protocol": "acp",
       "available_models": [
         "claude-opus-4.6-1m",
         "gpt-5.4",
@@ -13,7 +12,9 @@
       ],
       "cli_flags": "--model",
       "automation": {
-        "mode": "auto-approve"
+        "mode": "auto-approve",
+        "continuation": "autopilot",
+        "max_continues": 8
       },
       "timeout": {
         "heartbeat_ms": 600000,
@@ -25,29 +26,17 @@
         "capabilities": {
           "automation_modes": [
             "auto-approve"
+          ],
+          "automation_continuations": [
+            "single",
+            "autopilot"
           ]
-        },
-        "_comment": "ACP-first transport. Optimus can satisfy auto-approve autonomy here because AcpAdapter auto-approves session/request_permission."
+        }
       },
-      "cli": {
-        "path": "claude",
-        "cli_flags": "--model",
-        "capabilities": {
-          "automation_modes": [
-            "interactive",
-            "plan",
-            "accept-edits",
-            "deny-unapproved",
-            "auto-approve"
-          ]
-        },
-        "_comment": "Native Claude CLI fallback when requested automation semantics are not sufficiently covered by ACP."
-      },
-      "_comment": "Claude engine with ACP-first auto protocol selection. Prefer ACP unless requested automation semantics require CLI-only behavior."
+      "_comment": "ACP-only with autopilot. Warm pool reuses persistent claude-agent-acp process. Autopilot configured via AcpAdapter.configureSession()."
     },
     "github-copilot": {
-      "protocol": "auto",
-      "preferred_protocol": "acp",
+      "protocol": "acp",
       "available_models": [
         "gemini-3-pro-preview",
         "gpt-5.4",
@@ -74,28 +63,9 @@
             "single",
             "autopilot"
           ]
-        },
-        "_comment": "Copilot ACP transport. ACP inherently supports autopilot: agent runs to completion within session/prompt, permissions auto-approved via session/request_permission."
+        }
       },
-      "cli": {
-        "path": "copilot",
-        "cli_flags": "-m",
-        "capabilities": {
-          "automation_modes": [
-            "interactive",
-            "plan",
-            "accept-edits",
-            "deny-unapproved",
-            "auto-approve"
-          ],
-          "automation_continuations": [
-            "single",
-            "autopilot"
-          ]
-        },
-        "_comment": "Native Copilot CLI path. Required whenever automation.continuation=autopilot."
-      },
-      "_comment": "ACP is a transport; autopilot is a Copilot CLI continuation policy. With protocol='auto', Optimus may use ACP only when the requested automation mode and continuation are both compatible with ACP."
+      "_comment": "ACP-only with autopilot. Warm pool reuses persistent copilot --acp process. Autopilot configured via AcpAdapter.configureSession()."
     },
     "qwen-code": {
       "protocol": "acp",
