@@ -163,6 +163,8 @@ function isLocked(workspacePath: string, id: string): boolean {
 function createLock(workspacePath: string, id: string): boolean {
     const lockDir = getLockDir(workspacePath);
     const lockPath = getLockPath(workspacePath, id);
+    // Nonce for post-acquisition verification after stale-lock reclaim (Issue #511).
+    const nonce = `${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     try {
         if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
         // 'wx' flag: exclusive create — atomically fails with EEXIST if the file already exists.
@@ -171,6 +173,7 @@ function createLock(workspacePath: string, id: string): boolean {
         fs.writeFileSync(lockFd, JSON.stringify({
             pid: process.pid,
             cronId: id,
+            nonce,
             locked_at: new Date().toISOString()
         }), 'utf8');
         fs.closeSync(lockFd);
@@ -181,7 +184,28 @@ function createLock(workspacePath: string, id: string): boolean {
             try {
                 if (isLockStale(lockPath, workspacePath)) {
                     fs.unlinkSync(lockPath);
-                    return createLock(workspacePath, id);
+                    // Re-create with 'wx' — another process may also be reclaiming
+                    try {
+                        const fd2 = fs.openSync(lockPath, 'wx');
+                        fs.writeFileSync(fd2, JSON.stringify({
+                            pid: process.pid,
+                            cronId: id,
+                            nonce,
+                            locked_at: new Date().toISOString()
+                        }), 'utf8');
+                        fs.closeSync(fd2);
+                    } catch { return false; }
+                    // Post-acquisition nonce verification: re-read and confirm our nonce
+                    // is still present. Guards against a concurrent process that also
+                    // detected stale, deleted our lock, and created its own (Issue #511).
+                    try {
+                        const verify = JSON.parse(fs.readFileSync(lockPath, 'utf8')) as { nonce?: string };
+                        if (verify.nonce !== nonce) {
+                            console.error(`[Meta-Cron] Lock for '${id}' stolen by concurrent process — backing off`);
+                            return false;
+                        }
+                    } catch { return false; }
+                    return true;
                 }
             } catch {
                 // If we can't read/delete the stale lock, another process may be cleaning it up
@@ -371,6 +395,33 @@ export class MetaCronEngine {
 
     private static tick(): void {
         try {
+            // Re-validate scheduler leadership on every tick.
+            // If another process acquired the leader lock (e.g., after we were briefly
+            // unresponsive or our PID was recycled), stop this scheduler to prevent
+            // dual-scheduler overlap (Issue #511).
+            try {
+                const leaderPath = getSchedulerLockPath(this.workspacePath);
+                const leaderData = JSON.parse(fs.readFileSync(leaderPath, 'utf8')) as { pid?: number };
+                if (leaderData.pid !== process.pid) {
+                    console.error(`[Meta-Cron] Leader lock held by PID ${leaderData.pid}, not us (${process.pid}) — stopping scheduler`);
+                    if (this.interval) {
+                        clearInterval(this.interval);
+                        this.interval = null;
+                    }
+                    this.isLeader = false;
+                    return;
+                }
+            } catch {
+                // If we can't read the leader lock (deleted, corrupted), stop — we may no longer be leader
+                console.error('[Meta-Cron] Cannot verify leader lock — stopping scheduler');
+                if (this.interval) {
+                    clearInterval(this.interval);
+                    this.interval = null;
+                }
+                this.isLeader = false;
+                return;
+            }
+
             // Clean up old tick dedup files (older than 2 hours)
             try {
                 const lockDir = getLockDir(this.workspacePath);

@@ -192,4 +192,34 @@ describe('Meta-Cron lock management (Issue #511)', () => {
         // createLock should fall through to PID check — dead PID = stale
         expect(createLock(tmpDir, 'hourly-patrol')).toBe(true);
     });
+
+    it('createLock writes nonce to the lock file for post-acquisition verification', () => {
+        createLock(tmpDir, 'test-job');
+        const lockPath = getLockPath(tmpDir, 'test-job');
+        const data = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        expect(data.nonce).toBeDefined();
+        expect(typeof data.nonce).toBe('string');
+        expect(data.nonce.length).toBeGreaterThan(0);
+        // Nonce should contain the current PID
+        expect(data.nonce).toContain(String(process.pid));
+    });
+
+    it('createLock stale-reclaim preserves nonce for concurrent safety', () => {
+        // Write a stale lock (dead PID, no manifest entries)
+        const lockPath = getLockPath(tmpDir, 'test-job');
+        fs.writeFileSync(lockPath, JSON.stringify({
+            pid: 2147483647,
+            cronId: 'test-job',
+            locked_at: new Date().toISOString(),
+        }), 'utf8');
+
+        // Reclaim the stale lock
+        expect(createLock(tmpDir, 'test-job')).toBe(true);
+
+        // Verify the reclaimed lock has a nonce
+        const data = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        expect(data.nonce).toBeDefined();
+        expect(data.pid).toBe(process.pid);
+        expect(data.cronId).toBe('test-job');
+    });
 });
