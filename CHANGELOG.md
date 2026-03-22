@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.13.0] - 2026-03-22
+
+### Features
+- **Worktree orchestration tools** — 3 new MCP tools for automated multi-branch parallel development:
+  - `create_worktree` — Create a git worktree for a branch, with automatic `.optimus/` state initialization
+  - `list_worktrees` — List all active worktrees with branch, HEAD, and Optimus state status
+  - `remove_worktree` — Clean up a worktree after work is complete
+- **`branch` parameter on `delegate_task` / `delegate_task_async`** — When specified, automatically creates a worktree for the target branch and runs the agent there. Enables Master Agent to dispatch parallel feature work across isolated branches with zero git conflicts.
+
+### Architecture
+- **`WorktreeManager` (`src/utils/worktreeManager.ts`)** — Lifecycle management for git worktrees: create, list, find-by-branch, remove, ensure-for-branch. Auto-generates worktree paths using the convention `../<repo>-wt-<branch>/`.
+- **Seamless delegation** — `spawnAsyncWorker` already passes `cwd: workspacePath` to child processes, so worktree-targeted tasks run in the correct directory with full state isolation (v2.12.0) and shared config/roles/skills from the main worktree.
+
+### Compatibility
+- **Fully backward compatible** — Omitting the `branch` parameter preserves existing single-workspace behavior. The 3 new tools are additive.
+
 ## [2.12.0] - 2026-03-22
 
 ### Features

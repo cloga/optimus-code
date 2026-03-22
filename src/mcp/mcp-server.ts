@@ -29,6 +29,7 @@ import { MetaCronEngine, loadCrontab, saveCrontab } from "./meta-cron-engine";
 import { checkAndResumeAwaitingTasks } from "./input-resume-checker";
 import { sanitizeExternalContent, wrapUntrusted } from "../utils/sanitizeExternalContent";
 import { resolveOptimusPath, ensureWorktreeStateDirs } from '../utils/worktree';
+import { listWorktrees, createWorktree, removeWorktree, ensureWorktreeForBranch } from '../utils/worktreeManager';
 import {
   AgentRuntimeRequest,
   AgentRuntimeRecord,
@@ -595,6 +596,43 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "create_worktree",
+        description: "Create a git worktree for parallel branch development. Each worktree gets its own working directory with isolated runtime state while sharing project config, roles, and skills from the main worktree. Use this to enable multiple agents to work on separate features simultaneously without git conflicts.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            branch: { type: "string", description: "Branch name for the worktree (e.g., 'feat/auth-system'). A new branch is created if it doesn't exist." },
+            base_branch: { type: "string", description: "Base branch to create from (defaults to current HEAD). Only used when creating a new branch." },
+            workspace_path: { type: "string", description: "Absolute path to the main project workspace root." },
+          },
+          required: ["branch", "workspace_path"]
+        }
+      },
+      {
+        name: "list_worktrees",
+        description: "List all active git worktrees for the repository. Shows each worktree's path, branch, HEAD commit, and whether Optimus state is initialized. Use this to see available worktrees before delegating tasks to specific branches.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to any workspace in the repository (main or worktree)." },
+          },
+          required: ["workspace_path"]
+        }
+      },
+      {
+        name: "remove_worktree",
+        description: "Remove a git worktree after work is complete. Cleans up the worktree directory and its git tracking. Cannot remove the main worktree.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            branch: { type: "string", description: "Branch name of the worktree to remove." },
+            workspace_path: { type: "string", description: "Absolute path to the main project workspace root." },
+            force: { type: "boolean", description: "Force removal even if the worktree has uncommitted changes. Default: false." },
+          },
+          required: ["branch", "workspace_path"]
+        }
+      },
+      {
         name: "delegate_task",
         description: "Delegate a specific execution task to a designated expert role.",
         inputSchema: {
@@ -645,6 +683,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             agent_id: {
               type: "string",
               description: "Optional T1 agent instance ID (e.g., 'product-manager_1e5b9723') to resume a specific agent's session. When provided, the system looks up the agent's stored session_id and resumes that conversation. Use this for multi-phase workflows where the same agent must retain context across delegations."
+            },
+            branch: {
+              type: "string",
+              description: "Optional branch name. When specified, automatically creates a git worktree for this branch (if not already exists) and runs the agent in that isolated worktree. Enables parallel multi-branch development without git conflicts."
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
@@ -710,6 +752,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             heartbeat_timeout_ms: {
               type: "number",
               description: "Optional heartbeat staleness timeout in ms. Overrides engine default. Range: 1-1800000 (30 min max)."
+            },
+            branch: {
+              type: "string",
+              description: "Optional branch name. When specified, automatically creates a git worktree for this branch (if not already exists) and runs the agent in that isolated worktree. Enables parallel multi-branch development without git conflicts."
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
@@ -1060,6 +1106,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     requireParams("cancel_agent_run", request.params.arguments as any, ["run_id", "workspace_path"]);
     const envelope = await cancelAgentRuntimeRun(workspace_path, run_id, reason);
     return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
+
+  } else if (request.params.name === "create_worktree") {
+    const { branch, base_branch, workspace_path } = request.params.arguments as any;
+    requireParams("create_worktree", request.params.arguments as any, ["branch", "workspace_path"]);
+    try {
+      const result = createWorktree(workspace_path, { branch, baseBranch: base_branch });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+      };
+    } catch (e: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to create worktree: ${e.message}`);
+    }
+
+  } else if (request.params.name === "list_worktrees") {
+    const { workspace_path } = request.params.arguments as any;
+    requireParams("list_worktrees", request.params.arguments as any, ["workspace_path"]);
+    const worktrees = listWorktrees(workspace_path);
+    const summary = worktrees.map(w =>
+      `${w.isMain ? '★' : '◦'} ${w.branch} → ${w.path} (${w.head})${w.hasOptimusState ? ' [state ✓]' : ''}`
+    ).join('\n');
+    return {
+      content: [{ type: "text", text: worktrees.length > 0 ? `**Active Worktrees (${worktrees.length}):**\n${summary}\n\n${JSON.stringify(worktrees, null, 2)}` : 'No worktrees found. This repository may not be a git repository.' }]
+    };
+
+  } else if (request.params.name === "remove_worktree") {
+    const { branch, workspace_path, force } = request.params.arguments as any;
+    requireParams("remove_worktree", request.params.arguments as any, ["branch", "workspace_path"]);
+    try {
+      const message = removeWorktree(workspace_path, branch, force === true);
+      return {
+        content: [{ type: "text", text: message }]
+      };
+    } catch (e: any) {
+      throw new McpError(ErrorCode.InternalError, `Failed to remove worktree: ${e.message}`);
+    }
   }
 
   if (request.params.name === "check_task_status") {
@@ -1135,8 +1216,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, branch } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
+
+    // If branch is specified, create/find worktree and redirect workspace
+    if (branch) {
+      const originalWorkspace = workspace_path;
+      workspace_path = ensureWorktreeForBranch(originalWorkspace, branch);
+      console.error(`[Orchestrator] Async worktree delegation: branch='${branch}', worktree='${workspace_path}'`);
+    }
 
     // Resolve role alias to canonical name before validation
     role = resolveRoleName(role, workspace_path);
@@ -1654,6 +1742,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } else if (request.params.name === "delegate_task") {
     let { role, role_description, role_engine, role_model, task_description, output_path, context_files, required_skills, agent_id } = request.params.arguments as any;
     let workspace_path = (request.params.arguments as any).workspace_path;
+    const branch = (request.params.arguments as any).branch;
 
     // Resolve parent issue: explicit param > env var > undefined
     const rawParentSync = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
@@ -1668,6 +1757,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
        if (output_path.includes("optimus-code")) {
          workspace_path = output_path.split("optimus-code")[0] + "optimus-code";
        }
+    }
+
+    // If branch is specified, create/find worktree and redirect workspace
+    if (branch) {
+      const originalWorkspace = workspace_path;
+      workspace_path = ensureWorktreeForBranch(originalWorkspace, branch);
+      console.error(`[Orchestrator] Worktree delegation: branch='${branch}', worktree='${workspace_path}'`);
     }
 
     // Resolve role alias to canonical name before validation
