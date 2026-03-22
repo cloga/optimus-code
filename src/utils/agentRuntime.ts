@@ -218,7 +218,7 @@ export function mapTaskStatusToRuntimeStatus(task: TaskRecord | null | undefined
  *   - ```\n{...}\n```
  *   - Prose before/after a JSON object or array
  */
-function extractJsonFromText(text: string): unknown | undefined {
+export function extractJsonFromText(text: string): unknown | undefined {
     // Strategy 1: Extract from ```json ... ``` or ``` ... ``` code fences
     const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
     if (fenceMatch) {

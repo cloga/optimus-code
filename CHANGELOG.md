@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.16.15] - 2026-03-22
+
+### Features
+- **Generic Agent Runtime v2 API** — New decoupled API layer (`/api/v2/`) that provides prompt-based agent execution without Optimus-specific concepts (no role, skill, workspace, or tier system required).
+  - `POST /api/v2/agent/run` — Synchronous prompt → result execution
+  - `POST /api/v2/agent/start` — Async run initiation
+  - `GET /api/v2/agent/runs/:id` — Status polling with result
+  - `POST /api/v2/agent/runs/:id/cancel` — Run cancellation
+  - `GET /api/v2/health` — Health check with available engines list
+- **Built-in engine defaults** — `github-copilot` and `claude-code` engines work out-of-the-box without `available-agents.json` configuration.
+- **Structured output via v2** — Pass `output_schema` (JSON Schema) to get validated structured responses.
+- **Generic executor** (`genericExecutor.ts`) — Direct AcpProcessPool-based execution, no TaskManifestManager dependency.
+- **Generic runtime service** (`genericRuntime.ts`) — In-memory run tracking with lightweight envelope format.
+
 ## [2.16.14] - 2026-03-22
 
 ### Bug Fixes

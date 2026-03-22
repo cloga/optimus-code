@@ -34,6 +34,13 @@ import {
     cancelRun,
     RuntimeError
 } from './agentRuntimeService';
+import {
+    runGenericSync,
+    startGenericRun,
+    getGenericRunStatus,
+    cancelGenericRun,
+    listGenericEngines,
+} from './genericRuntime';
 import dotenv from 'dotenv';
 import path from 'path';
 import { ensureWorktreeStateDirs } from '../utils/worktree';
@@ -398,9 +405,54 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
     }
 
+    // ─── v2 Generic API (no Optimus orchestration) ───
+
+    // GET /api/v2/health
+    if ((params = matchRoute(method, url, '/api/v2/health', 'GET'))) {
+        sendJson(res, 200, {
+            status: 'ok',
+            version: typeof OPTIMUS_VERSION !== 'undefined' ? OPTIMUS_VERSION : 'dev',
+            engines: listGenericEngines(),
+            uptime_ms: Math.round(process.uptime() * 1000),
+        });
+        return;
+    }
+
+    // POST /api/v2/agent/run — synchronous generic run
+    if ((params = matchRoute(method, url, '/api/v2/agent/run', 'POST'))) {
+        const parsed = parseJsonBody(await readBody(req));
+        console.error(`[HTTP] POST /api/v2/agent/run engine=${parsed.engine || 'default'}`);
+        const envelope = await runGenericSync(parsed);
+        sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
+        return;
+    }
+
+    // POST /api/v2/agent/start — async generic start
+    if ((params = matchRoute(method, url, '/api/v2/agent/start', 'POST'))) {
+        const parsed = parseJsonBody(await readBody(req));
+        console.error(`[HTTP] POST /api/v2/agent/start engine=${parsed.engine || 'default'}`);
+        const envelope = startGenericRun(parsed);
+        sendJson(res, 202, envelope);
+        return;
+    }
+
+    // GET /api/v2/agent/runs/:id — generic status
+    if ((params = matchRoute(method, url, '/api/v2/agent/runs/:id', 'GET'))) {
+        const envelope = getGenericRunStatus(params.id!);
+        sendJson(res, 200, envelope);
+        return;
+    }
+
+    // POST /api/v2/agent/runs/:id/cancel — cancel generic run
+    if ((params = matchRoute(method, url, '/api/v2/agent/runs/:id/cancel', 'POST'))) {
+        const envelope = cancelGenericRun(params.id!);
+        sendJson(res, 200, envelope);
+        return;
+    }
+
     // 404
     sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`,
-        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, GET /api/v1/health'
+        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
     );
 }
 
@@ -564,10 +616,12 @@ function startServer() {
         } catch (err: any) {
             if (err instanceof RuntimeError) {
                 sendError(res, err.httpStatus, err.code, err.message, err.fix);
+            } else if (err.statusCode) {
+                // Generic runtime errors with explicit status codes
+                sendError(res, err.statusCode, 'validation_error', err.message);
             } else {
                 const msg = err.message || 'Internal server error';
                 console.error(`[HTTP] Unhandled error: ${msg}`);
-                // Classify into actionable error with recovery guidance
                 const { code, status, fix } = classifyHttpError(msg);
                 sendError(res, status, code, msg, fix);
             }
@@ -595,7 +649,13 @@ function startServer() {
         console.error(`     GET  /api/v1/agent/runs/:id        — Get status`);
         console.error(`     POST /api/v1/agent/runs/:id/resume — Resume`);
         console.error(`     POST /api/v1/agent/runs/:id/cancel — Cancel`);
-        console.error(`     GET  /api/v1/health                — Health\n`);
+        console.error(`     GET  /api/v1/health                — Health`);
+        console.error(`   Generic API (v2):`);
+        console.error(`     POST /api/v2/agent/run             — Sync run (prompt-based)`);
+        console.error(`     POST /api/v2/agent/start           — Async start`);
+        console.error(`     GET  /api/v2/agent/runs/:id        — Get status`);
+        console.error(`     POST /api/v2/agent/runs/:id/cancel — Cancel`);
+        console.error(`     GET  /api/v2/health                — Health & engines\n`);
     });
 
     // Overflow instances auto-shutdown when idle
