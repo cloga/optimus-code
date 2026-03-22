@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.12.0] - 2026-03-22
+
+### Features
+- **Git worktree support** — Optimus now detects git worktrees and resolves `.optimus/` paths accordingly. Shared resources (config, dist, roles, skills, memory) resolve from the main worktree, while runtime state (task manifests, results, reviews, agent instances) stays isolated per worktree. This enables running multiple features simultaneously on one machine.
+- **`ensureWorktreeStateDirs()` at server startup** — The MCP server automatically creates required state directories when running inside a worktree, so `optimus init` in the main worktree is all you need.
+- **`optimus init` now detects worktree context** — Shows informational output about worktree status and whether the main worktree has `.optimus/` set up.
+
+### Architecture
+- **Centralized path resolution via `resolveOptimusPath()`** — All `.optimus/` path construction across 12+ source files now routes through `src/utils/worktree.ts`, replacing ~40 scattered `path.join()` calls. Paths are auto-categorized as shared or state based on the first directory segment.
+- **Path categories**: `config`, `dist`, `roles`, `skills`, `memory`, `specs`, `tasks` → shared (main worktree). `state`, `results`, `reviews`, `system`, `agents` → per-worktree.
+
+### Compatibility
+- **Fully backward compatible** — Non-worktree workspaces behave identically (both roots resolve to the same directory). No changes to CLI commands, MCP tools, or configuration formats.
+
 ## [2.11.0] - 2026-03-22
 
 ### Features

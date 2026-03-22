@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
+import { resolveOptimusPath } from "../utils/worktree";
 
 // ─── Cron Entry Schema ───
 
@@ -85,7 +86,7 @@ function matchesCronExpression(expression: string, now: Date): boolean {
 // ─── Lock File Management ───
 
 function getLockDir(workspacePath: string): string {
-    return path.join(workspacePath, '.optimus', 'system', 'cron-locks');
+    return resolveOptimusPath(workspacePath, 'system', 'cron-locks');
 }
 
 function getLockPath(workspacePath: string, id: string): string {
@@ -203,7 +204,7 @@ export function deleteLock(workspacePath: string, id: string): void {
 // ─── Crontab File I/O ───
 
 function getCrontabPath(workspacePath: string): string {
-    return path.join(workspacePath, '.optimus', 'system', 'meta-crontab.json');
+    return resolveOptimusPath(workspacePath, 'system', 'meta-crontab.json');
 }
 
 export function loadCrontab(workspacePath: string): CrontabData | null {
@@ -231,7 +232,7 @@ export function saveCrontab(workspacePath: string, data: CrontabData): void {
 // We use an exclusive-create lock file with PID to elect a single leader.
 
 function getSchedulerLockPath(workspacePath: string): string {
-    return path.join(workspacePath, '.optimus', 'system', 'cron-locks', 'scheduler-leader.lock');
+    return resolveOptimusPath(workspacePath, 'system', 'cron-locks', 'scheduler-leader.lock');
 }
 
 function tryAcquireSchedulerLock(workspacePath: string): boolean {
@@ -456,7 +457,7 @@ export class MetaCronEngine {
         });
 
         // Capture child stdout/stderr to a log file for diagnostics (was stdio:'ignore' — Issue #326).
-        const logDir = path.join(this.workspacePath, '.optimus', 'system', 'cron-logs');
+        const logDir = resolveOptimusPath(this.workspacePath, 'system', 'cron-logs');
         if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
         const logFile = path.join(logDir, `${entry.id}_${new Date().toISOString().slice(0, 10)}.log`);
         const logFd = fs.openSync(logFile, 'a');

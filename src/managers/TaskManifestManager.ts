@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-
-// File-level mutex to prevent concurrent read-modify-write on task-manifest.json
+import { resolveOptimusPath } from '../utils/worktree';
 // Multiple agents (heartbeats, status updates, task creation) can race on the same file.
 let manifestMutex: Promise<void> = Promise.resolve();
 
@@ -71,7 +70,7 @@ export interface TaskRecord {
 
 export class TaskManifestManager {
     static getManifestPath(workspacePath: string): string {
-        return path.join(workspacePath, '.optimus', 'state', 'task-manifest.json');
+        return resolveOptimusPath(workspacePath, 'state', 'task-manifest.json');
     }
 
     static loadManifest(workspacePath: string): Record<string, TaskRecord> {
@@ -186,7 +185,7 @@ export class TaskManifestManager {
         const cutoffMs = maxAgeDays * 24 * 60 * 60 * 1000;
         const TERMINAL_STATUSES = new Set(['verified', 'failed', 'timeout', 'completed', 'partial', 'degraded', 'cancelled']);
 
-        const archivePath = path.join(workspacePath, '.optimus', 'state', 'task-manifest-archive.json');
+        const archivePath = resolveOptimusPath(workspacePath, 'state', 'task-manifest-archive.json');
         let archive: Record<string, TaskRecord> = {};
         try {
             if (fs.existsSync(archivePath)) {

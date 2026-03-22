@@ -8,6 +8,7 @@ import stripAnsi from 'strip-ansi';
 import * as iconv from 'iconv-lite';
 import { debugLog, formatChunk } from '../debugLogger';
 import { ANSI_RE } from '../utils/textParsing';
+import { resolveOptimusPath } from '../utils/worktree';
 
 type WindowsSpawnResolution = {
     cmd: string;
@@ -257,7 +258,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
             return { prompt, transport: 'inline' };
         }
 
-        const promptDir = path.join(currentCwd, '.optimus', 'runtime-prompts');
+        const promptDir = resolveOptimusPath(currentCwd, 'runtime-prompts');
         fs.mkdirSync(promptDir, { recursive: true });
 
         const promptFileName = [

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { TaskManifestManager } from '../managers/TaskManifestManager';
+import { resolveOptimusPath } from '../utils/worktree';
 
 type PrepareAsyncCouncilDispatchArgs = {
     workspacePath: string;
@@ -28,7 +29,7 @@ export function prepareAsyncCouncilDispatch({
     delegationDepth,
 }: PrepareAsyncCouncilDispatchArgs): PreparedAsyncCouncilDispatch {
     const resolvedTaskId = taskId ?? `council_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const reviewsPath = path.join(workspacePath, '.optimus', 'reviews', resolvedTaskId);
+    const reviewsPath = resolveOptimusPath(workspacePath, 'reviews', resolvedTaskId);
     const statusPath = path.join(reviewsPath, 'STATUS.md');
 
     fs.mkdirSync(reviewsPath, { recursive: true });

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { execSync } from 'child_process';
+import { resolveOptimusPath } from '../../utils/worktree';
 
 export interface VcsConfig {
     provider?: 'auto-detect' | 'github' | 'azure-devops';
@@ -104,7 +105,7 @@ export class VcsProviderFactory {
     }
 
     private static getConfigPath(workspacePath: string): string {
-        return path.join(workspacePath, '.optimus', 'config', 'vcs.json');
+        return resolveOptimusPath(workspacePath, 'config', 'vcs.json');
     }
 
     private static loadConfig(workspacePath: string): VcsConfig {

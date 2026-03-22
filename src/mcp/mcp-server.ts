@@ -28,6 +28,7 @@ import { resolveRoleName, resolveRoleNames, getRegisteredRoles } from "../utils/
 import { MetaCronEngine, loadCrontab, saveCrontab } from "./meta-cron-engine";
 import { checkAndResumeAwaitingTasks } from "./input-resume-checker";
 import { sanitizeExternalContent, wrapUntrusted } from "../utils/sanitizeExternalContent";
+import { resolveOptimusPath, ensureWorktreeStateDirs } from '../utils/worktree';
 import {
   AgentRuntimeRequest,
   AgentRuntimeRecord,
@@ -330,7 +331,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   if (request.params.uri === "optimus://system/instructions") {
     // Resolve workspace path securely
     const workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    const instructionsPath = path.resolve(workspacePath, '.optimus', 'config', 'system-instructions.md');
+    const instructionsPath = resolveOptimusPath(workspacePath, 'config', 'system-instructions.md');
     
     // Security check: Ensure it doesn't escape workspace
     if (!instructionsPath.startsWith(path.resolve(workspacePath))) {
@@ -1219,7 +1220,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let contextHint = '';
     if (!context_files || context_files.length === 0) {
         try {
-            const specsDir = path.join(workspace_path, '.optimus', 'specs');
+            const specsDir = resolveOptimusPath(workspace_path, 'specs');
             if (fs.existsSync(specsDir)) {
                 const specFolders = fs.readdirSync(specsDir).filter(d => {
                     try { return fs.statSync(path.join(specsDir, d)).isDirectory(); } catch { return false; }
@@ -1348,7 +1349,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ?? (Number.isNaN(rawParentSync) ? undefined : rawParentSync);
 
     const timestampId = Date.now();
-    const reviewsPath = path.join(workspacePath, ".optimus", "reviews", timestampId.toString());
+    const reviewsPath = resolveOptimusPath(workspacePath, "reviews", timestampId.toString());
     
     fs.mkdirSync(reviewsPath, { recursive: true });
 
@@ -1479,10 +1480,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { workspace_path } = request.params.arguments as any;
     requireParams("roster_check", request.params.arguments as any, ["workspace_path"]);
 
-    const t1Dir = path.join(workspace_path, ".optimus", "agents");
+    const t1Dir = resolveOptimusPath(workspace_path, "agents");
     
     // Check and create T2 project-level profile directory natively
-    const t2Dir = path.join(workspace_path, '.optimus', 'roles');
+    const t2Dir = resolveOptimusPath(workspace_path, 'roles');
     if (!fs.existsSync(t2Dir)) {
         fs.mkdirSync(t2Dir, { recursive: true });
     }
@@ -1579,7 +1580,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Show T3 usage stats if available
-    const t3LogPath = path.join(workspace_path, '.optimus', 'state', 't3-usage-log.json');
+    const t3LogPath = resolveOptimusPath(workspace_path, 'state', 't3-usage-log.json');
     if (fs.existsSync(t3LogPath)) {
       try {
         const t3Log = JSON.parse(fs.readFileSync(t3LogPath, 'utf8'));
@@ -1600,7 +1601,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     roster += "- T3 roles auto-precipitate to T2 immediately on first use.\n";
 
     // Show available skills
-    const skillsDir = path.join(workspace_path, '.optimus', 'skills');
+    const skillsDir = resolveOptimusPath(workspace_path, 'skills');
     if (fs.existsSync(skillsDir)) {
       const skillDirs = fs.readdirSync(skillsDir).filter(d => {
         try { return fs.statSync(path.join(skillsDir, d)).isDirectory() && fs.existsSync(path.join(skillsDir, d, 'SKILL.md')); } catch (e: any) { console.error("[roster_check] Warning: failed to stat skill dir " + d + ":", e.message); return false; }
@@ -1688,7 +1689,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       : path.join(optimusDir, "results", path.basename(output_path));
 
     // 1. Write the task description into a Blackboard Artifact so the stateless worker can read it
-    const tasksDir = path.join(workspacePath, ".optimus", "tasks");
+    const tasksDir = resolveOptimusPath(workspacePath, "tasks");
     fs.mkdirSync(tasksDir, { recursive: true });
     const taskArtifactPath = path.join(tasksDir, `task_${sessionId}.md`);
     fs.writeFileSync(taskArtifactPath, task_description, 'utf8');
@@ -1766,7 +1767,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vcsProvider = await VcsProviderFactory.getProvider(workspace_path);
 
       // Pre-merge build verification (configurable physical gate)
-      const vcsConfigPath = path.join(workspace_path, '.optimus', 'config', 'vcs.json');
+      const vcsConfigPath = resolveOptimusPath(workspace_path, 'config', 'vcs.json');
       if (fs.existsSync(vcsConfigPath)) {
         try {
           const vcsConfig = JSON.parse(fs.readFileSync(vcsConfigPath, 'utf8'));
@@ -1996,7 +1997,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { role, action, workspace_path } = request.params.arguments as any;
     requireParams("quarantine_role", request.params.arguments as any, ["role", "action", "workspace_path"]);
 
-    const t2Dir = path.join(workspace_path, '.optimus', 'roles');
+    const t2Dir = resolveOptimusPath(workspace_path, 'roles');
     const rolePath = path.join(t2Dir, `${role}.md`);
     if (!fs.existsSync(rolePath)) {
       return { content: [{ type: "text", text: `Role '${role}' not found at ${rolePath}` }] };
@@ -2098,7 +2099,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (idx === -1) return { content: [{ type: "text", text: `Cron entry '${id}' not found.` }] };
     crontab.crons.splice(idx, 1);
     saveCrontab(workspace_path, crontab);
-    const lockPath = path.join(workspace_path, '.optimus', 'system', 'cron-locks', id + '.lock');
+    const lockPath = resolveOptimusPath(workspace_path, 'system', 'cron-locks', id + '.lock');
     try { if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath); } catch (e: any) { console.error(`[MCP] Warning: operation failed: ${e.message}`); }
     return { content: [{ type: "text", text: `Removed Meta-Cron entry '${id}' and cleaned up lock file.` }] };
   }
@@ -2280,6 +2281,7 @@ if (process.argv.includes("--run-task")) {
 
     // Agent GC: clean up stale T1 instances on startup
     const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    ensureWorktreeStateDirs(workspaceRoot);
     try {
       cleanStaleAgents(workspaceRoot);
     } catch (e: any) {
@@ -2288,7 +2290,7 @@ if (process.argv.includes("--run-task")) {
 
     // Thin T2 template scanner: warn about templates that will be regenerated
     try {
-      const rolesDir = path.join(workspaceRoot, '.optimus', 'roles');
+      const rolesDir = resolveOptimusPath(workspaceRoot, 'roles');
       if (fs.existsSync(rolesDir)) {
         const roleFiles = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md'));
         for (const file of roleFiles) {

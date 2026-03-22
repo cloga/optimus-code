@@ -4,6 +4,7 @@ import { ClaudePermissionMode, getClaudeCliAutomationArgs } from '../utils/autom
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadProjectMcpServers } from '../utils/mcpConfig';
+import { resolveOptimusPath } from '../utils/worktree';
 // Claude CLI process line prefixes: spinning indicator (⏺), bullets (•), tree chars (└│├)
 const CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 
@@ -72,7 +73,7 @@ export class ClaudeCodeAdapter extends PersistentAgentAdapter {
         const projectMcpServers = loadProjectMcpServers(cwd, 'claude');
         if (projectMcpServers) {
             try {
-                const proxyMcpPath = path.join(cwd, '.optimus', '.claude-mcp.json');
+                const proxyMcpPath = resolveOptimusPath(cwd, 'state', '.claude-mcp.json');
                 fs.mkdirSync(path.dirname(proxyMcpPath), { recursive: true });
                 fs.writeFileSync(proxyMcpPath, JSON.stringify({ mcpServers: projectMcpServers }, null, 2));
                 args.push('--mcp-config', proxyMcpPath);

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { TaskRecord } from '../managers/TaskManifestManager';
+import { resolveOptimusPath } from './worktree';
 
 export type AgentRuntimeStatus =
     | 'queued'
@@ -86,8 +87,8 @@ export interface AgentRuntimeEnvelope {
 }
 
 export function ensureAgentRuntimeDirectories(workspacePath: string): { stateDir: string; outputDir: string } {
-    const stateDir = path.join(workspacePath, '.optimus', 'state', 'agent-runtime');
-    const outputDir = path.join(workspacePath, '.optimus', 'results', 'agent-runtime');
+    const stateDir = resolveOptimusPath(workspacePath, 'state', 'agent-runtime');
+    const outputDir = resolveOptimusPath(workspacePath, 'results', 'agent-runtime');
     fs.mkdirSync(stateDir, { recursive: true });
     fs.mkdirSync(outputDir, { recursive: true });
     return { stateDir, outputDir };
@@ -289,6 +290,11 @@ export function buildAgentRuntimeEnvelope(
     }
 
     if (status === 'completed' && record.output_schema !== undefined && outputInfo.parseError) {
+        status = 'failed';
+    }
+
+    // If the task "completed" but the output file is completely missing, mark as failed
+    if (status === 'completed' && !outputInfo.exists) {
         status = 'failed';
     }
 

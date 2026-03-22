@@ -6,6 +6,7 @@ import { dispatchCouncilConcurrent, delegateTaskSingle } from './worker-spawner'
 import { parseGitRemote, commentOnGitHubIssue, closeGitHubIssue } from '../utils/githubApi';
 import { agentSignature } from '../utils/agentSignature';
 import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
+import { resolveOptimusPath } from '../utils/worktree';
 
 /**
  * Spawn a detached background worker for an async task.
@@ -205,7 +206,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
 ### Implementation Priority
 1. (ordered action items)`;
 
-                const templatePath = path.join(task.workspacePath, '.optimus', 'config', 'verdict-template.md');
+                const templatePath = resolveOptimusPath(task.workspacePath, 'config', 'verdict-template.md');
                 try {
                     if (fs.existsSync(templatePath)) {
                         verdictTemplate = fs.readFileSync(templatePath, 'utf8').trim();

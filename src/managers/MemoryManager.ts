@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
+import { resolveOptimusPath } from '../utils/worktree';
 
 // ─── Types ───
 
@@ -261,7 +262,7 @@ export function loadFilteredMemory(
         const allEntries: MemoryEntry[] = [];
 
         // Read project-level memory
-        const projectFile = path.join(workspacePath, '.optimus', 'memory', 'continuous-memory.md');
+        const projectFile = resolveOptimusPath(workspacePath, 'memory', 'continuous-memory.md');
         if (fs.existsSync(projectFile)) {
             try {
                 const raw = fs.readFileSync(projectFile, 'utf8');
@@ -274,7 +275,7 @@ export function loadFilteredMemory(
         // Read role-level memory
         const sanitizedRole = sanitizeRoleName(currentRole);
         if (sanitizedRole) {
-            const roleFile = path.join(workspacePath, '.optimus', 'memory', 'roles', `${sanitizedRole}.md`);
+            const roleFile = resolveOptimusPath(workspacePath, 'memory', 'roles', `${sanitizedRole}.md`);
             if (fs.existsSync(roleFile)) {
                 try {
                     const raw = fs.readFileSync(roleFile, 'utf8');
@@ -537,7 +538,7 @@ export function getMemoryFilePath(
     role?: string
 ): string {
     if (level === 'project') {
-        return path.join(workspacePath, '.optimus', 'memory', 'continuous-memory.md');
+        return resolveOptimusPath(workspacePath, 'memory', 'continuous-memory.md');
     }
 
     // level === 'role'
@@ -550,7 +551,7 @@ export function getMemoryFilePath(
         throw new Error(`Invalid role name after sanitization: '${role}'`);
     }
 
-    const rolesDir = path.join(workspacePath, '.optimus', 'memory', 'roles');
+    const rolesDir = resolveOptimusPath(workspacePath, 'memory', 'roles');
 
     // Ensure directory exists
     if (!fs.existsSync(rolesDir)) {

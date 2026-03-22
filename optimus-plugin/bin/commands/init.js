@@ -38,6 +38,30 @@ module.exports = function init() {
   const scaffoldDir = path.resolve(__dirname, '..', '..', 'scaffold');
   const pluginRoot = path.resolve(__dirname, '..', '..');
 
+  // Detect git worktree context
+  let isWorktree = false;
+  let mainWorktreeRoot = cwd;
+  try {
+    const { execSync } = require('child_process');
+    const currentRoot = execSync('git rev-parse --show-toplevel', { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const gitCommonDir = execSync('git rev-parse --git-common-dir', { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const absoluteCommonDir = path.resolve(cwd, gitCommonDir);
+    mainWorktreeRoot = path.dirname(absoluteCommonDir);
+    isWorktree = path.resolve(currentRoot) !== path.resolve(mainWorktreeRoot);
+  } catch { /* not in a git repo */ }
+
+  if (isWorktree) {
+    console.log('\n🌿 Git worktree detected!');
+    console.log(`   Main worktree: ${mainWorktreeRoot}`);
+    console.log(`   This worktree: ${cwd}`);
+    const mainOptimus = path.join(mainWorktreeRoot, '.optimus');
+    if (fs.existsSync(mainOptimus)) {
+      console.log('   ✅ Main worktree has .optimus/ — shared resources (config, roles, skills) will resolve from there at runtime.');
+    } else {
+      console.log('   ⚠️  Main worktree has no .optimus/ yet — run "optimus init" there first for resource sharing.');
+    }
+  }
+
   console.log('\n🤖 Optimus Swarm — Initializing workspace...\n');
 
   // 0. Perform V3 Architecture Migrations

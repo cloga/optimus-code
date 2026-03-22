@@ -28,6 +28,7 @@ import { registerRole } from "../utils/resolveRoleName";
 import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normalizeAutomationPolicy } from "../utils/automationPolicy";
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
+import { resolveOptimusPath } from '../utils/worktree';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
 
 export interface EngineAutomationExplanation {
@@ -138,7 +139,7 @@ function extractBestFrontmatterDocument(content: string, role: string, candidate
 }
 
 function loadBestRoleTemplate(workspacePath: string, role: string): RoleTemplateCandidate | null {
-    const rolesDir = path.join(workspacePath, '.optimus', 'roles');
+    const rolesDir = resolveOptimusPath(workspacePath, 'roles');
     const flatPath = path.join(rolesDir, `${role}.md`);
     const candidatePaths = [
         flatPath,
@@ -313,7 +314,7 @@ interface T3UsageEntry {
 }
 
 function getT3UsageLogPath(workspacePath: string): string {
-    return path.join(workspacePath, '.optimus', 'state', 't3-usage-log.json');
+    return resolveOptimusPath(workspacePath, 'state', 't3-usage-log.json');
 }
 
 export function loadT3UsageLog(workspacePath: string): Record<string, T3UsageEntry> {
@@ -354,7 +355,7 @@ interface EngineHealthEntry {
 }
 
 function getEngineHealthPath(workspacePath: string): string {
-    return path.join(workspacePath, '.optimus', 'state', 'engine-health.json');
+    return resolveOptimusPath(workspacePath, 'state', 'engine-health.json');
 }
 
 function loadEngineHealth(workspacePath: string): Record<string, EngineHealthEntry> {
@@ -535,7 +536,7 @@ function checkRequiredSkills(workspacePath: string, skills: string[]): { found: 
     const missing: string[] = [];
     for (const skill of skills) {
         const resolvedSkill = SKILL_ALIASES[skill] || skill;
-        const skillPath = path.join(workspacePath, '.optimus', 'skills', resolvedSkill, 'SKILL.md');
+        const skillPath = resolveOptimusPath(workspacePath, 'skills', resolvedSkill, 'SKILL.md');
         if (fs.existsSync(skillPath)) {
             found.set(skill, fs.readFileSync(skillPath, 'utf8'));
         } else {
@@ -548,7 +549,7 @@ function checkRequiredSkills(workspacePath: string, skills: string[]): { found: 
 // ─── Engine/Model Validation (prevents corrupted T2 templates) ───
 
 export function loadValidEnginesAndModels(workspacePath: string): { engines: string[]; models: Record<string, string[]> } {
-    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    const configPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
     try {
         const config = readAvailableAgentsConfigFile(configPath);
         if (config) {
@@ -610,7 +611,7 @@ export function readAvailableAgentsConfigFile(configPath: string): AvailableAgen
 
 export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgentsConfig | null {
     if (!workspacePath) return null;
-    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    const configPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
     try {
         return readAvailableAgentsConfigFile(configPath);
     } catch (e: any) {
@@ -905,7 +906,7 @@ export function isValidModel(model: string, engine: string, validModels: Record<
  */
 async function ensureT2Role(workspacePath: string, role: string, engine: string, model?: string, masterInfo?: MasterRoleInfo, delegationDepth?: number): Promise<string | null> {
     const safeRole = sanitizeRoleName(role);
-    const t2Dir = path.join(workspacePath, '.optimus', 'roles');
+    const t2Dir = resolveOptimusPath(workspacePath, 'roles');
     const t2Path = path.join(t2Dir, `${safeRole}.md`);
 
     if (!fs.existsSync(t2Dir)) fs.mkdirSync(t2Dir, { recursive: true });
@@ -1102,7 +1103,7 @@ async function generateRichT2Role(
     const safeRole = sanitizeRoleName(role);
 
     // 1. Read the role-creator skill (optional — degrade gracefully if missing)
-    const skillPath = path.join(workspacePath, '.optimus', 'skills', 'role-creator', 'SKILL.md');
+    const skillPath = resolveOptimusPath(workspacePath, 'skills', 'role-creator', 'SKILL.md');
     let roleCreatorSkillContent = '';
     if (fs.existsSync(skillPath)) {
         roleCreatorSkillContent = fs.readFileSync(skillPath, 'utf8');
@@ -1188,7 +1189,7 @@ export class AgentLockManager {
     }
 
     private get lockDir(): string {
-        return path.join(this.workspacePath, '.optimus', 'agents');
+        return resolveOptimusPath(this.workspacePath, 'agents');
     }
 
     private lockFilePath(role: string): string {
@@ -1567,13 +1568,13 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     }
 
     // Auto-migrate legacy folder `.optimus/personas` to `.optimus/agents`
-    const legacyT1Dir = path.join(workspacePath, '.optimus', 'personas');
-    const t1Dir = path.join(workspacePath, '.optimus', 'agents');
+    const legacyT1Dir = resolveOptimusPath(workspacePath, 'personas');
+    const t1Dir = resolveOptimusPath(workspacePath, 'agents');
     if (fs.existsSync(legacyT1Dir) && !fs.existsSync(t1Dir)) {
         try { fs.renameSync(legacyT1Dir, t1Dir); } catch (e: any) { console.error(`[Orchestrator] Warning: operation failed: ${e.message}`); }
     }
     
-    const t2Dir = path.join(workspacePath, '.optimus', 'roles');
+    const t2Dir = resolveOptimusPath(workspacePath, 'roles');
     if (!fs.existsSync(t2Dir)) {
         fs.mkdirSync(t2Dir, { recursive: true });
     }
@@ -1808,7 +1809,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
             
         personaContext = `You are a ${formattedRole} expert operating within the Optimus Spartan Swarm. Your purpose is to fulfill tasks autonomously within your specialized domain of expertise.\nAs a dynamically provisioned "T3" agent, apply industry best practices, solve complex problems, and deliver professional-grade results associated with your role.`;
         
-        const systemInstructionsPath = path.join(workspacePath, '.optimus', 'config', 'system-instructions.md');
+        const systemInstructionsPath = resolveOptimusPath(workspacePath, 'config', 'system-instructions.md');
         if (fs.existsSync(systemInstructionsPath)) {
             try {
                 const systemInstructions = fs.readFileSync(systemInstructionsPath, 'utf8');
@@ -1818,7 +1819,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     }
 
     // Load project memory for injection (after persona, before task)
-    const memoryFile = path.join(workspacePath, '.optimus', 'memory', 'continuous-memory.md');
+    const memoryFile = resolveOptimusPath(workspacePath, 'memory', 'continuous-memory.md');
     migrateMemoryFile(memoryFile);
     const memoryContent = loadFilteredMemory(workspacePath, role);
     const memorySection = memoryContent
@@ -1892,7 +1893,7 @@ Please provide your complete execution result below.`;
         // --- Pre-Flight: Create T1 instance placeholder from T2 template ---
         // session_id is unknown until after execution, so use a temp name.
         // Post-execution will rename to {role}_{session_id_prefix}.md
-        const agentsDir = path.join(workspacePath, '.optimus', 'agents');
+        const agentsDir = resolveOptimusPath(workspacePath, 'agents');
         if (!fs.existsSync(agentsDir)) fs.mkdirSync(agentsDir, { recursive: true });
 
         const tempId = Math.random().toString(36).slice(2, 10);
@@ -1951,7 +1952,7 @@ Please provide your complete execution result below.`;
         // Only fail if error pattern matched AND there's no meaningful non-log output
         if (matchedError && nonLogLines.length < 100) {
             // Clean up temp T1 — don't leave zombies
-            const tempFile = t1Path || path.join(workspacePath, '.optimus', 'agents', `${role}_pending_${tempId}.md`);
+            const tempFile = t1Path || resolveOptimusPath(workspacePath, 'agents', `${role}_pending_${tempId}.md`);
             if (fs.existsSync(tempFile) && tempFile.includes('pending_')) {
                 try { fs.unlinkSync(tempFile); } catch (e: any) { console.error(`[Orchestrator] Warning: operation failed: ${e.message}`); }
             }
@@ -2041,7 +2042,7 @@ Please provide your complete execution result below.`;
         const log = loadT3UsageLog(workspacePath);
         const entry = log[role];
         if (entry && entry.consecutive_failures >= 3 && entry.successes === 0 && !wasFallback) {
-            const t2RolePath = path.join(workspacePath, '.optimus', 'roles', `${sanitizeRoleName(role)}.md`);
+            const t2RolePath = resolveOptimusPath(workspacePath, 'roles', `${sanitizeRoleName(role)}.md`);
             if (fs.existsSync(t2RolePath)) {
                 const t2Content = fs.readFileSync(t2RolePath, 'utf8');
                 const quarantined = updateFrontmatter(t2Content, {
@@ -2144,7 +2145,7 @@ function isStaticallyValid(eng: string, mdl: string, configPath: string): boolea
 function computeDiversityAssignments(roles: string[], workspacePath: string): Array<{ engine?: string; model?: string }> {
     const health = loadEngineHealth(workspacePath);
     const { engines, models } = loadValidEnginesAndModels(workspacePath);
-    const configPath = path.join(workspacePath, '.optimus', 'config', 'available-agents.json');
+    const configPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
 
     if (engines.length === 0) {
         // No config — let each role use its default

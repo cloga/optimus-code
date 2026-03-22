@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveOptimusPath } from '../utils/worktree';
 
 /**
  * Garbage-collect stale T1 agent instances.
@@ -7,7 +8,7 @@ import * as path from 'path';
  * or last_invoked is missing. Skips files with `persistent: true`.
  */
 export function cleanStaleAgents(workspacePath: string, maxAgeDays: number = 7): void {
-    const agentsDir = path.join(workspacePath, '.optimus', 'agents');
+    const agentsDir = resolveOptimusPath(workspacePath, 'agents');
     if (!fs.existsSync(agentsDir)) return;
 
     const files = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
