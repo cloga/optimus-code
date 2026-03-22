@@ -81,7 +81,10 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
         req.on('data', (chunk: Buffer) => {
             totalSize += chunk.length;
             if (totalSize > maxSize) {
-                reject(new RuntimeError('Request body too large', 'body_too_large', 413));
+                reject(new RuntimeError(
+                    'Request body too large (limit: 10 MB). Reduce input size or use context_files references instead of inline content.',
+                    'body_too_large', 413
+                ));
                 req.destroy();
                 return;
             }
@@ -94,13 +97,47 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
 
 function parseJsonBody(body: string): any {
     if (!body.trim()) {
-        throw new RuntimeError('Request body is empty', 'empty_body');
+        throw new RuntimeError(
+            'Request body is empty. Send a JSON object with required fields: role, workspace_path, input.',
+            'empty_body'
+        );
     }
     try {
         return JSON.parse(body);
-    } catch {
-        throw new RuntimeError('Invalid JSON in request body', 'invalid_json');
+    } catch (e: any) {
+        throw new RuntimeError(
+            `Invalid JSON in request body: ${e.message || 'parse error'}. Ensure Content-Type is application/json and body is valid JSON.`,
+            'invalid_json'
+        );
     }
+}
+
+/**
+ * Classify unhandled errors into specific error codes based on message patterns.
+ */
+function classifyHttpError(msg: string): { code: string; status: number } {
+    if (/auth_failed/i.test(msg) || /authentication required/i.test(msg) || /unauthorized/i.test(msg)) {
+        return { code: 'auth_failed', status: 401 };
+    }
+    if (/rate_limit/i.test(msg) || /429/i.test(msg) || /too many requests/i.test(msg)) {
+        return { code: 'rate_limit', status: 429 };
+    }
+    if (/task_timeout/i.test(msg) || /activity timeout/i.test(msg)) {
+        return { code: 'task_timeout', status: 504 };
+    }
+    if (/acp_process_crashed/i.test(msg) || /exited unexpectedly/i.test(msg)) {
+        return { code: 'acp_process_crashed', status: 500 };
+    }
+    if (/invalid_model/i.test(msg) || /Invalid model/i.test(msg)) {
+        return { code: 'invalid_model', status: 400 };
+    }
+    if (/invalid.*engine/i.test(msg) || /engine.*not.*found/i.test(msg)) {
+        return { code: 'invalid_engine', status: 400 };
+    }
+    if (/\.optimus.*not found/i.test(msg) || /workspace.*not.*initialized/i.test(msg)) {
+        return { code: 'workspace_not_initialized', status: 400 };
+    }
+    return { code: 'internal_error', status: 500 };
 }
 
 // ─── Route matching ───
@@ -238,8 +275,11 @@ function startServer() {
             if (err instanceof RuntimeError) {
                 sendError(res, err.httpStatus, err.code, err.message);
             } else {
-                console.error(`[HTTP] Unhandled error: ${err.message}`);
-                sendError(res, 500, 'internal_error', err.message || 'Internal server error');
+                const msg = err.message || 'Internal server error';
+                console.error(`[HTTP] Unhandled error: ${msg}`);
+                // Classify common engine errors into actionable codes
+                const { code, status } = classifyHttpError(msg);
+                sendError(res, status, code, msg);
             }
         }
     });

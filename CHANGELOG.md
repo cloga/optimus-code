@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.16.5] - 2026-03-22
+
+### Improvements
+- **Agent-friendly error messages** — All ACP adapter errors now include recovery guidance (auth setup, retry hints, timeout config). HTTP server errors return structured `error_code` values (`auth_failed`, `rate_limit`, `task_timeout`, `acp_process_crashed`, `invalid_model`, `invalid_engine`, `workspace_not_initialized`) instead of generic `internal_error`.
+- **Runtime integration SKILL.md** — Added comprehensive error code reference table, authentication setup guide, warm pool behavior docs, and troubleshooting section for common failures.
+
+### Error Classification (New)
+- `auth_failed` (401) — engine authentication missing or expired
+- `rate_limit` (429) — API rate limit exceeded
+- `task_timeout` (504) — no activity from engine within timeout window
+- `acp_process_crashed` (500) — engine process exited unexpectedly (auto-recovers)
+- `invalid_model` (400) — model not available for the specified engine
+- `invalid_engine` (400) — engine not found in config
+- `workspace_not_initialized` (400) — .optimus/ directory not found
+- `body_too_large` (413) — now includes 10 MB limit in message
+- `invalid_json` (400) — now includes parse error details
+
 ## [2.16.4] - 2026-03-22
 
 ### Fixes

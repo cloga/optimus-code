@@ -232,3 +232,133 @@ current list. Common roles:
 - **Do NOT** poll status faster than every 2 seconds (async runs)
 - **Do NOT** omit `workspace_path` — it's required to locate `.optimus/` config
 - **Do NOT** hardcode engine names — let the role registry resolve the best engine
+
+---
+
+## Authentication
+
+The runtime delegates to engine CLIs that require their own authentication:
+
+| Engine | Auth Method | Setup |
+|--------|------------|-------|
+| `github-copilot` | GitHub token | Set `GH_TOKEN`, `GITHUB_TOKEN`, or `COPILOT_GITHUB_TOKEN` env var, OR run `copilot login` |
+| `claude-code` | Anthropic API key | Run `claude login` or set `ANTHROPIC_API_KEY` |
+
+**Important:** The HTTP runtime inherits the environment of the process that starts it.
+Ensure auth tokens are available in that environment:
+
+```bash
+# Example: start runtime with GitHub token
+export GH_TOKEN=$(gh auth token)
+node .optimus/dist/http-runtime.js --port 3100
+```
+
+---
+
+## Warm Pool Behavior
+
+The ACP process pool keeps engine processes alive between tasks:
+
+- **First request** to an engine → cold start (~2–5s spawn + ACP initialize)
+- **Subsequent requests** → reuse warm process (~0s spawn overhead)
+- **Idle timeout** → adapter evicted after 5 minutes of inactivity (configurable via `timeout.activity_ms`)
+- **Concurrent requests** → if the warm adapter is busy, an ephemeral adapter is spawned
+- **Cross-model reuse** → same `copilot --acp` process can switch models between tasks
+
+Pool status is logged to stderr:
+```
+[AcpPool] 🆕 Created persistent adapter for github-copilot        ← cold start
+[AcpPool] ♻️  Reusing warm adapter for github-copilot (idle 25s)   ← warm reuse
+[AcpPool] 💀 Adapter for github-copilot is dead, replacing        ← crash recovery
+```
+
+---
+
+## Error Code Reference
+
+All error responses follow the envelope format with `error_code` and `error_message`.
+Use `error_code` for programmatic handling; `error_message` contains human-readable details.
+
+### Request Validation Errors
+
+| Error Code | HTTP Status | Cause | Fix |
+|-----------|-------------|-------|-----|
+| `missing_params` | 400 | Required field(s) missing (`role`, `workspace_path`, `input`) | Add the listed fields to your request |
+| `invalid_json` | 400 | Request body is not valid JSON | Check JSON syntax; the response includes the parse error |
+| `empty_body` | 400 | POST request with no body | Send a JSON body with required fields |
+| `body_too_large` | 413 | Request exceeds 10 MB limit | Reduce input size or use `context_files` references |
+| `invalid_timeout` | 400 | `timeout_ms` or `heartbeat_timeout_ms` out of range | Use a value between 1 and 1,200,000 ms |
+
+### Engine / Model Errors
+
+| Error Code | HTTP Status | Cause | Fix |
+|-----------|-------------|-------|-----|
+| `invalid_engine` | 400 | `role_engine` not found in `available-agents.json` | Check `.optimus/config/available-agents.json` for valid engine names |
+| `invalid_model` | 400 | `role_model` not available for the specified engine | Remove `role_model` to use default, or check `available_models` in config |
+| `auth_failed` | 401 | Engine CLI returned authentication error | Set auth token (see Authentication section) or run engine login command |
+| `engine_not_available` | 503 | Engine CLI not installed or not on PATH | Install the engine CLI (`npm i -g @github/copilot`, `pip install claude-code`) |
+
+### Execution Errors
+
+| Error Code | HTTP Status | Cause | Fix |
+|-----------|-------------|-------|-----|
+| `runtime_execution_failed` | 500 | Task execution failed after all retries | Check `error_message` for details; may be auth, timeout, or engine crash |
+| `task_timeout` | 504 | No activity from engine for the configured heartbeat period | Increase `runtime_policy.timeout_ms` or check if the engine is responsive |
+| `acp_process_crashed` | 500 | ACP engine process exited unexpectedly | Retry — warm pool will auto-recover with a fresh process |
+| `rate_limit` | 429 | Engine API rate limited | Wait and retry; consider using `runtime_policy.retries` |
+
+### State Errors
+
+| Error Code | HTTP Status | Cause | Fix |
+|-----------|-------------|-------|-----|
+| `run_not_found` | 404 | Run ID doesn't match any known run | Verify the `run_id`; runs are stored in `.optimus/state/agent-runtime/` |
+| `task_not_found` | 404 | Task referenced by run no longer exists | The task manifest may have been cleaned up; start a new run |
+| `invalid_state` | 400 | Operation not valid for current run state (e.g., resume on a non-blocked run) | Check run status before calling resume |
+| `workspace_not_initialized` | 400 | `.optimus/` directory not found at workspace_path | Run `npx github:cloga/optimus-code#v2.16.4 init` in the workspace |
+
+### Infrastructure Errors
+
+| Error Code | HTTP Status | Cause | Fix |
+|-----------|-------------|-------|-----|
+| `not_found` | 404 | HTTP endpoint doesn't exist | Check the endpoint path against the API reference above |
+| `internal_error` | 500 | Unclassified server error | Check `error_message` for details; report if persistent |
+
+---
+
+## Troubleshooting
+
+### "Authentication required" from Copilot ACP
+```json
+{"error_code": "auth_failed", "error_message": "ACP error: Authentication required"}
+```
+**Fix:** Set `GH_TOKEN` before starting the runtime:
+```bash
+export GH_TOKEN=$(gh auth token)
+node .optimus/dist/http-runtime.js --port 3100
+```
+
+### "Invalid model 'X' for engine 'Y'"
+```json
+{"error_code": "invalid_model", "error_message": "Invalid model 'gpt-99' for engine 'github-copilot'. Valid models: gpt-5.4, claude-opus-4.6-1m, gemini-3-pro-preview"}
+```
+**Fix:** Remove `role_model` from request to use the default, or use one of the listed valid models.
+
+### Task completes but `result` is empty
+The result is written to the file at `runtime_metadata.output_path`. Read that file for full output:
+```bash
+cat .optimus/results/agent-runtime/run_xxx.json
+```
+
+### "Activity timeout: no session/update for Ns"
+The engine stopped sending progress. Possible causes:
+- Engine process hung or crashed
+- Network issue (for cloud-based models)
+- Task too complex for the timeout window
+
+**Fix:** Increase timeout via `runtime_policy.timeout_ms` or check engine health.
+
+### Warm pool not reusing processes
+Check logs for `🆕 Created` vs `♻️ Reusing`. If always creating:
+- Previous task may have crashed the process (check for `💀 dead`)
+- Concurrent requests may exhaust the pool (ephemeral adapters used)
+- Idle timeout (5 min default) may have evicted the adapter

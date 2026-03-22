@@ -108,6 +108,57 @@ export class AcpAdapter implements AgentAdapter {
             || /invalid.?input/i.test(message);
     }
 
+    /**
+     * Classify raw ACP JSON-RPC errors into actionable error messages
+     * so calling agents know how to recover.
+     */
+    private classifyAcpError(error: { code: number; message: string; data?: any }): Error {
+        const msg = error.message || '';
+        const code = error.code;
+        const data = error.data ? ` Details: ${JSON.stringify(error.data)}` : '';
+
+        // Authentication
+        if (/auth/i.test(msg) || /unauthorized/i.test(msg) || /login/i.test(msg)) {
+            return new Error(
+                `ACP auth_failed: ${msg}. Fix: set GH_TOKEN/GITHUB_TOKEN env var (for Copilot) or run the engine's login command before starting the runtime.`
+            );
+        }
+
+        // Rate limiting
+        if (/rate.?limit/i.test(msg) || code === 429 || /too many requests/i.test(msg) || /quota/i.test(msg)) {
+            return new Error(
+                `ACP rate_limit: ${msg}. Fix: wait and retry. Consider adding runtime_policy.retries to your request.`
+            );
+        }
+
+        // Model not found
+        if (/model.*not.*found/i.test(msg) || /invalid.*model/i.test(msg) || /unknown.*model/i.test(msg)) {
+            return new Error(
+                `ACP invalid_model: ${msg}. Fix: remove role_model to use the default, or check available_models in .optimus/config/available-agents.json.`
+            );
+        }
+
+        // Schema validation (invalid params structure)
+        if (code === -32602 || code === -32603) {
+            if (error.data && Array.isArray(error.data)) {
+                const fields = error.data.map((d: any) => `${d.path?.join('.') || '?'}: expected ${d.expected}, got ${d.message}`).join('; ');
+                return new Error(
+                    `ACP error ${code}: parameter validation failed — ${fields}. This may indicate an ACP protocol version mismatch.`
+                );
+            }
+        }
+
+        // Permission denied
+        if (/permission/i.test(msg) && /denied/i.test(msg)) {
+            return new Error(
+                `ACP permission_denied: ${msg}. The engine denied a tool/file operation. Check auto-approve settings or engine permissions.`
+            );
+        }
+
+        // Default: include code and message for debugging
+        return new Error(`ACP error ${code}: ${msg}${data}`);
+    }
+
     // ─── Low-level transport ───
 
     private sendMessage(msg: JsonRpcMessage): void {
@@ -136,7 +187,7 @@ export class AcpAdapter implements AgentAdapter {
             if (pending) {
                 this.pendingRequests.delete(msg.id);
                 if (msg.error) {
-                    pending.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`));
+                    pending.reject(this.classifyAcpError(msg.error));
                 } else {
                     pending.resolve(msg.result);
                 }
@@ -222,7 +273,10 @@ export class AcpAdapter implements AgentAdapter {
             debugLog('[AcpAdapter]', `Process exited: code=${code} signal=${signal}`);
             // Only handle if this is still the current process (not replaced by respawn)
             if (this.process !== thisProcess) return;
-            this.rejectAllPending(new Error(`ACP process exited unexpectedly (code=${code}, signal=${signal})`));
+            this.rejectAllPending(new Error(
+                `ACP acp_process_crashed: engine process exited unexpectedly (code=${code}, signal=${signal}). ` +
+                `The warm pool will auto-recover on the next request. If persistent, check engine installation and auth.`
+            ));
             this.process = undefined;
             this._initialized = false;
         });
@@ -393,7 +447,10 @@ export class AcpAdapter implements AgentAdapter {
                     const elapsed = Date.now() - this.lastUpdateTime;
                     if (elapsed >= this.activityTimeoutMs) {
                         const timeoutErr = new Error(
-                            `[AcpAdapter] Activity timeout: no session/update for ${Math.round(elapsed / 1000)}s`
+                            `ACP task_timeout: no activity from engine for ${Math.round(elapsed / 1000)}s ` +
+                            `(limit: ${Math.round(this.activityTimeoutMs / 1000)}s). ` +
+                            `The agent may be hung or the task may be too complex. ` +
+                            `Fix: retry, or increase timeout via runtime_policy.timeout_ms or config timeout.activity_ms.`
                         );
                         debugLog('[AcpAdapter]', timeoutErr.message);
                         this.stopActivityTimer();
@@ -549,7 +606,10 @@ export class AcpAdapter implements AgentAdapter {
                     const elapsed = Date.now() - this.lastUpdateTime;
                     if (elapsed >= this.activityTimeoutMs) {
                         const timeoutErr = new Error(
-                            `[AcpAdapter] Activity timeout: no session/update received for ${Math.round(elapsed / 1000)}s (limit: ${Math.round(this.activityTimeoutMs / 1000)}s)`
+                            `ACP task_timeout: no activity from engine for ${Math.round(elapsed / 1000)}s ` +
+                            `(limit: ${Math.round(this.activityTimeoutMs / 1000)}s). ` +
+                            `The agent may be hung or the task may be too complex. ` +
+                            `Fix: retry, or increase timeout via runtime_policy.timeout_ms or config timeout.activity_ms.`
                         );
                         debugLog('[AcpAdapter]', timeoutErr.message);
                         this.stopActivityTimer();

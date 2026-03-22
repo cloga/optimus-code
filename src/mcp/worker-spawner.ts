@@ -1558,6 +1558,42 @@ function getAdapterForEngine(engine: string, sessionId?: string, model?: string,
 }
 
 /**
+ * Classify worker execution errors into agent-friendly messages with recovery guidance.
+ */
+function classifyWorkerError(role: string, engine: string, e: any): string {
+    const msg = e instanceof Error ? e.message : String(e);
+    const prefix = `Worker execution failed for role '${role}' on engine '${engine}'`;
+
+    // Auth errors
+    if (/auth_failed/i.test(msg) || /authentication required/i.test(msg) || /unauthorized/i.test(msg) || /No authentication/i.test(msg)) {
+        return `${prefix}: auth_failed — ${msg}. Fix: set GH_TOKEN (Copilot) or ANTHROPIC_API_KEY (Claude), or run the engine's login command.`;
+    }
+
+    // Rate limit
+    if (/rate_limit/i.test(msg) || /429/i.test(msg) || /too many requests/i.test(msg) || /quota/i.test(msg)) {
+        return `${prefix}: rate_limit — ${msg}. Fix: wait and retry. Use runtime_policy.retries for automatic retry.`;
+    }
+
+    // Timeout
+    if (/task_timeout/i.test(msg) || /activity timeout/i.test(msg) || /heartbeat/i.test(msg)) {
+        return `${prefix}: task_timeout — ${msg}`;
+    }
+
+    // Process crash
+    if (/acp_process_crashed/i.test(msg) || /exited unexpectedly/i.test(msg) || /SIGKILL/i.test(msg)) {
+        return `${prefix}: acp_process_crashed — ${msg}. The warm pool will auto-recover. Retry the task.`;
+    }
+
+    // Model errors
+    if (/invalid_model/i.test(msg) || /invalid model/i.test(msg)) {
+        return `${prefix}: invalid_model — ${msg}`;
+    }
+
+    // Default
+    return `${prefix}: ${msg}`;
+}
+
+/**
  * Executes a single task delegation synchronously.
  */
 export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number, agentId?: string): Promise<string> {
@@ -1950,7 +1986,7 @@ Please provide your complete execution result below.`;
             /^API Error: [45]\d\d/m,
             /^error: option .* is invalid/m,
             /^Error: No authentication/m,
-            /^Worker execution failed:/m,
+            /^Worker execution failed/m,
         ];
         const matchedError = errorPatterns.find(p => p.test(firstLines));
         // Only fail if error pattern matched AND there's no meaningful non-log output
@@ -2057,7 +2093,7 @@ Please provide your complete execution result below.`;
                 console.error(`[Meta-Immune] Role '${role}' quarantined after ${entry.consecutive_failures} consecutive failures with 0 successes`);
             }
         }
-        throw new Error(`Worker execution failed for role '${role}' on engine '${activeEngine}': ${e.message}`);
+        throw new Error(classifyWorkerError(role, activeEngine, e));
     } finally {
         ConcurrencyGovernor.release();
         lockManager.releaseLock(lockKey);
