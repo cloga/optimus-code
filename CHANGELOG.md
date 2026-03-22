@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.2] - 2026-03-22
+
+### Fixes
+- **Copilot autopilot resolver failure after upgrade** — `deepMergePreserveUser` treated arrays atomically, so users upgrading from older configs had stale `automation_continuations: ["single"]` that suppressed the template's `["single", "autopilot"]`. Both ACP and CLI transports failed the continuation check, causing `selectedProtocol = null` and timeout-like behavior. (Fixes #499)
+- **Scaffold ACP config stale** — Updated scaffold `available-agents.json` so new installs get correct Copilot ACP capabilities (`autopilot` in continuations, no `--stdio` flag).
+- **Upgrade now unions capability arrays** — Post-merge migration ensures engine capability arrays are unioned with template values instead of being overridden by old user arrays. Also strips stale `--stdio` from ACP args.
+
 ## [2.16.1] - 2026-03-22
 
 ### Fixes
