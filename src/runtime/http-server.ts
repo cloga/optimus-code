@@ -202,6 +202,20 @@ function classifyHttpError(msg: string): { code: string; status: number; fix: st
             fix: 'No engine could be resolved for this role. Specify role_engine explicitly (e.g. "github-copilot" or "claude-code"), or add a default engine in .optimus/config/available-agents.json.'
         };
     }
+    if (/CAPIError/i.test(msg)) {
+        const statusMatch = msg.match(/CAPIError:\s*(\d{3})/);
+        const status = statusMatch ? parseInt(statusMatch[1]) : 502;
+        return {
+            code: `capi_error_${statusMatch?.[1] || 'unknown'}`, status,
+            fix: 'Copilot backend API returned an error. Verify: (1) model name is supported by Copilot (`gpt-5.4`, `claude-sonnet-4`), (2) `gh auth login` is current, (3) your Copilot subscription is active. Retry with a different model if the issue persists.'
+        };
+    }
+    if (/Invalid automation policy/i.test(msg)) {
+        return {
+            code: 'automation_policy_invalid', status: 422,
+            fix: 'Engine automation policy mismatch. Run `npx github:cloga/optimus-code upgrade` to refresh config with system defaults. System defaults inject ACP + autopilot capabilities automatically.'
+        };
+    }
     return {
         code: 'internal_error', status: 500,
         fix: 'An unexpected error occurred. Check the runtime stderr logs for details. If the error persists, retry the request or restart the runtime process.'

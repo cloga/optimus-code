@@ -812,11 +812,11 @@ function getConfiguredTransportProtocols(engineConfig: any, preferredProtocol: '
 
 function buildAutomationCompatibilityFixHint(engine: string, protocol: 'cli' | 'acp' | 'auto', requestedContinuation: string | undefined): string {
     if (requestedContinuation === 'autopilot') {
-        if (!engine.toLowerCase().includes('copilot')) {
-            return `Set automation.continuation to 'single' for engine '${engine}', or switch to a GitHub Copilot CLI engine if you need autopilot continuation.`;
-        }
         if (protocol === 'acp') {
-            return `Set protocol to 'cli' or 'auto' for engine '${engine}', or change automation.continuation to 'single'.`;
+            return `Ensure acp.capabilities.automation_continuations includes 'autopilot' in available-agents.json for engine '${engine}'. System defaults should provide this — try running 'npx github:cloga/optimus-code upgrade' to refresh config.`;
+        }
+        if (!engine.toLowerCase().includes('copilot')) {
+            return `Switch to protocol 'acp' for engine '${engine}' (supports autopilot via system defaults), or set automation.continuation to 'single'.`;
         }
     }
     return `Adjust automation.mode / automation.continuation or update the declared transport capabilities in available-agents.json.`;
@@ -1638,6 +1638,13 @@ function classifyWorkerError(role: string, engine: string, e: any): string {
         return `${prefix}: invalid_model — ${msg}`;
     }
 
+    // CAPI errors (Copilot API backend errors)
+    if (/CAPIError/i.test(msg) || /Execution failed.*CAPIError/i.test(msg)) {
+        const statusMatch = msg.match(/CAPIError:\s*(\d{3})/);
+        const status = statusMatch ? statusMatch[1] : 'unknown';
+        return `${prefix}: capi_error_${status} — ${msg}. This is a Copilot backend API error. Fix: verify model name is supported by Copilot (try 'gpt-5.4' or 'claude-sonnet-4'), check 'gh auth login' status, or retry.`;
+    }
+
     // Default
     return `${prefix}: ${msg}`;
 }
@@ -2046,6 +2053,8 @@ Please provide your complete execution result below.`;
             /^error: option .* is invalid/m,
             /^Error: No authentication/m,
             /^Worker execution failed/m,
+            /CAPIError: [45]\d\d/m,
+            /^Error: Execution failed:/m,
         ];
         const matchedError = errorPatterns.find(p => p.test(firstLines));
         // Only fail if error pattern matched AND there's no meaningful non-log output

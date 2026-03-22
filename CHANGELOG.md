@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.11] - 2026-03-22
+
+### Bug Fixes
+- **CAPIError detection** — Copilot backend API errors (`CAPIError: 400/500`) now caught by fail-fast error detection in worker-spawner and classified with actionable fix guidance in HTTP runtime.
+- **Automation policy fix hint** — `buildAutomationCompatibilityFixHint` no longer incorrectly suggests downgrading to `continuation: "single"` for `claude-code`. Now recommends running `upgrade` to refresh system defaults.
+- **New HTTP error category** — `automation_policy_invalid` (422) with guidance to run `upgrade` to get system defaults.
+
 ## [2.16.10] - 2026-03-22
 
 ### Improvements
