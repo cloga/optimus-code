@@ -1,9 +1,12 @@
 /**
  * Standalone esbuild config for the Optimus MCP Plugin
- * Compiles src/mcp/mcp-server.ts → optimus-plugin/dist/mcp-server.js
+ * Compiles:
+ *   src/mcp/mcp-server.ts    → optimus-plugin/dist/mcp-server.js    (MCP stdio server)
+ *   src/runtime/http-server.ts → optimus-plugin/dist/http-runtime.js  (HTTP REST server)
+ *   src/runtime/runtime-cli.ts → optimus-plugin/dist/runtime-cli.js   (JSON CLI contract)
  *
- * This build is completely independent from the VS Code extension build.
- * It produces a single self-contained CJS bundle with zero vscode dependencies.
+ * These builds are completely independent from the VS Code extension build.
+ * They produce self-contained CJS bundles with zero vscode dependencies.
  */
 const esbuild = require('esbuild');
 const { execSync } = require('child_process');
@@ -12,8 +15,15 @@ const path = require('path');
 const production = process.argv.includes('--production');
 
 async function build() {
+  // Build all entry points
+  const entryPoints = {
+    'mcp-server': path.resolve(__dirname, '..', 'src', 'mcp', 'mcp-server.ts'),
+    'http-runtime': path.resolve(__dirname, '..', 'src', 'runtime', 'http-server.ts'),
+    'runtime-cli': path.resolve(__dirname, '..', 'src', 'runtime', 'runtime-cli.ts'),
+  };
+
   const result = await esbuild.build({
-    entryPoints: [path.resolve(__dirname, '..', 'src', 'mcp', 'mcp-server.ts')],
+    entryPoints: entryPoints,
     bundle: true,
     format: 'cjs',
     minify: production,
@@ -21,7 +31,7 @@ async function build() {
     sourcesContent: false,
     platform: 'node',
     target: 'node18',
-    outfile: path.resolve(__dirname, 'dist', 'mcp-server.js'),
+    outdir: path.resolve(__dirname, 'dist'),
     // All dependencies are fully bundled — esbuild transpiles ESM→CJS at build time.
     // vscode guard is enforced via metafile analysis below (not via external).
     logLevel: 'info',
@@ -39,8 +49,13 @@ async function build() {
     process.exit(1);
   }
 
-  const outputSize = Object.values(result.metafile.outputs)[0]?.bytes || 0;
-  console.log(`\n✅ Plugin build complete (${(outputSize / 1024).toFixed(1)} KB)`);
+  const outputs = Object.entries(result.metafile.outputs);
+  for (const [outputFile, meta] of outputs) {
+    if (outputFile.endsWith('.js')) {
+      const name = path.basename(outputFile);
+      console.log(`\n✅ ${name} built (${(meta.bytes / 1024).toFixed(1)} KB)`);
+    }
+  }
   if (production) {
     console.log('   Mode: production (minified)');
   }

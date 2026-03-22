@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.15.0] - 2026-03-22
+
+### Features
+- **Agent Runtime HTTP Server** — Native REST API for host application integration, no MCP transport required:
+  - `POST /api/v1/agent/run` — Synchronous run (blocks until complete)
+  - `POST /api/v1/agent/start` — Async start (returns immediately)
+  - `GET /api/v1/agent/runs/:id` — Get run status/result
+  - `POST /api/v1/agent/runs/:id/resume` — Resume blocked run
+  - `POST /api/v1/agent/runs/:id/cancel` — Cancel active run
+  - `GET /api/v1/health` — Health check
+  - Start: `node .optimus/dist/http-runtime.js --port 3100 --workspace /path`
+- **Agent Runtime CLI Contract** — JSON-in/JSON-out CLI for app embedding:
+  - `optimus-runtime run < request.json` — sync run
+  - `optimus-runtime start < request.json` — async start
+  - `optimus-runtime status --run-id <id>` — get status
+  - `optimus-runtime resume < resume.json` — resume blocked
+  - `optimus-runtime cancel --run-id <id>` — cancel
+  - All output is structured JSON on stdout, logs on stderr
+- **TypeScript SDK** (`src/sdk/runtime-client.ts`) — Thin HTTP client wrapping the REST API:
+  - `const runtime = new OptimusRuntime({ baseUrl: 'http://localhost:3100' })`
+  - `await runtime.runAgent({ role: 'writer', input: {...} })`
+  - Typed methods: `runAgent`, `startRun`, `getStatus`, `resumeRun`, `cancelRun`, `waitForCompletion`, `health`
+
+### Architecture
+- **`AgentRuntimeService` (`src/runtime/agentRuntimeService.ts`)** — Transport-agnostic service layer extracted from MCP server. Shared by MCP tool handlers, HTTP server, and CLI. Clean API: `runSync()`, `startRun()`, `getRunStatus()`, `resumeRun()`, `cancelRun()`, `waitForCompletion()`.
+- **Three build outputs** via esbuild: `dist/mcp-server.js` (MCP stdio), `dist/http-runtime.js` (HTTP REST), `dist/runtime-cli.js` (JSON CLI).
+- **`RuntimeError`** class with `code` and `httpStatus` for clean error propagation across all transports.
+
+### Compatibility
+- MCP tool handlers (`run_agent`, `start_agent_run`, etc.) now delegate to the shared service — behavior is identical.
+- Addresses [#517](https://github.com/cloga/optimus-code/issues/517): Host applications no longer need MCP transport.
+
 ## [2.14.0] - 2026-03-22
 
 ### Features
