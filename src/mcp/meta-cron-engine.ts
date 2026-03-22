@@ -103,10 +103,33 @@ function isPidRunning(pid: number): boolean {
     }
 }
 
-function isLockStale(lockPath: string): boolean {
+function isLockStale(lockPath: string, workspacePath?: string): boolean {
     try {
         const content = fs.readFileSync(lockPath, 'utf8');
-        const data = JSON.parse(content) as { pid?: number; locked_at?: string };
+        const data = JSON.parse(content) as { pid?: number; locked_at?: string; cronId?: string };
+
+        // If the lock records a cronId and we have a workspacePath, check whether
+        // a child worker task is still actively running in the manifest.
+        // This defends against the server-crash scenario: the MCP server PID dies
+        // but its detached child worker is still alive and heartbeating.
+        // The manifest heartbeat is updated by the child, not the server (Issue #511).
+        if (data.cronId && workspacePath) {
+            try {
+                const manifest = TaskManifestManager.loadManifest(workspacePath);
+                const prefix = `cron_${data.cronId}_`;
+                for (const [taskId, task] of Object.entries(manifest)) {
+                    if (!taskId.startsWith(prefix)) continue;
+                    if ((task as any).status !== 'running') continue;
+                    const hb = (task as any).heartbeatTime as number | undefined;
+                    // If the task has heartbeated within the last 5 minutes, the worker
+                    // is alive — lock is NOT stale even if the server PID is dead.
+                    if (hb && (Date.now() - hb) < 5 * 60 * 1000) {
+                        return false;
+                    }
+                }
+            } catch { /* manifest read failure — fall through to PID/time checks */ }
+        }
+
         // PID-based staleness: if the owning process is gone, the lock is stale
         if (typeof data.pid === 'number' && !isPidRunning(data.pid)) {
             return true;
@@ -130,7 +153,7 @@ function isLocked(workspacePath: string, id: string): boolean {
     const lockPath = getLockPath(workspacePath, id);
     try {
         if (!fs.existsSync(lockPath)) return false;
-        return !isLockStale(lockPath);
+        return !isLockStale(lockPath, workspacePath);
     } catch (e: any) {
         console.error(`[Meta-Cron] Warning: failed to check lock for '${id}': ${e.message}. Treating as unlocked.`);
         return false;
@@ -147,6 +170,7 @@ function createLock(workspacePath: string, id: string): boolean {
         const lockFd = fs.openSync(lockPath, 'wx');
         fs.writeFileSync(lockFd, JSON.stringify({
             pid: process.pid,
+            cronId: id,
             locked_at: new Date().toISOString()
         }), 'utf8');
         fs.closeSync(lockFd);
@@ -155,7 +179,7 @@ function createLock(workspacePath: string, id: string): boolean {
         if (e?.code === 'EEXIST') {
             // Lock file exists — check if it belongs to a dead process (stale lock)
             try {
-                if (isLockStale(lockPath)) {
+                if (isLockStale(lockPath, workspacePath)) {
                     fs.unlinkSync(lockPath);
                     return createLock(workspacePath, id);
                 }

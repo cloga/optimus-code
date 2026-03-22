@@ -104,4 +104,92 @@ describe('Meta-Cron lock management (Issue #511)', () => {
         // Should fail — lock is within 2h threshold and PID is alive
         expect(createLock(tmpDir, 'test-job')).toBe(false);
     });
+
+    it('createLock writes cronId to the lock file', () => {
+        createLock(tmpDir, 'hourly-patrol');
+        const lockPath = getLockPath(tmpDir, 'hourly-patrol');
+        const data = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        expect(data.cronId).toBe('hourly-patrol');
+        expect(data.pid).toBe(process.pid);
+        expect(data.locked_at).toBeDefined();
+    });
+
+    it('lock with dead server PID is NOT stale when manifest shows running task with fresh heartbeat (server-crash scenario)', () => {
+        // Simulate: MCP server (PID 2147483647) created the lock and spawned a child.
+        // The server died, but the child worker is still running and heartbeating in the manifest.
+        const lockPath = getLockPath(tmpDir, 'hourly-patrol');
+        fs.writeFileSync(lockPath, JSON.stringify({
+            pid: 2147483647, // dead server PID
+            cronId: 'hourly-patrol',
+            locked_at: new Date().toISOString(),
+        }), 'utf8');
+
+        // Create a manifest with a running task that has a fresh heartbeat
+        const manifestDir = path.join(tmpDir, '.optimus', 'state');
+        fs.mkdirSync(manifestDir, { recursive: true });
+        const manifestPath = path.join(manifestDir, 'task-manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify({
+            'cron_hourly-patrol_1234_abc': {
+                taskId: 'cron_hourly-patrol_1234_abc',
+                status: 'running',
+                heartbeatTime: Date.now() - 30_000, // 30 seconds ago — fresh
+                startTime: Date.now() - 600_000,
+            }
+        }), 'utf8');
+
+        // createLock should see the manifest entry and refuse to reclaim the lock
+        expect(createLock(tmpDir, 'hourly-patrol')).toBe(false);
+        // isLocked should return true — the worker is still running
+        expect(isLocked(tmpDir, 'hourly-patrol')).toBe(true);
+    });
+
+    it('lock with dead server PID IS stale when manifest shows no running tasks', () => {
+        const lockPath = getLockPath(tmpDir, 'hourly-patrol');
+        fs.writeFileSync(lockPath, JSON.stringify({
+            pid: 2147483647, // dead PID
+            cronId: 'hourly-patrol',
+            locked_at: new Date().toISOString(),
+        }), 'utf8');
+
+        // Create a manifest with NO running tasks for this cron entry
+        const manifestDir = path.join(tmpDir, '.optimus', 'state');
+        fs.mkdirSync(manifestDir, { recursive: true });
+        const manifestPath = path.join(manifestDir, 'task-manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify({
+            'cron_hourly-patrol_1234_abc': {
+                taskId: 'cron_hourly-patrol_1234_abc',
+                status: 'completed',
+                heartbeatTime: Date.now() - 30_000,
+                startTime: Date.now() - 600_000,
+            }
+        }), 'utf8');
+
+        // createLock should detect dead PID + no running tasks = stale
+        expect(createLock(tmpDir, 'hourly-patrol')).toBe(true);
+    });
+
+    it('lock with dead server PID IS stale when manifest task heartbeat is older than 5 minutes', () => {
+        const lockPath = getLockPath(tmpDir, 'hourly-patrol');
+        fs.writeFileSync(lockPath, JSON.stringify({
+            pid: 2147483647, // dead PID
+            cronId: 'hourly-patrol',
+            locked_at: new Date().toISOString(),
+        }), 'utf8');
+
+        // Create a manifest with a running task BUT stale heartbeat (>5 min old)
+        const manifestDir = path.join(tmpDir, '.optimus', 'state');
+        fs.mkdirSync(manifestDir, { recursive: true });
+        const manifestPath = path.join(manifestDir, 'task-manifest.json');
+        fs.writeFileSync(manifestPath, JSON.stringify({
+            'cron_hourly-patrol_1234_abc': {
+                taskId: 'cron_hourly-patrol_1234_abc',
+                status: 'running',
+                heartbeatTime: Date.now() - 10 * 60 * 1000, // 10 min ago — stale
+                startTime: Date.now() - 600_000,
+            }
+        }), 'utf8');
+
+        // createLock should fall through to PID check — dead PID = stale
+        expect(createLock(tmpDir, 'hourly-patrol')).toBe(true);
+    });
 });
