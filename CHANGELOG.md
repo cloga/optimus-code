@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.16.3] - 2026-03-22
+
+### Fixes
+- **Resolver fails for explicit protocol with sub-object capabilities (#499)** — `getTransportConfig()` returned the parent engine config instead of the protocol sub-object when `protocol !== 'auto'`, making `capabilities.automation_continuations` invisible to all check functions. Now prefers the `cli` or `acp` sub-object when it exists.
+- **Upgrade merge preserves stale `protocol` field** — `deepMergePreserveUser` treats scalars as atomic, so user's old `protocol: "cli"` overrode template's `"auto"`. Post-merge migration now normalizes `protocol` to `"auto"` when both `acp` and `cli` sub-objects are present.
+- **Health endpoint hardcoded version `2.14.0`** — Now injected at build time via esbuild `define` from `package.json`. Health correctly reports the installed version.
+- **Stale dist bundles in git** — Rebuilt and committed all 3 bundles so `npx github:cloga/optimus-code#v2.16.3` gets current code.
+
+### Tests
+- 4 new regression tests for #499: explicit protocol with sub-objects, explain output verification, flat config backward compatibility.
+
 ## [2.16.2] - 2026-03-22
 
 ### Fixes
