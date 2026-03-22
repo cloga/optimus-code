@@ -34,6 +34,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { ensureWorktreeStateDirs } from '../utils/worktree';
 
+declare const OPTIMUS_VERSION: string;
+
 // ─── Config ───
 
 function parseArgs(): { port: number; workspacePath: string } {
@@ -148,7 +150,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if ((params = matchRoute(method, url, '/api/v1/health', 'GET'))) {
         sendJson(res, 200, {
             status: 'ok',
-            version: '2.14.0',
+            version: typeof OPTIMUS_VERSION !== 'undefined' ? OPTIMUS_VERSION : 'dev',
             workspace: defaultWorkspacePath,
             uptime_ms: Math.round(process.uptime() * 1000)
         });

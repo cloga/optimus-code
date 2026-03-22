@@ -635,7 +635,9 @@ function getTransportConfig(engineConfig: any, protocol: 'cli' | 'acp'): any {
         return engineConfig[protocol] || null;
     }
     const explicitProtocol = engineConfig.protocol === 'acp' ? 'acp' : 'cli';
-    return explicitProtocol === protocol ? engineConfig : null;
+    if (explicitProtocol !== protocol) return null;
+    // Prefer protocol sub-object if it exists (has capabilities), else fall back to parent
+    return engineConfig[protocol] || engineConfig;
 }
 
 function getDefaultProtocolForEngine(engine: string): 'cli' | 'acp' {

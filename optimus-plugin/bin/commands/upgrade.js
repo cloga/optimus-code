@@ -154,6 +154,16 @@ module.exports = function upgrade() {
             }
           }
         }
+        // Normalize protocol: if template uses "auto" with sub-objects and user has
+        // explicit protocol, upgrade to "auto" so both transports are considered
+        if (tplEngine.protocol === 'auto' && userEngine.protocol !== 'auto'
+            && userEngine.acp && userEngine.cli) {
+          userEngine.protocol = 'auto';
+          if (tplEngine.preferred_protocol && !userEngine.preferred_protocol) {
+            userEngine.preferred_protocol = tplEngine.preferred_protocol;
+          }
+          patched = true;
+        }
         // Also ensure ACP args don't contain stale flags
         if (userEngine.acp?.args && Array.isArray(userEngine.acp.args)) {
           const filtered = userEngine.acp.args.filter(a => a !== '--stdio');

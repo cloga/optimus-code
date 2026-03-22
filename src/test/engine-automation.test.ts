@@ -427,4 +427,118 @@ describe('Engine automation integration', () => {
             'dontAsk',
         ]);
     });
+
+    // --- Regression tests for #499: explicit protocol with sub-objects ---
+
+    it('resolves explicit protocol=cli with cli sub-object capabilities (#499)', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'github-copilot': {
+                    protocol: 'cli',
+                    preferred_protocol: 'acp',
+                    available_models: ['gemini-3-pro-preview'],
+                    automation: { mode: 'auto-approve', continuation: 'autopilot' },
+                    acp: {
+                        path: 'copilot',
+                        args: ['--acp'],
+                        capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
+                    },
+                    cli: {
+                        path: 'copilot',
+                        cli_flags: '-m',
+                        capabilities: {
+                            automation_modes: ['interactive', 'auto-approve'],
+                            automation_continuations: ['single', 'autopilot']
+                        }
+                    }
+                }
+            }
+        });
+        try {
+            // Should NOT throw — cli sub-object declares autopilot support
+            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('cli');
+            const transport = getResolvedEngineTransport('github-copilot', workspacePath, 'gemini-3-pro-preview');
+            expect(transport.protocol).toBe('cli');
+            expect(transport.executable).toBe('copilot');
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
+    it('explain_available_agents shows capabilities from sub-objects when protocol is explicit (#499)', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'github-copilot': {
+                    protocol: 'cli',
+                    available_models: ['gemini-3-pro-preview'],
+                    automation: { mode: 'auto-approve', continuation: 'autopilot' },
+                    cli: {
+                        path: 'copilot',
+                        cli_flags: '-m',
+                        capabilities: {
+                            automation_modes: ['auto-approve'],
+                            automation_continuations: ['single', 'autopilot']
+                        }
+                    }
+                }
+            }
+        });
+        try {
+            const explanation = explainEngineResolution('github-copilot', workspacePath, 'gemini-3-pro-preview');
+            expect(explanation.selectedProtocol).toBe('cli');
+            expect(explanation.error).toBeUndefined();
+            // CLI candidate should show the sub-object capabilities, not empty arrays
+            const cliCandidate = explanation.candidates?.find((c: any) => c.protocol === 'cli');
+            expect(cliCandidate).toBeDefined();
+            expect(cliCandidate?.capabilities?.automation_continuations).toContain('autopilot');
+            expect(cliCandidate?.supportsRequestedContinuation).toBe(true);
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
+    it('resolves explicit protocol=acp with acp sub-object capabilities (#499)', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'github-copilot': {
+                    protocol: 'acp',
+                    available_models: ['gpt-5.4'],
+                    automation: { mode: 'auto-approve', continuation: 'autopilot' },
+                    acp: {
+                        path: 'copilot',
+                        args: ['--acp'],
+                        capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
+                    }
+                }
+            }
+        });
+        try {
+            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('acp');
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
+    it('still works with flat config (no sub-objects) for backward compatibility (#499)', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'github-copilot': {
+                    protocol: 'cli',
+                    path: 'copilot',
+                    cli_flags: '-m',
+                    available_models: ['gpt-5.4'],
+                    automation: { mode: 'auto-approve', continuation: 'autopilot' },
+                    capabilities: {
+                        automation_modes: ['auto-approve'],
+                        automation_continuations: ['single', 'autopilot']
+                    }
+                }
+            }
+        });
+        try {
+            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('cli');
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
 });

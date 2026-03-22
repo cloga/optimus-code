@@ -11,8 +11,10 @@
 const esbuild = require('esbuild');
 const { execSync } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const production = process.argv.includes('--production');
+const pkgVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version;
 
 async function build() {
   // Build all entry points
@@ -36,6 +38,9 @@ async function build() {
     // vscode guard is enforced via metafile analysis below (not via external).
     logLevel: 'info',
     metafile: true,
+    define: {
+      'OPTIMUS_VERSION': JSON.stringify(pkgVersion),
+    },
     tsconfig: path.resolve(__dirname, '..', 'tsconfig.json'),
   });
 
