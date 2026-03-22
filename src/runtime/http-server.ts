@@ -13,6 +13,9 @@
  *   POST /api/v1/agent/runs/:id/cancel — Cancel active run
  *   GET  /api/v1/health                — Health check
  *
+ * Auto-scaling: when at capacity, spawns overflow instances on adjacent ports.
+ * Overflow instances auto-shutdown after idle timeout (default: 60s).
+ *
  * Start:
  *   node dist/http-runtime.js [--port 3100] [--workspace /path/to/project]
  *   OPTIMUS_WORKSPACE_ROOT=/path node dist/http-runtime.js
@@ -21,6 +24,7 @@
  * Logs/traces are written to stderr, never mixed into response body.
  */
 import http from 'http';
+import { spawn, ChildProcess } from 'child_process';
 import {
     normalizeRuntimeRequest,
     runSync,
@@ -38,10 +42,19 @@ declare const OPTIMUS_VERSION: string;
 
 // ─── Config ───
 
-function parseArgs(): { port: number; workspacePath: string } {
+interface ParsedArgs {
+    port: number;
+    workspacePath: string;
+    isOverflow: boolean;
+    idleTimeoutMs: number;
+}
+
+function parseArgs(): ParsedArgs {
     const args = process.argv.slice(2);
     let port = parseInt(process.env.OPTIMUS_RUNTIME_PORT || '3100', 10);
     let workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    let isOverflow = false;
+    let idleTimeoutMs = 60_000;
 
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--port' && args[i + 1]) {
@@ -50,10 +63,15 @@ function parseArgs(): { port: number; workspacePath: string } {
         } else if (args[i] === '--workspace' && args[i + 1]) {
             workspacePath = path.resolve(args[i + 1]);
             i++;
+        } else if (args[i] === '--overflow') {
+            isOverflow = true;
+        } else if (args[i] === '--idle-timeout' && args[i + 1]) {
+            idleTimeoutMs = parseInt(args[i + 1], 10) * 1000;
+            i++;
         }
     }
 
-    return { port, workspacePath };
+    return { port, workspacePath, isOverflow, idleTimeoutMs };
 }
 
 // ─── HTTP Helpers ───
@@ -215,7 +233,7 @@ function matchRoute(method: string, url: string, pattern: string, expectedMethod
 
 // ─── Request handler ───
 
-async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse, defaultWorkspacePath: string): Promise<void> {
+async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse, defaultWorkspacePath: string, basePort: number): Promise<void> {
     const url = (req.url || '/').split('?')[0];
     const method = (req.method || 'GET').toUpperCase();
 
@@ -241,48 +259,72 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             workspace: defaultWorkspacePath,
             uptime_ms: Math.round(process.uptime() * 1000),
             active_runs: activeRuns,
-            max_concurrent: MAX_CONCURRENT_RUNS
+            max_concurrent: MAX_CONCURRENT_RUNS,
+            overflow: {
+                instances: overflowPool.map(inst => ({
+                    port: inst.port,
+                    active_runs: inst.activeRuns,
+                    ready: inst.ready,
+                    idle_ms: Date.now() - inst.lastActivity
+                })),
+                max_instances: MAX_OVERFLOW_INSTANCES,
+                total_capacity: MAX_CONCURRENT_RUNS * (1 + MAX_OVERFLOW_INSTANCES)
+            }
         });
         return;
     }
 
     // POST /api/v1/agent/run — synchronous run
     if ((params = matchRoute(method, url, '/api/v1/agent/run', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
         if (activeRuns >= MAX_CONCURRENT_RUNS) {
+            // Try overflow auto-scaling before rejecting
+            const rawBody = JSON.stringify(body);
+            if (await tryOverflow(basePort, defaultWorkspacePath, req, res, rawBody)) {
+                return; // proxied to overflow instance
+            }
+            const totalCapacity = MAX_CONCURRENT_RUNS * (1 + overflowPool.length);
             sendError(res, 429, 'concurrency_limit',
-                `Server is at capacity (${activeRuns}/${MAX_CONCURRENT_RUNS} concurrent runs). Try again shortly.`,
-                `Wait for an active run to complete, or increase the limit with OPTIMUS_MAX_CONCURRENT env var (default: 5). Alternatively, use POST /api/v1/agent/start for async execution.`
+                `All instances at capacity (${activeRuns + overflowPool.reduce((s, i) => s + i.activeRuns, 0)}/${totalCapacity} total concurrent runs across ${1 + overflowPool.length} instances).`,
+                `All ${1 + overflowPool.length} instances (max overflow: ${MAX_OVERFLOW_INSTANCES}) are full. Wait for a run to complete, or increase limits with OPTIMUS_MAX_CONCURRENT (per-instance) and OPTIMUS_MAX_OVERFLOW (overflow instances).`
             );
             return;
         }
-        const body = parseJsonBody(await readBody(req));
         if (!body.workspace_path) body.workspace_path = defaultWorkspacePath;
         const request = normalizeRuntimeRequest(body);
         console.error(`[HTTP] POST /agent/run role=${request.role} engine=${request.role_engine || 'default'} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
         activeRuns++;
+        lastActivity = Date.now();
         try {
             const envelope = await runSync(request);
             sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
         } finally {
             activeRuns--;
+            lastActivity = Date.now();
         }
         return;
     }
 
     // POST /api/v1/agent/start — async start
     if ((params = matchRoute(method, url, '/api/v1/agent/start', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
         if (activeRuns >= MAX_CONCURRENT_RUNS) {
+            const rawBody = JSON.stringify(body);
+            if (await tryOverflow(basePort, defaultWorkspacePath, req, res, rawBody)) {
+                return;
+            }
+            const totalCapacity = MAX_CONCURRENT_RUNS * (1 + overflowPool.length);
             sendError(res, 429, 'concurrency_limit',
-                `Server is at capacity (${activeRuns}/${MAX_CONCURRENT_RUNS} concurrent runs). Try again shortly.`,
-                `Wait for an active run to complete, or increase the limit with OPTIMUS_MAX_CONCURRENT env var (default: 5).`
+                `All instances at capacity (${activeRuns + overflowPool.reduce((s, i) => s + i.activeRuns, 0)}/${totalCapacity} total concurrent runs).`,
+                `All instances are full. Wait for a run to complete, or increase limits with OPTIMUS_MAX_CONCURRENT and OPTIMUS_MAX_OVERFLOW.`
             );
             return;
         }
-        const body = parseJsonBody(await readBody(req));
         if (!body.workspace_path) body.workspace_path = defaultWorkspacePath;
         const request = normalizeRuntimeRequest(body);
         console.error(`[HTTP] POST /agent/start role=${request.role} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
         activeRuns++;
+        lastActivity = Date.now();
         const envelope = startRun(request);
         // Track when async run completes to release the slot
         const runId = envelope.run_id;
@@ -293,10 +335,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
                     const terminal = ['completed', 'failed', 'cancelled', 'verified', 'partial', 'degraded'];
                     if (terminal.includes(status.status)) {
                         activeRuns--;
+                        lastActivity = Date.now();
                         clearInterval(checkCompletion);
                     }
                 } catch {
                     activeRuns--;
+                    lastActivity = Date.now();
                     clearInterval(checkCompletion);
                 }
             }, 5000);
@@ -346,13 +390,149 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     );
 }
 
+// ─── Overflow Auto-Scaling Pool ───
+
+interface OverflowInstance {
+    port: number;
+    process: ChildProcess;
+    activeRuns: number;
+    lastActivity: number;
+    ready: boolean;
+}
+
+const MAX_OVERFLOW_INSTANCES = parseInt(process.env.OPTIMUS_MAX_OVERFLOW || '3', 10);
+const OVERFLOW_IDLE_TIMEOUT_S = parseInt(process.env.OPTIMUS_OVERFLOW_IDLE_TIMEOUT || '60', 10);
+const overflowPool: OverflowInstance[] = [];
+
+function findAvailableOverflow(): OverflowInstance | undefined {
+    return overflowPool.find(inst => inst.ready && inst.activeRuns < MAX_CONCURRENT_RUNS);
+}
+
+function spawnOverflowInstance(basePort: number, workspacePath: string): OverflowInstance | null {
+    if (overflowPool.length >= MAX_OVERFLOW_INSTANCES) {
+        return null;
+    }
+
+    // Find next available port
+    const usedPorts = new Set([basePort, ...overflowPool.map(i => i.port)]);
+    let overflowPort = basePort + 1;
+    while (usedPorts.has(overflowPort)) overflowPort++;
+
+    const scriptPath = process.argv[1]; // path to http-runtime.js
+    const child = spawn(process.execPath, [
+        scriptPath,
+        '--port', String(overflowPort),
+        '--workspace', workspacePath,
+        '--overflow',
+        '--idle-timeout', String(OVERFLOW_IDLE_TIMEOUT_S)
+    ], {
+        stdio: ['ignore', 'ignore', 'pipe'], // capture stderr for logs
+        env: { ...process.env }
+    });
+
+    const instance: OverflowInstance = {
+        port: overflowPort,
+        process: child,
+        activeRuns: 0,
+        lastActivity: Date.now(),
+        ready: false
+    };
+
+    // Detect when overflow is ready
+    child.stderr?.on('data', (data: Buffer) => {
+        const line = data.toString();
+        if (line.includes('Optimus Agent Runtime')) {
+            instance.ready = true;
+        }
+        // Forward logs with prefix
+        process.stderr.write(`[overflow:${overflowPort}] ${line}`);
+    });
+
+    child.on('exit', (code) => {
+        const idx = overflowPool.indexOf(instance);
+        if (idx >= 0) overflowPool.splice(idx, 1);
+        console.error(`[Autoscale] Overflow instance :${overflowPort} exited (code=${code}). Pool: ${overflowPool.length} instances`);
+    });
+
+    overflowPool.push(instance);
+    console.error(`[Autoscale] 🚀 Spawned overflow instance :${overflowPort} (pool: ${overflowPool.length}/${MAX_OVERFLOW_INSTANCES})`);
+    return instance;
+}
+
+/**
+ * Proxy an HTTP request to an overflow instance.
+ */
+function proxyToOverflow(instance: OverflowInstance, req: http.IncomingMessage, res: http.ServerResponse, body: string): void {
+    instance.activeRuns++;
+    instance.lastActivity = Date.now();
+
+    const proxyReq = http.request({
+        hostname: '127.0.0.1',
+        port: instance.port,
+        path: req.url,
+        method: req.method,
+        headers: { ...req.headers, host: `127.0.0.1:${instance.port}` },
+        timeout: 0 // no timeout for long-running agent tasks
+    }, (proxyRes) => {
+        const chunks: Buffer[] = [];
+        proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+        proxyRes.on('end', () => {
+            instance.activeRuns--;
+            instance.lastActivity = Date.now();
+            res.writeHead(proxyRes.statusCode || 200, {
+                ...proxyRes.headers,
+                'X-Optimus-Instance': `overflow:${instance.port}`
+            });
+            res.end(Buffer.concat(chunks));
+        });
+    });
+
+    proxyReq.on('error', (err) => {
+        instance.activeRuns--;
+        sendError(res, 502, 'overflow_proxy_error',
+            `Overflow instance :${instance.port} is unreachable: ${err.message}`,
+            'The overflow instance may have crashed. Retry the request — a new instance will be spawned if needed.'
+        );
+    });
+
+    proxyReq.write(body);
+    proxyReq.end();
+}
+
+/**
+ * Try to handle overflow: find or spawn an overflow instance and proxy to it.
+ * Returns true if proxied, false if no capacity.
+ */
+async function tryOverflow(basePort: number, workspacePath: string, req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<boolean> {
+    // Try existing overflow instances first
+    let instance: OverflowInstance | null | undefined = findAvailableOverflow();
+    if (!instance) {
+        // Spawn a new one
+        instance = spawnOverflowInstance(basePort, workspacePath);
+        if (!instance) {
+            return false; // max overflow reached
+        }
+        // Wait for it to become ready (up to 5s)
+        for (let i = 0; i < 50 && !instance.ready; i++) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        if (!instance.ready) {
+            return false;
+        }
+    }
+
+    console.error(`[Autoscale] ➡️  Routing to overflow :${instance.port} (active: ${instance.activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
+    proxyToOverflow(instance, req, res, body);
+    return true;
+}
+
 // ─── Server ───
 
 const MAX_CONCURRENT_RUNS = parseInt(process.env.OPTIMUS_MAX_CONCURRENT || '5', 10);
 let activeRuns = 0;
 
 function startServer() {
-    const { port, workspacePath } = parseArgs();
+    const { port, workspacePath, isOverflow, idleTimeoutMs } = parseArgs();
 
     // Load .env
     if (process.env.DOTENV_PATH) {
@@ -366,7 +546,7 @@ function startServer() {
 
     const server = http.createServer(async (req, res) => {
         try {
-            await handleRequest(req, res, workspacePath);
+            await handleRequest(req, res, workspacePath, port);
         } catch (err: any) {
             if (err instanceof RuntimeError) {
                 sendError(res, err.httpStatus, err.code, err.message, err.fix);
@@ -382,15 +562,19 @@ function startServer() {
 
     // Agent tasks are long-running (minutes to tens of minutes).
     // Disable Node.js default timeouts that would kill connections prematurely.
-    server.timeout = 0;           // socket inactivity (default was 0 in recent Node)
-    server.requestTimeout = 0;    // total request lifetime (default 300s in Node 18+)
-    server.keepAliveTimeout = 620_000; // slightly over 10 min, for keep-alive between requests
+    server.timeout = 0;
+    server.requestTimeout = 0;
+    server.keepAliveTimeout = 620_000;
 
     server.listen(port, () => {
-        console.error(`\n🚀 Optimus Agent Runtime — HTTP Server`);
+        const label = isOverflow ? '(overflow)' : '(primary)';
+        console.error(`\n🚀 Optimus Agent Runtime — HTTP Server ${label}`);
         console.error(`   Port:      ${port}`);
         console.error(`   Workspace: ${workspacePath}`);
         console.error(`   Max concurrent: ${MAX_CONCURRENT_RUNS}`);
+        if (!isOverflow) {
+            console.error(`   Max overflow:   ${MAX_OVERFLOW_INSTANCES} (total capacity: ${MAX_CONCURRENT_RUNS * (1 + MAX_OVERFLOW_INSTANCES)})`);
+        }
         console.error(`   Endpoints:`);
         console.error(`     POST /api/v1/agent/run             — Sync run`);
         console.error(`     POST /api/v1/agent/start           — Async start`);
@@ -400,8 +584,30 @@ function startServer() {
         console.error(`     GET  /api/v1/health                — Health\n`);
     });
 
-    process.on('SIGTERM', () => { server.close(); process.exit(0); });
-    process.on('SIGINT', () => { server.close(); process.exit(0); });
+    // Overflow instances auto-shutdown when idle
+    if (isOverflow) {
+        const idleCheck = setInterval(() => {
+            if (activeRuns === 0 && (Date.now() - lastActivity) > idleTimeoutMs) {
+                console.error(`[Overflow] Idle for ${Math.round(idleTimeoutMs / 1000)}s with no active runs. Shutting down.`);
+                clearInterval(idleCheck);
+                server.close(() => process.exit(0));
+            }
+        }, 5000);
+    }
+
+    process.on('SIGTERM', () => {
+        // Gracefully shutdown overflow instances
+        overflowPool.forEach(inst => inst.process.kill('SIGTERM'));
+        server.close();
+        process.exit(0);
+    });
+    process.on('SIGINT', () => {
+        overflowPool.forEach(inst => inst.process.kill('SIGTERM'));
+        server.close();
+        process.exit(0);
+    });
 }
+
+let lastActivity = Date.now();
 
 startServer();

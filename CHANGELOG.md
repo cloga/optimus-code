@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.16.9] - 2026-03-22
+
+### Features
+- **HTTP runtime auto-scaling** — When the primary instance reaches max concurrent runs, overflow instances are automatically spawned on adjacent ports. Overflow instances auto-shutdown after idle timeout (default: 60s). Total capacity = `MAX_CONCURRENT * (1 + MAX_OVERFLOW)` = 20 by default.
+  - `OPTIMUS_MAX_OVERFLOW` env var controls max overflow instances (default: 3)
+  - `OPTIMUS_OVERFLOW_IDLE_TIMEOUT` env var controls idle shutdown in seconds (default: 60)
+  - Primary instance acts as reverse proxy, routing overflow requests transparently
+  - `/api/v1/health` reports all instances with per-instance `active_runs` and `idle_ms`
+  - `X-Optimus-Instance` response header identifies which instance handled the request
+
 ## [2.16.8] - 2026-03-22
 
 ### Breaking Changes
