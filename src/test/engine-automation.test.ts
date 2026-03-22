@@ -36,8 +36,8 @@ function createTempWorkspace(configOverride?: object): string {
                 automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 5 },
                 acp: {
                     path: 'copilot',
-                    args: ['--acp', '--stdio'],
-                    capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single'] }
+                    args: ['--acp'],
+                    capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
                 },
                 cli: {
                     path: 'copilot',
@@ -146,31 +146,58 @@ describe('Engine automation integration', () => {
         }
     });
 
-    it('keeps Copilot autopilot on CLI even when ACP is configured as the preferred protocol', () => {
+    it('selects Copilot ACP for autopilot when ACP declares autopilot capability', () => {
         const workspacePath = createTempWorkspace();
         try {
-            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('cli');
-            expect(resolveCliAdapterKind('github-copilot', workspacePath)).toBe('github-copilot');
+            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('acp');
         } finally {
             cleanup(workspacePath);
         }
     });
 
-    it('explains why Copilot auto protocol falls back from preferred ACP to CLI', () => {
+    it('explains why Copilot auto protocol selects ACP when ACP supports autopilot', () => {
         const workspacePath = createTempWorkspace();
         try {
             const explanation = explainEngineResolution('github-copilot', workspacePath);
             expect(explanation.configuredProtocol).toBe('auto');
-            expect(explanation.selectedProtocol).toBe('cli');
-            expect(explanation.selectionReason).toMatch(/preferred protocol 'acp'/i);
-            expect(explanation.selectionReason).toMatch(/autopilot/i);
+            expect(explanation.selectedProtocol).toBe('acp');
 
             const acpCandidate = explanation.candidates.find(candidate => candidate.protocol === 'acp');
             const cliCandidate = explanation.candidates.find(candidate => candidate.protocol === 'cli');
 
-            expect(acpCandidate?.supportsRequestedPolicy).toBe(false);
-            expect(acpCandidate?.reason).toMatch(/does not support automation\.continuation 'autopilot'/i);
+            expect(acpCandidate?.supportsRequestedPolicy).toBe(true);
             expect(cliCandidate?.supportsRequestedPolicy).toBe(true);
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
+    it('falls back to CLI when ACP lacks autopilot in its capabilities', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'github-copilot': {
+                    protocol: 'auto',
+                    preferred_protocol: 'acp',
+                    available_models: ['gpt-5.4'],
+                    automation: { mode: 'auto-approve', continuation: 'autopilot' },
+                    acp: {
+                        path: 'copilot',
+                        args: ['--acp'],
+                        capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single'] }
+                    },
+                    cli: {
+                        path: 'copilot',
+                        cli_flags: '-m',
+                        capabilities: {
+                            automation_modes: ['interactive', 'plan', 'accept-edits', 'deny-unapproved', 'auto-approve'],
+                            automation_continuations: ['single', 'autopilot']
+                        }
+                    }
+                }
+            }
+        });
+        try {
+            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('cli');
         } finally {
             cleanup(workspacePath);
         }

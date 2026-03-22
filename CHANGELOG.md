@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.15.1] - 2026-03-22
+
+### Features
+- **Copilot CLI ACP Warm Pool** — GitHub Copilot now runs via ACP protocol (`copilot --acp`) with persistent process pooling, matching the warm start optimization previously available only for Claude ACP.
+  - **Before**: Every delegation spawned a fresh `copilot -p "prompt"` process (~4s cold start: Node.js bootstrap + MCP server init + tool registration)
+  - **After**: A persistent `copilot --acp` process stays alive in the pool; subsequent tasks skip all initialization overhead
+  - Verified: `copilot --acp` implements full ACP JSON-RPC protocol (initialize, session/new, session/prompt, session/update streaming, session/request_permission auto-approval)
+  - Session context preserved across multi-turn interactions within the same warm process
+
+### Changes
+- **`available-agents.json`** — Copilot ACP capabilities updated to declare `autopilot` support in `automation_continuations`. ACP protocol inherently supports continuation (agent runs to completion within `session/prompt`), so `autopilot` is a natural fit.
+- **Protocol resolution** now correctly selects ACP (preferred) for Copilot instead of falling back to CLI. Previous behavior was caused by ACP not declaring `autopilot` capability while the engine automation requested it.
+- Removed redundant `--stdio` flag from Copilot ACP args (Copilot `--acp` defaults to stdio transport).
+
 ## [2.15.0] - 2026-03-22
 
 ### Features
