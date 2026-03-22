@@ -32,27 +32,7 @@ import { resolveOptimusPath, ensureWorktreeStateDirs } from '../utils/worktree';
 import { AcpProcessPool } from '../utils/acpProcessPool';
 import { listWorktrees, createWorktree, removeWorktree, ensureWorktreeForBranch } from '../utils/worktreeManager';
 import {
-  AgentRuntimeRequest,
-  AgentRuntimeRecord,
-  buildAgentRuntimeEnvelope,
-  buildAgentRuntimeTaskDescription,
-  getAgentRuntimeOutputPath,
-  loadAgentRuntimeRecord,
-  saveAgentRuntimeRecord,
-  updateAgentRuntimeRecord
-} from "../utils/agentRuntime";
-import {
-  normalizeRuntimeRequest as normalizeRequest,
-  createRun as createAgentRuntimeRun,
-  getRunStatus as buildAgentRuntimeResponse,
-  runSync as runAgentSync,
-  startRun as startAgentRun,
-  resumeRun as resumeAgentRun,
-  cancelRun as cancelAgentRuntimeRun,
-  RuntimeError,
   resolveHeartbeatTimeout,
-  DEFAULT_AGENT_RUNTIME_TIMEOUT_MS,
-  MAX_HEARTBEAT_MS
 } from "../runtime/agentRuntimeService";
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
@@ -92,30 +72,10 @@ function reloadEnv() {
 }
 reloadEnv();
 
-// Agent Runtime constants and helpers are now imported from runtime/agentRuntimeService.ts
+// resolveHeartbeatTimeout is imported from agentRuntimeService for delegate_task_async
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// resolveHeartbeatTimeout is now imported from agentRuntimeService
-// buildRuntimeResumeContext is now in agentRuntimeService
-// normalizeRuntimeRequest is now imported as normalizeRequest
-// createRuntimeRecord is now in agentRuntimeService
-// buildAgentRuntimeResponse is now imported as getRunStatus
-// createAgentRuntimeRun is now imported as createRun
-
-// ─── Legacy wrappers for MCP tool handlers (thin delegation to service) ───
-
-function normalizeRuntimeRequest(args: any): AgentRuntimeRequest {
-  try {
-    return normalizeRequest(args);
-  } catch (err: any) {
-    if (err instanceof RuntimeError) {
-      throw new McpError(ErrorCode.InvalidParams, err.message);
-    }
-    throw err;
-  }
 }
 
 // 1. Initialize the MCP Server (The Marionette Controller)
@@ -317,100 +277,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           },
           required: ["workspace_path"]
-        }
-      },
-      {
-        name: "run_agent",
-        description: "Run an application-facing Agent Runtime request synchronously and return a normalized result envelope.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            role: { type: "string", description: "Agent role to execute." },
-            skill: { type: "string", description: "Optional skill/playbook name to equip for this run." },
-            input: { description: "Application payload passed to the agent runtime." },
-            instructions: { type: "string", description: "Optional domain-specific instructions for this run." },
-            output_schema: { description: "Optional JSON schema that the result should match." },
-            runtime_policy: {
-              type: "object",
-              properties: {
-                timeout_ms: { type: "number", description: "Maximum runtime before the run is cancelled. Defaults to 120000." },
-                retries: { type: "number", description: "Number of additional attempts after the initial attempt. Defaults to 0." },
-                fallback_engines: { type: "array", items: { type: "string" }, description: "Ordered fallback engines to try after the primary engine." }
-              }
-            },
-            role_description: { type: "string", description: "Optional role description for dynamic/runtime-created roles." },
-            role_engine: { type: "string", description: "Optional primary engine to use." },
-            role_model: { type: "string", description: "Optional model to use." },
-            agent_id: { type: "string", description: "Optional existing T1 agent instance to resume." },
-            context_files: { type: "array", items: { type: "string" }, description: "Optional workspace-relative files that should be included as context." },
-            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
-          },
-          required: ["role", "input", "workspace_path"]
-        }
-      },
-      {
-        name: "start_agent_run",
-        description: "Start an application-facing Agent Runtime request asynchronously and return the run envelope immediately.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            role: { type: "string", description: "Agent role to execute." },
-            skill: { type: "string", description: "Optional skill/playbook name to equip for this run." },
-            input: { description: "Application payload passed to the agent runtime." },
-            instructions: { type: "string", description: "Optional domain-specific instructions for this run." },
-            output_schema: { description: "Optional JSON schema that the result should match." },
-            runtime_policy: {
-              type: "object",
-              properties: {
-                timeout_ms: { type: "number", description: "Heartbeat timeout for the async run." }
-              }
-            },
-            role_description: { type: "string", description: "Optional role description for dynamic/runtime-created roles." },
-            role_engine: { type: "string", description: "Optional primary engine to use." },
-            role_model: { type: "string", description: "Optional model to use." },
-            agent_id: { type: "string", description: "Optional existing T1 agent instance to resume." },
-            context_files: { type: "array", items: { type: "string" }, description: "Optional workspace-relative files that should be included as context." },
-            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
-          },
-          required: ["role", "input", "workspace_path"]
-        }
-      },
-      {
-        name: "get_agent_run_status",
-        description: "Return the normalized status/result envelope for an Agent Runtime run.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            run_id: { type: "string", description: "The Agent Runtime run ID returned by run_agent/start_agent_run." },
-            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
-          },
-          required: ["run_id", "workspace_path"]
-        }
-      },
-      {
-        name: "resume_agent_run",
-        description: "Resume a run that is blocked on manual intervention by providing the human answer directly.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            run_id: { type: "string", description: "The Agent Runtime run ID." },
-            human_answer: { type: "string", description: "The human answer that should unblock the run." },
-            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
-          },
-          required: ["run_id", "human_answer", "workspace_path"]
-        }
-      },
-      {
-        name: "cancel_agent_run",
-        description: "Cancel an active Agent Runtime run and mark it with a normalized cancelled status.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            run_id: { type: "string", description: "The Agent Runtime run ID." },
-            reason: { type: "string", description: "Optional cancellation reason." },
-            workspace_path: { type: "string", description: "Absolute path to the workspace root." }
-          },
-          required: ["run_id", "workspace_path"]
         }
       },
       {
@@ -797,74 +663,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // 3. Handle Tool Execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
-  if (request.params.name === "run_agent") {
-    const runtimeRequest = normalizeRuntimeRequest(request.params.arguments as any);
-    try {
-      const envelope = await runAgentSync(runtimeRequest);
-      return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
-    } catch (err: any) {
-      if (err instanceof RuntimeError) {
-        throw new McpError(ErrorCode.InvalidParams, err.message);
-      }
-      throw err;
-    }
-  }
-
-  if (request.params.name === "start_agent_run") {
-    const runtimeRequest = normalizeRuntimeRequest(request.params.arguments as any);
-    try {
-      const envelope = startAgentRun(runtimeRequest);
-      return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
-    } catch (err: any) {
-      if (err instanceof RuntimeError) {
-        throw new McpError(ErrorCode.InvalidParams, err.message);
-      }
-      throw err;
-    }
-  }
-
-  if (request.params.name === "get_agent_run_status") {
-    const { run_id, workspace_path } = request.params.arguments as any;
-    requireParams("get_agent_run_status", request.params.arguments as any, ["run_id", "workspace_path"]);
-    try {
-      const envelope = buildAgentRuntimeResponse(workspace_path, run_id);
-      return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
-    } catch (err: any) {
-      if (err instanceof RuntimeError) {
-        throw new McpError(ErrorCode.InvalidParams, err.message);
-      }
-      throw err;
-    }
-  }
-
-  if (request.params.name === "resume_agent_run") {
-    const { run_id, human_answer, workspace_path } = request.params.arguments as any;
-    requireParams("resume_agent_run", request.params.arguments as any, ["run_id", "human_answer", "workspace_path"]);
-    try {
-      const envelope = resumeAgentRun(workspace_path, run_id, human_answer);
-      return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
-    } catch (err: any) {
-      if (err instanceof RuntimeError) {
-        throw new McpError(ErrorCode.InvalidParams, err.message);
-      }
-      throw err;
-    }
-  }
-
-  if (request.params.name === "cancel_agent_run") {
-    const { run_id, reason, workspace_path } = request.params.arguments as any;
-    requireParams("cancel_agent_run", request.params.arguments as any, ["run_id", "workspace_path"]);
-    try {
-      const envelope = await cancelAgentRuntimeRun(workspace_path, run_id, reason);
-      return { content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }] };
-    } catch (err: any) {
-      if (err instanceof RuntimeError) {
-        throw new McpError(ErrorCode.InvalidParams, err.message);
-      }
-      throw err;
-    }
-
-  } else if (request.params.name === "create_worktree") {
+  if (request.params.name === "create_worktree") {
     const { branch, base_branch, workspace_path } = request.params.arguments as any;
     requireParams("create_worktree", request.params.arguments as any, ["branch", "workspace_path"]);
     try {
