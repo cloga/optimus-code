@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.20] - 2026-03-25
+
+### Bug Fixes
+- **Azure DevOps `az-cli` auth support** — `AdoProvider` now respects `ado.auth` from `.optimus/config/vcs.json`. When configured as `\"az-cli\"`, Optimus falls back to `az account get-access-token` if no PAT environment variable is present.
+- **ADO authorization header handling** — PAT-based auth continues to use `Basic`, while Azure CLI access tokens now use the correct `Bearer` authorization header.
+- **ADO auth regression coverage** — Added tests to verify `az-cli` fallback works and that PAT environment variables still take precedence when present.
+
 ## [2.16.19] - 2026-03-25
 
 ### Improvements

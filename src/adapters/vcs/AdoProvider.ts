@@ -1,11 +1,12 @@
 import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment, WorkItemUpdate } from './IVcsProvider';
 import { marked } from 'marked';
+import * as childProcess from 'child_process';
 
 /**
  * Azure DevOps VCS Provider Implementation
  *
  * Implements the unified VCS interface using Azure DevOps REST API.
- * Uses Personal Access Tokens (PATs) for authentication.
+ * Uses Personal Access Tokens (PATs) or Azure CLI access tokens for authentication.
  */
 function adoHttpRecoveryHint(status: number): string {
     const hints: Record<number, string> = {
@@ -26,6 +27,8 @@ function trimTrailingSlash(value: string): string {
 }
 
 export class AdoProvider implements IVcsProvider {
+    private readonly azCliTokenProvider: () => string | undefined;
+    private authMode?: string;
     private organization: string;
     private project: string;
     private webBaseUrl: string;
@@ -44,11 +47,52 @@ export class AdoProvider implements IVcsProvider {
         iteration_path?: string;
         assigned_to?: string;
         auto_tags?: string[];
-    }, webBaseUrl?: string) {
+    }, webBaseUrl?: string, authMode?: string, azCliTokenProvider?: () => string | undefined) {
         this.organization = organization;
         this.project = project;
         this.defaults = defaults;
         this.webBaseUrl = trimTrailingSlash(webBaseUrl || `https://${organization}.visualstudio.com`);
+        this.authMode = authMode;
+        this.azCliTokenProvider = azCliTokenProvider || (() => {
+            return childProcess.execSync(
+                'az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv',
+                {
+                    encoding: 'utf8',
+                    stdio: ['pipe', 'pipe', 'pipe']
+                }
+            ).trim();
+        });
+    }
+
+    private getMissingTokenError(): Error {
+        return new Error('ADO authentication token not found. Set ADO_PAT or AZURE_DEVOPS_PAT, or configure ado.auth = "az-cli" and ensure `az login` has an active session.');
+    }
+
+    private getAuthCredential(): { authorization: string } | undefined {
+        const envToken = process.env.ADO_PAT || process.env.AZURE_DEVOPS_PAT;
+        if (envToken) {
+            return {
+                authorization: `Basic ${Buffer.from(`:${envToken}`).toString('base64')}`
+            };
+        }
+
+        if (this.authMode === 'az-cli') {
+            try {
+                const accessToken = this.azCliTokenProvider();
+
+                if (accessToken) {
+                    return {
+                        authorization: `Bearer ${accessToken}`
+                    };
+                }
+            } catch (error: any) {
+                const message = error instanceof Error ? error.message : String(error);
+                console.error(`[AdoProvider] az-cli token acquisition failed: ${message}`);
+                return undefined;
+            }
+        }
+
+        return undefined;
     }
 
     private async resolveProjectDisplayName(): Promise<string> {
@@ -61,8 +105,8 @@ export class AdoProvider implements IVcsProvider {
             return this.projectDisplayName;
         }
 
-        const token = this.getToken();
-        if (!token) {
+        const authCredential = this.getAuthCredential();
+        if (!authCredential) {
             this.projectDisplayName = this.project;
             return this.projectDisplayName;
         }
@@ -72,7 +116,7 @@ export class AdoProvider implements IVcsProvider {
                 `https://dev.azure.com/${this.organization}/_apis/projects/${this.project}?api-version=7.0`,
                 {
                     headers: {
-                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
+                        'Authorization': authCredential.authorization,
                         'Accept': 'application/json',
                         'User-Agent': 'Optimus-Agent'
                     }
@@ -104,13 +148,13 @@ export class AdoProvider implements IVcsProvider {
     }
 
     private buildAdoAuthHeaders(contentType?: string): Record<string, string> {
-        const token = this.getToken();
-        if (!token) {
-            throw new Error('ADO PAT token not found in environment variables');
+        const authCredential = this.getAuthCredential();
+        if (!authCredential) {
+            throw this.getMissingTokenError();
         }
 
         return {
-            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
+            'Authorization': authCredential.authorization,
             ...(contentType ? { 'Content-Type': contentType } : {}),
             'Accept': 'application/json',
             'User-Agent': 'Optimus-Agent'
@@ -124,11 +168,6 @@ export class AdoProvider implements IVcsProvider {
         workItemType?: string,
         adoOptions?: AdoWorkItemOptions
     ): Promise<WorkItemResult> {
-        const token = this.getToken();
-        if (!token) {
-            throw new Error('ADO PAT token not found in environment variables');
-        }
-
         try {
             // Resolve values: call param > vcs.json default > fallback
             const resolvedType = workItemType || this.defaults?.work_item_type || 'User Story';
@@ -185,12 +224,7 @@ export class AdoProvider implements IVcsProvider {
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitems/$${resolvedType}?api-version=7.0`,
                 {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                        'Content-Type': 'application/json-patch+json',
-                        'Accept': 'application/json',
-                        'User-Agent': 'Optimus-Agent'
-                    },
+                    headers: this.buildAdoAuthHeaders('application/json-patch+json'),
                     body: JSON.stringify(patchDocument)
                 }
             );
@@ -218,21 +252,12 @@ export class AdoProvider implements IVcsProvider {
         head: string,
         base: string
     ): Promise<PullRequestResult> {
-        const token = this.getToken();
-        if (!token) {
-            throw new Error('ADO PAT token not found in environment variables');
-        }
-
         try {
             // First, we need to get the repository details
             const repoResponse = await fetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories?api-version=7.0`,
                 {
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                        'Accept': 'application/json',
-                        'User-Agent': 'Optimus-Agent'
-                    }
+                    headers: this.buildAdoAuthHeaders()
                 }
             );
 
@@ -260,12 +285,7 @@ export class AdoProvider implements IVcsProvider {
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests?api-version=7.0`,
                 {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'User-Agent': 'Optimus-Agent'
-                    },
+                    headers: this.buildAdoAuthHeaders('application/json'),
                     body: JSON.stringify(pullRequestData)
                 }
             );
@@ -292,21 +312,12 @@ export class AdoProvider implements IVcsProvider {
         commitTitle?: string,
         mergeMethod: 'merge' | 'squash' | 'rebase' = 'squash'
     ): Promise<MergeResult> {
-        const token = this.getToken();
-        if (!token) {
-            throw new Error('ADO PAT token not found in environment variables');
-        }
-
         try {
             // First get repository info to get the repository ID
             const repoResponse = await fetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories?api-version=7.0`,
                 {
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                        'Accept': 'application/json',
-                        'User-Agent': 'Optimus-Agent'
-                    }
+                    headers: this.buildAdoAuthHeaders()
                 }
             );
 
@@ -331,11 +342,7 @@ export class AdoProvider implements IVcsProvider {
                 const prResponse = await fetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
                     {
-                        headers: {
-                            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                            'Accept': 'application/json',
-                            'User-Agent': 'Optimus-Agent'
-                        }
+                        headers: this.buildAdoAuthHeaders()
                     }
                 );
                 if (prResponse.ok) {
@@ -365,12 +372,7 @@ export class AdoProvider implements IVcsProvider {
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
                 {
                     method: 'PATCH',
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'User-Agent': 'Optimus-Agent'
-                    },
+                    headers: this.buildAdoAuthHeaders('application/json'),
                     body: JSON.stringify(mergeData)
                 }
             );
@@ -387,11 +389,6 @@ export class AdoProvider implements IVcsProvider {
         itemId: string | number,
         comment: string
     ): Promise<CommentResult> {
-        const token = this.getToken();
-        if (!token) {
-            throw new Error('ADO PAT token not found in environment variables');
-        }
-
         const id = typeof itemId === 'string' ? parseInt(itemId) : itemId;
 
         try {
@@ -402,12 +399,7 @@ export class AdoProvider implements IVcsProvider {
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0-preview.3`,
                     {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            'User-Agent': 'Optimus-Agent'
-                        },
+                        headers: this.buildAdoAuthHeaders('application/json'),
                         body: JSON.stringify({ text: htmlComment })
                     }
                 );
@@ -427,11 +419,7 @@ export class AdoProvider implements IVcsProvider {
                 const repoResponse = await fetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories?api-version=7.0`,
                     {
-                        headers: {
-                            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                            'Accept': 'application/json',
-                            'User-Agent': 'Optimus-Agent'
-                        }
+                        headers: this.buildAdoAuthHeaders()
                     }
                 );
 
@@ -447,12 +435,7 @@ export class AdoProvider implements IVcsProvider {
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullRequests/${id}/threads?api-version=7.0`,
                     {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            'User-Agent': 'Optimus-Agent'
-                        },
+                        headers: this.buildAdoAuthHeaders('application/json'),
                         body: JSON.stringify({
                             comments: [{
                                 parentCommentId: 0,
@@ -572,7 +555,4 @@ export class AdoProvider implements IVcsProvider {
         return [];
     }
 
-    private getToken(): string | undefined {
-        return process.env.ADO_PAT || process.env.AZURE_DEVOPS_PAT;
-    }
 }

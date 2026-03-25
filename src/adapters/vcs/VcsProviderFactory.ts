@@ -82,7 +82,7 @@ export class VcsProviderFactory {
             const { organization, project, webBaseUrl } = this.getAdoInfo(config, resolvedWorkspacePath);
             const { AdoProvider } = await import('./AdoProvider.js');
             const adoDefaults = config.ado?.defaults;
-            provider = new AdoProvider(organization, project, adoDefaults, webBaseUrl);
+            provider = new AdoProvider(organization, project, adoDefaults, webBaseUrl, config.ado?.auth);
         } else {
             throw new Error(`Unsupported or undetectable VCS provider: ${providerType}`);
         }
