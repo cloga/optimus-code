@@ -175,10 +175,71 @@ function writeClientMcpConfigs(workspaceRoot) {
   }
 }
 
+function writeCopilotLaunchers(workspaceRoot) {
+  const ps1Path = path.join(workspaceRoot, 'copilot-optimus.ps1');
+  const cmdPath = path.join(workspaceRoot, 'copilot-optimus.cmd');
+  const shPath = path.join(workspaceRoot, 'copilot-optimus');
+
+  const ps1Content = `param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Args
+)
+
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$configPath = Join-Path $repoRoot '.copilot\\mcp-config.json'
+
+if (-not (Test-Path $configPath)) {
+    Write-Error "Missing Copilot MCP config: $configPath\`nRun 'optimus init' or 'optimus upgrade' first."
+    exit 1
+}
+
+Push-Location $repoRoot
+try {
+    & copilot '--additional-mcp-config' "@$configPath" @Args
+    exit $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+`;
+
+  const cmdContent = `@echo off
+setlocal
+powershell -ExecutionPolicy Bypass -File "%~dp0copilot-optimus.ps1" %*
+exit /b %ERRORLEVEL%
+`;
+
+  const shContent = `#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CONFIG_PATH="$SCRIPT_DIR/.copilot/mcp-config.json"
+
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "Missing Copilot MCP config: $CONFIG_PATH" >&2
+  echo "Run 'optimus init' or 'optimus upgrade' first." >&2
+  exit 1
+fi
+
+cd "$SCRIPT_DIR"
+exec copilot --additional-mcp-config "@$CONFIG_PATH" "$@"
+`;
+
+  fs.writeFileSync(ps1Path, ps1Content, 'utf8');
+  fs.writeFileSync(cmdPath, cmdContent, 'utf8');
+  fs.writeFileSync(shPath, shContent, 'utf8');
+
+  try {
+    fs.chmodSync(shPath, 0o755);
+  } catch {
+    // Ignore chmod failures on platforms/filesystems that do not support it.
+  }
+}
+
 module.exports = {
   CANONICAL_CONFIG_PATH,
   createDefaultCanonicalConfig,
   loadCanonicalMcpConfig,
   renderServersForTarget,
-  writeClientMcpConfigs
+  writeClientMcpConfigs,
+  writeCopilotLaunchers
 };

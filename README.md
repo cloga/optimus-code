@@ -36,9 +36,17 @@ This creates a `.optimus/` folder with agent definitions, skills, and config in 
 - GitHub Copilot CLI: `.copilot/mcp-config.json`
 - Claude Code: `.mcp.json`
 
+For GitHub Copilot CLI, Optimus also generates launcher scripts so you do not need to remember `--additional-mcp-config`:
+
+- Windows PowerShell: `copilot-optimus.ps1`
+- Windows cmd.exe: `copilot-optimus.cmd`
+- macOS / Linux: `copilot-optimus`
+
 ### Step 2: (Optional) Configure MCP for non-VS-Code clients
 
-> **VS Code, Copilot CLI, and Claude Code users:** Skip this step. `optimus init` already generated the project-local MCP files those clients expect.
+> **VS Code and Claude Code users:** Skip this step. `optimus init` already generated the project-local MCP files those clients expect.
+>
+> **GitHub Copilot CLI users:** Start Copilot CLI through one of the generated `copilot-optimus*` launchers so the project-local `.copilot/mcp-config.json` is always loaded.
 
 For Cursor, Windsurf, Roo Cline, or other MCP clients, configure manually:
 
@@ -77,7 +85,7 @@ If you've previously initialized and want to update to the latest skills, roles,
 npx -y github:cloga/optimus-code upgrade
 ```
 
-This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory. It also regenerates `.vscode/mcp.json`, `.copilot/mcp-config.json`, and `.mcp.json` from `.optimus/config/mcp-servers.json`.
+This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory. It also regenerates `.vscode/mcp.json`, `.copilot/mcp-config.json`, `.mcp.json`, and the `copilot-optimus*` launchers from `.optimus/config/mcp-servers.json`.
 
 ### MCP configuration model
 

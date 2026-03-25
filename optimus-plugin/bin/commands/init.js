@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { writeClientMcpConfigs } = require('../lib/mcp-config');
+const { writeClientMcpConfigs, writeCopilotLaunchers } = require('../lib/mcp-config');
 
 function copyDirRecursive(src, dest) {
   if (!fs.existsSync(dest)) {
@@ -223,10 +223,12 @@ module.exports = function init() {
     }
   }
   writeClientMcpConfigs(cwd);
+  writeCopilotLaunchers(cwd);
   console.log('\n🔌 Generated MCP client configs from .optimus/config/mcp-servers.json');
   console.log('   • VS Code / GitHub Copilot: .vscode/mcp.json');
   console.log('   • GitHub Copilot CLI:       .copilot/mcp-config.json');
   console.log('   • Claude Code:              .mcp.json');
+  console.log('   • Copilot launchers:        copilot-optimus.ps1 / .cmd / (POSIX) copilot-optimus');
   console.log('   📍 MCP server:   .optimus/dist/mcp-server.js');
   console.log('   📍 HTTP runtime: .optimus/dist/http-runtime.js');
   console.log('   📍 CLI runtime:  .optimus/dist/runtime-cli.js');

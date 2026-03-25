@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.16.19] - 2026-03-25
+
+### Improvements
+- **Copilot CLI launcher generation** — `optimus init` and `optimus upgrade` now generate repo-local Copilot CLI launchers (`copilot-optimus.ps1`, `copilot-optimus.cmd`, and `copilot-optimus`) that automatically preload the project's `.copilot/mcp-config.json`.
+- **Copilot CLI documentation** — Updated the setup guide to explain that Copilot CLI should be started via the generated launcher so project-level MCP configuration is applied consistently.
+
 ## [2.16.18] - 2026-03-22
 
 ### Refactoring
