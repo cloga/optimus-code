@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.16.22] - 2026-03-26
+
+### Maintenance
+- **Removed redundant dependencies** — Cleaned up 4 unused packages from `package.json`:
+  - `lucide-react` (frontend icon library, never imported in CLI codebase)
+  - `node-fetch` (no code references; Node 18+ has native `fetch`)
+  - `@types/marked` (for marked v5; project uses v17 which ships its own types)
+  - `@types/strip-ansi` (for strip-ansi v3; project uses v7 which ships its own types)
+
 ## [2.16.21] - 2026-03-26
 
 ### Features
