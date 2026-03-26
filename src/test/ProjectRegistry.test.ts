@@ -85,6 +85,7 @@ describe('optimus go helpers', () => {
 
     expect(goModule.getProjectMcpConfigPath(projectRoot)).toBe(copilotConfig);
     expect(goModule.buildCopilotArgs(copilotConfig, ['--continue'])).toEqual([
+      '--resume',
       '--additional-mcp-config',
       `@${copilotConfig}`,
       '--continue'

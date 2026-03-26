@@ -63,7 +63,7 @@ function getProjectMcpConfigPath(projectPath) {
 }
 
 function buildCopilotArgs(configPath, passthroughArgs) {
-  const args = [];
+  const args = ['--resume'];
   if (configPath) {
     args.push('--additional-mcp-config', `@${configPath}`);
   }
