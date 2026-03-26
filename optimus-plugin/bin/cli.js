@@ -25,6 +25,13 @@ switch (command) {
     require('./commands/upgrade')();
     break;
 
+  case 'go':
+    Promise.resolve(require('./commands/go')()).catch(error => {
+      console.error(error.message);
+      process.exit(1);
+    });
+    break;
+
   case 'memory':
     require('./commands/memory')();
     break;
@@ -77,6 +84,7 @@ Optimus Swarm CLI — Universal Multi-Agent Orchestrator (MCP)
 
 Usage:
   optimus init        Bootstrap .optimus/ workspace in current directory
+  optimus go          Launch Copilot CLI for a registered Optimus project
   optimus upgrade     Upgrade skills, roles, and config from plugin source
   optimus memory      Manage user-level cross-project memory
   optimus serve       Start MCP server (stdio transport)

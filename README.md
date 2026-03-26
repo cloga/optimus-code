@@ -87,6 +87,24 @@ npx -y github:cloga/optimus-code upgrade
 
 This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory. It also regenerates `.vscode/mcp.json`, `.copilot/mcp-config.json`, `.mcp.json`, and the `copilot-optimus*` launchers from `.optimus/config/mcp-servers.json`.
 
+### Jumping between Optimus projects in Copilot CLI
+
+Optimus also keeps a global registry of initialized workspaces at `~/.optimus/projects.json`. Every `optimus init` and `optimus upgrade` automatically registers the current project there.
+
+Use `optimus go` to launch GitHub Copilot CLI for any registered Optimus workspace without manually `cd`-ing first:
+
+```bash
+optimus go
+optimus go FlightReview
+optimus go FR --continue
+optimus go --scan
+```
+
+- `optimus go` shows an interactive project picker
+- `optimus go <project-or-alias>` jumps directly into that project
+- extra Copilot CLI flags are passed through unchanged
+- `optimus go --scan` scans your home directory and its direct child folders for `.optimus/` workspaces and registers them
+
 ### MCP configuration model
 
 Optimus now treats `.optimus/config/mcp-servers.json` as the single source of truth for workspace MCP server definitions. Edit that file when you want to customize the local Optimus server entry, then run `optimus upgrade` (or regenerate via init in a fresh workspace) to project the same server into each supported client config.

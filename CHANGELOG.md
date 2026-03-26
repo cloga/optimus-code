@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.16.21] - 2026-03-26
+
+### Features
+- **`optimus go` cross-project Copilot launcher** — Added a new `optimus go` command that launches GitHub Copilot CLI for any registered Optimus workspace without requiring a manual `cd`.
+- **Global project registry** — Optimus now stores registered workspaces in `~/.optimus/projects.json`, supports alias-aware project lookup, and can scan the home directory plus its direct child folders for `.optimus/` workspaces.
+- **Automatic workspace registration** — `optimus init` and `optimus upgrade` now auto-register the current project in the global registry so it is immediately available to `optimus go`.
+- **Regression coverage for project registry** — Added tests covering project registration, scan behavior, and Copilot launcher argument construction.
+
 ## [2.16.20] - 2026-03-25
 
 ### Bug Fixes

@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { writeClientMcpConfigs, writeCopilotLaunchers } = require('../lib/mcp-config');
+const { getProjectsRegistryPath, registerProject } = require('../lib/project-registry');
 
 function deepMergePreserveUser(template, user) {
   const result = { ...template };
@@ -243,11 +244,13 @@ module.exports = function upgrade() {
   }
   writeClientMcpConfigs(cwd);
   writeCopilotLaunchers(cwd);
+  const registeredProject = registerProject(cwd);
   console.log('\n🔌 Regenerated MCP client configs from .optimus/config/mcp-servers.json');
   console.log('   • VS Code / GitHub Copilot: .vscode/mcp.json');
   console.log('   • GitHub Copilot CLI:       .copilot/mcp-config.json');
   console.log('   • Claude Code:              .mcp.json');
   console.log('   • Copilot launchers:        copilot-optimus.ps1 / .cmd / (POSIX) copilot-optimus');
+  console.log(`   • Project registry:         ${getProjectsRegistryPath()} (${registeredProject.name})`);
   console.log('   📍 MCP server:   .optimus/dist/mcp-server.js');
   console.log('   📍 HTTP runtime: .optimus/dist/http-runtime.js');
   console.log('   📍 CLI runtime:  .optimus/dist/runtime-cli.js');
