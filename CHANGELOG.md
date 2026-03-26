@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.16.23] - 2026-03-26
+
+### Features
+- **Lightweight CLI installer** — New `scripts/install-cli.ps1` and `scripts/install-cli-remote.ps1` install only the `optimus go` launcher (~25KB) to `~/.optimus/cli/`, auto-adding to user PATH. No roles, agents, skills, or dist bundles needed.
+  - One-line remote install: `irm https://raw.githubusercontent.com/cloga/optimus-code/master/scripts/install-cli-remote.ps1 | iex`
+  - Local install: `.\scripts\install-cli.ps1`
+  - Uninstall: `.\scripts\install-cli.ps1 -Uninstall`
+- **`optimus go --resume` by default** — `optimus go` now automatically passes `--resume` to Copilot CLI, enabling session resumption without manual flags.
+
 ## [2.16.22] - 2026-03-26
 
 ### Maintenance
