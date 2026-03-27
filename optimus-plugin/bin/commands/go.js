@@ -9,14 +9,22 @@ const {
   findProjectsByIdentifier,
   getProjectsRegistryPath,
   loadProjectRegistry,
+  registerProject,
+  saveProjectRegistry,
   scanForProjects,
   sortProjects,
   touchProject
 } = require('../lib/project-registry');
+const {
+  getClientAdapter,
+  resolveCliClient,
+  listAvailableClients
+} = require('../lib/go-clients');
 
 function parseGoArgs(argv = process.argv.slice(3)) {
   let shouldScan = false;
   let scanRoot;
+  let cliOverride;
   let projectIdentifier;
   const passthroughArgs = [];
 
@@ -32,6 +40,15 @@ function parseGoArgs(argv = process.argv.slice(3)) {
       continue;
     }
 
+    if (arg === '--cli') {
+      const next = argv[index + 1];
+      if (next && !next.startsWith('-')) {
+        cliOverride = next;
+        index++;
+      }
+      continue;
+    }
+
     if (!projectIdentifier && !arg.startsWith('-')) {
       projectIdentifier = arg;
       continue;
@@ -41,6 +58,7 @@ function parseGoArgs(argv = process.argv.slice(3)) {
   }
 
   return {
+    cliOverride,
     passthroughArgs,
     projectIdentifier,
     scanRoot,
@@ -48,34 +66,12 @@ function parseGoArgs(argv = process.argv.slice(3)) {
   };
 }
 
-function getProjectMcpConfigPath(projectPath) {
-  const copilotConfig = path.join(projectPath, '.copilot', 'mcp-config.json');
-  if (fs.existsSync(copilotConfig)) {
-    return copilotConfig;
-  }
-
-  const claudeConfig = path.join(projectPath, '.mcp.json');
-  if (fs.existsSync(claudeConfig)) {
-    return claudeConfig;
-  }
-
-  return undefined;
-}
-
-function buildCopilotArgs(configPath, passthroughArgs) {
-  const args = ['--resume'];
-  if (configPath) {
-    args.push('--additional-mcp-config', `@${configPath}`);
-  }
-
-  return args.concat(passthroughArgs);
-}
-
 function renderProject(project, index) {
   const aliasSuffix = project.aliases.length > 0
     ? ` [${project.aliases.join(', ')}]`
     : '';
-  return `  [${index + 1}] ${project.name}${aliasSuffix} — ${project.path}`;
+  const cliSuffix = project.preferredCli ? ` (${project.preferredCli})` : '';
+  return `  [${index + 1}] ${project.name}${aliasSuffix}${cliSuffix} — ${project.path}`;
 }
 
 function prompt(question) {
@@ -122,7 +118,7 @@ function resolveProjectSelection(identifier, projects) {
   };
 }
 
-function launchCopilot(project, passthroughArgs) {
+function launchClient(project, clientId, passthroughArgs) {
   if (!fs.existsSync(project.path)) {
     throw new Error(`Registered project path does not exist: ${project.path}`);
   }
@@ -131,13 +127,15 @@ function launchCopilot(project, passthroughArgs) {
     throw new Error(`Registered path is not an Optimus workspace: ${project.path}`);
   }
 
-  const configPath = getProjectMcpConfigPath(project.path);
+  const adapter = getClientAdapter(clientId);
+  const configPath = adapter.resolveConfigPath(project.path);
   if (!configPath) {
-    throw new Error(`Missing Copilot MCP config for ${project.name}. Run 'optimus upgrade' in ${project.path} first.`);
+    throw new Error(`Missing MCP config for ${adapter.label} in ${project.name}. Run 'optimus upgrade' in ${project.path} first.`);
   }
 
-  const args = buildCopilotArgs(configPath, passthroughArgs);
-  const result = spawnSync('copilot', args, {
+  const args = adapter.buildArgs(configPath, passthroughArgs);
+  console.log(`→ ${project.name} (${project.path}) via ${adapter.label}`);
+  const result = spawnSync(adapter.executable, args, {
     cwd: project.path,
     stdio: 'inherit',
     shell: process.platform === 'win32'
@@ -174,8 +172,60 @@ async function selectProjectInteractively(projects) {
   return resolved.project;
 }
 
+function handleSetCli(argv) {
+  const projectIdentifier = argv[0];
+  const clientId = argv[1];
+
+  if (!projectIdentifier || !clientId) {
+    console.error('Usage: optimus go set-cli <project> <client>');
+    console.error(`Available clients: ${listAvailableClients().map(c => c.id).join(', ')}`);
+    process.exit(1);
+  }
+
+  getClientAdapter(clientId);
+
+  const registry = loadProjectRegistry();
+  const matches = findProjectsByIdentifier(projectIdentifier, registry.projects);
+  if (matches.length === 0) {
+    throw new Error(`Project '${projectIdentifier}' not found.`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Project '${projectIdentifier}' matched multiple entries: ${matches.map(p => p.name).join(', ')}`);
+  }
+
+  registerProject(matches[0].path, { preferredCli: clientId });
+  console.log(`✅ Set preferred CLI for ${matches[0].name} to '${clientId}'`);
+}
+
+function handleSetDefaultCli(argv) {
+  const clientId = argv[0];
+
+  if (!clientId) {
+    console.error('Usage: optimus go set-default-cli <client>');
+    console.error(`Available clients: ${listAvailableClients().map(c => c.id).join(', ')}`);
+    process.exit(1);
+  }
+
+  getClientAdapter(clientId);
+
+  const registry = loadProjectRegistry();
+  registry.defaults = registry.defaults || {};
+  registry.defaults.cli = clientId;
+  saveProjectRegistry(registry);
+  console.log(`✅ Set global default CLI to '${clientId}'`);
+}
+
 module.exports = async function go() {
-  const { passthroughArgs, projectIdentifier, scanRoot, shouldScan } = parseGoArgs();
+  const subcommand = process.argv[3];
+
+  if (subcommand === 'set-cli') {
+    return handleSetCli(process.argv.slice(4));
+  }
+  if (subcommand === 'set-default-cli') {
+    return handleSetDefaultCli(process.argv.slice(4));
+  }
+
+  const { cliOverride, passthroughArgs, projectIdentifier, scanRoot, shouldScan } = parseGoArgs();
 
   if (shouldScan) {
     const discovered = scanForProjects(scanRoot || os.homedir());
@@ -204,11 +254,10 @@ module.exports = async function go() {
     throw new Error(resolved.error);
   }
 
+  const clientId = resolveCliClient(cliOverride, project, registry.defaults);
   touchProject(project.path);
-  launchCopilot(project, passthroughArgs);
+  launchClient(project, clientId, passthroughArgs);
 };
 
-module.exports.buildCopilotArgs = buildCopilotArgs;
-module.exports.getProjectMcpConfigPath = getProjectMcpConfigPath;
 module.exports.parseGoArgs = parseGoArgs;
 module.exports.resolveProjectSelection = resolveProjectSelection;

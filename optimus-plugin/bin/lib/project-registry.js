@@ -10,6 +10,7 @@ function getProjectsRegistryPath() {
 function createEmptyRegistry() {
   return {
     version: 1,
+    defaults: {},
     projects: []
   };
 }
@@ -61,7 +62,8 @@ function normalizeProjectEntry(entry) {
     name,
     path: normalizedPath,
     aliases: normalizeAliases(entry.aliases),
-    lastUsedAt: typeof entry.lastUsedAt === 'string' ? entry.lastUsedAt : undefined
+    lastUsedAt: typeof entry.lastUsedAt === 'string' ? entry.lastUsedAt : undefined,
+    preferredCli: typeof entry.preferredCli === 'string' && entry.preferredCli.trim() ? entry.preferredCli.trim() : undefined
   };
 }
 
@@ -79,6 +81,7 @@ function loadProjectRegistry() {
 
     return {
       version: typeof raw?.version === 'number' ? raw.version : 1,
+      defaults: raw?.defaults && typeof raw.defaults === 'object' ? raw.defaults : {},
       projects
     };
   } catch {
@@ -92,6 +95,7 @@ function saveProjectRegistry(registry) {
 
   const normalizedRegistry = {
     version: 1,
+    defaults: registry?.defaults && typeof registry.defaults === 'object' ? registry.defaults : {},
     projects: Array.isArray(registry?.projects)
       ? registry.projects.map(normalizeProjectEntry).filter(Boolean)
       : []
@@ -128,12 +132,16 @@ function registerProject(workspacePath, options = {}) {
     ...(existing?.aliases || []),
     ...(options.aliases || [])
   ]);
+  const preferredCli = typeof options.preferredCli === 'string' && options.preferredCli.trim()
+    ? options.preferredCli.trim()
+    : existing?.preferredCli;
 
   const nextEntry = {
     name,
     path: normalizedPath,
     aliases,
-    lastUsedAt: existing?.lastUsedAt
+    lastUsedAt: existing?.lastUsedAt,
+    preferredCli
   };
 
   registry.projects = registry.projects

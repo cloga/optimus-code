@@ -44,7 +44,8 @@ $pluginBin = Join-Path (Join-Path $repoRoot 'optimus-plugin') 'bin'
 $requiredFiles = @(
     (Join-Path $pluginBin 'cli.js'),
     (Join-Path (Join-Path $pluginBin 'commands') 'go.js'),
-    (Join-Path (Join-Path $pluginBin 'lib') 'project-registry.js')
+    (Join-Path (Join-Path $pluginBin 'lib') 'project-registry.js'),
+    (Join-Path (Join-Path $pluginBin 'lib') 'go-clients.js')
 )
 foreach ($f in $requiredFiles) {
     if (-not (Test-Path $f)) {
@@ -61,6 +62,7 @@ New-Item -ItemType Directory -Path $libDir -Force | Out-Null
 Copy-Item (Join-Path $pluginBin 'cli.js') $binDir -Force
 Copy-Item (Join-Path (Join-Path $pluginBin 'commands') 'go.js') $commandsDir -Force
 Copy-Item (Join-Path (Join-Path $pluginBin 'lib') 'project-registry.js') $libDir -Force
+Copy-Item (Join-Path (Join-Path $pluginBin 'lib') 'go-clients.js') $libDir -Force
 
 # Create a minimal package.json for the 'version' command
 $pluginPkg = Join-Path (Join-Path $repoRoot 'optimus-plugin') 'package.json'
@@ -106,8 +108,9 @@ Write-Host "✅ Optimus CLI installed ($sizeKB KB)"
 Write-Host "   Location: $cliDir"
 Write-Host ""
 Write-Host "   Commands:"
-Write-Host "     optimus go              # Launch Copilot for a project"
+Write-Host "     optimus go              # Launch agent CLI for a project"
 Write-Host "     optimus go <name>       # Launch specific project"
+Write-Host "     optimus go --cli claude # Use Claude instead of Copilot"
 Write-Host "     optimus go --scan       # Discover & register projects"
 Write-Host "     optimus version         # Print version"
 Write-Host ""

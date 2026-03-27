@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.16.24] - 2026-03-27
+
+### Features
+- **Multi-CLI `optimus go`** — `optimus go` now supports both GitHub Copilot CLI and Claude Code CLI via a client adapter layer. Use `--cli copilot` or `--cli claude` to override per-launch.
+- **Per-project CLI preference** — Each project can store a `preferredCli` in `~/.optimus/projects.json`. Set via `optimus go set-cli <project> <client>`.
+- **Global default CLI** — Set via `optimus go set-default-cli <client>`. Resolution order: `--cli` flag → project `preferredCli` → global default → `copilot`.
+- **Client adapter architecture** — New `go-clients.js` module provides extensible adapter definitions for each supported CLI (executable, config path, injection flags).
+
 ## [2.16.23] - 2026-03-26
 
 ### Features

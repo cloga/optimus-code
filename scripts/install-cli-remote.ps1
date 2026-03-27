@@ -26,6 +26,7 @@ $files = @(
     @{ Url = "$baseUrl/bin/cli.js";                   Dest = Join-Path $binDir 'cli.js' }
     @{ Url = "$baseUrl/bin/commands/go.js";            Dest = Join-Path $commandsDir 'go.js' }
     @{ Url = "$baseUrl/bin/lib/project-registry.js";   Dest = Join-Path $libDir 'project-registry.js' }
+    @{ Url = "$baseUrl/bin/lib/go-clients.js";         Dest = Join-Path $libDir 'go-clients.js' }
     @{ Url = "$baseUrl/package.json";                  Dest = Join-Path $cliDir 'package.json' }
 )
 
@@ -53,8 +54,9 @@ if (-not $userPath -or -not $userPath.Contains($cliDir)) {
 Write-Host ""
 Write-Host "Done! Optimus CLI installed."
 Write-Host ""
-Write-Host "  optimus go              # Launch Copilot for a project"
+Write-Host "  optimus go              # Launch agent CLI for a project"
 Write-Host "  optimus go <name>       # Launch specific project"
+Write-Host "  optimus go --cli claude # Use Claude instead of Copilot"
 Write-Host "  optimus go --scan       # Discover & register projects"
 Write-Host ""
 Write-Host "  Restart terminal if 'optimus' is not recognized."

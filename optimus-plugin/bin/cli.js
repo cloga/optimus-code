@@ -84,7 +84,9 @@ Optimus Swarm CLI — Universal Multi-Agent Orchestrator (MCP)
 
 Usage:
   optimus init        Bootstrap .optimus/ workspace in current directory
-  optimus go          Launch Copilot CLI for a registered Optimus project
+  optimus go          Launch agent CLI for a registered Optimus project
+  optimus go set-cli <project> <client>   Set per-project default CLI
+  optimus go set-default-cli <client>     Set global default CLI
   optimus upgrade     Upgrade skills, roles, and config from plugin source
   optimus memory      Manage user-level cross-project memory
   optimus serve       Start MCP server (stdio transport)
