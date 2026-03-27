@@ -121,16 +121,16 @@ describe('client adapter layer', () => {
     expect(clientsModule.resolveCliClient(undefined, undefined, undefined)).toBe('copilot');
   });
 
-  it('copilot adapter builds correct args with @-prefixed config path', () => {
+  it('copilot adapter builds correct args with --resume and @-prefixed config path', () => {
     const adapter = clientsModule.getClientAdapter('copilot');
     const args = adapter.buildArgs('/path/to/config.json', ['--continue']);
-    expect(args).toEqual(['--additional-mcp-config', '@/path/to/config.json', '--continue']);
+    expect(args).toEqual(['--resume', '--additional-mcp-config', '@/path/to/config.json', '--continue']);
   });
 
-  it('claude adapter builds correct args with --mcp-config', () => {
+  it('claude adapter builds correct args with --resume and --mcp-config', () => {
     const adapter = clientsModule.getClientAdapter('claude');
-    const args = adapter.buildArgs('/path/to/.mcp.json', ['--resume']);
-    expect(args).toEqual(['--mcp-config', '/path/to/.mcp.json', '--resume']);
+    const args = adapter.buildArgs('/path/to/.mcp.json', ['--continue']);
+    expect(args).toEqual(['--resume', '--mcp-config', '/path/to/.mcp.json', '--continue']);
   });
 
   it('copilot adapter resolves .copilot/mcp-config.json', () => {

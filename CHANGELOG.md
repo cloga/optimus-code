@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.16.25] - 2026-03-27
+
+### Bug Fixes
+- **`optimus go` default `--resume`** — Restored `--resume` as a default argument for both Copilot and Claude adapters, which was accidentally dropped during the multi-CLI refactor in v2.16.24.
+
 ## [2.16.24] - 2026-03-27
 
 ### Features

@@ -11,7 +11,7 @@ const CLIENT_ADAPTERS = {
       return fs.existsSync(config) ? config : undefined;
     },
     buildArgs(configPath, passthroughArgs) {
-      const args = [];
+      const args = ['--resume'];
       if (configPath) {
         args.push('--additional-mcp-config', `@${configPath}`);
       }
@@ -27,7 +27,7 @@ const CLIENT_ADAPTERS = {
       return fs.existsSync(config) ? config : undefined;
     },
     buildArgs(configPath, passthroughArgs) {
-      const args = [];
+      const args = ['--resume'];
       if (configPath) {
         args.push('--mcp-config', configPath);
       }
