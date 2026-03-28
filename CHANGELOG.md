@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.16.27] - 2026-03-28
+
+### Bug Fixes
+- **Agent Runtime state file lifecycle sync** — `worker-spawner` now appends `running`, `completed`, and `failed` history entries to `.optimus/state/agent-runtime/run_*.json` during task execution. Previously, state files remained stuck at `pending` even after successful completion. Fixes #532.
+
 ## [2.16.26] - 2026-03-28
 
 ### Bug Fixes

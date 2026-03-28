@@ -30,7 +30,7 @@ import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normaliz
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
-import { loadAgentRuntimeRecord, saveAgentRuntimeRecord } from '../utils/agentRuntime';
+import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory } from '../utils/agentRuntime';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { executePrompt } from '../runtime/genericExecutor';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
@@ -2057,6 +2057,17 @@ Please provide your complete execution result below.${verifySuffix}`;
         const hasAutomation = !!engineConfig?.automation && typeof engineConfig.automation === 'object';
         const automationPolicy = hasAutomation ? normalizeAutomationPolicy(engineConfig.automation) : null;
 
+        // ── Agent Runtime: mark run as running ──
+        if (_fallbackSessionId.startsWith('async_')) {
+            const rtTaskId = _fallbackSessionId.replace('async_', '');
+            const rtTask = TaskManifestManager.loadManifest(workspacePath)[rtTaskId];
+            if (rtTask?.runtime_run_id) {
+                appendAgentRuntimeHistory(workspacePath, rtTask.runtime_run_id, {
+                    task_id: rtTaskId, status: 'running', at: new Date().toISOString(), note: 'Execution started'
+                });
+            }
+        }
+
         // ── Core Execution: delegate to Agent Runtime (genericExecutor) ──
         const execResult = await executePrompt(basePrompt, {
             engine: activeEngine,
@@ -2190,6 +2201,10 @@ Please provide your complete execution result below.${verifySuffix}`;
                         record.updated_at = new Date().toISOString();
                         saveAgentRuntimeRecord(workspacePath, record);
                     }
+                    // Append completed history entry
+                    appendAgentRuntimeHistory(workspacePath, task.runtime_run_id, {
+                        task_id: taskId, status: 'completed', at: new Date().toISOString(), note: 'Execution finished'
+                    });
                 }
             }
         }
@@ -2205,6 +2220,18 @@ Please provide your complete execution result below.${verifySuffix}`;
 
         return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${newSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
     } catch (e: any) {
+        // ── Agent Runtime: mark run as failed ──
+        if (_fallbackSessionId.startsWith('async_')) {
+            try {
+                const rtTaskId = _fallbackSessionId.replace('async_', '');
+                const rtTask = TaskManifestManager.loadManifest(workspacePath)[rtTaskId];
+                if (rtTask?.runtime_run_id) {
+                    appendAgentRuntimeHistory(workspacePath, rtTask.runtime_run_id, {
+                        task_id: rtTaskId, status: 'failed', at: new Date().toISOString(), note: e.message?.slice(0, 200) || 'Execution failed'
+                    });
+                }
+            } catch { /* best-effort, don't mask the original error */ }
+        }
         // Track T3 failures too
         if (isT3) {
             trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
