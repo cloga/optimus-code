@@ -17,6 +17,7 @@ import type {
     AgentRuntimeRequest,
     AgentRuntimeEnvelope,
     AgentRuntimePolicy,
+    StreamEvent,
 } from '../utils/agentRuntime';
 
 // ─── SDK Types ───
@@ -163,6 +164,74 @@ export class OptimusRuntime {
 
             await new Promise(resolve => setTimeout(resolve, pollInterval));
         }
+    }
+
+    /**
+     * Subscribe to streaming events for an active run via SSE.
+     * Returns an async iterator that yields StreamEvents.
+     */
+    async *streamRun(runId: string, options?: {
+        sinceSequence?: number;
+        workspacePath?: string;
+    }): AsyncGenerator<StreamEvent> {
+        const url = `${this.baseUrl}/api/v1/agent/runs/${encodeURIComponent(runId)}/stream?since=${options?.sinceSequence || 0}`;
+
+        const response = await fetch(url, {
+            headers: {
+                ...this.headers,
+                'Accept': 'text/event-stream',
+                ...(options?.workspacePath || this.workspacePath
+                    ? { 'X-Optimus-Workspace': options?.workspacePath || this.workspacePath! }
+                    : {}),
+            },
+        });
+
+        if (!response.ok) {
+            throw new RuntimeApiError(
+                `Stream connection failed: ${response.status}`,
+                'stream_failed',
+                response.status
+            );
+        }
+
+        if (!response.body) {
+            throw new RuntimeApiError('No response body for streaming', 'stream_failed', 500);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let textBuffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                textBuffer += decoder.decode(value, { stream: true });
+                const lines = textBuffer.split('\n');
+                textBuffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const event = JSON.parse(line.slice(6)) as StreamEvent;
+                            if (event.type === 'done') return;
+                            yield event;
+                        } catch { /* skip malformed events */ }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    /**
+     * Start a run and stream events. Convenience wrapper.
+     */
+    async *runAndStream(input: RunAgentInput): AsyncGenerator<StreamEvent> {
+        const envelope = await this.startRun(input);
+        yield* this.streamRun(envelope.run_id);
     }
 
     // ─── Internal ───

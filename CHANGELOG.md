@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.16.28] - 2026-03-28
+
+### Features
+- **Agent Runtime streaming (SSE)** — New `GET /api/v1/agent/runs/:id/stream` endpoint provides real-time Server-Sent Events during agent execution. Emits `text`, `thinking`, `status`, `error`, and `done` event types with sequence numbers for reconnection support.
+- **Streaming pipeline** — `executePrompt()` now accepts an `onChunk` callback that receives streaming chunks from ACP adapters. Events flow from engine → AcpAdapter → genericExecutor → worker-spawner → in-memory event buffer → HTTP SSE.
+- **SDK streaming** — `OptimusRuntime` client gains `streamRun()` async generator and `runAndStream()` convenience method for consuming SSE events from TypeScript/JavaScript.
+- **Event buffer** — Per-run in-memory ring buffer (2000 events) with subscriber notification, sequence-based replay for reconnection, and automatic TTL cleanup (5 min after completion).
+
 ## [2.16.27] - 2026-03-28
 
 ### Bug Fixes

@@ -158,6 +158,110 @@ export function updateAgentRuntimeRecord(
     return updated;
 }
 
+// ─── Streaming Event Buffer ───
+
+export type StreamEventType = 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'step_start' | 'step_complete' | 'status' | 'error' | 'done';
+
+export interface StreamEvent {
+    type: StreamEventType;
+    data: string;
+    timestamp: string;
+    sequence: number;
+}
+
+interface RunEventBuffer {
+    events: StreamEvent[];
+    listeners: Set<(event: StreamEvent) => void>;
+    completed: boolean;
+    sequenceCounter: number;
+    cleanupTimer?: ReturnType<typeof setTimeout>;
+}
+
+const EVENT_BUFFER_SIZE = 2000;
+const EVENT_BUFFER_TTL_MS = 5 * 60 * 1000;
+
+const eventBuffers = new Map<string, RunEventBuffer>();
+
+export function createEventBuffer(runId: string): RunEventBuffer {
+    const existing = eventBuffers.get(runId);
+    if (existing) return existing;
+
+    const buffer: RunEventBuffer = {
+        events: [],
+        listeners: new Set(),
+        completed: false,
+        sequenceCounter: 0,
+    };
+    eventBuffers.set(runId, buffer);
+    return buffer;
+}
+
+export function pushStreamEvent(runId: string, type: StreamEventType, data: string): StreamEvent | null {
+    const buffer = eventBuffers.get(runId);
+    if (!buffer) return null;
+
+    const event: StreamEvent = {
+        type,
+        data,
+        timestamp: new Date().toISOString(),
+        sequence: ++buffer.sequenceCounter,
+    };
+
+    buffer.events.push(event);
+    if (buffer.events.length > EVENT_BUFFER_SIZE) {
+        buffer.events.shift();
+    }
+
+    for (const listener of buffer.listeners) {
+        try { listener(event); } catch { /* best-effort */ }
+    }
+
+    return event;
+}
+
+export function subscribeToEvents(
+    runId: string,
+    sinceSequence: number,
+    listener: (event: StreamEvent) => void
+): { unsubscribe: () => void; completed: boolean } {
+    const buffer = eventBuffers.get(runId);
+    if (!buffer) return { unsubscribe: () => {}, completed: true };
+
+    for (const event of buffer.events) {
+        if (event.sequence > sinceSequence) {
+            try { listener(event); } catch { /* best-effort */ }
+        }
+    }
+
+    buffer.listeners.add(listener);
+    return {
+        unsubscribe: () => buffer.listeners.delete(listener),
+        completed: buffer.completed,
+    };
+}
+
+export function markStreamComplete(runId: string): void {
+    const buffer = eventBuffers.get(runId);
+    if (!buffer) return;
+
+    pushStreamEvent(runId, 'done', '');
+    buffer.completed = true;
+
+    buffer.cleanupTimer = setTimeout(() => {
+        eventBuffers.delete(runId);
+    }, EVENT_BUFFER_TTL_MS);
+}
+
+export function getEventBuffer(runId: string): RunEventBuffer | undefined {
+    return eventBuffers.get(runId);
+}
+
+export function clearEventBuffer(runId: string): void {
+    const buffer = eventBuffers.get(runId);
+    if (buffer?.cleanupTimer) clearTimeout(buffer.cleanupTimer);
+    eventBuffers.delete(runId);
+}
+
 export function buildAgentRuntimeTaskDescription(request: AgentRuntimeRequest): string {
     const skillLine = request.skill ? `- **Skill / playbook**: \`${request.skill}\`\n` : '';
     const instructionsLine = request.instructions ? `${request.instructions.trim()}\n\n` : '';

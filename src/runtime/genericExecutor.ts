@@ -66,6 +66,8 @@ export interface ExecuteOptions {
     role?: string;
     /** Verification strictness: 'strict' | 'normal' | 'skip' */
     verificationLevel?: 'strict' | 'normal' | 'skip';
+    /** Streaming callback: called for each output chunk during execution */
+    onChunk?: (chunk: string, isThinking: boolean) => void;
 }
 
 export interface ExecuteResult {
@@ -126,11 +128,18 @@ export async function executePrompt(
         : null;
 
     try {
+        const onUpdate = options.onChunk
+            ? (chunk: string) => {
+                const isThinking = chunk.startsWith('[thinking] ');
+                options.onChunk!(isThinking ? chunk.slice(11) : chunk, isThinking);
+            }
+            : undefined;
+
         const invokePromise = adapter.invoke(
             fullPrompt,
             options.mode || 'agent',
             options.sessionId,
-            undefined,
+            onUpdate,
             options.extraEnv,
             acpOptions
         );

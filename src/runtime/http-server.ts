@@ -41,6 +41,7 @@ import {
     cancelGenericRun,
     listGenericEngines,
 } from './genericRuntime';
+import { subscribeToEvents, getEventBuffer } from '../utils/agentRuntime';
 import dotenv from 'dotenv';
 import path from 'path';
 import { ensureWorktreeStateDirs } from '../utils/worktree';
@@ -376,6 +377,66 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         console.error(`[HTTP] GET /agent/runs/${params.id}`);
         const envelope = getRunStatus(workspacePath, params.id);
         sendJson(res, 200, envelope);
+        return;
+    }
+
+    // GET /api/v1/agent/runs/:id/stream — SSE streaming endpoint
+    if ((params = matchRoute(method, url, '/api/v1/agent/runs/:id/stream', 'GET'))) {
+        const runId = params.id;
+        const urlObj = new URL(`http://localhost${req.url}`);
+        const since = parseInt(urlObj.searchParams.get('since') || '0', 10);
+        console.error(`[HTTP] GET /agent/runs/${runId}/stream (SSE, since=${since})`);
+
+        const buffer = getEventBuffer(runId);
+        if (!buffer) {
+            sendError(res, 404, 'stream_not_found',
+                `No streaming buffer for run '${runId}'. The run may have already completed or the run ID is invalid.`,
+                'Start a run with POST /api/v1/agent/start first, then connect to /stream before the run finishes. Alternatively, use GET /api/v1/agent/runs/:id to poll for the final result.'
+            );
+            return;
+        }
+
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'X-Optimus-Instance': `primary:${basePort}`,
+        });
+
+        const { unsubscribe, completed: alreadyDone } = subscribeToEvents(runId, since, (event) => {
+            try {
+                res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+            } catch { /* client may have disconnected */ }
+        });
+
+        const heartbeat = setInterval(() => {
+            try { res.write(': heartbeat\n\n'); } catch { /* ignore */ }
+        }, 15000);
+
+        if (alreadyDone) {
+            clearInterval(heartbeat);
+            unsubscribe();
+            res.end();
+            return;
+        }
+
+        const checkDone = setInterval(() => {
+            const currentBuffer = getEventBuffer(runId);
+            if (!currentBuffer || currentBuffer.completed) {
+                clearInterval(checkDone);
+                clearInterval(heartbeat);
+                unsubscribe();
+                try { res.end(); } catch { /* ignore */ }
+            }
+        }, 1000);
+
+        req.on('close', () => {
+            clearInterval(checkDone);
+            clearInterval(heartbeat);
+            unsubscribe();
+        });
+
         return;
     }
 

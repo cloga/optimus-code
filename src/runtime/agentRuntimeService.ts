@@ -23,6 +23,9 @@ import {
     saveAgentRuntimeRecord,
     loadAgentRuntimeRecord,
     updateAgentRuntimeRecord,
+    createEventBuffer,
+    pushStreamEvent,
+    markStreamComplete,
 } from '../utils/agentRuntime';
 import { spawnAsyncWorker, runWorkerInProcess } from '../mcp/council-runner';
 import { resolveRoleName } from '../utils/resolveRoleName';
@@ -233,10 +236,20 @@ export function startRun(request: AgentRuntimeRequest): AgentRuntimeEnvelope {
         validateEngineAndModel(request.role_engine, request.role_model, request.workspace_path);
     }
     const { runId } = createRun(request);
+    createEventBuffer(runId);
+    pushStreamEvent(runId, 'status', 'queued');
     // Fire-and-forget: run in-process for warm pool reuse, don't await
-    runWorkerInProcess(runId, request.workspace_path).catch(err =>
-        console.error(`[AgentRuntime] In-process run ${runId} failed:`, err.message)
-    );
+    runWorkerInProcess(runId, request.workspace_path)
+        .then(() => {
+            pushStreamEvent(runId, 'status', 'completed');
+            markStreamComplete(runId);
+        })
+        .catch(err => {
+            pushStreamEvent(runId, 'error', err.message || 'Execution failed');
+            pushStreamEvent(runId, 'status', 'failed');
+            markStreamComplete(runId);
+            console.error(`[AgentRuntime] In-process run ${runId} failed:`, err.message);
+        });
     return getRunStatus(request.workspace_path, runId);
 }
 

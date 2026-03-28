@@ -30,7 +30,7 @@ import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normaliz
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
-import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory } from '../utils/agentRuntime';
+import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory, pushStreamEvent } from '../utils/agentRuntime';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { executePrompt } from '../runtime/genericExecutor';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
@@ -2068,6 +2068,16 @@ Please provide your complete execution result below.${verifySuffix}`;
             }
         }
 
+        // ── Resolve streaming callback for Agent Runtime runs ──
+        let streamingRunId: string | undefined;
+        if (_fallbackSessionId.startsWith('async_')) {
+            const rtTaskId = _fallbackSessionId.replace('async_', '');
+            const rtTask = TaskManifestManager.loadManifest(workspacePath)[rtTaskId];
+            if (rtTask?.runtime_run_id) {
+                streamingRunId = rtTask.runtime_run_id;
+            }
+        }
+
         // ── Core Execution: delegate to Agent Runtime (genericExecutor) ──
         const execResult = await executePrompt(basePrompt, {
             engine: activeEngine,
@@ -2079,6 +2089,9 @@ Please provide your complete execution result below.${verifySuffix}`;
             maxContinues: automationPolicy?.maxContinues,
             role,
             verificationLevel: 'normal',
+            onChunk: streamingRunId
+                ? (chunk, isThinking) => pushStreamEvent(streamingRunId!, isThinking ? 'thinking' : 'text', chunk)
+                : undefined,
         });
 
         const response = execResult.output;
