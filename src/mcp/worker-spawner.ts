@@ -1904,8 +1904,11 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     }
 
     let personaContext = "";
+    let roleFrontmatter: Record<string, string> = {};
     if (t1Content) {
-        personaContext = parseFrontmatter(t1Content).body.trim();
+        const parsed = parseFrontmatter(t1Content);
+        personaContext = parsed.body.trim();
+        roleFrontmatter = parsed.frontmatter;
     } else {
         const formattedRole = role
             .split(/[-_]+/)
@@ -1961,7 +1964,7 @@ let contextContent = "";
         : '';
 
     // ── Harness: Self-Verification Prompt Suffix ──
-    const verifyLevel = frontmatter?.verification_level || 'normal';
+    const verifyLevel = roleFrontmatter?.verification_level || 'normal';
     const verifySuffix = verifyLevel !== 'skip' ? `
 
 ## Verification Checklist (MANDATORY)

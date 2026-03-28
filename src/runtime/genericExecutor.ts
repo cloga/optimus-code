@@ -163,7 +163,7 @@ export async function executePrompt(
             parsed !== undefined ? JSON.stringify(parsed) : rawOutput,
             {
                 role: options.role || 'generic',
-                outputSchema: options.outputSchema,
+                outputSchema: options.outputSchema as object | undefined,
                 outputPath: '',
                 engine,
                 verificationLevel: verifyLevel,

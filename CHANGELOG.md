@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.16.26] - 2026-03-28
+
+### Bug Fixes
+- **Runtime `frontmatter` ReferenceError** — Fixed bare `frontmatter` identifier in `worker-spawner.ts` that caused `ReferenceError: frontmatter is not defined` in orchestrator code paths. The variable is now properly scoped as `roleFrontmatter` from the parsed role template. Fixes #531.
+- **TypeScript baseline errors resolved** — Fixed `outputSchema` type mismatch in `genericExecutor.ts`. `npm run check-types` now passes with zero errors.
+
 ## [2.16.25] - 2026-03-27
 
 ### Bug Fixes
