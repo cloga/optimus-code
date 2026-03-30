@@ -71,20 +71,17 @@ function loadCanonicalMcpConfig(workspaceRoot) {
 
 function renderString(value, target, workspaceRoot) {
   if (value === WORKSPACE_TOKEN) {
-    if (target === 'vscode') return '${workspaceFolder}';
     if (target === 'runtime') return workspaceRoot;
-    return '.';
+    // Use absolute paths for all targets including vscode, because Copilot CLI
+    // auto-discovers .vscode/mcp.json but cannot resolve ${workspaceFolder}.
+    // These files are gitignored so absolute paths don't affect other users.
+    return workspaceRoot;
   }
 
   if (value.startsWith(`${WORKSPACE_TOKEN}/`)) {
     const suffix = value.slice(WORKSPACE_TOKEN.length + 1);
-    if (target === 'vscode') {
-      return `\${workspaceFolder}/${suffix}`;
-    }
-    if (target === 'runtime') {
-      return path.join(workspaceRoot, ...suffix.split('/'));
-    }
-    return `./${suffix}`;
+    // Always resolve to absolute path for the same reason
+    return path.join(workspaceRoot, ...suffix.split('/'));
   }
 
   return value.replace(/\$\{env:([^}]+)\}/g, (_, name) => {

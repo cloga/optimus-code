@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.4] - 2026-03-30
+
+### Bug Fixes
+- **All MCP configs now use absolute paths** — Copilot CLI 1.0.13 auto-discovers `.vscode/mcp.json` but cannot resolve `${workspaceFolder}` variables, causing `Connection closed`. All generated MCP configs (`.vscode/mcp.json`, `.copilot/mcp-config.json`, `.mcp.json`) now use absolute paths for `command`, `args`, and `env` values. These files are gitignored so absolute paths don't affect other users.
+
 ## [2.17.3] - 2026-03-30
 
 ### Bug Fixes
