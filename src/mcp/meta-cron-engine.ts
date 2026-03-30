@@ -559,6 +559,12 @@ export class MetaCronEngine {
         const ws = this.workspacePath;
         const fireTime = Date.now();
 
+        // Safety timer prevents leaked locks when tasks hang forever (2h hard ceiling).
+        // CRITICAL: checkInterval MUST clear safetyTimer on task completion, otherwise the
+        // stale safetyTimer fires later and deletes the lock belonging to a SUBSEQUENT run
+        // of the same cron entry — the root cause of overlapping runs (Issue #511).
+        let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+
         const checkInterval = setInterval(() => {
             try {
                 const manifest = TaskManifestManager.loadManifest(ws);
@@ -572,6 +578,7 @@ export class MetaCronEngine {
                     console.error(`[Meta-Cron] Task '${taskId}' still pending after ${Math.round(startupTimeout / 1000)}s — child process likely failed to start. Marking as failed.`);
                     TaskManifestManager.updateTask(ws, taskId, { status: 'failed', error_message: 'Child process failed to start (task remained pending)' });
                     clearInterval(checkInterval);
+                    if (safetyTimer) clearTimeout(safetyTimer);
                     deleteLock(ws, entryId);
                     MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
                     const freshCrontab = loadCrontab(ws);
@@ -588,6 +595,7 @@ export class MetaCronEngine {
 
                 if (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded' || task.status === 'cancelled') {
                     clearInterval(checkInterval);
+                    if (safetyTimer) clearTimeout(safetyTimer);
                     deleteLock(ws, entryId);
                     MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
                     const freshCrontab = loadCrontab(ws);
@@ -608,7 +616,7 @@ export class MetaCronEngine {
         }, 30_000);
         if (typeof checkInterval.unref === 'function') checkInterval.unref();
 
-        const safetyTimer = setTimeout(() => {
+        safetyTimer = setTimeout(() => {
             clearInterval(checkInterval);
             deleteLock(ws, entryId);
             MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);

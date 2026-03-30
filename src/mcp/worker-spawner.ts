@@ -564,7 +564,21 @@ export function loadValidEnginesAndModels(workspacePath: string): { engines: str
             }
             return { engines, models };
         }
-    } catch (e: any) { console.error(`[EngineValidation] Warning: failed to read available-agents.json: ${e.message}`); }
+    } catch (e: any) {
+        console.error(`[EngineValidation] Warning: failed to read available-agents.json: ${e.message}`);
+        // Strict schema validation failed — fall back to raw JSON extraction so
+        // per-engine static validation in computeDiversityAssignments can still
+        // reject individual malformed entries while keeping valid ones.
+        const rawEngines = readRawEngineEntries(configPath);
+        if (rawEngines) {
+            const engines = Object.keys(rawEngines);
+            const models: Record<string, string[]> = {};
+            for (const eng of engines) {
+                models[eng] = Array.isArray(rawEngines[eng]?.available_models) ? rawEngines[eng].available_models : [];
+            }
+            return { engines, models };
+        }
+    }
     return { engines: [], models: {} };
 }
 
@@ -611,6 +625,22 @@ export function readAvailableAgentsConfigFile(configPath: string): AvailableAgen
     const config = parseAvailableAgentsConfig(JSON.parse(fs.readFileSync(configPath, 'utf8')));
     emitAvailableAgentsConfigWarnings(configPath, config);
     return config;
+}
+
+/**
+ * Lenient raw reader: extracts the engines object from available-agents.json
+ * without strict schema validation. Used as a fallback when the strict parser
+ * rejects the entire config due to per-engine issues (e.g. malformed models).
+ */
+function readRawEngineEntries(configPath: string): Record<string, any> | null {
+    try {
+        if (!fs.existsSync(configPath)) return null;
+        const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (raw && typeof raw.engines === 'object' && raw.engines !== null) {
+            return raw.engines;
+        }
+    } catch {}
+    return null;
 }
 
 export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgentsConfig | null {
@@ -1993,6 +2023,7 @@ Task Description:
 ${taskText}${contextContent}${skillContent ? `\n\n=== EQUIPPED SKILLS ===\nThe following skills have been loaded for you to reference and follow:\n${skillContent}\n=== END SKILLS ===` : ''}
 
 CRITICAL: Your output MUST be written to this EXACT file: ${normalizePathForAgent(outputPath)}
+Do NOT create files with your own naming — the orchestrator expects ALL deliverable content at the path above.
 Please provide your complete execution result below.${verifySuffix}`;
 
     console.error(`[Orchestrator] Prompt size: ${basePrompt.length} chars (ACP lean: ${isAcpEngine})`);
@@ -2194,6 +2225,57 @@ Please provide your complete execution result below.${verifySuffix}`;
 
         fs.writeFileSync(outputPath, cleanResponse, 'utf8');
 
+        // ── Post-execution: Rogue output file rescue (Issue #382) ──
+        // ACP agents with filesystem access sometimes write their real deliverable
+        // to a self-chosen filename (based on their role name) instead of the
+        // mandated outputPath. The response text written above is often just a
+        // summary/log. Detect this by checking if outputPath is suspiciously small
+        // and a larger sibling file exists with a similar naming pattern.
+        try {
+            const outputSize = cleanResponse.length;
+            const ROGUE_THRESHOLD = 2000; // bytes — real deliverables are typically > 2KB
+            if (outputSize < ROGUE_THRESHOLD) {
+                const outputDir = path.dirname(outputPath);
+                const outputBase = path.basename(outputPath);
+                const outputExt = path.extname(outputBase);
+                // Extract the stem prefix (e.g., "01-PROPOSAL" from "01-PROPOSAL_architect_gemini.md")
+                const stemParts = path.basename(outputBase, outputExt).split('_');
+                const stemPrefix = stemParts[0]; // e.g., "01-PROPOSAL" or the primary identifier
+                if (stemPrefix && fs.existsSync(outputDir)) {
+                    const siblings = fs.readdirSync(outputDir).filter(f => {
+                        if (f === path.basename(outputPath)) return false;
+                        if (path.extname(f) !== outputExt) return false;
+                        // Must share the same stem prefix (e.g., "01-PROPOSAL")
+                        return f.startsWith(stemPrefix);
+                    });
+                    let bestCandidate: { name: string; size: number } | null = null;
+                    for (const sib of siblings) {
+                        const sibPath = path.join(outputDir, sib);
+                        try {
+                            const stat = fs.statSync(sibPath);
+                            // Only consider files significantly larger than the output
+                            if (stat.size > outputSize * 2 && stat.size > ROGUE_THRESHOLD) {
+                                if (!bestCandidate || stat.size > bestCandidate.size) {
+                                    bestCandidate = { name: sib, size: stat.size };
+                                }
+                            }
+                        } catch { /* skip unreadable files */ }
+                    }
+                    if (bestCandidate) {
+                        const roguePath = path.join(outputDir, bestCandidate.name);
+                        const rogueContent = fs.readFileSync(roguePath, 'utf8');
+                        fs.writeFileSync(outputPath, rogueContent, 'utf8');
+                        // Remove the rogue file to prevent orphan artifacts
+                        try { fs.unlinkSync(roguePath); } catch { /* best effort */ }
+                        console.error(`[Harness] Rogue output rescue: agent wrote ${bestCandidate.size}B to '${bestCandidate.name}' instead of '${path.basename(outputPath)}' (${outputSize}B). Content rescued. (Issue #382)`);
+                    }
+                }
+            }
+        } catch (e: any) {
+            // Rogue detection is best-effort — don't fail the task if it errors
+            console.error(`[Harness] Warning: rogue output detection failed: ${e.message}`);
+        }
+
         // Backfill execution metadata (usage, stop_reason) into runtime record
         if (_fallbackSessionId.startsWith('async_')) {
             const taskId = _fallbackSessionId.replace('async_', '');
@@ -2326,9 +2408,18 @@ function classifyComboReadiness(entry: EngineHealthEntry | undefined, now: numbe
  */
 function isStaticallyValid(eng: string, mdl: string, configPath: string): boolean {
     try {
-        const config = readAvailableAgentsConfigFile(configPath);
-        if (!config) return false;
-        const engineConfig = config.engines?.[eng];
+        // Try strict parser first; fall back to raw JSON so per-engine
+        // validation still works when the full config has malformed entries.
+        let engineConfig: any;
+        try {
+            const config = readAvailableAgentsConfigFile(configPath);
+            if (!config) return false;
+            engineConfig = config.engines?.[eng];
+        } catch {
+            const rawEngines = readRawEngineEntries(configPath);
+            if (!rawEngines) return false;
+            engineConfig = rawEngines[eng];
+        }
         if (!engineConfig) return false;
         const protocol = resolveProtocolFromEngineConfig(eng, engineConfig);
         const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;
