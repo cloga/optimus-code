@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.17.0] - 2026-03-30
+
+### Features
+- **`optimus_status` MCP tool** — New tool to verify Optimus Swarm activation. Returns version, workspace, skills/roles/engines count, system instructions and memory status. Provides actionable next steps.
+- **Enhanced system instructions (v3)** — Injected `copilot-instructions.md`, `CLAUDE.md`, and `cursor.mdc` now include a MANDATORY FIRST ACTION directing agents to call `optimus_status` immediately, ensuring reliable Optimus activation across all clients.
+
+### Bug Fixes
+- **Security: 8 npm vulnerabilities resolved** — Fixed path-to-regexp ReDoS (high), hono prototype pollution, brace-expansion hang, and esbuild/vite/vitest chain (5 moderate). `npm audit` now reports 0 vulnerabilities.
+- **Council capacity test fixed** — The pre-existing `council-capacity.test.ts` failure ("rejects malformed config entries") is now resolved. Added `readRawEngineEntries()` fallback for lenient config reading when strict parsing rejects malformed entries. **245/245 tests now pass.**
+- **Meta-cron patrol concurrency (#511)** — Fixed safety timer leak in `meta-cron-engine.ts` that allowed overlapping patrol runs. All exit paths now properly clear both `checkInterval` and `safetyTimer`.
+- **Agent output_path enforcement (#382)** — Added post-execution artifact rescue in `worker-spawner.ts` that detects when agents write to self-chosen filenames instead of the specified `output_path`, and auto-corrects by moving the content.
+
+### Refactoring
+- **worker-spawner.ts modularization** — Extracted 989 lines (37% reduction) into two new modules:
+  - `src/mcp/engine-resolver.ts` (1023 lines) — engine config, model validation, protocol resolution, health tracking, ACP auto-discovery
+  - `src/mcp/t3-tracker.ts` (80 lines) — T3 usage tracking, role name sanitization, usage log persistence
+  - All functions re-exported from `worker-spawner.ts` for backward compatibility
+
+### Dependencies
+- vitest upgraded from 2.1.9 to 3.2.4
+
 ## [2.16.28] - 2026-03-28
 
 ### Features

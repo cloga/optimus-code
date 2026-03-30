@@ -168,6 +168,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           }
         },
         {
+          name: "optimus_status",
+          description: "Check if the Optimus Swarm is active and healthy in this workspace. Returns version, workspace path, available tools, skills, roles, engines, and system instructions status. Call this at the start of a session to verify Optimus is working.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace_path: {
+                type: "string",
+                description: "Absolute path to the project workspace root."
+              }
+            },
+            required: ["workspace_path"]
+          }
+        },
+        {
           name: "vcs_update_work_item",
           description: "Update an existing work item (GitHub Issue / ADO Work Item) — change title, state, description, assignee, priority, or labels.",
           inputSchema: {
@@ -1022,6 +1036,71 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           type: "text",
           text: `--- START USER MEMORY (REFERENCE ONLY) ---\nThe following are personal preferences from this user.\nThese apply across projects but may be overridden by project-specific conventions.\n\n${content}\n--- END USER MEMORY ---`
         }]
+      };
+        } else if (request.params.name === "optimus_status") {
+      const { workspace_path } = request.params.arguments as any;
+      requireParams("optimus_status", request.params.arguments as any, ["workspace_path"]);
+
+      const optimusDir = resolveOptimusPath(workspace_path);
+      const hasOptimus = fs.existsSync(optimusDir);
+      const version = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
+
+      let skillCount = 0;
+      let roleCount = 0;
+      let engineCount = 0;
+      let hasSystemInstructions = false;
+      let hasMemory = false;
+
+      if (hasOptimus) {
+        try {
+          const skillsDir = path.join(optimusDir, 'skills');
+          if (fs.existsSync(skillsDir)) {
+            skillCount = fs.readdirSync(skillsDir, { withFileTypes: true }).filter(d => d.isDirectory()).length;
+          }
+        } catch {}
+        try {
+          const rolesDir = path.join(optimusDir, 'roles');
+          if (fs.existsSync(rolesDir)) {
+            roleCount = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md')).length;
+          }
+        } catch {}
+        try {
+          const configPath = path.join(optimusDir, 'config', 'available-agents.json');
+          if (fs.existsSync(configPath)) {
+            const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            engineCount = Object.keys(raw?.engines || raw || {}).filter(k => k !== '$schema' && k !== '_comment').length;
+          }
+        } catch {}
+        hasSystemInstructions = fs.existsSync(path.join(optimusDir, 'config', 'system-instructions.md'));
+        hasMemory = fs.existsSync(path.join(optimusDir, 'memory', 'continuous-memory.md'));
+      }
+
+      const status = {
+        active: hasOptimus,
+        version,
+        workspace: workspace_path,
+        skills: skillCount,
+        roles: roleCount,
+        engines: engineCount,
+        system_instructions: hasSystemInstructions,
+        project_memory: hasMemory,
+      };
+
+      const statusText = hasOptimus
+        ? `✅ **Optimus Swarm Active** (v${version})\n\n` +
+          `| Component | Status |\n|---|---|\n` +
+          `| Workspace | \`${workspace_path}\` |\n` +
+          `| Skills | ${skillCount} loaded |\n` +
+          `| Roles | ${roleCount} available |\n` +
+          `| Engines | ${engineCount} configured |\n` +
+          `| System Instructions | ${hasSystemInstructions ? '✅' : '❌ missing'} |\n` +
+          `| Project Memory | ${hasMemory ? '✅' : '—'} |\n\n` +
+          `**Next step:** Call \`roster_check\` to see your available agents, then delegate tasks to specialists.\n` +
+          `**Full protocol:** Read \`.optimus/skills/master-onboarding/SKILL.md\``
+        : `❌ **Optimus Swarm Not Initialized**\n\nNo \`.optimus/\` directory found at \`${workspace_path}\`.\n\n**Fix:** Run \`npx -y github:cloga/optimus-code init\` in the project root.`;
+
+      return {
+        content: [{ type: "text", text: statusText + '\n\n```json\n' + JSON.stringify(status, null, 2) + '\n```' }]
       };
         } else if (request.params.name === "append_memory") {
       let { category, tags, content, level } = request.params.arguments as any;
