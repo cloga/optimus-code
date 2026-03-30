@@ -1,7 +1,7 @@
 {
   "$schema": "./available-agents.schema.json",
   "_schema_version": 1,
-  "_comment": "Default user-level engine and model configuration. Store your primary config in ~/.optimus/config/available-agents.json (or OPTIMUS_USER_AVAILABLE_AGENTS_PATH). Project-level .optimus/config/available-agents.json remains an optional opt-in override.",
+  "_comment": "Optional project-level override sample. Your default source of truth should stay in ~/.optimus/config/available-agents.json (or OPTIMUS_USER_AVAILABLE_AGENTS_PATH). Copy this file to .optimus/config/available-agents.json only if you want this repository to override selected engines or models.",
   "engines": {
     "claude-code": {
       "available_models": ["claude-opus-4.6-1m", "gpt-5.4", "gemini-3-pro-preview"],

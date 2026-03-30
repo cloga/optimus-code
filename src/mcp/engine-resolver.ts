@@ -8,6 +8,7 @@
  * Extracted from worker-spawner.ts for modularity.
  */
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { AgentAdapter } from "../adapters/AgentAdapter";
 import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
@@ -282,31 +283,14 @@ export function classifyComboReadiness(entry: EngineHealthEntry | undefined, now
 // ─── Engine/Model Validation (prevents corrupted T2 templates) ───
 
 export function loadValidEnginesAndModels(workspacePath: string): { engines: string[]; models: Record<string, string[]> } {
-    const configPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
-    try {
-        const config = readAvailableAgentsConfigFile(configPath);
-        if (config) {
-            const engines = Object.keys(config.engines || {});
-            const models: Record<string, string[]> = {};
-            for (const eng of engines) {
-                models[eng] = config.engines[eng]?.available_models || [];
-            }
-            return { engines, models };
+    const engineEntries = loadStaticValidationEngineEntries(workspacePath);
+    const engines = Object.keys(engineEntries);
+    if (engines.length > 0) {
+        const models: Record<string, string[]> = {};
+        for (const eng of engines) {
+            models[eng] = Array.isArray(engineEntries[eng]?.available_models) ? engineEntries[eng].available_models : [];
         }
-    } catch (e: any) {
-        console.error(`[EngineValidation] Warning: failed to read available-agents.json: ${e.message}`);
-        // Strict schema validation failed — fall back to raw JSON extraction so
-        // per-engine static validation in computeDiversityAssignments can still
-        // reject individual malformed entries while keeping valid ones.
-        const rawEngines = readRawEngineEntries(configPath);
-        if (rawEngines) {
-            const engines = Object.keys(rawEngines);
-            const models: Record<string, string[]> = {};
-            for (const eng of engines) {
-                models[eng] = Array.isArray(rawEngines[eng]?.available_models) ? rawEngines[eng].available_models : [];
-            }
-            return { engines, models };
-        }
+        return { engines, models };
     }
     return { engines: [], models: {} };
 }
@@ -372,17 +356,6 @@ export function readRawEngineEntries(configPath: string): Record<string, any> | 
     return null;
 }
 
-export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgentsConfig | null {
-    if (!workspacePath) return null;
-    const configPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
-    try {
-        return readAvailableAgentsConfigFile(configPath);
-    } catch (e: any) {
-        console.error(`[EngineValidation] Warning: failed to read available-agents.json: ${e.message}`);
-    }
-    return null;
-}
-
 /**
  * System defaults for ACP + autopilot mode.
  * These are injected into engine configs so the config file only needs
@@ -412,27 +385,137 @@ const ENGINE_SYSTEM_DEFAULTS: Record<string, any> = {
     }
 };
 
+function isPlainObject(value: unknown): value is Record<string, any> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneConfigValue<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.map(item => cloneConfigValue(item)) as T;
+    }
+    if (isPlainObject(value)) {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, entryValue]) => [key, cloneConfigValue(entryValue)])
+        ) as T;
+    }
+    return value;
+}
+
+function mergeConfigValue(base: any, override: any): any {
+    if (override === undefined) {
+        return cloneConfigValue(base);
+    }
+    if (Array.isArray(override)) {
+        return cloneConfigValue(override);
+    }
+    if (isPlainObject(base) && isPlainObject(override)) {
+        const merged: Record<string, any> = {};
+        const keys = new Set([...Object.keys(base), ...Object.keys(override)]);
+        for (const key of keys) {
+            merged[key] = mergeConfigValue(base[key], override[key]);
+        }
+        return merged;
+    }
+    if (isPlainObject(override)) {
+        return mergeConfigValue({}, override);
+    }
+    return cloneConfigValue(override);
+}
+
+function getUserAvailableAgentsConfigPath(): string {
+    return process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH || path.join(os.homedir(), '.optimus', 'config', 'available-agents.json');
+}
+
+interface AvailableAgentsConfigReadResult {
+    config: AvailableAgentsConfig | null;
+    hadError: boolean;
+}
+
+function readAvailableAgentsConfigFileWithStatus(configPath: string, sourceLabel: string): AvailableAgentsConfigReadResult {
+    try {
+        return {
+            config: readAvailableAgentsConfigFile(configPath),
+            hadError: false,
+        };
+    } catch (e: any) {
+        console.error(`[EngineValidation] Warning: failed to read ${sourceLabel} available-agents.json at '${configPath}': ${e.message}`);
+        return {
+            config: null,
+            hadError: true,
+        };
+    }
+}
+
 function applyEngineDefaults(engine: string, config: any): any {
-    if (!config) return config;
-    // Only apply system defaults for simplified configs (new format).
-    // Verbose configs with explicit protocol, cli section, or top-level capabilities
-    // manage their own transport/automation settings — skip defaults.
-    if (config.protocol !== undefined || config.cli || config.capabilities) {
-        return config;
-    }
     const defaults = ENGINE_SYSTEM_DEFAULTS[engine] || ENGINE_SYSTEM_DEFAULTS['_default'];
-    const merged = { ...defaults, ...config };
-    // Deep-merge automation and acp sub-objects
-    if (defaults.automation) {
-        merged.automation = { ...defaults.automation, ...(config.automation || {}) };
+    if (!config) {
+        return cloneConfigValue(defaults);
     }
-    if (defaults.acp) {
-        merged.acp = { ...defaults.acp, ...(config.acp || {}) };
-        if (defaults.acp.capabilities && !config.acp?.capabilities) {
-            merged.acp.capabilities = defaults.acp.capabilities;
+    // Preserve legacy behavior for verbose engine declarations that manage
+    // their own transport/automation semantics explicitly.
+    if (config.protocol !== undefined || config.cli || config.capabilities) {
+        return cloneConfigValue(config);
+    }
+    return mergeConfigValue(defaults, config);
+}
+
+function buildEffectiveAvailableAgentsConfig(
+    userConfig: AvailableAgentsConfig | null,
+    projectConfig: AvailableAgentsConfig | null
+): AvailableAgentsConfig | null {
+    if (!userConfig && !projectConfig) {
+        return null;
+    }
+
+    const merged = mergeConfigValue(userConfig || {}, projectConfig || {});
+    const configuredEngines = isPlainObject(merged.engines) ? merged.engines : {};
+    const configuredEngineNames = Object.keys(configuredEngines);
+    if (configuredEngineNames.length === 0) {
+        return null;
+    }
+    const effectiveEngines: Record<string, any> = {};
+
+    for (const engine of configuredEngineNames) {
+        effectiveEngines[engine] = applyEngineDefaults(engine, configuredEngines[engine]);
+    }
+
+    return {
+        ...merged,
+        engines: effectiveEngines,
+    };
+}
+
+export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgentsConfig | null {
+    if (!workspacePath) return null;
+
+    const userConfigPath = getUserAvailableAgentsConfigPath();
+    const projectConfigPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
+    const userConfig = readAvailableAgentsConfigFileWithStatus(userConfigPath, 'user').config;
+    const projectConfig = readAvailableAgentsConfigFileWithStatus(projectConfigPath, 'project').config;
+
+    return buildEffectiveAvailableAgentsConfig(userConfig, projectConfig);
+}
+
+function loadStaticValidationEngineEntries(workspacePath?: string): Record<string, any> {
+    if (!workspacePath) return {};
+
+    const userConfigPath = getUserAvailableAgentsConfigPath();
+    const projectConfigPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
+    const userResult = readAvailableAgentsConfigFileWithStatus(userConfigPath, 'user');
+    const projectResult = readAvailableAgentsConfigFileWithStatus(projectConfigPath, 'project');
+    const mergedEngines = mergeConfigValue(
+        userResult.config?.engines || {},
+        projectResult.config?.engines || {},
+    );
+
+    if (projectResult.hadError) {
+        const rawProjectEngines = readRawEngineEntries(projectConfigPath);
+        if (rawProjectEngines) {
+            return mergeConfigValue(mergedEngines, rawProjectEngines);
         }
     }
-    return merged;
+
+    return mergedEngines;
 }
 
 export function getEngineConfig(engine: string, workspacePath?: string): any | null {
@@ -476,7 +559,8 @@ export function getDocumentedDefaultAcpArgs(engine: string): string[] {
     // also document `--stdio` / `--port` server modes. Optimus runs ACP over
     // stdio, so default Copilot ACP launches to `copilot --acp --stdio` unless
     // config explicitly overrides the transport args.
-    if (engine.toLowerCase().includes('copilot')) {
+    const normalizedEngine = engine.toLowerCase();
+    if (normalizedEngine.includes('copilot') || normalizedEngine.includes('claude')) {
         return ['--acp', '--stdio'];
     }
     return ['--acp'];
@@ -732,20 +816,10 @@ export function isValidModel(model: string, engine: string, validModels: Record<
  *   - Engine path must be non-empty (checked via available-agents.json)
  *   - If an engine lists available_models, each model string must be non-empty
  */
-export function isStaticallyValid(eng: string, mdl: string, configPath: string): boolean {
+export function isStaticallyValid(eng: string, mdl: string, workspacePath?: string): boolean {
     try {
-        // Try strict parser first; fall back to raw JSON so per-engine
-        // validation still works when the full config has malformed entries.
-        let engineConfig: any;
-        try {
-            const config = readAvailableAgentsConfigFile(configPath);
-            if (!config) return false;
-            engineConfig = config.engines?.[eng];
-        } catch {
-            const rawEngines = readRawEngineEntries(configPath);
-            if (!rawEngines) return false;
-            engineConfig = rawEngines[eng];
-        }
+        const engineEntries = loadStaticValidationEngineEntries(workspacePath);
+        const engineConfig = engineEntries[eng] ? applyEngineDefaults(eng, engineEntries[eng]) : null;
         if (!engineConfig) return false;
         const protocol = resolveProtocolFromEngineConfig(eng, engineConfig);
         const transportConfig = getTransportConfig(engineConfig, protocol) || engineConfig;

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.17.5] - 2026-03-30
+
+### Features
+- **User-level `available-agents` is now the default config source** — `optimus init` now seeds `~/.optimus/config/available-agents.json` (or `OPTIMUS_USER_AVAILABLE_AGENTS_PATH`) as the primary engine registry. Projects receive `.optimus/config/available-agents.project.sample.json` as an opt-in override sample instead of an always-active override.
+
+### Bug Fixes
+- **Engine config hierarchy and fallback hardening** — Runtime engine resolution now layers built-in defaults under user-level and project-level config, preserves nested object overrides without concatenating arrays, skips malformed user config with a warning, and retains raw fallback for malformed project config during static validation.
+- **`optimus upgrade` now preserves the new default model cleanly** — upgrades sync the user-level engine registry, keep existing project-level overrides when present, and refresh the project-level sample when no active override exists.
+
 ## [2.17.4] - 2026-03-30
 
 ### Bug Fixes

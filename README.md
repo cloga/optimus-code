@@ -305,7 +305,7 @@ The system ships with 5 pre-installed skills. Two are **meta-skills** that enabl
 
 The **ACP adapter** is the universal protocol layer that standardizes communication with any agent supporting the [Agent Client Protocol](https://github.com/cloga/optimus-code/issues/319). It uses JSON-RPC over stdio with LSP-style `Content-Length` framing, replacing legacy CLI text parsing with structured session lifecycle messages (`initialize` → `session/new` → `session/prompt` → `session/update` → response).
 
-To configure an ACP-based agent, add an entry to `.optimus/config/available-agents.json`:
+To configure an ACP-based agent for all projects by default, add an entry to `~/.optimus/config/available-agents.json` (or `OPTIMUS_USER_AVAILABLE_AGENTS_PATH`). If a repository needs its own override, copy `.optimus/config/available-agents.project.sample.json` to `.optimus/config/available-agents.json` and edit it there:
 
 ```json
 {
@@ -335,7 +335,9 @@ When delegating a task, engine and model are resolved in priority order:
 
 ### Multi-Engine Configuration
 
-Engines are defined in `.optimus/config/available-agents.json`. The `protocol` field determines which adapter handles the engine:
+The default engine registry lives in `~/.optimus/config/available-agents.json`. Project-level `.optimus/config/available-agents.json` is optional and only needed when a repository should override the user-level defaults. The `protocol` field determines which adapter handles the engine:
+
+Optimus resolves engine settings in three layers: built-in defaults, then the user-level `~/.optimus/config/available-agents.json` (or `OPTIMUS_USER_AVAILABLE_AGENTS_PATH`), then the project-level `.optimus/config/available-agents.json` if you explicitly opt into a repository-specific override. Nested objects merge deeply, while arrays such as `available_models` or capability lists are replaced instead of concatenated.
 
 ```json
 {

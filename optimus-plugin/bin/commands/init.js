@@ -11,17 +11,22 @@ const fs = require('fs');
 const path = require('path');
 const { writeClientMcpConfigs, writeCopilotLaunchers } = require('../lib/mcp-config');
 const { getProjectsRegistryPath, registerProject } = require('../lib/project-registry');
+const { copyFileIfMissing, getUserAvailableAgentsConfigPath } = require('../lib/available-agents-config');
 
-function copyDirRecursive(src, dest) {
+function copyDirRecursive(src, dest, options = {}) {
+  const skippedNames = new Set(options.skippedNames || []);
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
   }
   const entries = fs.readdirSync(src, { withFileTypes: true });
   for (const entry of entries) {
+    if (skippedNames.has(entry.name)) {
+      continue;
+    }
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
+      copyDirRecursive(srcPath, destPath, options);
     } else {
       if (!fs.existsSync(destPath)) {
         fs.copyFileSync(srcPath, destPath);
@@ -94,7 +99,22 @@ module.exports = function init() {
   const configSrc = path.join(scaffoldDir, 'config');
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Installing system config...');
-    copyDirRecursive(configSrc, path.join(optimusDir, 'config'));
+    copyDirRecursive(configSrc, path.join(optimusDir, 'config'), {
+      skippedNames: ['available-agents.json'],
+    });
+  }
+
+  const userAvailableAgentsTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.json');
+  const userAvailableAgentsPath = getUserAvailableAgentsConfigPath();
+  if (fs.existsSync(userAvailableAgentsTemplatePath)) {
+    const createdUserConfig = copyFileIfMissing(userAvailableAgentsTemplatePath, userAvailableAgentsPath);
+    if (createdUserConfig) {
+      console.log(`  ✅ Created user-level available-agents config at ${userAvailableAgentsPath}`);
+    } else {
+      console.log(`  ⏭️  Preserved user-level available-agents config at ${userAvailableAgentsPath}`);
+    }
+    console.log('  💡 User-level available-agents.json is the default source of truth for engine config.');
+    console.log('  💡 Use .optimus/config/available-agents.project.sample.json as an opt-in project override sample.');
   }
 
   // 2.0.1 Auto-fill vcs.json owner/repo from git remote
