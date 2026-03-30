@@ -121,20 +121,10 @@ describe('client adapter layer', () => {
     expect(clientsModule.resolveCliClient(undefined, undefined, undefined)).toBe('copilot');
   });
 
-  it('copilot adapter disables IDE-discovered servers before re-injecting via --additional-mcp-config', () => {
-    const projectRoot = makeTempDir('optimus-go-copilot-args-');
-    const copilotConfig = path.join(projectRoot, '.copilot', 'mcp-config.json');
-    fs.mkdirSync(path.dirname(copilotConfig), { recursive: true });
-    fs.writeFileSync(copilotConfig, JSON.stringify({ mcpServers: { 'spartan-swarm': { command: 'node' } } }), 'utf8');
-
+  it('copilot adapter builds correct args with --resume and @-prefixed config path', () => {
     const adapter = clientsModule.getClientAdapter('copilot');
-    const args = adapter.buildArgs(copilotConfig, ['--continue']);
-    expect(args).toEqual([
-      '--resume',
-      '--disable-mcp-server', 'spartan-swarm',
-      '--additional-mcp-config', `@${copilotConfig}`,
-      '--continue'
-    ]);
+    const args = adapter.buildArgs('/path/to/config.json', ['--continue']);
+    expect(args).toEqual(['--resume', '--additional-mcp-config', '@/path/to/config.json', '--continue']);
   });
 
   it('claude adapter builds correct args with --resume and --mcp-config', () => {

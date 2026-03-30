@@ -13,16 +13,6 @@ const CLIENT_ADAPTERS = {
     buildArgs(configPath, passthroughArgs) {
       const args = ['--resume'];
       if (configPath) {
-        // Disable any MCP servers with the same name that may have been
-        // auto-discovered via IDE connection (.vscode/mcp.json), then
-        // re-inject from .copilot/mcp-config.json to avoid duplicate registration.
-        try {
-          const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-          const serverNames = Object.keys(cfg.mcpServers || cfg.servers || {});
-          for (const name of serverNames) {
-            args.push('--disable-mcp-server', name);
-          }
-        } catch { /* best-effort; proceed without disable */ }
         args.push('--additional-mcp-config', `@${configPath}`);
       }
       return args.concat(passthroughArgs);

@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.3] - 2026-03-30
+
+### Bug Fixes
+- **Reverted `--disable-mcp-server` in `optimus go`** — The v2.17.2 fix caused `spartan-swarm` to show as disabled (⊘) because `--disable-mcp-server` takes precedence over `--additional-mcp-config`. Reverted to simple `--additional-mcp-config` injection, which per Copilot CLI docs "overrides any installed MCP server configuration with the same name."
+
 ## [2.17.2] - 2026-03-30
 
 ### Bug Fixes
