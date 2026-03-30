@@ -10,7 +10,7 @@
       ],
       "timeout": {
         "heartbeat_ms": 600000,
-        "activity_ms": 1200000
+        "activity_ms": 300000
       },
       "acp": {
         "path": "claude-agent-acp"

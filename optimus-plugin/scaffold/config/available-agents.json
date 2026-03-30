@@ -5,7 +5,7 @@
   "engines": {
     "claude-code": {
       "available_models": ["claude-opus-4.6-1m", "gpt-5.4", "gemini-3-pro-preview"],
-      "timeout": { "heartbeat_ms": 600000, "activity_ms": 1200000 },
+      "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 },
       "acp": { "path": "claude-agent-acp" }
     },
     "github-copilot": {
@@ -15,7 +15,7 @@
     },
     "qwen-code": {
       "available_models": ["qwen3-coder"],
-      "timeout": { "heartbeat_ms": 600000, "activity_ms": 1200000 },
+      "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 },
       "acp": { "path": "auto", "args": ["--acp"] },
       "_comment": "path 'auto' = auto-discover from VS Code extensions"
     }

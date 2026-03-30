@@ -1188,6 +1188,7 @@ Please provide your complete execution result below.${verifySuffix}`;
             maxContinues: automationPolicy?.maxContinues,
             role,
             verificationLevel: 'normal',
+            workspacePath,
             onChunk: streamingRunId
                 ? (chunk, isThinking) => pushStreamEvent(streamingRunId!, isThinking ? 'thinking' : 'text', chunk)
                 : undefined,

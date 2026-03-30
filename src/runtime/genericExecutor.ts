@@ -9,6 +9,7 @@ import { AcpProcessPool } from '../utils/acpProcessPool';
 import { AcpAdapter } from '../adapters/AcpAdapter';
 import { extractJsonFromText } from '../utils/agentRuntime';
 import { validateOutput, formatValidationIssues } from '../harness/outputValidator';
+import { getEngineConfig, buildResolvedTransportForProtocol, loadEngineActivityTimeout } from '../mcp/engine-resolver';
 
 // ─── Engine Configuration ───
 
@@ -68,6 +69,8 @@ export interface ExecuteOptions {
     verificationLevel?: 'strict' | 'normal' | 'skip';
     /** Streaming callback: called for each output chunk during execution */
     onChunk?: (chunk: string, isThinking: boolean) => void;
+    /** Workspace path — when provided, loads engine config from available-agents.json instead of using hardcoded defaults */
+    workspacePath?: string;
 }
 
 export interface ExecuteResult {
@@ -90,14 +93,40 @@ export async function executePrompt(
     options: ExecuteOptions = {}
 ): Promise<ExecuteResult> {
     const engine = options.engine || 'github-copilot';
-    const config = resolveEngineConfig(engine);
+
+    // Resolve engine executable, args, and activity timeout.
+    // When workspacePath is provided, prefer config from available-agents.json;
+    // otherwise fall back to hardcoded BUILTIN_ENGINES defaults.
+    let executable: string;
+    let args: string[];
+    let activityTimeoutMs: number;
+
+    if (options.workspacePath) {
+        const engineConfig = getEngineConfig(engine, options.workspacePath);
+        if (engineConfig) {
+            const transport = buildResolvedTransportForProtocol(engine, 'acp', engineConfig?.acp || engineConfig, options.model);
+            executable = transport.executable || engineConfig?.acp?.path || BUILTIN_ENGINES[engine]?.executable || 'copilot';
+            args = transport.args;
+            activityTimeoutMs = loadEngineActivityTimeout(options.workspacePath, engine) || BUILTIN_ENGINES[engine]?.activityTimeoutMs || 300_000;
+        } else {
+            const config = resolveEngineConfig(engine);
+            executable = config.executable;
+            args = config.args;
+            activityTimeoutMs = config.activityTimeoutMs;
+        }
+    } else {
+        const config = resolveEngineConfig(engine);
+        executable = config.executable;
+        args = config.args;
+        activityTimeoutMs = config.activityTimeoutMs;
+    }
 
     const pool = AcpProcessPool.getInstance();
     const adapter = pool.getOrCreateAdapter(
         engine,
-        config.executable,
-        config.args,
-        config.activityTimeoutMs
+        executable,
+        args,
+        activityTimeoutMs
     );
 
     const acpOptions: Record<string, unknown> = {

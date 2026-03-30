@@ -91,13 +91,17 @@ export class AcpAdapter implements AgentAdapter {
     private _invocationCount: number = 0;
     private _stderrBuffer: string = '';
 
-    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false) {
+    /** Timeout for ACP protocol handshake (initialize). Should complete in < 5s; 15s is generous. */
+    private initTimeoutMs: number;
+
+    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false, initTimeoutMs: number = 15_000) {
         this.id = id;
         this.name = name;
         this.executable = executable;
         this.defaultArgs = defaultArgs;
         this.activityTimeoutMs = activityTimeoutMs;
         this._persistent = persistent;
+        this.initTimeoutMs = initTimeoutMs;
     }
 
     // --- Pool management API ---
@@ -204,6 +208,22 @@ export class AcpAdapter implements AgentAdapter {
         return new Promise((resolve, reject) => {
             this.pendingRequests.set(id, { resolve, reject });
         });
+    }
+
+    /**
+     * Send a JSON-RPC request with a timeout. Used for handshake calls (initialize)
+     * that should complete quickly — NOT for long-running task execution.
+     */
+    private async sendRequestWithTimeout(method: string, params: any, timeoutMs: number): Promise<any> {
+        return Promise.race([
+            this.sendRequest(method, params),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error(
+                    `ACP initialization_timeout: '${method}' handshake did not complete within ${timeoutMs / 1000}s. ` +
+                    `The engine process may be hung. Check engine installation and auth.`
+                )), timeoutMs)
+            )
+        ]);
     }
 
     private handleIncoming(msg: any): void {
@@ -469,12 +489,21 @@ export class AcpAdapter implements AgentAdapter {
         this._stderrBuffer = '';
         this.spawnProcess(extraEnv);
 
-        const initResult = await this.sendRequest('initialize', {
-            protocolVersion: 1,
-            capabilities: {},
-            clientInfo: { name: 'optimus', version: '0.4.0' }
-        });
-        debugLog('[AcpAdapter]', `Initialize OK (persistent): ${JSON.stringify(initResult)?.substring(0, 200)}`);
+        try {
+            const initResult = await this.sendRequestWithTimeout('initialize', {
+                protocolVersion: 1,
+                capabilities: {},
+                clientInfo: { name: 'optimus', version: '0.4.0' }
+            }, this.initTimeoutMs);
+            debugLog('[AcpAdapter]', `Initialize OK (persistent): ${JSON.stringify(initResult)?.substring(0, 200)}`);
+        } catch (err: any) {
+            if (err?.message?.includes('initialization_timeout')) {
+                debugLog('[AcpAdapter]', `Init timeout in _ensureReady — killing hung process`);
+                this.cleanup();
+                this._initialized = false;
+            }
+            throw err;
+        }
         this._initialized = true;
     }
 
@@ -701,11 +730,11 @@ export class AcpAdapter implements AgentAdapter {
             };
 
             // Step 2: Initialize handshake (protocolVersion is a number per Qwen's ACP impl)
-            const initResult = await this.sendRequest('initialize', {
+            const initResult = await this.sendRequestWithTimeout('initialize', {
                 protocolVersion: 1,
                 capabilities: {},
                 clientInfo: { name: 'optimus', version: '0.4.0' }
-            });
+            }, this.initTimeoutMs);
             debugLog('[AcpAdapter]', `Initialize OK: ${JSON.stringify(initResult)?.substring(0, 200)}`);
 
             // Step 3: Create or resume session
