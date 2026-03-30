@@ -22,10 +22,10 @@ export interface EngineConfig {
 const BUILTIN_ENGINES: Record<string, EngineConfig> = {
     'github-copilot': {
         executable: 'copilot',
-        args: ['--acp'],
+        args: ['--acp', '--stdio'],
         activityTimeoutMs: 300_000,
     },
-    'claude-code': {
+    'claude-code':{
         executable: 'claude-agent-acp',
         args: ['--acp'],
         activityTimeoutMs: 300_000,

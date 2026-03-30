@@ -36,7 +36,7 @@ function createTempWorkspace(configOverride?: object): string {
                 automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 5 },
                 acp: {
                     path: 'copilot',
-                    args: ['--acp'],
+                    args: ['--acp', '--stdio'],
                     capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
                 },
                 cli: {
@@ -182,7 +182,7 @@ describe('Engine automation integration', () => {
                     automation: { mode: 'auto-approve', continuation: 'autopilot' },
                     acp: {
                         path: 'copilot',
-                        args: ['--acp'],
+                        args: ['--acp', '--stdio'],
                         capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single'] }
                     },
                     cli: {
@@ -440,7 +440,7 @@ describe('Engine automation integration', () => {
                     automation: { mode: 'auto-approve', continuation: 'autopilot' },
                     acp: {
                         path: 'copilot',
-                        args: ['--acp'],
+                        args: ['--acp', '--stdio'],
                         capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
                     },
                     cli: {
@@ -506,7 +506,7 @@ describe('Engine automation integration', () => {
                     automation: { mode: 'auto-approve', continuation: 'autopilot' },
                     acp: {
                         path: 'copilot',
-                        args: ['--acp'],
+                        args: ['--acp', '--stdio'],
                         capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
                     }
                 }

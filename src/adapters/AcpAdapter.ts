@@ -89,6 +89,7 @@ export class AcpAdapter implements AgentAdapter {
     private _busy: boolean = false;
     private _idleSince: number = 0;
     private _invocationCount: number = 0;
+    private _stderrBuffer: string = '';
 
     constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false) {
         this.id = id;
@@ -256,7 +257,34 @@ export class AcpAdapter implements AgentAdapter {
 
     // ─── Process lifecycle ───
 
+    private validateExecutable(): void {
+        // If it's an absolute path, check file existence directly
+        if (path.isAbsolute(this.executable)) {
+            if (!fs.existsSync(this.executable)) {
+                throw new Error(
+                    `ACP pre-flight failed: executable not found at '${this.executable}'. ` +
+                    `Update the path in .optimus/config/available-agents.json.`
+                );
+            }
+            return;
+        }
+        // Otherwise check PATH
+        try {
+            if (process.platform === 'win32') {
+                cp.execSync(`where ${this.executable}`, { stdio: 'pipe', timeout: 5000 });
+            } else {
+                cp.execSync(`which ${this.executable}`, { stdio: 'pipe', timeout: 5000 });
+            }
+        } catch {
+            throw new Error(
+                `ACP pre-flight failed: executable '${this.executable}' not found in PATH. ` +
+                `Install the CLI tool or update the path in .optimus/config/available-agents.json.`
+            );
+        }
+    }
+
     private spawnProcess(extraEnv?: Record<string, string>): void {
+        this.validateExecutable();
         const env = { ...process.env, ...extraEnv };
         const args = [...this.defaultArgs];
 
@@ -281,7 +309,12 @@ export class AcpAdapter implements AgentAdapter {
         });
 
         this.process.stderr!.on('data', (chunk: Buffer) => {
-            debugLog('[AcpAdapter][stderr]', chunk.toString('utf8').trimEnd());
+            const text = chunk.toString('utf8');
+            this._stderrBuffer += text;
+            if (this._stderrBuffer.length > 2000) {
+                this._stderrBuffer = this._stderrBuffer.slice(-2000);
+            }
+            debugLog('[AcpAdapter][stderr]', text.trimEnd());
         });
 
         // Track process identity for exit handler closure
@@ -298,8 +331,15 @@ export class AcpAdapter implements AgentAdapter {
             debugLog('[AcpAdapter]', `Process exited: code=${code} signal=${signal}`);
             // Only handle if this is still the current process (not replaced by respawn)
             if (this.process !== thisProcess) return;
+            const stderrSnippet = this._stderrBuffer.trim();
+            const stderrInfo = stderrSnippet
+                ? ` Last stderr: ${stderrSnippet.slice(-500)}`
+                : '';
+            if (stderrSnippet) {
+                console.error(`[AcpAdapter] Process stderr before crash:\n${stderrSnippet.slice(-500)}`);
+            }
             this.rejectAllPending(new Error(
-                `ACP acp_process_crashed: engine process exited unexpectedly (code=${code}, signal=${signal}). ` +
+                `ACP acp_process_crashed: engine process exited unexpectedly (code=${code}, signal=${signal}).${stderrInfo} ` +
                 `The warm pool will auto-recover on the next request. If persistent, check engine installation and auth.`
             ));
             this.process = undefined;
@@ -426,6 +466,7 @@ export class AcpAdapter implements AgentAdapter {
             this._initialized = false;
         }
 
+        this._stderrBuffer = '';
         this.spawnProcess(extraEnv);
 
         const initResult = await this.sendRequest('initialize', {
@@ -615,6 +656,7 @@ export class AcpAdapter implements AgentAdapter {
         debugLog('[AcpAdapter]', `Invoking for ${this.name} (mode=${mode}, resume=${!!sessionId})`);
 
         // Step 1: Spawn the subprocess transport
+        this._stderrBuffer = '';
         this.spawnProcess(extraEnv);
 
         try {

@@ -11,7 +11,7 @@
     "github-copilot": {
       "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
       "timeout": { "heartbeat_ms": 600000 },
-      "acp": { "path": "copilot", "args": ["--acp"] }
+      "acp": { "path": "copilot", "args": ["--acp", "--stdio"] }
     },
     "qwen-code": {
       "available_models": ["qwen3-coder"],

@@ -393,7 +393,7 @@ const ENGINE_SYSTEM_DEFAULTS: Record<string, any> = {
         protocol: 'acp',
         automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
         acp: {
-            path: 'copilot', args: ['--acp'],
+            path: 'copilot', args: ['--acp', '--stdio'],
             capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
         }
     },

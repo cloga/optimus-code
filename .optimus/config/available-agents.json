@@ -4,19 +4,50 @@
   "_comment": "Engine & Model configuration. ACP protocol, warm pool, and autopilot mode are system defaults.",
   "engines": {
     "claude-code": {
-      "available_models": ["claude-opus-4.6-1m", "gpt-5.4", "gemini-3-pro-preview"],
-      "timeout": { "heartbeat_ms": 600000, "activity_ms": 1200000 },
-      "acp": { "path": "claude-agent-acp" }
+      "available_models": [
+        "claude-opus-4.6",
+        "gpt-5.4"
+      ],
+      "timeout": {
+        "heartbeat_ms": 600000,
+        "activity_ms": 1200000
+      },
+      "acp": {
+        "path": "claude-agent-acp"
+      }
     },
     "github-copilot": {
-      "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
-      "timeout": { "heartbeat_ms": 600000 },
-      "acp": { "path": "copilot", "args": ["--acp"] }
-    },
+      "available_models": [
+        "gpt-5.4",
+        "claude-opus-4.6"
+      ],
+      "timeout": {
+        "heartbeat_ms": 600000
+      },
+      "acp": {
+        "path": "copilot",
+        "args": [
+          "--acp",
+          "--stdio"
+        ]
+      }
+    }
+  },
+  "_disabled_engines": {
     "qwen-code": {
-      "available_models": ["qwen3-coder"],
-      "timeout": { "heartbeat_ms": 600000, "activity_ms": 1200000 },
-      "acp": { "path": "auto", "args": ["--acp"] },
+      "available_models": [
+        "qwen3-coder"
+      ],
+      "timeout": {
+        "heartbeat_ms": 600000,
+        "activity_ms": 1200000
+      },
+      "acp": {
+        "path": "auto",
+        "args": [
+          "--acp"
+        ]
+      },
       "_comment": "path 'auto' = auto-discover from VS Code extensions"
     }
   }
