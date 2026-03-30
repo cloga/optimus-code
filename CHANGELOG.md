@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.1] - 2026-03-30
+
+### Bug Fixes
+- **MCP config `node` ENOENT on Windows** — `optimus init/upgrade` now writes the absolute Node.js path (via `process.execPath`) into generated MCP configs instead of bare `node`. Fixes `spawn node ENOENT` when MCP hosts like Copilot CLI spawn the server without `shell: true`. Fixes #533.
+
 ## [2.17.0] - 2026-03-30
 
 ### Features

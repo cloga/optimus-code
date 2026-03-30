@@ -163,6 +163,13 @@ function mergeTargetConfig(existing, target, renderedServers) {
   return result;
 }
 
+function resolveNodeCommand(command) {
+  if (command === 'node' || command === 'node.exe') {
+    return process.execPath;
+  }
+  return command;
+}
+
 function writeClientMcpConfigs(workspaceRoot) {
   const config = loadCanonicalMcpConfig(workspaceRoot);
 
@@ -170,6 +177,14 @@ function writeClientMcpConfigs(workspaceRoot) {
     const targetPath = path.join(workspaceRoot, spec.relativePath);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     const renderedServers = renderServersForTarget(config, target, workspaceRoot);
+
+    // Resolve bare 'node' to absolute path for MCP hosts that spawn without shell
+    for (const server of Object.values(renderedServers)) {
+      if (server && typeof server === 'object' && typeof server.command === 'string') {
+        server.command = resolveNodeCommand(server.command);
+      }
+    }
+
     const merged = mergeTargetConfig(readExistingConfig(targetPath), target, renderedServers);
     fs.writeFileSync(targetPath, JSON.stringify(merged, null, 4) + '\n', 'utf8');
   }
