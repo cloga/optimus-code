@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.2] - 2026-03-30
+
+### Bug Fixes
+- **MCP duplicate registration via IDE auto-connect** — `optimus go` now passes `--disable-mcp-server` for each server defined in `.copilot/mcp-config.json` before re-injecting via `--additional-mcp-config`. This prevents duplicate `spartan-swarm` registration when Copilot CLI auto-connects to a running VS Code instance that already loaded `.vscode/mcp.json`.
+
 ## [2.17.1] - 2026-03-30
 
 ### Bug Fixes
