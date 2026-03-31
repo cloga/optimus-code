@@ -91,6 +91,39 @@ describe('project registry helpers', () => {
     const reloaded = registryModule.loadProjectRegistry();
     expect(reloaded.defaults).toEqual({ cli: 'claude' });
   });
+
+  it('prunes stale projects that no longer exist or are no longer Optimus workspaces', () => {
+    const registryRoot = makeTempDir('optimus-go-prune-');
+    process.env.OPTIMUS_PROJECTS_REGISTRY_PATH = path.join(registryRoot, 'projects.json');
+
+    const validProject = path.join(registryRoot, 'FlightReview');
+    fs.mkdirSync(path.join(validProject, '.optimus'), { recursive: true });
+
+    const deletedProject = path.join(registryRoot, 'workspace');
+    const nonWorkspaceProject = path.join(registryRoot, 'plain-folder');
+    fs.mkdirSync(nonWorkspaceProject, { recursive: true });
+
+    fs.writeFileSync(process.env.OPTIMUS_PROJECTS_REGISTRY_PATH, JSON.stringify({
+      version: 1,
+      defaults: {},
+      projects: [
+        { name: 'FlightReview', path: validProject, aliases: [] },
+        { name: 'workspace', path: deletedProject, aliases: [] },
+        { name: 'plain-folder', path: nonWorkspaceProject, aliases: [] }
+      ]
+    }, null, 2), 'utf8');
+
+    const registry = registryModule.loadProjectRegistry();
+    expect(registry.projects).toHaveLength(1);
+    expect(registry.projects[0]).toMatchObject({
+      name: 'FlightReview',
+      path: path.resolve(validProject)
+    });
+
+    const persisted = JSON.parse(fs.readFileSync(process.env.OPTIMUS_PROJECTS_REGISTRY_PATH!, 'utf8'));
+    expect(persisted.projects).toHaveLength(1);
+    expect(persisted.projects[0].path).toBe(path.resolve(validProject));
+  });
 });
 
 describe('optimus go helpers', () => {

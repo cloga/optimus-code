@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.17.8] - 2026-03-31
+
+### Bug Fixes
+- **Prune stale `optimus go` project entries** — The global project registry now self-heals on load by removing paths that no longer exist or no longer contain `.optimus`, so deleted smoke and temp workspaces stop polluting the project picker.
+
+### Improvements
+- **Clearer upgrade reminder** — `optimus upgrade` now ends with a direct reminder to run `npx github:cloga/optimus-code upgrade` in other installed workspaces so they pick up the latest fixes.
+
 ## [2.17.7] - 2026-03-31
 
 ### Bug Fixes

@@ -67,6 +67,10 @@ function normalizeProjectEntry(entry) {
   };
 }
 
+function isRegisteredProjectPathValid(projectPath) {
+  return fs.existsSync(projectPath) && fs.existsSync(path.join(projectPath, '.optimus'));
+}
+
 function loadProjectRegistry() {
   const registryPath = getProjectsRegistryPath();
   if (!fs.existsSync(registryPath)) {
@@ -75,15 +79,26 @@ function loadProjectRegistry() {
 
   try {
     const raw = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
-    const projects = Array.isArray(raw?.projects)
+    const rawProjects = Array.isArray(raw?.projects)
       ? raw.projects.map(normalizeProjectEntry).filter(Boolean)
       : [];
+    const projects = rawProjects.filter(project => isRegisteredProjectPathValid(project.path));
 
-    return {
+    const normalizedRegistry = {
       version: typeof raw?.version === 'number' ? raw.version : 1,
       defaults: raw?.defaults && typeof raw.defaults === 'object' ? raw.defaults : {},
       projects
     };
+
+    if (
+      raw?.version !== normalizedRegistry.version ||
+      JSON.stringify(raw?.defaults && typeof raw.defaults === 'object' ? raw.defaults : {}) !== JSON.stringify(normalizedRegistry.defaults) ||
+      rawProjects.length !== projects.length
+    ) {
+      saveProjectRegistry(normalizedRegistry);
+    }
+
+    return normalizedRegistry;
   } catch {
     return createEmptyRegistry();
   }
