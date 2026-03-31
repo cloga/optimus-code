@@ -3225,8 +3225,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path22) {
-      let input = path22;
+    function removeDotSegments(path21) {
+      let input = path21;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3425,8 +3425,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path22, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path22 && path22 !== "/" ? path22 : void 0;
+        const [path21, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path21 && path21 !== "/" ? path21 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -10510,7 +10510,7 @@ var require_main = __commonJS({
   "../node_modules/dotenv/lib/main.js"(exports2, module2) {
     "use strict";
     var fs20 = require("fs");
-    var path22 = require("path");
+    var path21 = require("path");
     var os3 = require("os");
     var crypto4 = require("crypto");
     var packageJson = require_package();
@@ -10626,7 +10626,7 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path22.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path21.resolve(process.cwd(), ".env.vault");
       }
       if (fs20.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
@@ -10634,7 +10634,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path22.join(os3.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path21.join(os3.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -10651,7 +10651,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path22.resolve(process.cwd(), ".env");
+      const dotenvPath = path21.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -10675,13 +10675,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path23 of optionPaths) {
+      for (const path22 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs20.readFileSync(path23, { encoding }));
+          const parsed = DotenvModule.parse(fs20.readFileSync(path22, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path23} ${e.message}`);
+            _debug(`Failed to load ${path22} ${e.message}`);
           }
           lastError = e;
         }
@@ -10696,7 +10696,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative2 = path22.relative(process.cwd(), filePath);
+            const relative2 = path21.relative(process.cwd(), filePath);
             shortPaths.push(relative2);
           } catch (e) {
             if (debug) {
@@ -13231,8 +13231,8 @@ function getErrorMap() {
 
 // ../node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path22, errorMaps, issueData } = params;
-  const fullPath = [...path22, ...issueData.path || []];
+  const { data, path: path21, errorMaps, issueData } = params;
+  const fullPath = [...path21, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -13347,11 +13347,11 @@ var errorUtil;
 
 // ../node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path22, key) {
+  constructor(parent, value, path21, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path22;
+    this._path = path21;
     this._key = key;
   }
   get path() {
@@ -16997,10 +16997,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path22) {
-  if (!path22)
+function getElementAtPath(obj, path21) {
+  if (!path21)
     return obj;
-  return path22.reduce((acc, key) => acc?.[key], obj);
+  return path21.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -17383,11 +17383,11 @@ function aborted(x2, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path22, issues) {
+function prefixIssues(path21, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path22);
+    iss.path.unshift(path21);
     return iss;
   });
 }
@@ -27746,29 +27746,6 @@ function withManifestLock(fn) {
     }
   });
 }
-var DEFAULT_TASK_STARTUP_TIMEOUT_MS = 2 * 60 * 1e3;
-var MAX_TASK_STARTUP_TIMEOUT_MS = 10 * 60 * 1e3;
-function buildStartupTimeoutErrorMessage(timeoutMs) {
-  return [
-    `TASK_STARTUP_TIMEOUT: Async worker failed to start within ${Math.round(timeoutMs / 1e3)}s (task remained pending).`,
-    `Fix: verify the detached worker can launch (Node executable, engine path, workspace permissions), then retry or increase startup_timeout_ms.`
-  ].join(" ");
-}
-function buildRunnerDiedErrorMessage(pid) {
-  return [
-    `TASK_RUNNER_DIED: Async worker PID ${pid} is no longer running while the task is still marked running.`,
-    `Fix: inspect detached worker crash logs, verify engine bootstrap/auth, then retry the task.`
-  ].join(" ");
-}
-function isPidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 var TaskManifestManager = class {
   static getManifestPath(workspacePath) {
     return resolveOptimusPath(workspacePath, "state", "task-manifest.json");
@@ -27832,28 +27809,10 @@ var TaskManifestManager = class {
       for (const taskId in manifest) {
         const task = manifest[taskId];
         if (task.status === "running") {
-          if (typeof task.pid === "number" && task.pid > 0 && !isPidAlive(task.pid)) {
-            task.status = "failed";
-            task.error_message = buildRunnerDiedErrorMessage(task.pid);
-            task.completed_at = now;
-            changed = true;
-            try {
-              if (task.output_path) {
-                const dir = path4.dirname(task.output_path);
-                if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
-                fs4.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
-              }
-            } catch (e) {
-              console.error(`[TaskManifest] Warning: failed to write runner-death marker: ${e.message}`);
-            }
-            continue;
-          }
           const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
           if (now - task.heartbeatTime > effectiveTimeout) {
             task.status = "failed";
             task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
-            task.completed_at = now;
             changed = true;
             try {
               if (task.output_path) {
@@ -27864,24 +27823,6 @@ var TaskManifestManager = class {
               }
             } catch (e) {
               console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
-            }
-          }
-        } else if (task.status === "pending") {
-          const startupTimeout = task.startup_timeout_ms || DEFAULT_TASK_STARTUP_TIMEOUT_MS;
-          if (now - task.startTime > startupTimeout) {
-            task.status = "failed";
-            task.error_message = buildStartupTimeoutErrorMessage(startupTimeout);
-            task.completed_at = now;
-            changed = true;
-            try {
-              if (task.output_path) {
-                const dir = path4.dirname(task.output_path);
-                if (!fs4.existsSync(dir)) fs4.mkdirSync(dir, { recursive: true });
-                fs4.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
-              }
-            } catch (e) {
-              console.error(`[TaskManifest] Warning: failed to write startup-timeout marker: ${e.message}`);
             }
           }
         }
@@ -28067,9 +28008,9 @@ function checkForLoop(sessionId, threshold = 3) {
   const edits = sessionEdits.get(sessionId);
   if (!edits) return null;
   const hotFiles = [];
-  for (const [path22, count] of edits) {
+  for (const [path21, count] of edits) {
     if (count >= threshold) {
-      hotFiles.push({ path: path22, count });
+      hotFiles.push({ path: path21, count });
     }
   }
   if (hotFiles.length === 0) return null;
@@ -28112,7 +28053,7 @@ function analyzeOutputForLoops(sessionId, output, threshold = 3) {
 var cp = __toESM(require("child_process"));
 var readline = __toESM(require("readline"));
 var fs7 = __toESM(require("fs"));
-var path8 = __toESM(require("path"));
+var path7 = __toESM(require("path"));
 
 // ../src/debugLogger.ts
 var customLogger;
@@ -28252,19 +28193,6 @@ function loadProjectMcpServers(workspaceRoot, target) {
     }
   }
   return null;
-}
-
-// ../src/utils/copilotAuthEnv.ts
-var path7 = __toESM(require("path"));
-function sanitizeCopilotAuthEnv(env) {
-  if (!env.COPILOT_GITHUB_TOKEN) {
-    delete env.GITHUB_TOKEN;
-    delete env.GH_TOKEN;
-  }
-}
-function isCopilotCliExecutable(executable) {
-  const normalized = path7.basename(executable).toLowerCase();
-  return normalized === "copilot" || normalized === "copilot.cmd" || normalized === "copilot.exe" || normalized === "copilot.ps1" || normalized === "copilot.bat";
 }
 
 // ../src/adapters/AcpAdapter.ts
@@ -28461,7 +28389,7 @@ var AcpAdapter = class {
   }
   // ─── Process lifecycle ───
   validateExecutable() {
-    if (path8.isAbsolute(this.executable)) {
+    if (path7.isAbsolute(this.executable)) {
       if (!fs7.existsSync(this.executable)) {
         throw new Error(
           `ACP pre-flight failed: executable not found at '${this.executable}'. Update the path in .optimus/config/available-agents.json.`
@@ -28484,7 +28412,6 @@ var AcpAdapter = class {
   spawnProcess(extraEnv) {
     this.validateExecutable();
     const env = { ...process.env, ...extraEnv };
-    this.sanitizeSpawnEnv(env);
     const args = [...this.defaultArgs];
     debugLog("[AcpAdapter]", `Spawning: ${this.executable} ${args.join(" ")}`);
     this.process = cp.spawn(this.executable, args, {
@@ -28539,11 +28466,6 @@ ${stderrSnippet.slice(-500)}`);
       pid: this.process.pid,
       startTime: Date.now()
     };
-  }
-  sanitizeSpawnEnv(env) {
-    if (isCopilotCliExecutable(this.executable)) {
-      sanitizeCopilotAuthEnv(env);
-    }
   }
   rejectAllPending(err) {
     for (const [, pending] of this.pendingRequests) {
@@ -29301,7 +29223,7 @@ var import_path5 = __toESM(require("path"));
 // ../src/adapters/PersistentAgentAdapter.ts
 var cp2 = __toESM(require("child_process"));
 var fs8 = __toESM(require("fs"));
-var path9 = __toESM(require("path"));
+var path8 = __toESM(require("path"));
 
 // ../node_modules/ansi-regex/index.js
 function ansiRegex({ onlyFirst = false } = {}) {
@@ -29356,7 +29278,7 @@ function resolveWindowsSpawnResolution(cmd) {
   }
   const candidates = whereResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).filter((candidate) => fs8.existsSync(candidate)).sort((left, right) => {
     const extRank = (filePath) => {
-      const ext = path9.extname(filePath).toLowerCase();
+      const ext = path8.extname(filePath).toLowerCase();
       if (ext === ".exe" || ext === ".com") {
         return 0;
       }
@@ -29371,7 +29293,7 @@ function resolveWindowsSpawnResolution(cmd) {
     return extRank(left) - extRank(right);
   });
   for (const candidate of candidates) {
-    const ext = path9.extname(candidate).toLowerCase();
+    const ext = path8.extname(candidate).toLowerCase();
     if (ext === ".exe" || ext === ".com") {
       const resolved = { cmd: candidate, argsPrefix: [] };
       windowsSpawnResolutionCache.set(cmd, resolved);
@@ -29386,9 +29308,9 @@ function resolveWindowsSpawnResolution(cmd) {
       if (!scriptMatch) {
         continue;
       }
-      const wrapperDir = path9.dirname(candidate);
-      const nodeExecutable = fs8.existsSync(path9.join(wrapperDir, "node.exe")) ? path9.join(wrapperDir, "node.exe") : "node";
-      const entryScript = path9.join(wrapperDir, scriptMatch[1].replace(/\\/g, path9.sep));
+      const wrapperDir = path8.dirname(candidate);
+      const nodeExecutable = fs8.existsSync(path8.join(wrapperDir, "node.exe")) ? path8.join(wrapperDir, "node.exe") : "node";
+      const entryScript = path8.join(wrapperDir, scriptMatch[1].replace(/\\/g, path8.sep));
       const resolved = { cmd: nodeExecutable, argsPrefix: [entryScript] };
       windowsSpawnResolutionCache.set(cmd, resolved);
       return resolved;
@@ -29490,7 +29412,7 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
       Date.now().toString(),
       Math.random().toString(36).slice(2, 8)
     ].join("-") + ".md";
-    const promptFilePath = path9.join(promptDir, promptFileName);
+    const promptFilePath = path8.join(promptDir, promptFileName);
     fs8.writeFileSync(promptFilePath, prompt, "utf8");
     debugLog(this.id, "Prepared oversized prompt file", JSON.stringify({
       mode,
@@ -29498,7 +29420,7 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
       promptFilePath,
       promptFileThreshold: this.getPromptFileThreshold()
     }));
-    const relativePromptPath = path9.relative(currentCwd, promptFilePath).replace(/\\/g, "/");
+    const relativePromptPath = path8.relative(currentCwd, promptFilePath).replace(/\\/g, "/");
     const wrappedPrompt = [
       "The original user prompt was too large to pass inline over the CLI.",
       `Read the UTF-8 file at "${relativePromptPath}" before doing anything else.`,
@@ -29752,7 +29674,7 @@ ${outputBlock}
     const record2 = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record2, result);
     const lines = this.countMeaningfulLines(content);
-    const path22 = this.getStructuredResultPath(record2);
+    const path21 = this.getStructuredResultPath(record2);
     const lineRange = this.getStructuredResultLineRange(record2);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -29786,30 +29708,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path22, "matches=0"]);
+        return this.buildStructuredSummary([path21, "matches=0"]);
       }
-      return this.buildStructuredSummary([path22, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path21, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path22, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path21, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path22, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path21, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path22, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path21, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path22, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path21, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path22, "items=0"]);
+        return this.buildStructuredSummary([path21, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path22, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path21, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path22, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path21, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -30371,7 +30293,7 @@ ${line}` : "";
 
 // ../src/adapters/ClaudeCodeAdapter.ts
 var fs9 = __toESM(require("fs"));
-var path10 = __toESM(require("path"));
+var path9 = __toESM(require("path"));
 var CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   agentPermissionMode;
@@ -30423,7 +30345,7 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
     if (projectMcpServers) {
       try {
         const proxyMcpPath = resolveOptimusPath(cwd, "state", ".claude-mcp.json");
-        fs9.mkdirSync(path10.dirname(proxyMcpPath), { recursive: true });
+        fs9.mkdirSync(path9.dirname(proxyMcpPath), { recursive: true });
         fs9.writeFileSync(proxyMcpPath, JSON.stringify({ mcpServers: projectMcpServers }, null, 2));
         args.push("--mcp-config", proxyMcpPath);
       } catch (e) {
@@ -30520,7 +30442,10 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
    * Only forward if COPILOT_GITHUB_TOKEN is explicitly set.
    */
   sanitizeSpawnEnv(env) {
-    sanitizeCopilotAuthEnv(env);
+    if (!env.COPILOT_GITHUB_TOKEN) {
+      delete env.GITHUB_TOKEN;
+      delete env.GH_TOKEN;
+    }
   }
 };
 
@@ -30536,108 +30461,108 @@ var AvailableAgentsConfigError = class extends Error {
     this.name = "AvailableAgentsConfigError";
   }
 };
-function fail(path22, reason) {
-  throw new AvailableAgentsConfigError(`${path22} ${reason}`);
+function fail(path21, reason) {
+  throw new AvailableAgentsConfigError(`${path21} ${reason}`);
 }
 function isPlainObject3(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
-function assertPlainObject(value, path22) {
+function assertPlainObject(value, path21) {
   if (!isPlainObject3(value)) {
-    fail(path22, "must be an object");
+    fail(path21, "must be an object");
   }
 }
-function assertOptionalString(value, path22) {
+function assertOptionalString(value, path21) {
   if (value !== void 0 && typeof value !== "string") {
-    fail(path22, "must be a string");
+    fail(path21, "must be a string");
   }
 }
-function assertOptionalNonNegativeNumber(value, path22) {
+function assertOptionalNonNegativeNumber(value, path21) {
   if (value === void 0) return;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    fail(path22, "must be a non-negative number");
+    fail(path21, "must be a non-negative number");
   }
 }
-function assertStringArray(value, path22) {
+function assertStringArray(value, path21) {
   if (!Array.isArray(value)) {
-    fail(path22, "must be an array of strings");
+    fail(path21, "must be an array of strings");
   }
   value.forEach((item, index) => {
     if (typeof item !== "string" || item.trim().length === 0) {
-      fail(`${path22}[${index}]`, "must be a non-empty string");
+      fail(`${path21}[${index}]`, "must be a non-empty string");
     }
   });
 }
-function assertEnum(value, allowed, path22) {
+function assertEnum(value, allowed, path21) {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    fail(path22, `must be one of: ${allowed.join(", ")}`);
+    fail(path21, `must be one of: ${allowed.join(", ")}`);
   }
 }
-function assertTimeoutConfig(value, path22) {
+function assertTimeoutConfig(value, path21) {
   if (value === void 0) return;
-  assertPlainObject(value, path22);
-  assertOptionalNonNegativeNumber(value.heartbeat_ms, `${path22}.heartbeat_ms`);
-  assertOptionalNonNegativeNumber(value.activity_ms, `${path22}.activity_ms`);
+  assertPlainObject(value, path21);
+  assertOptionalNonNegativeNumber(value.heartbeat_ms, `${path21}.heartbeat_ms`);
+  assertOptionalNonNegativeNumber(value.activity_ms, `${path21}.activity_ms`);
 }
-function assertCapabilities(value, path22) {
+function assertCapabilities(value, path21) {
   if (value === void 0) return;
-  assertPlainObject(value, path22);
+  assertPlainObject(value, path21);
   if (value.automation_modes !== void 0) {
-    assertStringArray(value.automation_modes, `${path22}.automation_modes`);
+    assertStringArray(value.automation_modes, `${path21}.automation_modes`);
     value.automation_modes.forEach((mode, index) => {
-      assertEnum(mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path22}.automation_modes[${index}]`);
+      assertEnum(mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path21}.automation_modes[${index}]`);
     });
   }
   if (value.automation_continuations !== void 0) {
-    assertStringArray(value.automation_continuations, `${path22}.automation_continuations`);
+    assertStringArray(value.automation_continuations, `${path21}.automation_continuations`);
     value.automation_continuations.forEach((continuation, index) => {
-      assertEnum(continuation, AUTOMATION_CONTINUATION_VALUES, `${path22}.automation_continuations[${index}]`);
+      assertEnum(continuation, AUTOMATION_CONTINUATION_VALUES, `${path21}.automation_continuations[${index}]`);
     });
   }
 }
-function assertAutomationConfig(value, path22) {
+function assertAutomationConfig(value, path21) {
   if (value === void 0) return;
-  assertPlainObject(value, path22);
+  assertPlainObject(value, path21);
   if (value.mode !== void 0) {
-    assertEnum(value.mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path22}.mode`);
+    assertEnum(value.mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path21}.mode`);
   }
   if (value.continuation !== void 0) {
-    assertEnum(value.continuation, AUTOMATION_CONTINUATION_VALUES, `${path22}.continuation`);
+    assertEnum(value.continuation, AUTOMATION_CONTINUATION_VALUES, `${path21}.continuation`);
   }
-  assertOptionalNonNegativeNumber(value.max_continues, `${path22}.max_continues`);
+  assertOptionalNonNegativeNumber(value.max_continues, `${path21}.max_continues`);
 }
-function assertTransportConfig(value, path22) {
+function assertTransportConfig(value, path21) {
   if (value === void 0) return;
-  assertPlainObject(value, path22);
-  assertOptionalString(value.path, `${path22}.path`);
+  assertPlainObject(value, path21);
+  assertOptionalString(value.path, `${path21}.path`);
   if (value.args !== void 0) {
-    assertStringArray(value.args, `${path22}.args`);
+    assertStringArray(value.args, `${path21}.args`);
   }
-  assertOptionalString(value.cli_flags, `${path22}.cli_flags`);
-  assertCapabilities(value.capabilities, `${path22}.capabilities`);
-  assertTimeoutConfig(value.timeout, `${path22}.timeout`);
-  assertOptionalString(value._comment, `${path22}._comment`);
-  assertOptionalString(value.status, `${path22}.status`);
+  assertOptionalString(value.cli_flags, `${path21}.cli_flags`);
+  assertCapabilities(value.capabilities, `${path21}.capabilities`);
+  assertTimeoutConfig(value.timeout, `${path21}.timeout`);
+  assertOptionalString(value._comment, `${path21}._comment`);
+  assertOptionalString(value.status, `${path21}.status`);
 }
-function assertEngineConfig(value, path22) {
-  assertTransportConfig(value, path22);
-  assertPlainObject(value, path22);
+function assertEngineConfig(value, path21) {
+  assertTransportConfig(value, path21);
+  assertPlainObject(value, path21);
   if (value.protocol !== void 0) {
-    assertEnum(value.protocol, ENGINE_PROTOCOL_VALUES, `${path22}.protocol`);
+    assertEnum(value.protocol, ENGINE_PROTOCOL_VALUES, `${path21}.protocol`);
   }
   if (value.preferred_protocol !== void 0) {
-    assertEnum(value.preferred_protocol, TRANSPORT_PROTOCOL_VALUES, `${path22}.preferred_protocol`);
+    assertEnum(value.preferred_protocol, TRANSPORT_PROTOCOL_VALUES, `${path21}.preferred_protocol`);
   }
-  assertOptionalString(value.adapter, `${path22}.adapter`);
-  assertOptionalString(value.family, `${path22}.family`);
+  assertOptionalString(value.adapter, `${path21}.adapter`);
+  assertOptionalString(value.family, `${path21}.family`);
   if (value.available_models !== void 0) {
-    assertStringArray(value.available_models, `${path22}.available_models`);
+    assertStringArray(value.available_models, `${path21}.available_models`);
   }
-  assertAutomationConfig(value.automation, `${path22}.automation`);
-  assertTransportConfig(value.acp, `${path22}.acp`);
-  assertTransportConfig(value.cli, `${path22}.cli`);
+  assertAutomationConfig(value.automation, `${path21}.automation`);
+  assertTransportConfig(value.acp, `${path21}.acp`);
+  assertTransportConfig(value.cli, `${path21}.cli`);
   if (value.protocol === "auto" && value.acp === void 0 && value.cli === void 0) {
-    fail(path22, `uses protocol 'auto' but does not declare either '${path22}.acp' or '${path22}.cli'`);
+    fail(path21, `uses protocol 'auto' but does not declare either '${path21}.acp' or '${path21}.cli'`);
   }
 }
 function assertAvailableAgentsConfig(value) {
@@ -30801,43 +30726,30 @@ function resolveHealthyModel(workspacePath, engine, model) {
     }
   }
   const { engines: availEngines, models: availModels } = loadValidEnginesAndModels(workspacePath);
-  const now = Date.now();
-  const fallbackCandidates = [];
-  for (const candidateModel of availModels[engine] || []) {
+  const sameEngineModels = availModels[engine] || [];
+  for (const candidateModel of sameEngineModels) {
     if (candidateModel === model) continue;
-    fallbackCandidates.push({ engine, model: candidateModel, scope: "same-engine" });
+    const candidateKey = `${engine}:${candidateModel}`;
+    const candidateEntry = health[candidateKey];
+    if (!candidateEntry || candidateEntry.status !== "unhealthy") {
+      console.error(`[EngineHealth] Fallback selected: ${engine}/${candidateModel} (same engine, replacing unhealthy ${engine}/${model})`);
+      return { engine, model: candidateModel };
+    }
   }
   for (const candidateEngine of availEngines) {
     if (candidateEngine === engine) continue;
-    for (const candidateModel of availModels[candidateEngine] || []) {
-      fallbackCandidates.push({ engine: candidateEngine, model: candidateModel, scope: "cross-engine" });
+    const candidateModels = availModels[candidateEngine] || [];
+    for (const candidateModel of candidateModels) {
+      const candidateKey = `${candidateEngine}:${candidateModel}`;
+      const candidateEntry = health[candidateKey];
+      if (!candidateEntry || candidateEntry.status !== "unhealthy") {
+        console.error(`[EngineHealth] Fallback selected: ${candidateEngine}/${candidateModel} (cross-engine, replacing unhealthy ${engine}/${model})`);
+        return { engine: candidateEngine, model: candidateModel };
+      }
     }
-  }
-  const selectedFallback = pickHealthyFallbackCandidate(fallbackCandidates, health, now);
-  if (selectedFallback) {
-    console.error(
-      `[EngineHealth] Fallback selected: ${selectedFallback.engine}/${selectedFallback.model} (${selectedFallback.scope}, readiness=${selectedFallback.readiness}, replacing unhealthy ${engine}/${model})`
-    );
-    return { engine: selectedFallback.engine, model: selectedFallback.model };
   }
   console.error(`[EngineHealth] All engine+model combos are unhealthy. Proceeding with original ${engine}/${model} as last resort.`);
   return { engine, model };
-}
-function pickHealthyFallbackCandidate(candidates, health, now) {
-  const confirmedHealthy = [];
-  const unverified = [];
-  for (const candidate of candidates) {
-    const readiness = classifyComboReadiness(health[`${candidate.engine}:${candidate.model}`], now);
-    if (readiness === "unhealthy") {
-      continue;
-    }
-    if (readiness === "confirmed_healthy") {
-      confirmedHealthy.push({ ...candidate, readiness });
-    } else {
-      unverified.push({ ...candidate, readiness });
-    }
-  }
-  return confirmedHealthy[0] ?? unverified[0];
 }
 function classifyComboReadiness(entry, now) {
   if (!entry) return "unverified";
@@ -31484,7 +31396,7 @@ var BUILTIN_ENGINES = {
   },
   "claude-code": {
     executable: "claude-agent-acp",
-    args: ["--acp", "--stdio"],
+    args: ["--acp"],
     activityTimeoutMs: 3e5
   }
 };
@@ -32931,7 +32843,7 @@ ${failed.map((f) => `- ${f}`).join("\n")}
 
 // ../src/mcp/agent-gc.ts
 var fs13 = __toESM(require("fs"));
-var path14 = __toESM(require("path"));
+var path13 = __toESM(require("path"));
 function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
   const agentsDir = resolveOptimusPath(workspacePath, "agents");
   if (!fs13.existsSync(agentsDir)) return;
@@ -32940,7 +32852,7 @@ function cleanStaleAgents(workspacePath, maxAgeDays = 7) {
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1e3;
   for (const file2 of files) {
     if (file2.endsWith(".lock")) continue;
-    const filePath = path14.join(agentsDir, file2);
+    const filePath = path13.join(agentsDir, file2);
     const content = fs13.readFileSync(filePath, "utf8");
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) continue;
@@ -33440,7 +33352,7 @@ var import_child_process8 = require("child_process");
 var import_dotenv = __toESM(require_main());
 
 // ../src/adapters/vcs/VcsProviderFactory.ts
-var path17 = __toESM(require("path"));
+var path16 = __toESM(require("path"));
 var fs16 = __toESM(require("fs"));
 var crypto2 = __toESM(require("crypto"));
 var import_child_process4 = require("child_process");
@@ -33603,7 +33515,7 @@ var VcsProviderFactory = class {
    */
   static createConfig(workspacePath, config2) {
     const configPath = this.getConfigPath(workspacePath);
-    const configDir = path17.dirname(configPath);
+    const configDir = path16.dirname(configPath);
     if (!fs16.existsSync(configDir)) {
       fs16.mkdirSync(configDir, { recursive: true });
     }
@@ -34479,34 +34391,6 @@ function reloadEnv() {
   }
 }
 reloadEnv();
-function persistAsyncRunnerFatalFailure(taskId, workspacePath, error2) {
-  const message = error2 instanceof Error ? error2.message : String(error2);
-  const manifest = TaskManifestManager.loadManifest(workspacePath);
-  const task = manifest[taskId];
-  if (!task || task.status === "cancelled" || task.status === "failed" || task.status === "verified" || task.status === "partial" || task.status === "completed") {
-    return;
-  }
-  const errorMessage = [
-    `ASYNC_RUNNER_FATAL: Detached worker terminated before it could persist a final task status.`,
-    `Root cause: ${message}`,
-    `Fix: inspect runner crash logs or retry the task once engine/bootstrap issues are resolved.`
-  ].join(" ");
-  TaskManifestManager.updateTask(workspacePath, taskId, {
-    status: "failed",
-    error_message: errorMessage,
-    completed_at: Date.now()
-  });
-  if (task.output_path) {
-    try {
-      const dir = import_path13.default.dirname(task.output_path);
-      if (!import_fs12.default.existsSync(dir)) import_fs12.default.mkdirSync(dir, { recursive: true });
-      import_fs12.default.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${errorMessage}
-`, "utf8");
-    } catch (writeErr) {
-      console.error(`[Runner] Warning: failed to write fatal output marker for ${taskId}: ${writeErr.message}`);
-    }
-  }
-}
 var server = new Server(
   {
     name: "optimus-facade",
@@ -34868,10 +34752,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Optional heartbeat staleness timeout in ms. Overrides engine default. Range: 1-1800000 (30 min max)."
             },
-            startup_timeout_ms: {
-              type: "number",
-              description: "Optional startup timeout in ms for stuck-pending detection. Range: 1-600000 (10 min max)."
-            },
             branch: {
               type: "string",
               description: "Optional branch name. When specified, automatically creates a git worktree for this branch (if not already exists) and runs the agent in that isolated worktree. Enables parallel multi-branch development without git conflicts."
@@ -35226,7 +35106,7 @@ ${task.error_message || task.cancellation_reason || "Task was cancelled."}`;
     return { content: [{ type: "text", text: details }] };
   }
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, startup_timeout_ms, branch } = request.params.arguments;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, branch } = request.params.arguments;
     requireParams("delegate_task_async", request.params.arguments, ["role", "task_description", "output_path", "workspace_path"]);
     if (branch) {
       const originalWorkspace = workspace_path;
@@ -35242,11 +35122,6 @@ ${task.error_message || task.cancellation_reason || "Task was cancelled."}`;
     const resolvedOutputPath = import_path13.default.resolve(workspace_path, output_path);
     output_path = resolvedOutputPath.startsWith(optimusDir) ? resolvedOutputPath : import_path13.default.join(optimusDir, "results", import_path13.default.basename(output_path));
     const resolvedHeartbeatTimeout = resolveHeartbeatTimeout(workspace_path, role_engine, heartbeat_timeout_ms);
-    if (startup_timeout_ms !== void 0) {
-      if (typeof startup_timeout_ms !== "number" || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_TASK_STARTUP_TIMEOUT_MS) {
-        throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
-      }
-    }
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     TaskManifestManager.createTask(workspace_path, {
       taskId,
@@ -35264,8 +35139,7 @@ ${task.error_message || task.cancellation_reason || "Task was cancelled."}`;
       parent_issue_number: parentIssueNumber,
       agent_id: agent_id || void 0,
       depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : void 0,
-      heartbeat_timeout_ms: resolvedHeartbeatTimeout,
-      startup_timeout_ms
+      heartbeat_timeout_ms: resolvedHeartbeatTimeout
     });
     let isBlocked = false;
     let blockedBy = [];
@@ -36165,9 +36039,10 @@ ${summary}`
     if (process.env.OPTIMUS_CRON_TRIGGERED === "true") {
       return { content: [{ type: "text", text: "Self-registration denied: cron-triggered agents cannot register new Meta-Cron entries." }] };
     }
+    const MAX_STARTUP_TIMEOUT_MS = 6e5;
     if (startup_timeout_ms !== void 0) {
-      if (typeof startup_timeout_ms !== "number" || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_TASK_STARTUP_TIMEOUT_MS) {
-        throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
+      if (typeof startup_timeout_ms !== "number" || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_STARTUP_TIMEOUT_MS) {
+        throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
       }
     }
     const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
@@ -36376,23 +36251,9 @@ if (process.argv.includes("--run-task")) {
     console.error("[Runner] Usage: --run-task <taskId> <workspacePath>");
     process.exit(1);
   }
-  let fatalRecorded = false;
-  const recordFatalAndExit = (error2, label) => {
-    if (!fatalRecorded) {
-      fatalRecorded = true;
-      persistAsyncRunnerFatalFailure(taskId, workspacePath, error2);
-    }
-    console.error(`[Runner] ${label}:`, error2);
-    process.exit(1);
-  };
-  process.on("uncaughtException", (error2) => {
-    recordFatalAndExit(error2, "Uncaught exception");
-  });
-  process.on("unhandledRejection", (reason) => {
-    recordFatalAndExit(reason, "Unhandled rejection");
-  });
   runAsyncWorker(taskId, workspacePath).catch((err) => {
-    recordFatalAndExit(err, "Fatal");
+    console.error("[Runner] Fatal:", err);
+    process.exit(1);
   });
 } else {
   async function main() {

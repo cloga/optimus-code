@@ -9,31 +9,28 @@ const fs = require('fs');
 const path = require('path');
 const { writeClientMcpConfigs, writeCopilotLaunchers } = require('../lib/mcp-config');
 const { getProjectsRegistryPath, registerProject } = require('../lib/project-registry');
+const {
+  copyFileForce,
+  deepMergePreserveUser,
+  getUserAvailableAgentsConfigPath,
+  syncAvailableAgentsConfig,
+} = require('../lib/available-agents-config');
 
-function deepMergePreserveUser(template, user) {
-  const result = { ...template };
-  for (const key of Object.keys(user)) {
-    if (typeof user[key] === 'object' && user[key] !== null && !Array.isArray(user[key])
-        && typeof result[key] === 'object' && result[key] !== null && !Array.isArray(result[key])) {
-      result[key] = deepMergePreserveUser(result[key], user[key]);
-    } else {
-      result[key] = user[key];
-    }
-  }
-  return result;
-}
-
-function mergeConfigFiles(srcDir, destDir) {
+function mergeConfigFiles(srcDir, destDir, options = {}) {
+  const skippedNames = new Set(options.skippedNames || []);
   if (!fs.existsSync(destDir)) {
     fs.mkdirSync(destDir, { recursive: true });
   }
   const entries = fs.readdirSync(srcDir, { withFileTypes: true });
   let count = 0;
   for (const entry of entries) {
+    if (skippedNames.has(entry.name)) {
+      continue;
+    }
     const srcPath = path.join(srcDir, entry.name);
     const destPath = path.join(destDir, entry.name);
     if (entry.isDirectory()) {
-      count += mergeConfigFiles(srcPath, destPath);
+      count += mergeConfigFiles(srcPath, destPath, options);
     } else if (entry.name.endsWith('.json') && fs.existsSync(destPath)) {
       try {
         const template = JSON.parse(fs.readFileSync(srcPath, 'utf8'));
@@ -99,6 +96,9 @@ module.exports = function upgrade() {
   let skillCount = 0;
   let roleCount = 0;
   let configCount = 0;
+  const availableAgentsTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.json');
+  const availableAgentsProjectSampleTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.project.sample.json');
+  const projectConfigDir = path.join(optimusDir, 'config');
 
   // 1. Skills: FORCE OVERWRITE
   const skillsSrc = path.join(pluginRoot, 'skills');
@@ -118,70 +118,53 @@ module.exports = function upgrade() {
   const configSrc = path.join(scaffoldDir, 'config');
   if (fs.existsSync(configSrc)) {
     console.log('\n⚙️  Upgrading system config...');
-    configCount = mergeConfigFiles(configSrc, path.join(optimusDir, 'config'));
+    configCount = mergeConfigFiles(configSrc, projectConfigDir, {
+      skippedNames: ['available-agents.json', 'available-agents.project.sample.json'],
+    });
   }
 
-  // 3.5 Post-merge migration: ensure engine capability arrays include
-  // template values (deepMergePreserveUser treats arrays as atomic, so
-  // user's old ["single"] would suppress template's ["single","autopilot"]).
-  const agentsPath = path.join(optimusDir, 'config', 'available-agents.json');
-  const agentsTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.json');
-  if (fs.existsSync(agentsPath) && fs.existsSync(agentsTemplatePath)) {
+  const userAvailableAgentsPath = getUserAvailableAgentsConfigPath();
+  if (fs.existsSync(availableAgentsTemplatePath)) {
+    console.log(`  👤 Syncing user-level available-agents config at ${userAvailableAgentsPath}...`);
     try {
-      const agents = JSON.parse(fs.readFileSync(agentsPath, 'utf8'));
-      const template = JSON.parse(fs.readFileSync(agentsTemplatePath, 'utf8'));
-      let patched = false;
-      for (const engineName of Object.keys(template.engines || {})) {
-        const tplEngine = template.engines[engineName];
-        const userEngine = agents.engines?.[engineName];
-        if (!userEngine) continue;
-        for (const transport of ['acp', 'cli']) {
-          const tplCaps = tplEngine[transport]?.capabilities;
-          const userCaps = userEngine[transport]?.capabilities;
-          if (!tplCaps || !userCaps) continue;
-          for (const capKey of ['automation_modes', 'automation_continuations']) {
-            const tplArr = tplCaps[capKey];
-            const userArr = userCaps[capKey];
-            if (!Array.isArray(tplArr)) continue;
-            if (!Array.isArray(userArr)) {
-              userCaps[capKey] = [...tplArr];
-              patched = true;
-            } else {
-              const merged = [...new Set([...userArr, ...tplArr])];
-              if (merged.length !== userArr.length) {
-                userCaps[capKey] = merged;
-                patched = true;
-              }
-            }
-          }
-        }
-        // Normalize protocol: if template uses "auto" with sub-objects and user has
-        // explicit protocol, upgrade to "auto" so both transports are considered
-        if (tplEngine.protocol === 'auto' && userEngine.protocol !== 'auto'
-            && userEngine.acp && userEngine.cli) {
-          userEngine.protocol = 'auto';
-          if (tplEngine.preferred_protocol && !userEngine.preferred_protocol) {
-            userEngine.preferred_protocol = tplEngine.preferred_protocol;
-          }
-          patched = true;
-        }
-        // Also ensure ACP args don't contain stale flags
-        if (userEngine.acp?.args && Array.isArray(userEngine.acp.args)) {
-          const filtered = userEngine.acp.args.filter(a => a !== '--stdio');
-          if (filtered.length !== userEngine.acp.args.length) {
-            userEngine.acp.args = filtered;
-            patched = true;
-          }
-        }
-      }
-      if (patched) {
-        fs.writeFileSync(agentsPath, JSON.stringify(agents, null, 2), 'utf8');
-        console.log('  🔧 Patched engine capability arrays (union with template)');
+      const syncResult = syncAvailableAgentsConfig(availableAgentsTemplatePath, userAvailableAgentsPath);
+      if (syncResult.created) {
+        console.log('  ✅ Installed default user-level available-agents.json');
+      } else if (syncResult.overwrittenDueToError) {
+        console.log('  🔄 Replaced malformed user-level available-agents.json with the latest template');
+      } else if (syncResult.patched) {
+        console.log('  🔧 Refreshed user-level engine capabilities from template');
+      } else {
+        console.log('  ℹ️  Preserved your user-level engine config');
       }
     } catch (e) {
-      console.log('  ⚠️  Capability migration skipped: ' + (e.message || e));
+      console.log('  ⚠️  User-level available-agents sync skipped: ' + (e.message || e));
     }
   }
+
+  const agentsPath = path.join(projectConfigDir, 'available-agents.json');
+  if (fs.existsSync(agentsPath) && fs.existsSync(availableAgentsTemplatePath)) {
+    console.log(`  🏗️  Preserving active project override at ${path.relative(process.cwd(), agentsPath)}...`);
+    try {
+      const syncResult = syncAvailableAgentsConfig(availableAgentsTemplatePath, agentsPath);
+      if (syncResult.overwrittenDueToError) {
+        console.log(`  🔄 Updated ${path.relative(process.cwd(), agentsPath)} (overwritten — parse error)`);
+      } else if (syncResult.patched) {
+        console.log('  🔧 Patched project engine capability arrays (union with template)');
+      } else if (syncResult.preservedUserValues) {
+        console.log('  ℹ️  Preserved your existing project-level override');
+      } else {
+        console.log(`  🔄 Updated ${path.relative(process.cwd(), agentsPath)}`);
+      }
+    } catch (e) {
+      console.log('  ⚠️  Project-level available-agents sync skipped: ' + (e.message || e));
+    }
+  } else if (fs.existsSync(availableAgentsProjectSampleTemplatePath)) {
+    const projectSamplePath = path.join(projectConfigDir, 'available-agents.project.sample.json');
+    copyFileForce(availableAgentsProjectSampleTemplatePath, projectSamplePath);
+    console.log(`  🧪 Refreshed project override sample at ${path.relative(process.cwd(), projectSamplePath)}`);
+  }
+
   const systemSrc = path.join(scaffoldDir, 'system');
   if (fs.existsSync(systemSrc)) {
     console.log('\n\u23f0 Upgrading system scheduler config...');

@@ -3739,7 +3739,7 @@ var require_main = __commonJS({
   "../node_modules/dotenv/lib/main.js"(exports2, module2) {
     "use strict";
     var fs14 = require("fs");
-    var path15 = require("path");
+    var path14 = require("path");
     var os3 = require("os");
     var crypto3 = require("crypto");
     var packageJson = require_package();
@@ -3855,7 +3855,7 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path15.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path14.resolve(process.cwd(), ".env.vault");
       }
       if (fs14.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
@@ -3863,7 +3863,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path15.join(os3.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path14.join(os3.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -3880,7 +3880,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path15.resolve(process.cwd(), ".env");
+      const dotenvPath = path14.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -3904,13 +3904,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path16 of optionPaths) {
+      for (const path15 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs14.readFileSync(path16, { encoding }));
+          const parsed = DotenvModule.parse(fs14.readFileSync(path15, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path16} ${e.message}`);
+            _debug(`Failed to load ${path15} ${e.message}`);
           }
           lastError = e;
         }
@@ -3925,7 +3925,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative2 = path15.relative(process.cwd(), filePath);
+            const relative2 = path14.relative(process.cwd(), filePath);
             shortPaths.push(relative2);
           } catch (e) {
             if (debug) {
@@ -4151,29 +4151,6 @@ function withManifestLock(fn) {
     }
   });
 }
-var DEFAULT_TASK_STARTUP_TIMEOUT_MS = 2 * 60 * 1e3;
-var MAX_TASK_STARTUP_TIMEOUT_MS = 10 * 60 * 1e3;
-function buildStartupTimeoutErrorMessage(timeoutMs) {
-  return [
-    `TASK_STARTUP_TIMEOUT: Async worker failed to start within ${Math.round(timeoutMs / 1e3)}s (task remained pending).`,
-    `Fix: verify the detached worker can launch (Node executable, engine path, workspace permissions), then retry or increase startup_timeout_ms.`
-  ].join(" ");
-}
-function buildRunnerDiedErrorMessage(pid) {
-  return [
-    `TASK_RUNNER_DIED: Async worker PID ${pid} is no longer running while the task is still marked running.`,
-    `Fix: inspect detached worker crash logs, verify engine bootstrap/auth, then retry the task.`
-  ].join(" ");
-}
-function isPidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 var TaskManifestManager = class {
   static getManifestPath(workspacePath) {
     return resolveOptimusPath(workspacePath, "state", "task-manifest.json");
@@ -4237,28 +4214,10 @@ var TaskManifestManager = class {
       for (const taskId in manifest) {
         const task = manifest[taskId];
         if (task.status === "running") {
-          if (typeof task.pid === "number" && task.pid > 0 && !isPidAlive(task.pid)) {
-            task.status = "failed";
-            task.error_message = buildRunnerDiedErrorMessage(task.pid);
-            task.completed_at = now;
-            changed = true;
-            try {
-              if (task.output_path) {
-                const dir = path2.dirname(task.output_path);
-                if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
-                fs2.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
-              }
-            } catch (e) {
-              console.error(`[TaskManifest] Warning: failed to write runner-death marker: ${e.message}`);
-            }
-            continue;
-          }
           const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
           if (now - task.heartbeatTime > effectiveTimeout) {
             task.status = "failed";
             task.error_message = "Task timed out or runner process died (reaped by Watchdog).";
-            task.completed_at = now;
             changed = true;
             try {
               if (task.output_path) {
@@ -4269,24 +4228,6 @@ var TaskManifestManager = class {
               }
             } catch (e) {
               console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`);
-            }
-          }
-        } else if (task.status === "pending") {
-          const startupTimeout = task.startup_timeout_ms || DEFAULT_TASK_STARTUP_TIMEOUT_MS;
-          if (now - task.startTime > startupTimeout) {
-            task.status = "failed";
-            task.error_message = buildStartupTimeoutErrorMessage(startupTimeout);
-            task.completed_at = now;
-            changed = true;
-            try {
-              if (task.output_path) {
-                const dir = path2.dirname(task.output_path);
-                if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
-                fs2.writeFileSync(task.output_path, `\u274C **Fatal Error**: ${task.error_message}
-`, "utf8");
-              }
-            } catch (e) {
-              console.error(`[TaskManifest] Warning: failed to write startup-timeout marker: ${e.message}`);
             }
           }
         }
@@ -5251,9 +5192,9 @@ function checkForLoop(sessionId, threshold = 3) {
   const edits = sessionEdits.get(sessionId);
   if (!edits) return null;
   const hotFiles = [];
-  for (const [path15, count] of edits) {
+  for (const [path14, count] of edits) {
     if (count >= threshold) {
-      hotFiles.push({ path: path15, count });
+      hotFiles.push({ path: path14, count });
     }
   }
   if (hotFiles.length === 0) return null;
@@ -5296,7 +5237,7 @@ function analyzeOutputForLoops(sessionId, output2, threshold = 3) {
 var cp = __toESM(require("child_process"));
 var readline = __toESM(require("readline"));
 var fs7 = __toESM(require("fs"));
-var path8 = __toESM(require("path"));
+var path7 = __toESM(require("path"));
 
 // ../src/debugLogger.ts
 var customLogger;
@@ -5436,19 +5377,6 @@ function loadProjectMcpServers(workspaceRoot, target) {
     }
   }
   return null;
-}
-
-// ../src/utils/copilotAuthEnv.ts
-var path7 = __toESM(require("path"));
-function sanitizeCopilotAuthEnv(env) {
-  if (!env.COPILOT_GITHUB_TOKEN) {
-    delete env.GITHUB_TOKEN;
-    delete env.GH_TOKEN;
-  }
-}
-function isCopilotCliExecutable(executable) {
-  const normalized = path7.basename(executable).toLowerCase();
-  return normalized === "copilot" || normalized === "copilot.cmd" || normalized === "copilot.exe" || normalized === "copilot.ps1" || normalized === "copilot.bat";
 }
 
 // ../src/adapters/AcpAdapter.ts
@@ -5645,7 +5573,7 @@ var AcpAdapter = class {
   }
   // ─── Process lifecycle ───
   validateExecutable() {
-    if (path8.isAbsolute(this.executable)) {
+    if (path7.isAbsolute(this.executable)) {
       if (!fs7.existsSync(this.executable)) {
         throw new Error(
           `ACP pre-flight failed: executable not found at '${this.executable}'. Update the path in .optimus/config/available-agents.json.`
@@ -5668,7 +5596,6 @@ var AcpAdapter = class {
   spawnProcess(extraEnv) {
     this.validateExecutable();
     const env = { ...process.env, ...extraEnv };
-    this.sanitizeSpawnEnv(env);
     const args = [...this.defaultArgs];
     debugLog("[AcpAdapter]", `Spawning: ${this.executable} ${args.join(" ")}`);
     this.process = cp.spawn(this.executable, args, {
@@ -5723,11 +5650,6 @@ ${stderrSnippet.slice(-500)}`);
       pid: this.process.pid,
       startTime: Date.now()
     };
-  }
-  sanitizeSpawnEnv(env) {
-    if (isCopilotCliExecutable(this.executable)) {
-      sanitizeCopilotAuthEnv(env);
-    }
   }
   rejectAllPending(err) {
     for (const [, pending] of this.pendingRequests) {
@@ -6485,7 +6407,7 @@ var import_path5 = __toESM(require("path"));
 // ../src/adapters/PersistentAgentAdapter.ts
 var cp2 = __toESM(require("child_process"));
 var fs8 = __toESM(require("fs"));
-var path9 = __toESM(require("path"));
+var path8 = __toESM(require("path"));
 
 // ../node_modules/ansi-regex/index.js
 function ansiRegex({ onlyFirst = false } = {}) {
@@ -6540,7 +6462,7 @@ function resolveWindowsSpawnResolution(cmd) {
   }
   const candidates = whereResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).filter((candidate) => fs8.existsSync(candidate)).sort((left, right) => {
     const extRank = (filePath) => {
-      const ext = path9.extname(filePath).toLowerCase();
+      const ext = path8.extname(filePath).toLowerCase();
       if (ext === ".exe" || ext === ".com") {
         return 0;
       }
@@ -6555,7 +6477,7 @@ function resolveWindowsSpawnResolution(cmd) {
     return extRank(left) - extRank(right);
   });
   for (const candidate of candidates) {
-    const ext = path9.extname(candidate).toLowerCase();
+    const ext = path8.extname(candidate).toLowerCase();
     if (ext === ".exe" || ext === ".com") {
       const resolved = { cmd: candidate, argsPrefix: [] };
       windowsSpawnResolutionCache.set(cmd, resolved);
@@ -6570,9 +6492,9 @@ function resolveWindowsSpawnResolution(cmd) {
       if (!scriptMatch) {
         continue;
       }
-      const wrapperDir = path9.dirname(candidate);
-      const nodeExecutable = fs8.existsSync(path9.join(wrapperDir, "node.exe")) ? path9.join(wrapperDir, "node.exe") : "node";
-      const entryScript = path9.join(wrapperDir, scriptMatch[1].replace(/\\/g, path9.sep));
+      const wrapperDir = path8.dirname(candidate);
+      const nodeExecutable = fs8.existsSync(path8.join(wrapperDir, "node.exe")) ? path8.join(wrapperDir, "node.exe") : "node";
+      const entryScript = path8.join(wrapperDir, scriptMatch[1].replace(/\\/g, path8.sep));
       const resolved = { cmd: nodeExecutable, argsPrefix: [entryScript] };
       windowsSpawnResolutionCache.set(cmd, resolved);
       return resolved;
@@ -6674,7 +6596,7 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
       Date.now().toString(),
       Math.random().toString(36).slice(2, 8)
     ].join("-") + ".md";
-    const promptFilePath = path9.join(promptDir, promptFileName);
+    const promptFilePath = path8.join(promptDir, promptFileName);
     fs8.writeFileSync(promptFilePath, prompt, "utf8");
     debugLog(this.id, "Prepared oversized prompt file", JSON.stringify({
       mode,
@@ -6682,7 +6604,7 @@ var PersistentAgentAdapter = class _PersistentAgentAdapter {
       promptFilePath,
       promptFileThreshold: this.getPromptFileThreshold()
     }));
-    const relativePromptPath = path9.relative(currentCwd, promptFilePath).replace(/\\/g, "/");
+    const relativePromptPath = path8.relative(currentCwd, promptFilePath).replace(/\\/g, "/");
     const wrappedPrompt = [
       "The original user prompt was too large to pass inline over the CLI.",
       `Read the UTF-8 file at "${relativePromptPath}" before doing anything else.`,
@@ -6936,7 +6858,7 @@ ${outputBlock}
     const record2 = typeof result === "object" && result !== null ? result : void 0;
     const content = this.getStructuredResultText(record2, result);
     const lines = this.countMeaningfulLines(content);
-    const path15 = this.getStructuredResultPath(record2);
+    const path14 = this.getStructuredResultPath(record2);
     const lineRange = this.getStructuredResultLineRange(record2);
     const preview = lines.length > 0 ? `preview=${this.sanitizeStructuredSummaryValue(lines[0], 80)}` : void 0;
     if (/delegate_task/.test(normalizedName)) {
@@ -6970,30 +6892,30 @@ ${outputBlock}
     }
     if (/grep|search/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path15, "matches=0"]);
+        return this.buildStructuredSummary([path14, "matches=0"]);
       }
-      return this.buildStructuredSummary([path15, `matches=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path14, `matches=${lines.length}`, preview]);
     }
     if (/edit|write|create|update|patch|save|insert/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path15, lineRange, "status=updated"]);
+        return this.buildStructuredSummary([path14, lineRange, "status=updated"]);
       }
-      return this.buildStructuredSummary([path15, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path14, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/read|view/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path15, lineRange, "lines=0"]);
+        return this.buildStructuredSummary([path14, lineRange, "lines=0"]);
       }
-      return this.buildStructuredSummary([path15, lineRange, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path14, lineRange, `lines=${lines.length}`, preview]);
     }
     if (/glob|list|ls|dir/.test(normalizedName)) {
       if (lines.length === 0) {
-        return this.buildStructuredSummary([path15, "items=0"]);
+        return this.buildStructuredSummary([path14, "items=0"]);
       }
       if (this.looksLikePathList(lines)) {
-        return this.buildStructuredSummary([path15, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
+        return this.buildStructuredSummary([path14, `items=${lines.length}`, `first=${this.sanitizeStructuredSummaryValue(lines[0], 80)}`]);
       }
-      return this.buildStructuredSummary([path15, `lines=${lines.length}`, preview]);
+      return this.buildStructuredSummary([path14, `lines=${lines.length}`, preview]);
     }
     return this.summarizeStructuredToolResult(result);
   }
@@ -7555,7 +7477,7 @@ ${line}` : "";
 
 // ../src/adapters/ClaudeCodeAdapter.ts
 var fs9 = __toESM(require("fs"));
-var path10 = __toESM(require("path"));
+var path9 = __toESM(require("path"));
 var CLAUDE_PROCESS_LINE_RE = /^[⏺●•└│├↳✓✗]/;
 var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
   agentPermissionMode;
@@ -7607,7 +7529,7 @@ var ClaudeCodeAdapter = class extends PersistentAgentAdapter {
     if (projectMcpServers) {
       try {
         const proxyMcpPath = resolveOptimusPath(cwd, "state", ".claude-mcp.json");
-        fs9.mkdirSync(path10.dirname(proxyMcpPath), { recursive: true });
+        fs9.mkdirSync(path9.dirname(proxyMcpPath), { recursive: true });
         fs9.writeFileSync(proxyMcpPath, JSON.stringify({ mcpServers: projectMcpServers }, null, 2));
         args.push("--mcp-config", proxyMcpPath);
       } catch (e) {
@@ -7704,7 +7626,10 @@ var GitHubCopilotAdapter = class extends PersistentAgentAdapter {
    * Only forward if COPILOT_GITHUB_TOKEN is explicitly set.
    */
   sanitizeSpawnEnv(env) {
-    sanitizeCopilotAuthEnv(env);
+    if (!env.COPILOT_GITHUB_TOKEN) {
+      delete env.GITHUB_TOKEN;
+      delete env.GH_TOKEN;
+    }
   }
 };
 
@@ -7720,108 +7645,108 @@ var AvailableAgentsConfigError = class extends Error {
     this.name = "AvailableAgentsConfigError";
   }
 };
-function fail(path15, reason) {
-  throw new AvailableAgentsConfigError(`${path15} ${reason}`);
+function fail(path14, reason) {
+  throw new AvailableAgentsConfigError(`${path14} ${reason}`);
 }
 function isPlainObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
-function assertPlainObject(value, path15) {
+function assertPlainObject(value, path14) {
   if (!isPlainObject(value)) {
-    fail(path15, "must be an object");
+    fail(path14, "must be an object");
   }
 }
-function assertOptionalString(value, path15) {
+function assertOptionalString(value, path14) {
   if (value !== void 0 && typeof value !== "string") {
-    fail(path15, "must be a string");
+    fail(path14, "must be a string");
   }
 }
-function assertOptionalNonNegativeNumber(value, path15) {
+function assertOptionalNonNegativeNumber(value, path14) {
   if (value === void 0) return;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    fail(path15, "must be a non-negative number");
+    fail(path14, "must be a non-negative number");
   }
 }
-function assertStringArray(value, path15) {
+function assertStringArray(value, path14) {
   if (!Array.isArray(value)) {
-    fail(path15, "must be an array of strings");
+    fail(path14, "must be an array of strings");
   }
   value.forEach((item, index) => {
     if (typeof item !== "string" || item.trim().length === 0) {
-      fail(`${path15}[${index}]`, "must be a non-empty string");
+      fail(`${path14}[${index}]`, "must be a non-empty string");
     }
   });
 }
-function assertEnum(value, allowed, path15) {
+function assertEnum(value, allowed, path14) {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    fail(path15, `must be one of: ${allowed.join(", ")}`);
+    fail(path14, `must be one of: ${allowed.join(", ")}`);
   }
 }
-function assertTimeoutConfig(value, path15) {
+function assertTimeoutConfig(value, path14) {
   if (value === void 0) return;
-  assertPlainObject(value, path15);
-  assertOptionalNonNegativeNumber(value.heartbeat_ms, `${path15}.heartbeat_ms`);
-  assertOptionalNonNegativeNumber(value.activity_ms, `${path15}.activity_ms`);
+  assertPlainObject(value, path14);
+  assertOptionalNonNegativeNumber(value.heartbeat_ms, `${path14}.heartbeat_ms`);
+  assertOptionalNonNegativeNumber(value.activity_ms, `${path14}.activity_ms`);
 }
-function assertCapabilities(value, path15) {
+function assertCapabilities(value, path14) {
   if (value === void 0) return;
-  assertPlainObject(value, path15);
+  assertPlainObject(value, path14);
   if (value.automation_modes !== void 0) {
-    assertStringArray(value.automation_modes, `${path15}.automation_modes`);
+    assertStringArray(value.automation_modes, `${path14}.automation_modes`);
     value.automation_modes.forEach((mode, index) => {
-      assertEnum(mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path15}.automation_modes[${index}]`);
+      assertEnum(mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path14}.automation_modes[${index}]`);
     });
   }
   if (value.automation_continuations !== void 0) {
-    assertStringArray(value.automation_continuations, `${path15}.automation_continuations`);
+    assertStringArray(value.automation_continuations, `${path14}.automation_continuations`);
     value.automation_continuations.forEach((continuation, index) => {
-      assertEnum(continuation, AUTOMATION_CONTINUATION_VALUES, `${path15}.automation_continuations[${index}]`);
+      assertEnum(continuation, AUTOMATION_CONTINUATION_VALUES, `${path14}.automation_continuations[${index}]`);
     });
   }
 }
-function assertAutomationConfig(value, path15) {
+function assertAutomationConfig(value, path14) {
   if (value === void 0) return;
-  assertPlainObject(value, path15);
+  assertPlainObject(value, path14);
   if (value.mode !== void 0) {
-    assertEnum(value.mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path15}.mode`);
+    assertEnum(value.mode, [...AUTOMATION_MODE_VALUES, ...LEGACY_AUTOMATION_MODE_VALUES], `${path14}.mode`);
   }
   if (value.continuation !== void 0) {
-    assertEnum(value.continuation, AUTOMATION_CONTINUATION_VALUES, `${path15}.continuation`);
+    assertEnum(value.continuation, AUTOMATION_CONTINUATION_VALUES, `${path14}.continuation`);
   }
-  assertOptionalNonNegativeNumber(value.max_continues, `${path15}.max_continues`);
+  assertOptionalNonNegativeNumber(value.max_continues, `${path14}.max_continues`);
 }
-function assertTransportConfig(value, path15) {
+function assertTransportConfig(value, path14) {
   if (value === void 0) return;
-  assertPlainObject(value, path15);
-  assertOptionalString(value.path, `${path15}.path`);
+  assertPlainObject(value, path14);
+  assertOptionalString(value.path, `${path14}.path`);
   if (value.args !== void 0) {
-    assertStringArray(value.args, `${path15}.args`);
+    assertStringArray(value.args, `${path14}.args`);
   }
-  assertOptionalString(value.cli_flags, `${path15}.cli_flags`);
-  assertCapabilities(value.capabilities, `${path15}.capabilities`);
-  assertTimeoutConfig(value.timeout, `${path15}.timeout`);
-  assertOptionalString(value._comment, `${path15}._comment`);
-  assertOptionalString(value.status, `${path15}.status`);
+  assertOptionalString(value.cli_flags, `${path14}.cli_flags`);
+  assertCapabilities(value.capabilities, `${path14}.capabilities`);
+  assertTimeoutConfig(value.timeout, `${path14}.timeout`);
+  assertOptionalString(value._comment, `${path14}._comment`);
+  assertOptionalString(value.status, `${path14}.status`);
 }
-function assertEngineConfig(value, path15) {
-  assertTransportConfig(value, path15);
-  assertPlainObject(value, path15);
+function assertEngineConfig(value, path14) {
+  assertTransportConfig(value, path14);
+  assertPlainObject(value, path14);
   if (value.protocol !== void 0) {
-    assertEnum(value.protocol, ENGINE_PROTOCOL_VALUES, `${path15}.protocol`);
+    assertEnum(value.protocol, ENGINE_PROTOCOL_VALUES, `${path14}.protocol`);
   }
   if (value.preferred_protocol !== void 0) {
-    assertEnum(value.preferred_protocol, TRANSPORT_PROTOCOL_VALUES, `${path15}.preferred_protocol`);
+    assertEnum(value.preferred_protocol, TRANSPORT_PROTOCOL_VALUES, `${path14}.preferred_protocol`);
   }
-  assertOptionalString(value.adapter, `${path15}.adapter`);
-  assertOptionalString(value.family, `${path15}.family`);
+  assertOptionalString(value.adapter, `${path14}.adapter`);
+  assertOptionalString(value.family, `${path14}.family`);
   if (value.available_models !== void 0) {
-    assertStringArray(value.available_models, `${path15}.available_models`);
+    assertStringArray(value.available_models, `${path14}.available_models`);
   }
-  assertAutomationConfig(value.automation, `${path15}.automation`);
-  assertTransportConfig(value.acp, `${path15}.acp`);
-  assertTransportConfig(value.cli, `${path15}.cli`);
+  assertAutomationConfig(value.automation, `${path14}.automation`);
+  assertTransportConfig(value.acp, `${path14}.acp`);
+  assertTransportConfig(value.cli, `${path14}.cli`);
   if (value.protocol === "auto" && value.acp === void 0 && value.cli === void 0) {
-    fail(path15, `uses protocol 'auto' but does not declare either '${path15}.acp' or '${path15}.cli'`);
+    fail(path14, `uses protocol 'auto' but does not declare either '${path14}.acp' or '${path14}.cli'`);
   }
 }
 function assertAvailableAgentsConfig(value) {
@@ -7985,51 +7910,30 @@ function resolveHealthyModel(workspacePath, engine, model) {
     }
   }
   const { engines: availEngines, models: availModels } = loadValidEnginesAndModels(workspacePath);
-  const now = Date.now();
-  const fallbackCandidates = [];
-  for (const candidateModel of availModels[engine] || []) {
+  const sameEngineModels = availModels[engine] || [];
+  for (const candidateModel of sameEngineModels) {
     if (candidateModel === model) continue;
-    fallbackCandidates.push({ engine, model: candidateModel, scope: "same-engine" });
+    const candidateKey = `${engine}:${candidateModel}`;
+    const candidateEntry = health[candidateKey];
+    if (!candidateEntry || candidateEntry.status !== "unhealthy") {
+      console.error(`[EngineHealth] Fallback selected: ${engine}/${candidateModel} (same engine, replacing unhealthy ${engine}/${model})`);
+      return { engine, model: candidateModel };
+    }
   }
   for (const candidateEngine of availEngines) {
     if (candidateEngine === engine) continue;
-    for (const candidateModel of availModels[candidateEngine] || []) {
-      fallbackCandidates.push({ engine: candidateEngine, model: candidateModel, scope: "cross-engine" });
+    const candidateModels = availModels[candidateEngine] || [];
+    for (const candidateModel of candidateModels) {
+      const candidateKey = `${candidateEngine}:${candidateModel}`;
+      const candidateEntry = health[candidateKey];
+      if (!candidateEntry || candidateEntry.status !== "unhealthy") {
+        console.error(`[EngineHealth] Fallback selected: ${candidateEngine}/${candidateModel} (cross-engine, replacing unhealthy ${engine}/${model})`);
+        return { engine: candidateEngine, model: candidateModel };
+      }
     }
-  }
-  const selectedFallback = pickHealthyFallbackCandidate(fallbackCandidates, health, now);
-  if (selectedFallback) {
-    console.error(
-      `[EngineHealth] Fallback selected: ${selectedFallback.engine}/${selectedFallback.model} (${selectedFallback.scope}, readiness=${selectedFallback.readiness}, replacing unhealthy ${engine}/${model})`
-    );
-    return { engine: selectedFallback.engine, model: selectedFallback.model };
   }
   console.error(`[EngineHealth] All engine+model combos are unhealthy. Proceeding with original ${engine}/${model} as last resort.`);
   return { engine, model };
-}
-function pickHealthyFallbackCandidate(candidates, health, now) {
-  const confirmedHealthy = [];
-  const unverified = [];
-  for (const candidate of candidates) {
-    const readiness = classifyComboReadiness(health[`${candidate.engine}:${candidate.model}`], now);
-    if (readiness === "unhealthy") {
-      continue;
-    }
-    if (readiness === "confirmed_healthy") {
-      confirmedHealthy.push({ ...candidate, readiness });
-    } else {
-      unverified.push({ ...candidate, readiness });
-    }
-  }
-  return confirmedHealthy[0] ?? unverified[0];
-}
-function classifyComboReadiness(entry, now) {
-  if (!entry) return "unverified";
-  if (entry.status === "unhealthy" && now - new Date(entry.last_failure).getTime() < ENGINE_HEALTH_TTL_MS) {
-    return "unhealthy";
-  }
-  if (entry.successes > 0) return "confirmed_healthy";
-  return "unverified";
 }
 function loadValidEnginesAndModels(workspacePath) {
   const engineEntries = loadStaticValidationEngineEntries(workspacePath);
@@ -8517,7 +8421,7 @@ var BUILTIN_ENGINES = {
   },
   "claude-code": {
     executable: "claude-agent-acp",
-    args: ["--acp", "--stdio"],
+    args: ["--acp"],
     activityTimeoutMs: 3e5
   }
 };
@@ -10235,10 +10139,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path15) {
-  if (!path15)
+function getElementAtPath(obj, path14) {
+  if (!path14)
     return obj;
-  return path15.reduce((acc, key) => acc?.[key], obj);
+  return path14.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -10621,11 +10525,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path15, issues) {
+function prefixIssues(path14, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path15);
+    iss.path.unshift(path14);
     return iss;
   });
 }

@@ -92,6 +92,11 @@ Usage:
   optimus serve       Start MCP server (stdio transport)
   optimus version     Print version
 
+available-agents.json defaults:
+  User-level:    ~/.optimus/config/available-agents.json
+  Project-level: .optimus/config/available-agents.json (opt-in override)
+  Sample file:   .optimus/config/available-agents.project.sample.json
+
 Docs: https://github.com/cloga/optimus-code
 `);
     break;

@@ -62,7 +62,7 @@ export class AvailableAgentsConfigError extends Error {
     constructor(message: string) {
         super(
             `[Config] Invalid available-agents.json: ${message}. ` +
-            `Suggested fix: update .optimus/config/available-agents.json to match available-agents.schema.json.`
+            `Suggested fix: update ~/.optimus/config/available-agents.json (default) or .optimus/config/available-agents.json (project override) to match available-agents.schema.json.`
         );
         this.name = 'AvailableAgentsConfigError';
     }

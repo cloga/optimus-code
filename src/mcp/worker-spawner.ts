@@ -1464,7 +1464,6 @@ Provide your expert critique from the perspective of your role (${role}). Identi
 function computeDiversityAssignments(roles: string[], workspacePath: string): Array<{ engine?: string; model?: string }> {
     const health = loadEngineHealth(workspacePath);
     const { engines, models } = loadValidEnginesAndModels(workspacePath);
-    const configPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
 
     if (engines.length === 0) {
         // No config — let each role use its default
@@ -1496,7 +1495,7 @@ function computeDiversityAssignments(roles: string[], workspacePath: string): Ar
 
     for (const combo of configuredPool) {
         // Static validation first — reject phantom combos
-        if (!isStaticallyValid(combo.engine, combo.model, configPath)) {
+        if (!isStaticallyValid(combo.engine, combo.model, workspacePath)) {
             staticRejectedCount++;
             console.error(`[Council Diversity] Static validation rejected: ${combo.engine}:${combo.model || 'default'} (empty path or empty model string)`);
             continue;
