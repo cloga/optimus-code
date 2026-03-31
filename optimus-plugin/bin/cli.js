@@ -22,7 +22,7 @@ switch (command) {
     break;
 
   case 'upgrade':
-    require('./commands/upgrade')();
+    require('./commands/upgrade')(process.argv.slice(3));
     break;
 
   case 'go':
@@ -87,7 +87,8 @@ Usage:
   optimus go          Launch agent CLI for a registered Optimus project
   optimus go set-cli <project> <client>   Set per-project default CLI
   optimus go set-default-cli <client>     Set global default CLI
-  optimus upgrade     Upgrade skills, roles, and config from plugin source
+  optimus upgrade [--disable-project-available-agents]
+                      Upgrade skills, roles, and config from plugin source
   optimus memory      Manage user-level cross-project memory
   optimus serve       Start MCP server (stdio transport)
   optimus version     Print version
@@ -96,6 +97,11 @@ available-agents.json defaults:
   User-level:    ~/.optimus/config/available-agents.json
   Project-level: .optimus/config/available-agents.json (opt-in override)
   Sample file:   .optimus/config/available-agents.project.sample.json
+
+Upgrade migration:
+  --disable-project-available-agents
+      Rename .optimus/config/available-agents.json to a disabled backup
+      so the user-level config becomes authoritative again.
 
 Docs: https://github.com/cloga/optimus-code
 `);

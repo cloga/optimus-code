@@ -11,10 +11,13 @@ const { writeClientMcpConfigs, writeCopilotLaunchers } = require('../lib/mcp-con
 const { getProjectsRegistryPath, registerProject } = require('../lib/project-registry');
 const {
   copyFileForce,
+  disableProjectAvailableAgentsOverride,
   deepMergePreserveUser,
   getUserAvailableAgentsConfigPath,
   syncAvailableAgentsConfig,
 } = require('../lib/available-agents-config');
+
+const DISABLE_PROJECT_AVAILABLE_AGENTS_FLAG = '--disable-project-available-agents';
 
 function mergeConfigFiles(srcDir, destDir, options = {}) {
   const skippedNames = new Set(options.skippedNames || []);
@@ -76,11 +79,12 @@ function copyDirForceOverwrite(src, dest) {
   return count;
 }
 
-module.exports = function upgrade() {
+module.exports = function upgrade(argv = process.argv.slice(3)) {
   const cwd = process.cwd();
   const optimusDir = path.join(cwd, '.optimus');
   const scaffoldDir = path.resolve(__dirname, '..', '..', 'scaffold');
   const pluginRoot = path.resolve(__dirname, '..', '..');
+  const disableProjectAvailableAgents = argv.includes(DISABLE_PROJECT_AVAILABLE_AGENTS_FLAG);
 
   // Pre-check: .optimus/ must exist
   if (!fs.existsSync(optimusDir)) {
@@ -99,6 +103,8 @@ module.exports = function upgrade() {
   const availableAgentsTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.json');
   const availableAgentsProjectSampleTemplatePath = path.join(scaffoldDir, 'config', 'available-agents.project.sample.json');
   const projectConfigDir = path.join(optimusDir, 'config');
+  const agentsPath = path.join(projectConfigDir, 'available-agents.json');
+  const projectSamplePath = path.join(projectConfigDir, 'available-agents.project.sample.json');
 
   // 1. Skills: FORCE OVERWRITE
   const skillsSrc = path.join(pluginRoot, 'skills');
@@ -142,7 +148,16 @@ module.exports = function upgrade() {
     }
   }
 
-  const agentsPath = path.join(projectConfigDir, 'available-agents.json');
+  if (disableProjectAvailableAgents && fs.existsSync(agentsPath)) {
+    const disabled = disableProjectAvailableAgentsOverride(projectConfigDir);
+    if (disabled) {
+      console.log(`  🚫 Disabled project override and preserved it at ${path.relative(process.cwd(), disabled.disabledPath)}`);
+      console.log('  👤 User-level available-agents.json is now authoritative unless you restore a project override later.');
+    }
+  } else if (disableProjectAvailableAgents) {
+    console.log('  ℹ️  No active project-level available-agents override found to disable.');
+  }
+
   if (fs.existsSync(agentsPath) && fs.existsSync(availableAgentsTemplatePath)) {
     console.log(`  🏗️  Preserving active project override at ${path.relative(process.cwd(), agentsPath)}...`);
     try {
@@ -160,7 +175,6 @@ module.exports = function upgrade() {
       console.log('  ⚠️  Project-level available-agents sync skipped: ' + (e.message || e));
     }
   } else if (fs.existsSync(availableAgentsProjectSampleTemplatePath)) {
-    const projectSamplePath = path.join(projectConfigDir, 'available-agents.project.sample.json');
     copyFileForce(availableAgentsProjectSampleTemplatePath, projectSamplePath);
     console.log(`  🧪 Refreshed project override sample at ${path.relative(process.cwd(), projectSamplePath)}`);
   }

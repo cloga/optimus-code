@@ -4,6 +4,7 @@ import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const {
+    disableProjectAvailableAgentsOverride,
     getUserAvailableAgentsConfigPath,
     syncAvailableAgentsConfig,
 } = require('../../optimus-plugin/bin/lib/available-agents-config');
@@ -182,6 +183,76 @@ describe('available-agents scaffolding helpers', () => {
                 'claude-code': {
                     available_models: ['template-model'],
                     acp: { path: 'claude-agent-acp' },
+                },
+            },
+        });
+    });
+
+    it('disables an active project override by renaming it to a non-active backup', () => {
+        const tempDir = createTempDir('available-agents-disable-');
+        const projectConfigDir = path.join(tempDir, '.optimus', 'config');
+        const activePath = path.join(projectConfigDir, 'available-agents.json');
+        writeJson(activePath, {
+            engines: {
+                'github-copilot': {
+                    available_models: ['gpt-5.2'],
+                },
+            },
+        });
+
+        const result = disableProjectAvailableAgentsOverride(projectConfigDir);
+
+        expect(result).toEqual({
+            activePath,
+            disabledPath: path.join(projectConfigDir, 'available-agents.project.disabled.json'),
+        });
+        expect(fs.existsSync(activePath)).toBe(false);
+        expect(JSON.parse(fs.readFileSync(result.disabledPath, 'utf8'))).toEqual({
+            engines: {
+                'github-copilot': {
+                    available_models: ['gpt-5.2'],
+                },
+            },
+        });
+    });
+
+    it('allocates a unique disabled backup path when one already exists', () => {
+        const tempDir = createTempDir('available-agents-disable-unique-');
+        const projectConfigDir = path.join(tempDir, '.optimus', 'config');
+        const activePath = path.join(projectConfigDir, 'available-agents.json');
+        const existingDisabledPath = path.join(projectConfigDir, 'available-agents.project.disabled.json');
+        writeJson(activePath, {
+            engines: {
+                'claude-code': {
+                    available_models: ['claude-sonnet-4.5'],
+                },
+            },
+        });
+        writeJson(existingDisabledPath, {
+            engines: {
+                demo: {
+                    available_models: ['demo-model'],
+                },
+            },
+        });
+
+        const result = disableProjectAvailableAgentsOverride(projectConfigDir);
+
+        expect(result).toEqual({
+            activePath,
+            disabledPath: path.join(projectConfigDir, 'available-agents.project.disabled.1.json'),
+        });
+        expect(JSON.parse(fs.readFileSync(existingDisabledPath, 'utf8'))).toEqual({
+            engines: {
+                demo: {
+                    available_models: ['demo-model'],
+                },
+            },
+        });
+        expect(JSON.parse(fs.readFileSync(result.disabledPath, 'utf8'))).toEqual({
+            engines: {
+                'claude-code': {
+                    available_models: ['claude-sonnet-4.5'],
                 },
             },
         });

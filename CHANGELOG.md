@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.7] - 2026-03-31
+
+### Bug Fixes
+- **Published `optimus upgrade --disable-project-available-agents` migration flag** — Upgrades can now disable an active project-level `.optimus/config/available-agents.json` override by renaming it to a non-active backup (for example `.optimus/config/available-agents.project.disabled.json`) and reactivating the user-level `~/.optimus/config/available-agents.json` as the authoritative engine registry.
+
 ## [2.17.6] - 2026-03-31
 
 ### Bug Fixes

@@ -83,9 +83,12 @@ If you've previously initialized and want to update to the latest skills, roles,
 
 ```bash
 npx -y github:cloga/optimus-code upgrade
+npx -y github:cloga/optimus-code upgrade --disable-project-available-agents
 ```
 
 This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory. It also regenerates `.vscode/mcp.json`, `.copilot/mcp-config.json`, `.mcp.json`, and the `copilot-optimus*` launchers from `.optimus/config/mcp-servers.json`.
+
+If you want to adopt the new user-level `available-agents.json` default after previously using a project-level override, pass `--disable-project-available-agents`. Upgrade will rename `.optimus/config/available-agents.json` to a non-active backup such as `.optimus/config/available-agents.project.disabled.json`, then refresh the project sample file so user-level config becomes authoritative again.
 
 ### Jumping between Optimus projects
 
@@ -339,6 +342,8 @@ The default engine registry lives in `~/.optimus/config/available-agents.json`. 
 
 Optimus resolves engine settings in three layers: built-in defaults, then the user-level `~/.optimus/config/available-agents.json` (or `OPTIMUS_USER_AVAILABLE_AGENTS_PATH`), then the project-level `.optimus/config/available-agents.json` if you explicitly opt into a repository-specific override. Nested objects merge deeply, while arrays such as `available_models` or capability lists are replaced instead of concatenated.
 
+During migration, `optimus upgrade --disable-project-available-agents` disables the active project override without deleting it, which is useful when you want to standardize on the user-level registry across repositories.
+
 ```json
 {
   "engines": {
@@ -447,7 +452,9 @@ optimus serve
 ```
 optimus init        Bootstrap .optimus/ workspace in current directory
 optimus serve       Start MCP server (stdio transport)
-optimus upgrade     Update skills, roles, and config to latest version (preserves agents and runtime data)
+optimus upgrade [--disable-project-available-agents]
+                    Update skills, roles, and config to latest version
+                    (preserves agents and runtime data)
 optimus version     Print version
 optimus help        Show help
 ```

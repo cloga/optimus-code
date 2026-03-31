@@ -24,6 +24,33 @@ function copyFileForce(srcPath, destPath) {
   fs.copyFileSync(srcPath, destPath);
 }
 
+function getDisabledProjectAvailableAgentsPath(projectConfigDir, index = 0) {
+  const suffix = index === 0 ? '' : `.${index}`;
+  return path.join(projectConfigDir, `available-agents.project.disabled${suffix}.json`);
+}
+
+function disableProjectAvailableAgentsOverride(projectConfigDir) {
+  const activePath = path.join(projectConfigDir, 'available-agents.json');
+  if (!fs.existsSync(activePath)) {
+    return null;
+  }
+
+  ensureParentDir(activePath);
+
+  let disabledPath = getDisabledProjectAvailableAgentsPath(projectConfigDir);
+  let index = 1;
+  while (fs.existsSync(disabledPath)) {
+    disabledPath = getDisabledProjectAvailableAgentsPath(projectConfigDir, index);
+    index += 1;
+  }
+
+  fs.renameSync(activePath, disabledPath);
+  return {
+    activePath,
+    disabledPath,
+  };
+}
+
 function deepMergePreserveUser(template, user) {
   const result = { ...template };
   for (const key of Object.keys(user)) {
@@ -112,6 +139,7 @@ function syncAvailableAgentsConfig(templatePath, destPath) {
 module.exports = {
   copyFileForce,
   copyFileIfMissing,
+  disableProjectAvailableAgentsOverride,
   deepMergePreserveUser,
   getUserAvailableAgentsConfigPath,
   patchAvailableAgentsConfig,
