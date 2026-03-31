@@ -293,6 +293,7 @@ module.exports = function upgrade(argv = process.argv.slice(3)) {
   // 9. Summary
   console.log(`\n✅ Upgrade complete: ${skillCount} skills, ${roleCount} roles, ${configCount} config files updated.`);
   console.log('   User agents and runtime data preserved.\n');
-  console.log('💡 Upgrade other installed Optimus workspaces to pick up the latest fixes:');
-  console.log('   Run `npx github:cloga/optimus-code upgrade` in each project root.\n');
+  console.log('💡 This command upgraded the current workspace and regenerated its local configs/launchers.');
+  console.log('   To upgrade other installed Optimus workspaces, run `npx github:cloga/optimus-code upgrade` in each project root.');
+  console.log('   That command also ensures you are running the latest published CLI package, including `optimus go`.\n');
 };

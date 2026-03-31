@@ -93,7 +93,8 @@ Usage:
   optimus go set-cli <project> <client>   Set per-project default CLI
   optimus go set-default-cli <client>     Set global default CLI
   optimus upgrade [--disable-project-available-agents]
-                      Upgrade skills, roles, and config from plugin source
+                      Upgrade the current workspace's skills, roles, config,
+                      local launchers, and generated runtime bundles
   optimus memory      Manage user-level cross-project memory
   optimus serve       Start MCP server (stdio transport)
   optimus version     Print version

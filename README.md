@@ -88,6 +88,8 @@ npx -y github:cloga/optimus-code upgrade --disable-project-available-agents
 
 This force-updates skills, roles, and config from the latest release while preserving your agents (`.optimus/agents/`), runtime data (`.optimus/state/`), and memory. It also regenerates `.vscode/mcp.json`, `.copilot/mcp-config.json`, `.mcp.json`, and the `copilot-optimus*` launchers from `.optimus/config/mcp-servers.json`.
 
+In other words, `optimus upgrade` upgrades the current workspace. When you run it via `npx github:cloga/optimus-code upgrade`, you also pick up the latest published CLI package itself, including `optimus go`.
+
 If you want to adopt the new user-level `available-agents.json` default after previously using a project-level override, pass `--disable-project-available-agents`. Upgrade will rename `.optimus/config/available-agents.json` to a non-active backup such as `.optimus/config/available-agents.project.disabled.json`, then refresh the project sample file so user-level config becomes authoritative again.
 
 ### Jumping between Optimus projects
