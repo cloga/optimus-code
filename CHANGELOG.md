@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.17.7] - 2026-03-31
+## [2.17.8] - 2026-03-31
 
 ### Bug Fixes
 - **Restore `delegate_task` parity across sync/async flows** — Synchronous `delegate_task` now requires `workspace_path`, uses the same manifest-backed task lifecycle as async execution, persists task artifacts consistently, and returns blocking-compatibility guidance while remaining fully functional.
