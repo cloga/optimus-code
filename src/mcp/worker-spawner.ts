@@ -1058,7 +1058,7 @@ let contextContent = "";
     }
 
     const trackingIssueHeader = autoIssueNumber
-        ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
+        ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task_async and dispatch_council_async calls by default. Only use the synchronous variants when you explicitly need blocking behavior.\n`
         : '';
 
     // ── Harness: Self-Verification Prompt Suffix ──

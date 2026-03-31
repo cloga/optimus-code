@@ -26,7 +26,7 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
  * Uses the shared AcpProcessPool for warm adapter reuse across runs.
  * Safe for long-lived processes (HTTP server, CLI daemon) — never calls process.exit().
  */
-export async function runWorkerInProcess(taskId: string, workspacePath: string): Promise<void> {
+export async function runWorkerInProcess(taskId: string, workspacePath: string): Promise<string | undefined> {
     console.error(`[Runner] Starting in-process execution for task: ${taskId}`);
     const manifest = TaskManifestManager.loadManifest(workspacePath);
     const task = manifest[taskId];
@@ -50,10 +50,11 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
     }, 15000);
 
     try {
+        let delegateResult: string | undefined;
         if (task.type === 'delegate_task') {
-            await delegateTaskSingle(
+            delegateResult = await delegateTaskSingle(
                 task.role!,
-                task.task_description!,
+                task.task_artifact_path || task.task_description!,
                 task.output_path!,
                 `async_${taskId}`,
                 task.workspacePath,
@@ -103,6 +104,7 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
         }
 
         await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
+        return delegateResult;
     } catch (err: any) {
         console.error(`[Runner] Task ${taskId} failed (in-process):`, err);
         const latestManifest = TaskManifestManager.loadManifest(workspacePath);
@@ -220,7 +222,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
         if (task.type === 'delegate_task') {
             await delegateTaskSingle(
                 task.role!,
-                task.task_description!,
+                task.task_artifact_path || task.task_description!,
                 task.output_path!,
                 `async_${taskId}`,
                 task.workspacePath,

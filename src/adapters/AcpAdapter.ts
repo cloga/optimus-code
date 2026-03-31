@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { debugLog } from '../debugLogger';
 import { loadProjectMcpServers } from '../utils/mcpConfig';
+import { isCopilotCliExecutable, sanitizeCopilotAuthEnv } from '../utils/copilotAuthEnv';
 
 // ─── ACP Response Helpers ───
 
@@ -306,6 +307,7 @@ export class AcpAdapter implements AgentAdapter {
     private spawnProcess(extraEnv?: Record<string, string>): void {
         this.validateExecutable();
         const env = { ...process.env, ...extraEnv };
+        this.sanitizeSpawnEnv(env);
         const args = [...this.defaultArgs];
 
         debugLog('[AcpAdapter]', `Spawning: ${this.executable} ${args.join(' ')}`);
@@ -372,6 +374,12 @@ export class AcpAdapter implements AgentAdapter {
             pid: this.process.pid,
             startTime: Date.now(),
         };
+    }
+
+    private sanitizeSpawnEnv(env: NodeJS.ProcessEnv): void {
+        if (isCopilotCliExecutable(this.executable)) {
+            sanitizeCopilotAuthEnv(env);
+        }
     }
 
     private rejectAllPending(err: Error): void {

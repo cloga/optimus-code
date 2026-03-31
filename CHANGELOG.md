@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.7] - 2026-03-31
+
+### Bug Fixes
+- **Restore `delegate_task` parity across sync/async flows** — Synchronous `delegate_task` now requires `workspace_path`, uses the same manifest-backed task lifecycle as async execution, persists task artifacts consistently, and returns blocking-compatibility guidance while remaining fully functional.
+- **Keep nested delegated runtimes on the latest bundles** — Production builds now sync runtime bundles into workspace-local `.optimus/dist`, preventing nested delegated workers from loading stale MCP server code after runtime fixes.
+- **Harden delegated Copilot auth environment handling** — Restored `copilotAuthEnv` sanitization so delegated Copilot runs do not inherit conflicting GitHub token environment variables.
+
 ## [2.17.6] - 2026-03-31
 
 ### Bug Fixes

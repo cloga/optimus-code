@@ -15,9 +15,9 @@ import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle, explainAvailableAgentsConfig, explainEngineResolution, loadAvailableAgentsConfig, loadValidEnginesAndModels, loadEngineHeartbeatTimeout, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
 import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory, loadUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
-import { TaskManifestManager } from "../managers/TaskManifestManager";
+import { TaskManifestManager, MAX_TASK_STARTUP_TIMEOUT_MS } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
-import { runAsyncWorker, spawnAsyncWorker } from "./council-runner";
+import { runAsyncWorker, runWorkerInProcess, spawnAsyncWorker } from "./council-runner";
 import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
 import { execSync } from "child_process";
 import dotenv from "dotenv";
@@ -76,6 +76,45 @@ reloadEnv();
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function writeDelegateTaskArtifact(workspacePath: string, taskId: string, taskDescription: string): string {
+  const tasksDir = resolveOptimusPath(workspacePath, "tasks");
+  fs.mkdirSync(tasksDir, { recursive: true });
+  const taskArtifactPath = path.join(tasksDir, `${taskId}.md`);
+  fs.writeFileSync(taskArtifactPath, taskDescription, 'utf8');
+  return taskArtifactPath;
+}
+
+function persistAsyncRunnerFatalFailure(taskId: string, workspacePath: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const manifest = TaskManifestManager.loadManifest(workspacePath);
+  const task = manifest[taskId];
+  if (!task || task.status === 'cancelled' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'completed') {
+    return;
+  }
+
+  const errorMessage = [
+    `ASYNC_RUNNER_FATAL: Detached worker terminated before it could persist a final task status.`,
+    `Root cause: ${message}`,
+    `Fix: inspect runner crash logs or retry the task once engine/bootstrap issues are resolved.`,
+  ].join(' ');
+
+  TaskManifestManager.updateTask(workspacePath, taskId, {
+    status: 'failed',
+    error_message: errorMessage,
+    completed_at: Date.now(),
+  });
+
+  if (task.output_path) {
+    try {
+      const dir = path.dirname(task.output_path);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${errorMessage}\n`, 'utf8');
+    } catch (writeErr: any) {
+      console.error(`[Runner] Warning: failed to write fatal output marker for ${taskId}: ${writeErr.message}`);
+    }
+  }
 }
 
 // 1. Initialize the MCP Server (The Marionette Controller)
@@ -332,7 +371,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "delegate_task",
-        description: "Delegate a specific execution task to a designated expert role.",
+        description: "Blocking compatibility wrapper for delegating a specific execution task to a designated expert role. Prefer delegate_task_async for new orchestration flows.",
         inputSchema: {
           type: "object",
           properties: {
@@ -362,7 +401,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             workspace_path: {
               type: "string",
-              description: "Absolute path to the project workspace root.",
+              description: "Absolute path to the project workspace root. Required for new callers; omitted only for backward compatibility with older sync delegate_task clients.",
             },
             context_files: {
               type: "array",
@@ -450,6 +489,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             heartbeat_timeout_ms: {
               type: "number",
               description: "Optional heartbeat staleness timeout in ms. Overrides engine default. Range: 1-1800000 (30 min max)."
+            },
+            startup_timeout_ms: {
+              type: "number",
+              description: "Optional startup timeout in ms for stuck-pending detection. Range: 1-600000 (10 min max)."
             },
             branch: {
               type: "string",
@@ -786,7 +829,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, branch } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, startup_timeout_ms, branch } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
     // If branch is specified, create/find worktree and redirect workspace
@@ -817,16 +860,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       : path.join(optimusDir, "results", path.basename(output_path));
 
     const resolvedHeartbeatTimeout = resolveHeartbeatTimeout(workspace_path, role_engine, heartbeat_timeout_ms);
+    if (startup_timeout_ms !== undefined) {
+      if (typeof startup_timeout_ms !== 'number' || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_TASK_STARTUP_TIMEOUT_MS) {
+        throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
+      }
+    }
 
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
+    const taskArtifactPath = writeDelegateTaskArtifact(workspace_path, taskId, task_description);
     TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "delegate_task", role, task_description, output_path, workspacePath: workspace_path, context_files: context_files || [],
+        taskId, type: "delegate_task", role, task_description, task_artifact_path: taskArtifactPath, output_path, workspacePath: workspace_path, context_files: context_files || [],
         role_description, role_engine, role_model, required_skills,
         delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
         parent_issue_number: parentIssueNumber,
         agent_id: agent_id || undefined,
         depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : undefined,
-        heartbeat_timeout_ms: resolvedHeartbeatTimeout
+        heartbeat_timeout_ms: resolvedHeartbeatTimeout,
+        startup_timeout_ms: startup_timeout_ms,
     });
 
     // Dependency check: determine if task should be blocked
@@ -1384,15 +1434,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentSync) ? undefined : rawParentSync);
 
-    requireParams("delegate_task", request.params.arguments as any, ["role", "task_description", "output_path"]);
-
-    if (!workspace_path) {
-       // fallback to project root based on output_path or cwd
-       workspace_path = process.cwd();
-       if (output_path.includes("optimus-code")) {
-         workspace_path = output_path.split("optimus-code")[0] + "optimus-code";
-       }
-    }
+    requireParams("delegate_task", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
     // If branch is specified, create/find worktree and redirect workspace
     if (branch) {
@@ -1409,6 +1451,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     validateEngineAndModel(role_engine, role_model, workspace_path);
 
     const sessionId = crypto.randomUUID();
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
     const workspacePath = workspace_path;
 
     // Canonicalize output_path: if it does not already live under this workspace's .optimus/,
@@ -1419,21 +1462,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ? resolvedOutputPath
       : path.join(optimusDir, "results", path.basename(output_path));
 
-    // 1. Write the task description into a Blackboard Artifact so the stateless worker can read it
-    const tasksDir = resolveOptimusPath(workspacePath, "tasks");
-    fs.mkdirSync(tasksDir, { recursive: true });
-    const taskArtifactPath = path.join(tasksDir, `task_${sessionId}.md`);
-    fs.writeFileSync(taskArtifactPath, task_description, 'utf8');
+    // 1. Write the task description into a Blackboard Artifact so sync and async
+    // share the same task payload shape when invoking delegateTaskSingle.
+    const taskArtifactPath = writeDelegateTaskArtifact(workspacePath, taskId, task_description);
 
     // Ensure the output directory exists (handles .optimus/results/ when auto-scoped)
     fs.mkdirSync(path.dirname(canonicalOutputPath), { recursive: true });
 
+    const resolvedHeartbeatTimeout = resolveHeartbeatTimeout(workspacePath, role_engine, undefined);
+    TaskManifestManager.createTask(workspacePath, {
+      taskId,
+      type: "delegate_task",
+      role,
+      task_description,
+      task_artifact_path: taskArtifactPath,
+      output_path: canonicalOutputPath,
+      workspacePath,
+      context_files: context_files || [],
+      role_description,
+      role_engine,
+      role_model,
+      required_skills,
+      delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
+      parent_issue_number: parentIssueNumber,
+      agent_id: agent_id || undefined,
+      heartbeat_timeout_ms: resolvedHeartbeatTimeout,
+    });
+
     console.error(`[MCP] Delegating task to role: ${role}, output scoped to: ${canonicalOutputPath}`);
     
-    // 2. Delegate to the single worker pool (use canonicalOutputPath so agent writes inside .optimus/)
-      const result = await delegateTaskSingle(role, taskArtifactPath, canonicalOutputPath, sessionId, workspacePath, context_files, { description: role_description, engine: role_engine, model: role_model, requiredSkills: required_skills }, undefined, parentIssueNumber, undefined, agent_id);
+    // 2. Run through the same manifest-backed worker lifecycle used by async tasks,
+    // while keeping synchronous blocking semantics for compatibility callers.
+    const result = await runWorkerInProcess(taskId, workspacePath);
+    const completedTask = TaskManifestManager.loadManifest(workspacePath)[taskId];
+    if (!completedTask) {
+      throw new McpError(ErrorCode.InternalError, `delegate_task compatibility flow could not reload task record ${taskId}.`);
+    }
+    if (completedTask.status === 'failed') {
+      throw new McpError(ErrorCode.InternalError, completedTask.error_message || `delegate_task failed for task ${taskId}.`);
+    }
+    const syncResult = result || `✅ **Task Delegation Successful**\n\n**Task ID**: ${taskId}\n**Engine**: ${completedTask.resolved_engine || role_engine || 'auto-resolved'}\n**Session ID**: ${completedTask.session_id || sessionId}\n\nAgent has finished execution. Check standard output at \`${canonicalOutputPath.replace(/\\/g, '/')}\`.`;
+    const completionHint = completedTask.status === 'verified'
+      ? `\n\n**Task ID**: ${taskId}\n**Status**: verified`
+      : `\n\n**Task ID**: ${taskId}\n**Status**: ${completedTask.status}\n**Output Path**: \`${canonicalOutputPath.replace(/\\/g, '/')}\``;
     return {
-      content: [{ type: "text", text: result }]
+      content: [{
+        type: "text",
+        text: `⚠️ **Compatibility mode: You used the synchronous \`delegate_task\`. This blocks until the worker finishes. Prefer \`delegate_task_async\` + \`check_task_status\` for new orchestration flows.**${completionHint}\n\n${syncResult}`
+      }]
     };
   } else if (request.params.name === "vcs_create_work_item") {
     const { title, body, labels, work_item_type, workspace_path,
@@ -1780,10 +1856,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Validate startup_timeout_ms if provided
-    const MAX_STARTUP_TIMEOUT_MS = 600000; // 10 minutes
     if (startup_timeout_ms !== undefined) {
-        if (typeof startup_timeout_ms !== 'number' || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_STARTUP_TIMEOUT_MS) {
-            throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
+        if (typeof startup_timeout_ms !== 'number' || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_TASK_STARTUP_TIMEOUT_MS) {
+            throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
         }
     }
 
@@ -1999,9 +2074,23 @@ if (process.argv.includes("--run-task")) {
     console.error("[Runner] Usage: --run-task <taskId> <workspacePath>");
     process.exit(1);
   }
-  runAsyncWorker(taskId, workspacePath).catch((err) => {
-    console.error("[Runner] Fatal:", err);
+  let fatalRecorded = false;
+  const recordFatalAndExit = (error: unknown, label: string) => {
+    if (!fatalRecorded) {
+      fatalRecorded = true;
+      persistAsyncRunnerFatalFailure(taskId, workspacePath, error);
+    }
+    console.error(`[Runner] ${label}:`, error);
     process.exit(1);
+  };
+  process.on('uncaughtException', (error) => {
+    recordFatalAndExit(error, 'Uncaught exception');
+  });
+  process.on('unhandledRejection', (reason) => {
+    recordFatalAndExit(reason, 'Unhandled rejection');
+  });
+  runAsyncWorker(taskId, workspacePath).catch((err) => {
+    recordFatalAndExit(err, 'Fatal');
   });
 } else {
   // Standard MCP stdio transport

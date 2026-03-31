@@ -230,31 +230,28 @@ export function resolveHealthyModel(workspacePath: string, engine: string, model
 
     // Unhealthy within TTL — find fallback
     const { engines: availEngines, models: availModels } = loadValidEnginesAndModels(workspacePath);
+    const now = Date.now();
+    const fallbackCandidates: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine' }> = [];
 
-    // 1. Try other models on the same engine
-    const sameEngineModels = availModels[engine] || [];
-    for (const candidateModel of sameEngineModels) {
+    for (const candidateModel of availModels[engine] || []) {
         if (candidateModel === model) continue;
-        const candidateKey = `${engine}:${candidateModel}`;
-        const candidateEntry = health[candidateKey];
-        if (!candidateEntry || candidateEntry.status !== 'unhealthy') {
-            console.error(`[EngineHealth] Fallback selected: ${engine}/${candidateModel} (same engine, replacing unhealthy ${engine}/${model})`);
-            return { engine, model: candidateModel };
+        fallbackCandidates.push({ engine, model: candidateModel, scope: 'same-engine' });
+    }
+
+    for (const candidateEngine of availEngines) {
+        if (candidateEngine === engine) continue;
+        for (const candidateModel of availModels[candidateEngine] || []) {
+            fallbackCandidates.push({ engine: candidateEngine, model: candidateModel, scope: 'cross-engine' });
         }
     }
 
-    // 2. Try other engines
-    for (const candidateEngine of availEngines) {
-        if (candidateEngine === engine) continue;
-        const candidateModels = availModels[candidateEngine] || [];
-        for (const candidateModel of candidateModels) {
-            const candidateKey = `${candidateEngine}:${candidateModel}`;
-            const candidateEntry = health[candidateKey];
-            if (!candidateEntry || candidateEntry.status !== 'unhealthy') {
-                console.error(`[EngineHealth] Fallback selected: ${candidateEngine}/${candidateModel} (cross-engine, replacing unhealthy ${engine}/${model})`);
-                return { engine: candidateEngine, model: candidateModel };
-            }
-        }
+    const selectedFallback = pickHealthyFallbackCandidate(fallbackCandidates, health, now);
+    if (selectedFallback) {
+        console.error(
+            `[EngineHealth] Fallback selected: ${selectedFallback.engine}/${selectedFallback.model} ` +
+            `(${selectedFallback.scope}, readiness=${selectedFallback.readiness}, replacing unhealthy ${engine}/${model})`
+        );
+        return { engine: selectedFallback.engine, model: selectedFallback.model };
     }
 
     // 3. All combos unhealthy — escape hatch: return original (R3.4)
@@ -269,6 +266,29 @@ export function resolveHealthyModel(workspacePath: string, engine: string, model
  *   unhealthy         — recorded failures within TTL
  */
 export type ComboReadiness = 'confirmed_healthy' | 'unverified' | 'unhealthy';
+
+function pickHealthyFallbackCandidate(
+    candidates: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine' }>,
+    health: Record<string, EngineHealthEntry>,
+    now: number
+): ({ engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: Exclude<ComboReadiness, 'unhealthy'> }) | undefined {
+    const confirmedHealthy: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: 'confirmed_healthy' }> = [];
+    const unverified: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: 'unverified' }> = [];
+
+    for (const candidate of candidates) {
+        const readiness = classifyComboReadiness(health[`${candidate.engine}:${candidate.model}`], now);
+        if (readiness === 'unhealthy') {
+            continue;
+        }
+        if (readiness === 'confirmed_healthy') {
+            confirmedHealthy.push({ ...candidate, readiness });
+        } else {
+            unverified.push({ ...candidate, readiness });
+        }
+    }
+
+    return confirmedHealthy[0] ?? unverified[0];
+}
 
 export function classifyComboReadiness(entry: EngineHealthEntry | undefined, now: number): ComboReadiness {
     if (!entry) return 'unverified';
@@ -534,8 +554,15 @@ export function getTransportConfig(engineConfig: any, protocol: 'cli' | 'acp'): 
     }
     const explicitProtocol = engineConfig.protocol === 'acp' ? 'acp' : 'cli';
     if (explicitProtocol !== protocol) return null;
-    // Prefer protocol sub-object if it exists (has capabilities), else fall back to parent
-    return engineConfig[protocol] || engineConfig;
+    const scopedConfig = engineConfig[protocol];
+    if (!scopedConfig || typeof scopedConfig !== 'object') {
+        return engineConfig;
+    }
+
+    return {
+        ...engineConfig,
+        ...scopedConfig,
+    };
 }
 
 export function getDefaultProtocolForEngine(engine: string): 'cli' | 'acp' {

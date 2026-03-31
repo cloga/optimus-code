@@ -217,9 +217,9 @@ When delegating a task, the Master Agent should follow this sequence:
 
 1. **`roster_check`** — See available T1 agents, T2 roles, T3 engines, and skills. **Never skip.**
 2. **Select role** — Choose an existing role from the roster. Only invent a new role name if no existing role matches.
-3. **Provide structured role info** — Pass `role_description`, `role_engine`, `role_model` in `delegate_task`
+3. **Provide structured role info** — Pass `role_description`, `role_engine`, `role_model` in the delegation call
 4. **Check skills** — Specify `required_skills`. Missing skills → create them first via `skill-creator`
-5. **Delegate** — Use `delegate_task_async` (preferred) or `delegate_task`
+5. **Delegate** — Use `delegate_task_async` by default. Use synchronous `delegate_task` only when you explicitly need blocking execution in the current turn.
 6. **Context Check** — Before dispatching, ask: "Does prior work exist for this topic?"
    - Search your conversation history for references to specs, proposals, or council reviews
    - If uncertain, call `list_knowledge` to see available artifacts in `.optimus/`
@@ -448,7 +448,7 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 | Tool | Purpose |
 |------|---------|
 | `roster_check` | List all available agent roles (T1 local + T2 global) |
-| `delegate_task_async` / `delegate_task` | Dispatch a task to a specialized agent role (**prefer async**) |
+| `delegate_task_async` / `delegate_task` | Dispatch a task to a specialized agent role (`delegate_task` is the blocking compatibility variant; **prefer async**) |
 | `dispatch_council_async` / `dispatch_council` | Spawn parallel expert review council (**prefer async**) |
 | `check_task_status` | Poll the status of async queues |
 | `vcs_create_work_item` | Create GitHub Issue / ADO Work Item |
@@ -462,7 +462,7 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 | `register_meta_cron` / `list_meta_crons` / `remove_meta_cron` | Scheduled task management |
 | `hello` | Health check |
 
-**Rule**: Always prefer `_async` variants for delegation and council to avoid blocking the master process.
+**Rule**: Always prefer `_async` variants for delegation and council. Treat synchronous `delegate_task` / `dispatch_council` as blocking compatibility tools.
 
 ### Skills Quick Reference
 
@@ -472,7 +472,7 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 3. **Deployment**: Call `delegate_task_async` with `role`, `task_description`, and `output_path`. **NEVER simulate the work yourself when delegation is requested.**
 
 **Critical constraints:**
-- **Always use `_async` variants** (`delegate_task_async`, not `delegate_task`) to avoid blocking the master process
+- **Always use `_async` variants** (`delegate_task_async`, not `delegate_task`) for normal orchestration; use sync only when the caller explicitly wants blocking behavior
 - **Always call `roster_check` first** — even if you think you know the available roles
 - **Always provide `output_path`** inside `.optimus/` (check the Artifact Directory Routing Table above)
 - **Never busy-poll** `check_task_status` — wait at least 30 seconds between polls
@@ -504,7 +504,7 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 
 ### Delegation Scope Decision Matrix
 
-Before calling `delegate_task` or `dispatch_council`, the Master Agent MUST classify the task using this table:
+Before calling `delegate_task_async` / `delegate_task` or `dispatch_council_async` / `dispatch_council`, the Master Agent MUST classify the task using this table:
 
 | Situation | Delegate To | Rationale |
 |-----------|-------------|-----------|

@@ -343,6 +343,28 @@ describe('Engine automation integration', () => {
         }
     });
 
+    it('defaults Claude ACP transport to stdio when config only declares the executable path', () => {
+        const workspacePath = createTempWorkspace({
+            engines: {
+                'claude-code': {
+                    protocol: 'acp',
+                    path: 'claude-agent-acp',
+                    available_models: ['claude-opus-4.6-1m'],
+                    automation: { mode: 'auto-approve' }
+                }
+            }
+        });
+        try {
+            expect(getResolvedEngineTransport('claude-code', workspacePath)).toEqual({
+                protocol: 'acp',
+                executable: 'claude-agent-acp',
+                args: ['--acp', '--stdio'],
+            });
+        } finally {
+            cleanup(workspacePath);
+        }
+    });
+
     it('warns when Copilot ACP relies on implicit stdio defaults from config validation', () => {
         const workspacePath = createTempWorkspace({
             engines: {
