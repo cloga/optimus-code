@@ -13,73 +13,78 @@
 
 const path = require('path');
 const fs = require('fs');
+const { getInstalledVersion, maybeNotifyAboutUpdate } = require('./lib/update-notifier');
 
 const command = process.argv[2];
+const installedVersion = getInstalledVersion();
 
-switch (command) {
-  case 'init':
-    require('./commands/init')();
-    break;
+(async () => {
+  await maybeNotifyAboutUpdate(command, { currentVersion: installedVersion });
 
-  case 'upgrade':
-    require('./commands/upgrade')(process.argv.slice(3));
-    break;
+  switch (command) {
+    case 'init':
+      require('./commands/init')();
+      break;
 
-  case 'go':
-    Promise.resolve(require('./commands/go')()).catch(error => {
-      console.error(error.message);
-      process.exit(1);
-    });
-    break;
+    case 'upgrade':
+      require('./commands/upgrade')(process.argv.slice(3));
+      break;
 
-  case 'memory':
-    require('./commands/memory')();
-    break;
+    case 'go':
+      Promise.resolve(require('./commands/go')()).catch(error => {
+        console.error(error.message);
+        process.exit(1);
+      });
+      break;
 
-  case 'serve':
-    // Launch the MCP server directly
-    require(path.join(__dirname, '..', 'dist', 'mcp-server.js'));
-    break;
+    case 'memory':
+      require('./commands/memory')();
+      break;
 
-  case 'version': {
-    const pkgV = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    console.log(`optimus-swarm v${pkgV.version}`);
+    case 'serve':
+      // Launch the MCP server directly
+      require(path.join(__dirname, '..', 'dist', 'mcp-server.js'));
+      break;
 
-    // Build date from compile-time metadata
-    const buildMetaPath = path.join(__dirname, '..', 'dist', 'build-meta.json');
-    try {
-      const meta = JSON.parse(fs.readFileSync(buildMetaPath, 'utf8'));
-      console.log(`Build date:   ${meta.buildDate}`);
-    } catch {
-      console.log(`Build date:   unknown`);
+    case 'version': {
+      const pkgV = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+      console.log(`optimus-swarm v${pkgV.version}`);
+
+      // Build date from compile-time metadata
+      const buildMetaPath = path.join(__dirname, '..', 'dist', 'build-meta.json');
+      try {
+        const meta = JSON.parse(fs.readFileSync(buildMetaPath, 'utf8'));
+        console.log(`Build date:   ${meta.buildDate}`);
+      } catch {
+        console.log(`Build date:   unknown`);
+      }
+
+      // Skills from installed package
+      const skillsDir = path.join(__dirname, '..', 'skills');
+      try {
+        const skills = fs.readdirSync(skillsDir, { withFileTypes: true })
+          .filter(d => d.isDirectory())
+          .map(d => d.name)
+          .sort();
+        console.log(`Skills (${skills.length}):   ${skills.join(', ')}`);
+      } catch {
+        console.log(`Skills:       none found`);
+      }
+      break;
     }
 
-    // Skills from installed package
-    const skillsDir = path.join(__dirname, '..', 'skills');
-    try {
-      const skills = fs.readdirSync(skillsDir, { withFileTypes: true })
-        .filter(d => d.isDirectory())
-        .map(d => d.name)
-        .sort();
-      console.log(`Skills (${skills.length}):   ${skills.join(', ')}`);
-    } catch {
-      console.log(`Skills:       none found`);
+    case '--version':
+    case '-v': {
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+      console.log(`optimus-swarm v${pkg.version}`);
+      break;
     }
-    break;
-  }
 
-  case '--version':
-  case '-v': {
-    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    console.log(`optimus-swarm v${pkg.version}`);
-    break;
-  }
-
-  case 'help':
-  case '--help':
-  case '-h':
-  case undefined:
-    console.log(`
+    case 'help':
+    case '--help':
+    case '-h':
+    case undefined:
+      console.log(`
 Optimus Swarm CLI — Universal Multi-Agent Orchestrator (MCP)
 
 Usage:
@@ -105,10 +110,14 @@ Upgrade migration:
 
 Docs: https://github.com/cloga/optimus-code
 `);
-    break;
+      break;
 
-  default:
-    console.error(`Unknown command: ${command}`);
-    console.error(`Run 'optimus help' for usage information.`);
-    process.exit(1);
-}
+    default:
+      console.error(`Unknown command: ${command}`);
+      console.error(`Run 'optimus help' for usage information.`);
+      process.exit(1);
+  }
+})().catch(error => {
+  console.error(error.message);
+  process.exit(1);
+});

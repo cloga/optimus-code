@@ -104,6 +104,8 @@ optimus go FR --continue                # pass-through flags to the CLI
 optimus go --scan                       # discover and register projects
 ```
 
+The CLI periodically checks GitHub releases and prints an update notice when a newer version is available. The notice is skipped for `optimus serve` so MCP stdio output stays clean.
+
 #### Multi-CLI support
 
 `optimus go` supports both GitHub Copilot CLI and Claude Code CLI. Each project can have a preferred CLI, and you can override it per-launch:

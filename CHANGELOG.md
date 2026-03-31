@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.9] - 2026-03-31
+
+### Features
+- **CLI update notices** — `optimus` now checks the latest GitHub release on a cached interval and prints an upgrade reminder when a newer version is available. Cached notices continue to work offline, and `optimus serve` skips the check to keep MCP stdio output clean.
+
 ## [2.17.8] - 2026-03-31
 
 ### Bug Fixes
