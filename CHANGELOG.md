@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.17.10] - 2026-03-31
+## [2.17.11] - 2026-03-31
 
 ### Improvements
 - **Clarified upgrade scope** — `optimus upgrade` now states more explicitly that it upgrades the current workspace and its local launchers/config. The completion message and docs also explain that `npx github:cloga/optimus-code upgrade` picks up the latest published CLI package itself, including `optimus go`.
