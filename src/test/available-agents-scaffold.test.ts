@@ -50,7 +50,6 @@ describe('available-agents scaffolding helpers', () => {
             engines: {
                 'claude-code': {
                     available_models: ['template-model'],
-                    acp: { path: 'claude-agent-acp' },
                 },
             },
         });
@@ -66,7 +65,6 @@ describe('available-agents scaffolding helpers', () => {
             engines: {
                 'claude-code': {
                     available_models: ['template-model'],
-                    acp: { path: 'claude-agent-acp' },
                 },
             },
         });
@@ -82,14 +80,6 @@ describe('available-agents scaffolding helpers', () => {
                     protocol: 'auto',
                     preferred_protocol: 'acp',
                     available_models: ['gpt-5.4'],
-                    acp: {
-                        path: 'copilot',
-                        args: ['--acp', '--stdio'],
-                        capabilities: {
-                            automation_modes: ['auto-approve'],
-                            automation_continuations: ['single', 'autopilot'],
-                        },
-                    },
                     cli: {
                         path: 'copilot',
                         capabilities: {
@@ -106,12 +96,8 @@ describe('available-agents scaffolding helpers', () => {
                     protocol: 'acp',
                     available_models: ['custom-model'],
                     acp: {
-                        path: 'copilot-custom',
+                        path: 'copilot',
                         args: ['--acp', '--stdio'],
-                        capabilities: {
-                            automation_modes: ['interactive'],
-                            automation_continuations: ['single'],
-                        },
                     },
                     cli: {
                         path: 'copilot-custom-cli',
@@ -137,14 +123,6 @@ describe('available-agents scaffolding helpers', () => {
             protocol: 'auto',
             preferred_protocol: 'acp',
             available_models: ['custom-model'],
-            acp: {
-                path: 'copilot-custom',
-                args: ['--acp'],
-                capabilities: {
-                    automation_modes: ['interactive', 'auto-approve'],
-                    automation_continuations: ['single', 'autopilot'],
-                },
-            },
             cli: {
                 path: 'copilot-custom-cli',
                 capabilities: {
@@ -163,7 +141,6 @@ describe('available-agents scaffolding helpers', () => {
             engines: {
                 'claude-code': {
                     available_models: ['template-model'],
-                    acp: { path: 'claude-agent-acp' },
                 },
             },
         });
@@ -181,7 +158,6 @@ describe('available-agents scaffolding helpers', () => {
             engines: {
                 'claude-code': {
                     available_models: ['template-model'],
-                    acp: { path: 'claude-agent-acp' },
                 },
             },
         });

@@ -1,13 +1,8 @@
 # Changelog
 
-## [2.17.10] - 2026-03-31
+## [2.17.12] - 2026-03-31
 
-### Bug Fixes
-- **Restore `delegate_task` parity across sync/async flows** — Synchronous `delegate_task` now requires `workspace_path`, uses the same manifest-backed task lifecycle as async execution, persists task artifacts consistently, and returns blocking-compatibility guidance while remaining fully functional.
-- **Keep nested delegated runtimes on the latest bundles** — Production builds now sync runtime bundles into workspace-local `.optimus/dist`, preventing nested delegated workers from loading stale MCP server code after runtime fixes.
-- **Harden delegated Copilot auth environment handling** — Restored `copilotAuthEnv` sanitization so delegated Copilot runs do not inherit conflicting GitHub token environment variables.
-
-## [2.17.6] - 2026-03-31
+### Bug Fixes`r`n- **Restore `delegate_task` parity across sync/async flows** — Synchronous `delegate_task` now requires `workspace_path`, uses the same manifest-backed task lifecycle as async execution, persists task artifacts consistently, and returns blocking-compatibility guidance while remaining fully functional.`r`n- **Keep nested delegated runtimes on the latest bundles** — Production builds now sync runtime bundles into workspace-local `.optimus/dist`, preventing nested delegated workers from loading stale MCP server code after runtime fixes.`r`n- **Harden delegated Copilot auth environment handling** — Restored `copilotAuthEnv` sanitization so delegated Copilot runs do not inherit conflicting GitHub token environment variables.`r`n- **Simplify `available-agents` defaults** — `init` / `upgrade` templates no longer emit redundant default ACP config for Claude Code and GitHub Copilot, and upgrade cleanup now removes legacy default ACP stanzas while preserving true custom transport overrides.`r`n`r`n## [2.17.6] - 2026-03-31
 
 ### Bug Fixes
 - **Init handshake timeout and config-driven adapters** — Added init handshake timeout to prevent startup hangs, made adapters config-driven, and reduced timeouts for faster failure detection. (a1cf103, #538)
@@ -828,3 +823,4 @@
 - Initial MVP creation.
 - Shifted architecture from command-palette invocation to a persistent **Sidebar Webview Chat**.
 - Implemented **Adapter Design Pattern** in `src/adapters/`.
+
