@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.19.0] - 2026-04-03
+
+### Features (Claude Code Architecture Research — Issue #555)
+- **Structured task notifications** — `delegateTaskSingle()` returns `TaskDelegationResult` with status, tokens, timing, and metadata instead of plain text. `check_task_status` now shows execution metrics table.
+- **Coordinator synthesis gate** — Research tasks with `synthesis_required: true` auto-extract key findings before unblocking dependent implementation tasks, preventing understanding loss in agent handoffs.
+- **Lifecycle hooks** — 16 hook points across task lifecycle, execution pipeline, and MCP dispatch with veto support, best-effort error isolation, and 3 built-in hooks (metrics, logging, slow-execution).
+- **Prompt cache optimization** — Parallel workers share byte-identical prompt prefixes via `cache_control: ephemeral`, saving ~70-80% of repeated token processing in council dispatch.
+- **Dynamic skill prompts** — SKILL.md files support template syntax (`{{role}}`, `{% if engine == "claude-code" %}`, `{% include %}`) for context-aware prompt generation. Static skills unchanged (zero overhead).
+- **Memory staleness warnings** — Entries older than 1 day get a warning: "claims about code behavior may be outdated."
+- **Memory snapshot initialization** — `.optimus/memory/snapshots/` enables team onboarding with pre-populated project conventions.
+
+### Security
+- **Path security hardening** — New `pathSecurity.ts` module with null byte rejection, URL-encoded traversal detection, Unicode fullwidth character detection, and case-insensitive comparison for Windows/macOS.
+
+### Bug Fixes
+- **ACP executable resolution** — Multi-strategy path resolver scans common npm install locations as fallback when system PATH doesn't include ACP executables. Auto-updates to absolute path on resolution.
+- **ACP config completeness** — Fixed missing `protocol` and `acp` blocks in user-level `available-agents.json` that caused wrong executable/protocol fallback.
+
 ## [2.18.0] - 2026-04-03
 
 ### Features
