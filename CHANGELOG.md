@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.13] - 2026-04-03
+
+### Improvements
+- **Claude Code auto-accept permissions** — `optimus go --cli claude` now launches with `--dangerously-skip-permissions` by default for a frictionless autonomous workflow.
+
 ## [2.17.12] - 2026-04-03
 
 ### Bug Fixes
