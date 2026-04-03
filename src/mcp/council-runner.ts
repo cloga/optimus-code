@@ -3,10 +3,12 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { TaskManifestManager } from '../managers/TaskManifestManager';
 import { dispatchCouncilConcurrent, delegateTaskSingle } from './worker-spawner';
+import { TaskDelegationResult, formatTaskResultAsText } from '../types/TaskDelegationResult.js';
 import { parseGitRemote, commentOnGitHubIssue, closeGitHubIssue } from '../utils/githubApi';
 import { agentSignature } from '../utils/agentSignature';
 import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
 import { resolveOptimusPath } from '../utils/worktree';
+import { synthesizeIfRequired, injectSynthesisContext } from './synthesis-coordinator';
 
 /**
  * Spawn a detached background worker for an async task.
@@ -26,7 +28,7 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
  * Uses the shared AcpProcessPool for warm adapter reuse across runs.
  * Safe for long-lived processes (HTTP server, CLI daemon) — never calls process.exit().
  */
-export async function runWorkerInProcess(taskId: string, workspacePath: string): Promise<string | undefined> {
+export async function runWorkerInProcess(taskId: string, workspacePath: string): Promise<TaskDelegationResult | undefined> {
     console.error(`[Runner] Starting in-process execution for task: ${taskId}`);
     const manifest = TaskManifestManager.loadManifest(workspacePath);
     const task = manifest[taskId];
@@ -50,7 +52,7 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
     }, 15000);
 
     try {
-        let delegateResult: string | undefined;
+        let delegateResult: TaskDelegationResult | undefined;
         if (task.type === 'delegate_task') {
             delegateResult = await delegateTaskSingle(
                 task.role!,
@@ -85,13 +87,33 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
             completed_at: Date.now()
         };
         if (errorMessage) statusUpdate.error_message = errorMessage;
+
+        // Backfill structured execution metadata from delegation result
+        if (delegateResult) {
+            statusUpdate.result_status = delegateResult.status;
+            statusUpdate.execution_time_ms = delegateResult.execution_time_ms;
+            statusUpdate.output_size_bytes = delegateResult.output_size_bytes;
+            statusUpdate.usage = delegateResult.usage;
+            statusUpdate.validation_warnings = delegateResult.validation_warnings;
+        }
+
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished in-process with status: ${verificationStatus}.`);
 
         if (verificationStatus === 'verified') {
+            // Coordinator Synthesis Gate: synthesize findings before unblocking dependents
+            try {
+                await synthesizeIfRequired(workspacePath, taskId);
+            } catch (synthErr: any) {
+                console.error(`[Synthesis] Failed to synthesize findings for ${taskId}: ${synthErr.message}`);
+                // Don't block unblocking on synthesis failure — it's best-effort
+            }
+
             try {
                 const unblockedTasks = TaskManifestManager.unblockDependents(workspacePath, taskId);
                 for (const unblockedId of unblockedTasks) {
+                    // Inject synthesized findings into dependent task context
+                    try { injectSynthesisContext(workspacePath, unblockedId); } catch { /* best-effort */ }
                     console.error(`[Runner] Unblocked dependent task: ${unblockedId} — running in-process`);
                     // Fire-and-forget: don't await dependents (they run concurrently)
                     runWorkerInProcess(unblockedId, workspacePath).catch(e =>
@@ -219,8 +241,9 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
     }, 15000);
 
     try {
+        let delegateResult: TaskDelegationResult | undefined;
         if (task.type === 'delegate_task') {
-            await delegateTaskSingle(
+            delegateResult = await delegateTaskSingle(
                 task.role!,
                 task.task_artifact_path || task.task_description!,
                 task.output_path!,
@@ -388,6 +411,16 @@ Here is the synthesis report:\n\n${synthesisContent}`;
             completed_at: Date.now()
         };
         if (errorMessage) statusUpdate.error_message = errorMessage;
+
+        // Backfill structured execution metadata from delegation result
+        if (delegateResult) {
+            statusUpdate.result_status = delegateResult.status;
+            statusUpdate.execution_time_ms = delegateResult.execution_time_ms;
+            statusUpdate.output_size_bytes = delegateResult.output_size_bytes;
+            statusUpdate.usage = delegateResult.usage;
+            statusUpdate.validation_warnings = delegateResult.validation_warnings;
+        }
+
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
 
@@ -414,9 +447,19 @@ Here is the synthesis report:\n\n${synthesisContent}`;
 
         // Unblock dependent tasks if this task was verified
         if (verificationStatus === 'verified') {
+            // Coordinator Synthesis Gate: synthesize findings before unblocking dependents
+            try {
+                await synthesizeIfRequired(workspacePath, taskId);
+            } catch (synthErr: any) {
+                console.error(`[Synthesis] Failed to synthesize findings for ${taskId}: ${synthErr.message}`);
+                // Don't block unblocking on synthesis failure — it's best-effort
+            }
+
             try {
                 const unblockedTasks = TaskManifestManager.unblockDependents(workspacePath, taskId);
                 for (const unblockedId of unblockedTasks) {
+                    // Inject synthesized findings into dependent task context
+                    try { injectSynthesisContext(workspacePath, unblockedId); } catch { /* best-effort */ }
                     console.error(`[Runner] Unblocked dependent task: ${unblockedId} — spawning worker`);
                     spawnAsyncWorker(unblockedId, workspacePath);
                 }

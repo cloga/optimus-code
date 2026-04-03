@@ -27,7 +27,7 @@ const CLIENT_ADAPTERS = {
       return fs.existsSync(config) ? config : undefined;
     },
     buildArgs(configPath, passthroughArgs) {
-      const args = ['--resume'];
+      const args = ['--resume', '--dangerously-skip-permissions'];
       if (configPath) {
         args.push('--mcp-config', configPath);
       }

@@ -68,10 +68,40 @@ export interface TaskRecord {
     runtime_run_id?: string;
     runtime_trace_id?: string;
     runtime_skill?: string;
+
+    // === Structured execution metadata (for structured task notifications) ===
+    /** Wall-clock execution time in milliseconds */
+    execution_time_ms?: number;
+    /** Size of the output file in bytes */
+    output_size_bytes?: number;
+    /** Token usage from the LLM */
+    usage?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+    };
+    /** Validation warnings from the harness */
+    validation_warnings?: string[];
+    /** Structured execution status */
+    result_status?: 'success' | 'partial' | 'failed';
+
+    // === Synthesis gate fields (for coordinator synthesis gate) ===
+    /** If true, coordinator must synthesize findings before unblocking dependent tasks */
+    synthesis_required?: boolean;
+    /** Which role synthesizes findings (defaults to master-agent) */
+    synthesis_role?: string;
+    /** Synthesized key findings from this research task */
+    synthesized_findings?: string;
+    /** Timestamp (epoch ms) when synthesis was completed */
+    synthesized_at?: number;
+    /** Task ID of the synthesis sub-task, if synthesis was delegated */
+    synthesis_task_id?: string;
 }
 
 export const DEFAULT_TASK_STARTUP_TIMEOUT_MS = 2 * 60 * 1000;
 export const MAX_TASK_STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
+
+import { isPidAlive } from '../utils/isPidAlive';
 
 function buildStartupTimeoutErrorMessage(timeoutMs: number): string {
     return [
@@ -87,15 +117,18 @@ function buildRunnerDiedErrorMessage(pid: number): string {
     ].join(' ');
 }
 
-function isPidAlive(pid: number): boolean {
-    if (!Number.isInteger(pid) || pid <= 0) return false;
+function writeFailureMarker(outputPath: string | undefined, errorMessage: string): void {
+    if (!outputPath) return;
     try {
-        process.kill(pid, 0);
-        return true;
-    } catch {
-        return false;
+        const dir = path.dirname(outputPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(outputPath, `❌ **Fatal Error**: ${errorMessage}\n`, 'utf8');
+    } catch (e: any) {
+        console.error(`[TaskManifest] Warning: failed to write failure marker: ${e.message}`);
     }
 }
+
+export { writeFailureMarker };
 
 export class TaskManifestManager {
     static getManifestPath(workspacePath: string): string {
@@ -177,13 +210,7 @@ export class TaskManifestManager {
                         task.error_message = buildRunnerDiedErrorMessage(task.pid);
                         task.completed_at = now;
                         changed = true;
-                        try {
-                            if (task.output_path) {
-                                const dir = path.dirname(task.output_path);
-                                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                                fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
-                            }
-                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write runner-death marker: ${e.message}`); }
+                        writeFailureMarker(task.output_path, task.error_message);
                         continue;
                     }
                     const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
@@ -192,13 +219,7 @@ export class TaskManifestManager {
                         task.error_message = 'Task timed out or runner process died (reaped by Watchdog).';
                         task.completed_at = now;
                         changed = true;
-                        try {
-                            if (task.output_path) {
-                                const dir = path.dirname(task.output_path);
-                                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                                fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
-                            }
-                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`); }
+                        writeFailureMarker(task.output_path, task.error_message);
                     }
                 } else if (task.status === 'pending') {
                     const startupTimeout = task.startup_timeout_ms || DEFAULT_TASK_STARTUP_TIMEOUT_MS;
@@ -207,13 +228,7 @@ export class TaskManifestManager {
                         task.error_message = buildStartupTimeoutErrorMessage(startupTimeout);
                         task.completed_at = now;
                         changed = true;
-                        try {
-                            if (task.output_path) {
-                                const dir = path.dirname(task.output_path);
-                                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                                fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
-                            }
-                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write startup-timeout marker: ${e.message}`); }
+                        writeFailureMarker(task.output_path, task.error_message);
                     }
                 }
             }
@@ -308,5 +323,34 @@ export class TaskManifestManager {
             this.saveManifest(workspacePath, manifest);
         }
         return unblocked;
+    }
+
+    /**
+     * Mark a task's synthesis as complete with the given findings.
+     */
+    static markSynthesized(workspacePath: string, taskId: string, findings: string): void {
+        this.updateTask(workspacePath, taskId, {
+            synthesized_findings: findings,
+            synthesized_at: Date.now(),
+        });
+    }
+
+    /**
+     * Check if a task requires synthesis but hasn't been synthesized yet.
+     */
+    static isSynthesisRequired(workspacePath: string, taskId: string): boolean {
+        const manifest = this.loadManifest(workspacePath);
+        const task = manifest[taskId];
+        if (!task) return false;
+        return task.synthesis_required === true && !task.synthesized_findings;
+    }
+
+    /**
+     * Get the synthesized findings for a task, if available.
+     */
+    static getSynthesizedFindings(workspacePath: string, taskId: string): string | undefined {
+        const manifest = this.loadManifest(workspacePath);
+        const task = manifest[taskId];
+        return task?.synthesized_findings;
     }
 }

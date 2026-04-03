@@ -13,9 +13,10 @@ import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { dispatchCouncilConcurrent, delegateTaskSingle, explainAvailableAgentsConfig, explainEngineResolution, loadAvailableAgentsConfig, loadValidEnginesAndModels, loadEngineHeartbeatTimeout, isValidEngine, isValidModel, updateFrontmatter, loadT3UsageLog, saveT3UsageLog } from "./worker-spawner";
+import { formatTaskResultAsText } from "../types/TaskDelegationResult.js";
 import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory, loadUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
-import { TaskManifestManager, MAX_TASK_STARTUP_TIMEOUT_MS } from "../managers/TaskManifestManager";
+import { TaskManifestManager, MAX_TASK_STARTUP_TIMEOUT_MS, writeFailureMarker } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker, runWorkerInProcess, spawnAsyncWorker } from "./council-runner";
 import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
@@ -106,15 +107,7 @@ function persistAsyncRunnerFatalFailure(taskId: string, workspacePath: string, e
     completed_at: Date.now(),
   });
 
-  if (task.output_path) {
-    try {
-      const dir = path.dirname(task.output_path);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${errorMessage}\n`, 'utf8');
-    } catch (writeErr: any) {
-      console.error(`[Runner] Warning: failed to write fatal output marker for ${taskId}: ${writeErr.message}`);
-    }
-  }
+  writeFailureMarker(task.output_path, errorMessage);
 }
 
 // 1. Initialize the MCP Server (The Marionette Controller)
@@ -498,6 +491,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Optional branch name. When specified, automatically creates a git worktree for this branch (if not already exists) and runs the agent in that isolated worktree. Enables parallel multi-branch development without git conflicts."
             },
+            synthesis_required: {
+              type: "boolean",
+              description: "If true, findings will be automatically synthesized before dependent tasks are unblocked. Use for research/investigation tasks whose results feed into implementation tasks."
+            },
+            synthesis_role: {
+              type: "string",
+              description: "Custom role for synthesis (currently unused — synthesis uses heuristic extraction). Reserved for future LLM-based synthesis."
+            },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
         }
@@ -825,11 +826,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       details = `Task ${taskId} status: **${task.status}**`;
     }
     
+    // Append structured execution metadata when available
+    if (task.status === 'completed' || task.status === 'verified' || task.status === 'partial' || effectiveStatus === 'verified' || effectiveStatus === 'partial') {
+        const metaLines: string[] = [];
+        if (task.result_status) metaLines.push(`| Result | ${task.result_status} |`);
+        if (task.resolved_engine) metaLines.push(`| Engine | ${task.resolved_engine}${task.resolved_model ? ` / ${task.resolved_model}` : ''} |`);
+        if (task.execution_time_ms) metaLines.push(`| Time | ${task.execution_time_ms}ms |`);
+        if (task.output_size_bytes) metaLines.push(`| Output Size | ${task.output_size_bytes} bytes |`);
+        if (task.usage?.total_tokens) metaLines.push(`| Tokens | ${task.usage.total_tokens} |`);
+        if (task.validation_warnings?.length) metaLines.push(`| Warnings | ${task.validation_warnings.length} |`);
+
+        if (metaLines.length > 0) {
+            details += `\n\n**Execution Metadata**\n| Field | Value |\n|-------|-------|\n${metaLines.join('\n')}`;
+        }
+    }
+
+    // Include synthesis info if applicable
+    if (task.synthesis_required) {
+        if (task.synthesized_findings) {
+            details += `\n\n**Synthesized Findings**\n${task.synthesized_findings}`;
+        } else {
+            details += `\n\n⏳ Synthesis pending — findings not yet generated.`;
+        }
+    }
+
     return { content: [{ type: "text", text: details }] };
   }
   
   if (request.params.name === "delegate_task_async") {
-    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, startup_timeout_ms, branch } = request.params.arguments as any;
+    let { role, role_description, role_engine, role_model, task_description, output_path, workspace_path, context_files, required_skills, agent_id, depends_on, heartbeat_timeout_ms, startup_timeout_ms, branch, synthesis_required, synthesis_role } = request.params.arguments as any;
     requireParams("delegate_task_async", request.params.arguments as any, ["role", "task_description", "output_path", "workspace_path"]);
 
     // If branch is specified, create/find worktree and redirect workspace
@@ -877,6 +902,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : undefined,
         heartbeat_timeout_ms: resolvedHeartbeatTimeout,
         startup_timeout_ms: startup_timeout_ms,
+        synthesis_required: synthesis_required || undefined,
+        synthesis_role: synthesis_role || undefined,
     });
 
     // Dependency check: determine if task should be blocked
@@ -943,7 +970,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (isBlocked) {
         return { content: [{ type: "text", text: `⏳ Task queued with dependencies.\n\n**Task ID**: ${taskId}\n**Role**: ${role}\n**Status**: blocked\n**Blocked by**: ${blockedBy.map(id => `\`${id}\``).join(', ')}${issueInfo}\n\nTask will auto-start when all dependencies reach \`verified\` status. Use check_task_status to monitor.${contextHint}` }] };
     }
-    return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status tool periodically with this task ID to check its completion.${contextHint}` }] };
+    return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status to retrieve structured execution metadata (tokens, timing, status) after completion.${contextHint}` }] };
   }
   
   if (request.params.name === "dispatch_council_async") {
@@ -1501,7 +1528,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (completedTask.status === 'failed') {
       throw new McpError(ErrorCode.InternalError, completedTask.error_message || `delegate_task failed for task ${taskId}.`);
     }
-    const syncResult = result || `✅ **Task Delegation Successful**\n\n**Task ID**: ${taskId}\n**Engine**: ${completedTask.resolved_engine || role_engine || 'auto-resolved'}\n**Session ID**: ${completedTask.session_id || sessionId}\n\nAgent has finished execution. Check standard output at \`${canonicalOutputPath.replace(/\\/g, '/')}\`.`;
+    const syncResult = result ? formatTaskResultAsText(result) : `✅ **Task Delegation Successful**\n\n**Task ID**: ${taskId}\n**Engine**: ${completedTask.resolved_engine || role_engine || 'auto-resolved'}\n**Session ID**: ${completedTask.session_id || sessionId}\n\nAgent has finished execution. Check standard output at \`${canonicalOutputPath.replace(/\\/g, '/')}\`.`;
     const completionHint = completedTask.status === 'verified'
       ? `\n\n**Task ID**: ${taskId}\n**Status**: verified`
       : `\n\n**Task ID**: ${taskId}\n**Status**: ${completedTask.status}\n**Output Path**: \`${canonicalOutputPath.replace(/\\/g, '/')}\``;

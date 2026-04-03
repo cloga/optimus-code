@@ -27,6 +27,8 @@ import { resolveOptimusPath } from '../utils/worktree';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory, pushStreamEvent } from '../utils/agentRuntime';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { executePrompt } from '../runtime/genericExecutor';
+import { TaskDelegationResult, formatTaskResultAsText } from '../types/TaskDelegationResult.js';
+import { extractTaskResult, TaskResultMetadata } from '../harness/resultFormatter.js';
 
 // Re-export extracted modules for backward compatibility
 export {
@@ -689,14 +691,7 @@ export class AgentLockManager {
     }
 }
 
-function isProcessRunning(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return true;
-    } catch {
-        return false;
-    }
-}
+import { isPidAlive } from '../utils/isPidAlive';
 
 // Module-level singleton; initialized lazily per workspace
 let lockManagerInstance: AgentLockManager | null = null;
@@ -779,9 +774,10 @@ function classifyWorkerError(role: string, engine: string, e: any): string {
 /**
  * Executes a single task delegation synchronously.
  */
-export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number, agentId?: string): Promise<string> {
+export async function delegateTaskSingle(roleArg: string, taskPath: string, outputPath: string, _fallbackSessionId: string, workspacePath: string, contextFiles?: string[], masterInfo?: MasterRoleInfo, parentDepth?: number, parentIssueNumber?: number, autoIssueNumber?: number, agentId?: string): Promise<TaskDelegationResult> {
     const parsedRole = parseRoleSpec(roleArg, workspacePath);
     const role = sanitizeRoleName(parsedRole.role);
+    const delegationStartTime = Date.now();
 
     const currentDepth = parentDepth !== undefined ? parentDepth : parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10);
     const childDepth = currentDepth + 1;
@@ -1418,7 +1414,19 @@ Please provide your complete execution result below.${verifySuffix}`;
             trackEngineHealth(workspacePath, activeEngine, activeModel, true);
         }
 
-        return `✅ **Task Delegation Successful**\n\n**Agent Identity Resolved**: ${resolvedTier}\n**Engine**: ${activeEngine}\n**Session ID**: ${newSessionId || 'Ephemeral'}\n\n**System Note**: ${personaProof}\n\nAgent has finished execution. Check standard output at \`${normalizePathForAgent(outputPath)}\`.`;
+        const tierValue: 'T1' | 'T2' | 'T3' = resolvedTier.includes('T1') ? 'T1' : resolvedTier.includes('T2') ? 'T2' : 'T3';
+
+        const taskResultMeta: TaskResultMetadata = {
+            taskId: _fallbackSessionId.startsWith('async_') ? _fallbackSessionId.replace('async_', '') : (_fallbackSessionId || 'unknown'),
+            role: role,
+            engine: activeEngine,
+            model: activeModel,
+            outputPath: outputPath,
+            tierResolved: tierValue,
+            sessionId: newSessionId,
+        };
+
+        return extractTaskResult(execResult, taskResultMeta, delegationStartTime);
     } catch (e: any) {
         // ── Agent Runtime: mark run as failed ──
         if (_fallbackSessionId.startsWith('async_')) {
@@ -1476,8 +1484,9 @@ export async function spawnWorker(role: string, proposalPath: string, outputPath
             ...(diversityModel ? { model: diversityModel } : {})
         };
         const effectiveMasterInfo = Object.keys(masterInfo).length > 0 ? masterInfo : undefined;
-        return await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
+        const result = await delegateTaskSingle(role, `Please read the architectural PROPOSAL located at: ${proposalPath}.
 Provide your expert critique from the perspective of your role (${role}). Identify architectural bottlenecks, DX friction, security risks, or asynchronous race conditions. Conclude with a recommendation: Reject, Accept, or Hybrid.`, outputPath, sessionId, workspacePath, undefined, effectiveMasterInfo, parentDepth, parentIssueNumber);
+        return formatTaskResultAsText(result);
     } catch (err: any) {
         console.error(`[Spawner] Worker ${role} failed to start:`, err);
         return `❌ ${role}: exited with errors (${err.message}).`;
