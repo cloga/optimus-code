@@ -24,6 +24,7 @@ import { normalizeAutomationPolicy } from "../utils/automationPolicy";
 import { loadFilteredMemory, migrateMemoryFile, loadUserMemory, checkMemorySnapshot, initializeFromSnapshot } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
+import { renderSkillTemplate, buildSkillContext } from '../skills/SkillTemplateEngine.js';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory, pushStreamEvent } from '../utils/agentRuntime';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { executePrompt } from '../runtime/genericExecutor';
@@ -1004,9 +1005,16 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
                 `Expected path(s):\n${missing.map(s => `- .optimus/skills/${s}/SKILL.md`).join('\n')}`
             );
         }
+        // Build skill context from current execution environment
+        const skillContext = buildSkillContext(role, activeEngine, activeModel || '', workspacePath);
+
         // Inject found skills into agent context
         for (const [name, content] of found) {
-            skillContent += `\n\n=== SKILL: ${name} ===\n${content}\n=== END SKILL: ${name} ===\n`;
+            // Resolve skill directory for include directives
+            const skillDir = path.dirname(resolveOptimusPath(workspacePath, 'skills', name, 'SKILL.md'));
+            // Render dynamic template (no-op for static skills)
+            const rendered = renderSkillTemplate(content, skillContext, skillDir);
+            skillContent += `\n\n=== SKILL: ${name} ===\n${rendered}\n=== END SKILL: ${name} ===\n`;
         }
         console.error(`[Orchestrator] Loaded ${found.size} skill(s) for ${role}: ${[...found.keys()].join(', ')}`);
     }

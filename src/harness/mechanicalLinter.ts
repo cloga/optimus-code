@@ -167,6 +167,8 @@ export function lintSkillFile(content: string, filePath: string): LintResult {
     }
 
     // Body should have some content
+    // Template syntax ({{ variable }} and {% if ... %}) is valid for dynamic skills —
+    // don't flag these as errors or count them differently for content checks.
     const bodyLines = body.split('\n').filter(l => l.trim().length > 0);
     if (bodyLines.length < 5) {
         issues.push({
