@@ -3,6 +3,7 @@ import path from "path";
 import { spawn } from "child_process";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from "../utils/worktree";
+import { isPidAlive } from "../utils/isPidAlive";
 
 // ─── Cron Entry Schema ───
 
@@ -93,16 +94,6 @@ function getLockPath(workspacePath: string, id: string): string {
     return path.join(getLockDir(workspacePath), `${id}.lock`);
 }
 
-function isPidRunning(pid: number): boolean {
-    try {
-        // signal 0 checks process existence without sending a real signal
-        process.kill(pid, 0);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 function isLockStale(lockPath: string, workspacePath?: string): boolean {
     try {
         const content = fs.readFileSync(lockPath, 'utf8');
@@ -131,7 +122,7 @@ function isLockStale(lockPath: string, workspacePath?: string): boolean {
         }
 
         // PID-based staleness: if the owning process is gone, the lock is stale
-        if (typeof data.pid === 'number' && !isPidRunning(data.pid)) {
+        if (typeof data.pid === 'number' && !isPidAlive(data.pid)) {
             return true;
         }
         // Time-based fallback: treat locks older than 2 hours as stale regardless of PID.
@@ -220,7 +211,7 @@ function createLock(workspacePath: string, id: string): boolean {
 
 /**
  * Update existing lock with a new PID (e.g., after spawning the actual worker child process).
- * This ensures isPidRunning() checks the worker, not the parent MCP server.
+ * This ensures isPidAlive() checks the worker, not the parent MCP server.
  */
 function updateLockPid(workspacePath: string, id: string, childPid: number): void {
     const lockPath = getLockPath(workspacePath, id);
@@ -307,7 +298,7 @@ function tryAcquireSchedulerLock(workspacePath: string): boolean {
             try {
                 const content = fs.readFileSync(lockPath, 'utf8');
                 const data = JSON.parse(content) as { pid?: number; acquired_at?: string };
-                if (typeof data.pid === 'number' && !isPidRunning(data.pid)) {
+                if (typeof data.pid === 'number' && !isPidAlive(data.pid)) {
                     // Stale leader — remove and retry exactly once
                     try { fs.unlinkSync(lockPath); } catch { return false; }
                     try {
@@ -548,7 +539,7 @@ export class MetaCronEngine {
         child.unref();
         fs.closeSync(logFd);
 
-        // Update the lock with the child's PID so isPidRunning() checks the actual worker,
+        // Update the lock with the child's PID so isPidAlive() checks the actual worker,
         // not the MCP server. This prevents stale-lock false positives when the server
         // restarts but the worker child is still alive (root cause of Issue #511).
         if (child.pid) {

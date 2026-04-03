@@ -272,22 +272,19 @@ function pickHealthyFallbackCandidate(
     health: Record<string, EngineHealthEntry>,
     now: number
 ): ({ engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: Exclude<ComboReadiness, 'unhealthy'> }) | undefined {
-    const confirmedHealthy: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: 'confirmed_healthy' }> = [];
-    const unverified: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: 'unverified' }> = [];
+    let firstUnverified: { engine: string; model: string; scope: 'same-engine' | 'cross-engine'; readiness: 'unverified' } | undefined;
 
     for (const candidate of candidates) {
         const readiness = classifyComboReadiness(health[`${candidate.engine}:${candidate.model}`], now);
-        if (readiness === 'unhealthy') {
-            continue;
-        }
         if (readiness === 'confirmed_healthy') {
-            confirmedHealthy.push({ ...candidate, readiness });
-        } else {
-            unverified.push({ ...candidate, readiness });
+            return { ...candidate, readiness };
+        }
+        if (readiness === 'unverified' && !firstUnverified) {
+            firstUnverified = { ...candidate, readiness };
         }
     }
 
-    return confirmedHealthy[0] ?? unverified[0];
+    return firstUnverified;
 }
 
 export function classifyComboReadiness(entry: EngineHealthEntry | undefined, now: number): ComboReadiness {

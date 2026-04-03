@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveOptimusPath } from '../utils/worktree';
+import { isPidAlive } from '../utils/isPidAlive';
 // Multiple agents (heartbeats, status updates, task creation) can race on the same file.
 let manifestMutex: Promise<void> = Promise.resolve();
 
@@ -101,7 +102,12 @@ export interface TaskRecord {
 export const DEFAULT_TASK_STARTUP_TIMEOUT_MS = 2 * 60 * 1000;
 export const MAX_TASK_STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
 
-import { isPidAlive } from '../utils/isPidAlive';
+export function validateStartupTimeoutMs(value: unknown): void {
+    if (value === undefined) return;
+    if (typeof value !== 'number' || value <= 0 || value > MAX_TASK_STARTUP_TIMEOUT_MS) {
+        throw new Error(`startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${value}`);
+    }
+}
 
 function buildStartupTimeoutErrorMessage(timeoutMs: number): string {
     return [
