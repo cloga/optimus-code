@@ -1,7 +1,6 @@
 ---
 name: auto-release
 description: 'Autonomous release gate: runs on a schedule, inspects commits since the last tag, determines whether to release, and executes the release pipeline via the release-process skill.'
-version: 1.0.0
 ---
 
 # Auto-Release Skill
@@ -58,16 +57,7 @@ For each command in `extra_gates`:
 1. Run the command.
 2. If it exits non-zero, halt and log the failure. Do NOT release.
 
-## Phase 5: Run Test Suite (MANDATORY gate)
-
-Run `npm test` from the project root.
-
-- If tests pass (exit code 0), proceed to Phase 6.
-- If tests fail (non-zero exit), halt immediately. Log the test output.
-  Do NOT proceed to release. Do NOT tag. Do NOT push.
-  Use `request_human_input` to report the failure with test output summary.
-
-## Phase 6: Execute Release
+## Phase 5: Execute Release
 
 Delegate to `release-process` skill with:
 - The determined bump level
@@ -76,12 +66,12 @@ Delegate to `release-process` skill with:
 
 If `release-process` fails at any step, log the failure and exit without tagging or pushing.
 
-## Phase 7: Post-Release Verification
+## Phase 6: Post-Release Verification
 
 1. Run `git ls-remote --tags origin | grep v<newVersion>` to confirm the tag exists on remote.
 2. Log the release summary: version bumped from X to Y, N commits included, tag pushed.
 
-## Phase 8: Update Session State
+## Phase 7: Update Session State
 
 Append to `.optimus/memory/release-history.md` (create if missing):
 

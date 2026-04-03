@@ -15,6 +15,51 @@ const fs = require('fs');
 
 const production = process.argv.includes('--production');
 const pkgVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version;
+const DIST_BUNDLES = ['mcp-server.js', 'http-runtime.js', 'runtime-cli.js'];
+
+function patchWorkspaceMcpSelfReference(bundlePath) {
+  if (!fs.existsSync(bundlePath)) {
+    return;
+  }
+
+  const original = fs.readFileSync(bundlePath, 'utf8');
+  const patched = original.replace(
+    /join\(__dirname,\s*"\.\."\s*,\s*"\.\."\s*,\s*"dist"\s*,\s*"mcp-server\.js"\)/g,
+    'join(__dirname, "mcp-server.js")'
+  );
+
+  if (patched !== original) {
+    fs.writeFileSync(bundlePath, patched, 'utf8');
+  }
+}
+
+function syncWorkspaceDistIfPresent() {
+  const workspaceOptimusDir = path.resolve(__dirname, '..', '.optimus');
+  if (!fs.existsSync(workspaceOptimusDir)) {
+    return;
+  }
+
+  const sourceDistDir = path.resolve(__dirname, 'dist');
+  const targetDistDir = path.join(workspaceOptimusDir, 'dist');
+  fs.mkdirSync(targetDistDir, { recursive: true });
+
+  for (const bundle of DIST_BUNDLES) {
+    const sourcePath = path.join(sourceDistDir, bundle);
+    const targetPath = path.join(targetDistDir, bundle);
+    if (!fs.existsSync(sourcePath)) {
+      continue;
+    }
+
+    fs.copyFileSync(sourcePath, targetPath);
+    const sourceMapPath = `${sourcePath}.map`;
+    if (fs.existsSync(sourceMapPath)) {
+      fs.copyFileSync(sourceMapPath, `${targetPath}.map`);
+    }
+  }
+
+  patchWorkspaceMcpSelfReference(path.join(targetDistDir, 'mcp-server.js'));
+  console.log('\n[build] Synced workspace runtime bundles to .optimus/dist');
+}
 
 async function build() {
   // Build all entry points
@@ -53,6 +98,8 @@ async function build() {
     console.error('The standalone MCP plugin MUST NOT depend on vscode.');
     process.exit(1);
   }
+
+  syncWorkspaceDistIfPresent();
 
   const outputs = Object.entries(result.metafile.outputs);
   for (const [outputFile, meta] of outputs) {

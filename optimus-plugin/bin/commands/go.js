@@ -145,6 +145,21 @@ function launchClient(project, clientId, passthroughArgs) {
     throw result.error;
   }
 
+  // Claude --resume exits non-zero when user presses Esc; fallback to a new session
+  if (result.status !== 0 && adapter.id === 'claude' && args.includes('--resume')) {
+    console.log('→ Starting new session...');
+    const retryArgs = args.filter(a => a !== '--resume');
+    const retry = spawnSync(adapter.executable, retryArgs, {
+      cwd: project.path,
+      stdio: 'inherit',
+      shell: process.platform === 'win32'
+    });
+    if (retry.error) {
+      throw retry.error;
+    }
+    process.exit(retry.status ?? 0);
+  }
+
   process.exit(result.status ?? 0);
 }
 

@@ -62,17 +62,18 @@ Users install and upgrade from GitHub directly (not npm):
 - **Transport**: MCP server (`src/mcp/mcp-server.ts`), HTTP server (`src/runtime/http-server.ts`), CLI (`src/runtime/runtime-cli.ts`)
 - **v1 and v2 runtime APIs are independent** — zero cross-imports, share only `AcpProcessPool` singleton
 
-<!-- optimus-instructions v2 -->
+<!-- optimus-instructions v3 -->
 <!-- Auto-managed by Optimus Swarm — edits between these markers will be overwritten on upgrade -->
 
 ## Optimus Swarm — AI Development Team
 
-**First action:** Read `.optimus/skills/master-onboarding/SKILL.md` for the complete onboarding protocol.
+**⚡ MANDATORY FIRST ACTION:** Call `optimus_status` with your workspace_path NOW to verify the Optimus Swarm is active. Then call `get_user_memory` to load user preferences. Do not proceed without completing both calls.
 
 You have a multi-agent AI development team available via MCP tools (server: `spartan-swarm`).
 Instead of writing code directly, delegate to specialist agents who follow project conventions.
 
 ### Key Tools
+- **`optimus_status`** — Verify Optimus is active and see available skills/roles/engines
 - **`roster_check`** — List available agent roles and their capabilities
 - **`delegate_task`** — Assign a task to a specialist (e.g., `senior-full-stack-builder`, `code-architect`)
 - **`dispatch_council`** — Spawn parallel expert reviewers for architecture decisions

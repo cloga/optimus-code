@@ -67,6 +67,15 @@ describe('ACP Smoke Tests (Release CI)', () => {
             expect(config.acp.args).toContain('--stdio');
         });
 
+        it('claude-code engine has --stdio in args', () => {
+            const engines = getConfiguredEngineNames(WORKSPACE);
+            if (!engines.includes('claude-code')) {
+                return; // engine not configured in this workspace
+            }
+            const config = getEngineConfig('claude-code', WORKSPACE);
+            expect(config.acp.args).toContain('--stdio');
+        });
+
         it.each(getConfiguredEngineNames(WORKSPACE))(
             'engine "%s" automation policy is auto-approve + autopilot',
             (engine) => {

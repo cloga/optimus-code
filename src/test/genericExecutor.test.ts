@@ -22,6 +22,7 @@ describe('genericExecutor', () => {
             const config = resolveEngineConfig('claude-code');
             expect(config.executable).toBe('claude-agent-acp');
             expect(config.args).toContain('--acp');
+            expect(config.args).toContain('--stdio');
         });
 
         it('throws for unknown engine with helpful message', () => {

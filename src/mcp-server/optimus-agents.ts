@@ -301,7 +301,7 @@ server.tool(
     "Delegate a task to a specialized Sub-Agent (Worker). Use this to spin up a new worker or resume an existing worker by ID.",
     {
         engine: z.enum(["claude_code", "copilot_cli"]).optional().describe("The CLI engine. Omit to use the agent's default."),
-        model: z.string().optional().describe("The specific model to use (e.g., 'gpt-5.4', 'claude-opus-4.6-1m'). Omit to use the CLI's default."),
+        model: z.string().optional().describe("The specific model to use (e.g., 'gpt-5.4', 'claude-opus-4.6'). Omit to use the CLI's default."),
         instruction: z.string().describe("The specific task or prompt for the worker to execute."),
         role_prompt: z.string().optional().describe("Optional persona/system prompt (e.g., 'You are a QA engineer focused on unit tests.')."),
         session_id: z.string().optional().describe("If resuming a previous worker, provide its session UUID. If omitted, a new worker is created."),

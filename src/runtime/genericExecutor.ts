@@ -28,7 +28,7 @@ const BUILTIN_ENGINES: Record<string, EngineConfig> = {
     },
     'claude-code':{
         executable: 'claude-agent-acp',
-        args: ['--acp'],
+        args: ['--acp', '--stdio'],
         activityTimeoutMs: 300_000,
     },
 };

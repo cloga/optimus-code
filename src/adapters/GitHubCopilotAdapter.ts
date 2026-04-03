@@ -1,6 +1,7 @@
 import { PersistentAgentAdapter } from './PersistentAgentAdapter';
 import { AgentMode } from '../types/SharedTaskContext';
 import { getCopilotCliAutomationArgs } from '../utils/automationPolicy';
+import { sanitizeCopilotAuthEnv } from '../utils/copilotAuthEnv';
 import * as fs from 'fs';
 import * as path from 'path';
 // Copilot CLI uses ● (U+25CF filled circle) and tree-drawing chars for tool trace lines
@@ -99,9 +100,6 @@ export class GitHubCopilotAdapter extends PersistentAgentAdapter {
      * Only forward if COPILOT_GITHUB_TOKEN is explicitly set.
      */
     protected sanitizeSpawnEnv(env: NodeJS.ProcessEnv): void {
-        if (!env.COPILOT_GITHUB_TOKEN) {
-            delete env.GITHUB_TOKEN;
-            delete env.GH_TOKEN;
-        }
+        sanitizeCopilotAuthEnv(env);
     }
 }

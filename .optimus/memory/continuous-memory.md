@@ -675,3 +675,138 @@ author: patrol-manager
 ---
 Hourly patrol Run #203 found no new stuck-running tasks after Run #202 cleared the stale 00:00Z entries. The only direct action this cycle was triaging newly opened Issue #509 by adding labels P3 and system-maintained. Inventory at patrol time: 41 open issues, 0 open PRs, 0 stale merged remote branches, and one active running task (the current patrol). Health summary comment 4095334424 was posted to Issue #300.
 
+---
+id: mem_1774604408497_ftmfws
+date: 2026-03-27T09:40:08.497Z
+level: project
+category: workflow
+tags: [optimus-go, install, upgrade, release]
+author: unknown
+---
+`optimus go` has TWO install paths:
+1. Lightweight CLI-only install (~25KB): `irm https://raw.githubusercontent.com/cloga/optimus-code/master/scripts/install-cli-remote.ps1 | iex` — installs only `optimus go` to `~/.optimus/cli/`, no roles/agents/skills/dist. Local variant: `.\scripts\install-cli.ps1`.
+2. Full workspace upgrade: `npx github:cloga/optimus-code#v{version} upgrade` — upgrades the entire `.optimus/` workspace including MCP configs, launchers, and project registry.
+
+When releasing a new version that changes `go.js`, `go-clients.js`, `project-registry.js`, or `cli.js`, BOTH install scripts (`scripts/install-cli.ps1` and `scripts/install-cli-remote.ps1`) must be updated to include any new file dependencies. The lightweight installer copies specific files by name — it does NOT copy the whole directory.
+
+Multi-CLI support (v2.16.24+): `optimus go` supports `--cli copilot` and `--cli claude` with per-project preference (`preferredCli` in `~/.optimus/projects.json`) and global default (`defaults.cli`). Resolution order: `--cli` flag > project `preferredCli` > global `defaults.cli` > hardcoded `copilot`.
+
+---
+id: mem_1774858737021_k6akrs
+date: 2026-03-30T08:18:57.021Z
+level: project
+category: bug-fix
+tags: [copilot-cli, mcp, vscode, bug-fix, windows]
+author: unknown
+---
+Copilot CLI 1.0.13+ auto-discovers `.vscode/mcp.json` in the project directory (in addition to `~/.copilot/mcp-config.json` and `--additional-mcp-config`). However, Copilot CLI does NOT resolve VS Code's `${workspaceFolder}` variable — it treats it as a literal string, causing `Connection closed` / ENOENT. Therefore, ALL generated MCP configs (including `.vscode/mcp.json`) must use absolute paths, not `${workspaceFolder}` or relative `./`. This was fixed in v2.17.4 by making `renderString()` in `mcp-config.js` always resolve to absolute paths via `path.join(workspaceRoot, ...)`. These files are gitignored so absolute paths don't affect other users.
+
+---
+id: mem_1774924419537_o10vt2
+date: 2026-03-31T02:33:39.537Z
+level: project
+category: bug-fix
+tags: [build, mcp, delegation, copilot]
+author: unknown
+---
+Fixed delegated Copilot regression by syncing fresh optimus-plugin/dist bundles into workspace .optimus/dist during repo builds. Nested delegated MCP sessions launch .optimus/dist/mcp-server.js via .optimus/config/mcp-servers.json, so stale workspace dist can keep old auth/runtime bugs alive even after rebuilding optimus-plugin/dist.
+
+---
+id: mem_1775001600000_run11ci
+date: 2026-04-03T08:00:00Z
+level: project
+category: competitive-intel-session
+tags: [competitive-intel, session-state, baselines, run11]
+author: competitive-intel-analyst
+---
+## Competitive Intel Session State — 2026-04-03 (Run #11)
+
+### Mode: MONITOR (Friday; discovery_day=Monday)
+
+### Per-Competitor Updated State
+
+**CrewAI (crewAIInc/crewAI)**
+- last_seen_release: 1.13.0 (2026-04-02, stable)
+- last_seen_star_count: 47,865
+- 7d_star_baseline: 47,786 (Run #10)
+- last_reported_event_fingerprint: crewai-1.13.0-stable-a2ui-2026-04-03
+- last_reported_at: 2026-04-03T08:00Z
+- open_hypotheses: ["Will A2UI gain adoption? Watch for blog/issues/stars acceleration.", "Will 1.14.0 add MCP-native tooling or IDE integration?"]
+- trend_label: stable (high shipping velocity, feature breadth expanding)
+
+**DeerFlow (bytedance/deer-flow)**
+- last_seen_star_count: 56,680
+- 7d_star_baseline: 56,009 (Run #10)
+- star_delta_7d: +671 (+1.2%) — decelerating from 53% spike
+- cool_down_active: expires 2026-04-07
+- trend_label: accelerating (multi-cycle) but decelerating
+
+**Google ADK (google/adk-python)**
+- last_seen_release: v1.28.1 (2026-04-02)
+- last_seen_star_count: 18,714
+- cool_down_active: expires 2026-04-07
+- trend_label: accelerating (weekly releases, Google backing)
+- open_hypotheses: ["Will ADK v2.0.0 go beta or GA?"]
+
+**OpenAI Agents SDK (openai/openai-agents-python)**
+- last_seen_release: v0.13.4 (2026-04-01)
+- last_seen_star_count: 20,521
+- cool_down_active: expires 2026-04-09
+- trend_label: stable
+
+**LangGraph (langchain-ai/langgraph)**
+- last_seen_release: 1.1.4 (2026-03-31) — dep bumps only
+- last_seen_star_count: 28,264
+- trend_label: stable
+
+**Vibe Kanban (BloopAI/vibe-kanban)**
+- last_seen_release: v0.1.40 (2026-04-01, pre-release)
+- last_seen_star_count: 24,269
+- trend_label: stable (active pre-release cadence)
+
+**Coder Mux (coder/mux)**
+- last_seen_release: v0.22.0 stable; v0.22.1 nightly active
+- last_seen_star_count: 1,575
+- cool_down_active: expires 2026-04-09
+- trend_label: stable
+
+**Superset (superset-sh/superset)**
+- last_seen_release: desktop-v1.4.6 (2026-04-02)
+- last_seen_star_count: 8,520
+- trend_label: stable
+
+**Ruflo (ruvnet/ruflo)**
+- last_seen_star_count: 29,419
+- dispatch_active: Issue #548 from Run #9 — outcome unknown
+- trend_label: accelerating (3 consecutive cycles)
+
+**1Code (21st-dev/1code)**
+- last_seen_star_count: ~5,360
+- last_pushed: 2026-03-06
+- recommended_removal: true (set Run #11)
+- trend_label: cooling
+
+**AG2 (ag2ai/ag2)**
+- last_seen_release: v0.11.2 (2026-02-27)
+- last_seen_star_count: 4,347
+- trend_label: stable
+
+**Composio (ComposioHQ/agent-orchestrator)**
+- last_seen_star_count: 5,683
+- last_release: v0.2.2 (dep bump, closed as noise)
+- trend_label: stable
+
+### System-Wide State (Run #11)
+- briefs_written_this_cycle: 1 (crewai-1.13.0-stable-a2ui)
+- dispatches_this_cycle: 0
+- human_escalations_this_cycle: 0
+- api_failures: [microsoft/* — persistent SAML 403]
+- watchlist_mutations: 1Code recommended_removal:true
+- event_fingerprints_cooldown:
+  - crewai-1.13.0-stable-a2ui-2026-04-03: expires 2026-04-10
+  - openai-agents-sdk-mcp-resources-v0.13.0-2026-04-02: expires 2026-04-09
+  - coder-mux-v0.22.0-agent-browser-2026-04-02: expires 2026-04-09
+  - crewai-1.12.x-agent-skills-2026-03-31: expires 2026-04-07
+  - google-adk-v1.28.0-mcp-sampling-a2a-2026-03-31: expires 2026-04-07
+  - deerflow-viral-acceleration-54k-2026-03-31: expires 2026-04-07
+

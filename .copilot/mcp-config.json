@@ -2,13 +2,13 @@
     "mcpServers": {
         "spartan-swarm": {
             "type": "stdio",
-            "command": "node",
+            "command": "C:\\Program Files\\nodejs\\node.exe",
             "args": [
-                "./.optimus/dist/mcp-server.js"
+                "C:\\Users\\lochen\\optimus-code\\.optimus\\dist\\mcp-server.js"
             ],
             "env": {
-                "OPTIMUS_WORKSPACE_ROOT": ".",
-                "DOTENV_PATH": "./.env"
+                "OPTIMUS_WORKSPACE_ROOT": "C:\\Users\\lochen\\optimus-code",
+                "DOTENV_PATH": "C:\\Users\\lochen\\optimus-code\\.env"
             }
         }
     }

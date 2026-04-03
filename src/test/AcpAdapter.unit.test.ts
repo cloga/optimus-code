@@ -51,4 +51,46 @@ describe('AcpAdapter (unit)', () => {
       expect(() => adapter.stop()).not.toThrow();
     });
   });
+
+  describe('spawn env sanitization', () => {
+    it('strips repo GitHub tokens for Copilot ACP launches by default', () => {
+      const adapter = new AcpAdapter('github-copilot', 'GitHub Copilot', 'copilot', ['--acp', '--stdio']);
+      const env = {
+        GITHUB_TOKEN: 'repo-pat',
+        GH_TOKEN: 'repo-gh-token',
+      } as NodeJS.ProcessEnv;
+
+      (adapter as any).sanitizeSpawnEnv(env);
+
+      expect(env.GITHUB_TOKEN).toBeUndefined();
+      expect(env.GH_TOKEN).toBeUndefined();
+    });
+
+    it('preserves explicit Copilot token overrides for Copilot ACP launches', () => {
+      const adapter = new AcpAdapter('github-copilot', 'GitHub Copilot', 'C:\\tools\\copilot.cmd', ['--acp', '--stdio']);
+      const env = {
+        GITHUB_TOKEN: 'repo-pat',
+        GH_TOKEN: 'repo-gh-token',
+        COPILOT_GITHUB_TOKEN: 'copilot-token',
+      } as NodeJS.ProcessEnv;
+
+      (adapter as any).sanitizeSpawnEnv(env);
+
+      expect(env.GITHUB_TOKEN).toBe('repo-pat');
+      expect(env.GH_TOKEN).toBe('repo-gh-token');
+    });
+
+    it('does not strip GitHub tokens for non-Copilot ACP launches', () => {
+      const adapter = new AcpAdapter('claude-code', 'Claude Code', 'claude-agent-acp', ['--acp', '--stdio']);
+      const env = {
+        GITHUB_TOKEN: 'repo-pat',
+        GH_TOKEN: 'repo-gh-token',
+      } as NodeJS.ProcessEnv;
+
+      (adapter as any).sanitizeSpawnEnv(env);
+
+      expect(env.GITHUB_TOKEN).toBe('repo-pat');
+      expect(env.GH_TOKEN).toBe('repo-gh-token');
+    });
+  });
 });

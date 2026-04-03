@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.17.12] - 2026-04-03
+
+### Bug Fixes
+- **Claude `--resume` Esc fallback** — When using `optimus go --cli claude`, pressing Esc in the session picker now starts a new session instead of exiting, matching Copilot CLI behavior.
+
 ## [2.17.11] - 2026-03-31
 
 ### Improvements

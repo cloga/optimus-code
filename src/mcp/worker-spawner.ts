@@ -584,7 +584,27 @@ ${roleCreatorSkillContent ? `=== SKILL REFERENCE ===\n${roleCreatorSkillContent}
         throw new Error('role-creator response had opening --- but no closing frontmatter delimiter');
     }
 
-    // 5. Write the rich role to t2Path
+    // 5. Validate model in LLM-generated frontmatter before writing.
+    // role-creator is an LLM and may hallucinate invalid model IDs from examples in its prompt.
+    // Parse the generated frontmatter and sanitize the model field against available-agents.json.
+    const { engines: validEnginesGen, models: validModelsGen } = loadValidEnginesAndModels(workspacePath);
+    const parsedGenContent = parseFrontmatter(content);
+    const genEngine = parsedGenContent.frontmatter.engine || engine;
+    const genModel = parsedGenContent.frontmatter.model;
+    if (genModel && !isValidModel(genModel, genEngine, validModelsGen)) {
+        const fallback = model && isValidModel(model, genEngine, validModelsGen) ? model : (validModelsGen[genEngine]?.[0] || '');
+        console.error(
+            `[T2 Guard] role-creator generated invalid model '${genModel}' for engine '${genEngine}'. ` +
+            `Sanitizing to '${fallback || '(empty)'}'. Valid: ${(validModelsGen[genEngine] || []).join(', ')}`
+        );
+        const sanitizedContent = updateFrontmatter(content, { model: fallback });
+        const dir = path.dirname(t2Path);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(t2Path, sanitizedContent, 'utf8');
+        return;
+    }
+
+    // 6. Write the rich role to t2Path
     const dir = path.dirname(t2Path);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(t2Path, content, 'utf8');
@@ -898,17 +918,33 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     // --- Model Pre-Flight Validation ---
     // If a model was explicitly provided, validate it against available-agents.json whitelist.
     // Prevents invalid model names from silently passing through to CLI and failing late.
+    // If the model comes from a stale snapshot (T1/T2 frontmatter) and is not in available_models,
+    // auto-fallback to the first available model with a warning rather than crashing.
+    // Only hard-crash when the model was explicitly provided by the caller (role_model param).
+    const modelWasExplicitFromCaller = !!(masterInfo?.model) || !!(parsedRole.model);
     if (activeModel) {
         try {
             const engineConfig = getEngineConfig(activeEngine, workspacePath);
             if (engineConfig?.available_models && Array.isArray(engineConfig.available_models)) {
                 const allowedModels: string[] = engineConfig.available_models;
                 if (!allowedModels.includes(activeModel)) {
-                    throw new Error(
-                        `⚠️ **Model Pre-Flight Failed**: Model \`${activeModel}\` is not in the allowed list for engine \`${activeEngine}\`.\n\n` +
-                        `**Allowed models**: ${allowedModels.map(m => `\`${m}\``).join(', ')}\n\n` +
-                        `**Fix**: Re-delegate with a valid \`role_model\` from the list above, or omit \`role_model\` to use the engine default.`
-                    );
+                    if (modelWasExplicitFromCaller) {
+                        // Caller explicitly chose this model — surface as actionable error
+                        throw new Error(
+                            `⚠️ **Model Pre-Flight Failed**: Model \`${activeModel}\` is not in the allowed list for engine \`${activeEngine}\`.\n\n` +
+                            `**Allowed models**: ${allowedModels.map(m => `\`${m}\``).join(', ')}\n\n` +
+                            `**Fix**: Re-delegate with a valid \`role_model\` from the list above, or omit \`role_model\` to use the engine default.`
+                        );
+                    } else {
+                        // Model came from stale T1/T2 snapshot frontmatter — auto-fallback with a warning
+                        const fallbackModel = allowedModels[0];
+                        console.error(
+                            `[Engine] ⚠️ Model Pre-Flight Warning: snapshot model \`${activeModel}\` is not in allowed list for engine \`${activeEngine}\`. ` +
+                            `Auto-falling back to \`${fallbackModel}\`. ` +
+                            `To fix permanently, update the model field in .optimus/roles/${sanitizeRoleName(role)}.md to one of: ${allowedModels.join(', ')}`
+                        );
+                        activeModel = fallbackModel;
+                    }
                 }
             }
         } catch (e: any) {
@@ -1058,7 +1094,7 @@ let contextContent = "";
     }
 
     const trackingIssueHeader = autoIssueNumber
-        ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task and dispatch_council calls.\n`
+        ? `\n## Tracking Issue\nA GitHub Issue #${autoIssueNumber} has already been created to track this task.\nDO NOT create a new Issue via vcs_create_work_item. Use #${autoIssueNumber} as your Epic/tracking Issue for all sub-delegations.\nPass parent_issue_number: ${autoIssueNumber} to all delegate_task_async and dispatch_council_async calls by default. Only use the synchronous variants when you explicitly need blocking behavior.\n`
         : '';
 
     // ── Harness: Self-Verification Prompt Suffix ──

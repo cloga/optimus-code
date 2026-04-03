@@ -110,9 +110,42 @@ function patchAvailableAgentsConfig(agents, template) {
         patched = true;
       }
     }
+
+    if (!templateEngine.acp && userEngine.acp && isRedundantDefaultAcpConfig(engineName, userEngine.acp)) {
+      delete userEngine.acp;
+      patched = true;
+    }
   }
 
   return patched;
+}
+
+function isRedundantDefaultAcpConfig(engineName, acpConfig) {
+  if (!acpConfig || typeof acpConfig !== 'object') {
+    return false;
+  }
+
+  const pathValue = typeof acpConfig.path === 'string' ? acpConfig.path.trim() : '';
+  const args = Array.isArray(acpConfig.args)
+    ? acpConfig.args.filter(arg => typeof arg === 'string' && arg.trim().length > 0)
+    : [];
+  const hasCapabilities = !!acpConfig.capabilities;
+  const otherKeys = Object.keys(acpConfig).filter(key => !['path', 'args', 'capabilities'].includes(key));
+  if (hasCapabilities || otherKeys.length > 0) {
+    return false;
+  }
+
+  if (engineName === 'claude-code') {
+    return pathValue === 'claude-agent-acp' && args.length === 0;
+  }
+
+  if (engineName === 'github-copilot') {
+    const normalizedArgs = args.join(' ');
+    return pathValue === 'copilot'
+      && (normalizedArgs === '' || normalizedArgs === '--acp' || normalizedArgs === '--acp --stdio');
+  }
+
+  return false;
 }
 
 function syncAvailableAgentsConfig(templatePath, destPath) {

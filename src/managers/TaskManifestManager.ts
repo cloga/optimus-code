@@ -26,6 +26,7 @@ export interface TaskRecord {
     role?: string;
     roles?: string[];
     task_description?: string;
+    task_artifact_path?: string;
     context_files?: string[];
     proposal_path?: string;
     output_path?: string;
@@ -57,6 +58,7 @@ export interface TaskRecord {
     blocked_by?: string[];   // Runtime: unresolved prerequisite task IDs
     // Configurable heartbeat timeout (overrides TIMEOUT_MS default per-task)
     heartbeat_timeout_ms?: number;
+    startup_timeout_ms?: number;
     resolved_engine?: string;
     resolved_model?: string;
     session_id?: string;
@@ -66,6 +68,33 @@ export interface TaskRecord {
     runtime_run_id?: string;
     runtime_trace_id?: string;
     runtime_skill?: string;
+}
+
+export const DEFAULT_TASK_STARTUP_TIMEOUT_MS = 2 * 60 * 1000;
+export const MAX_TASK_STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
+
+function buildStartupTimeoutErrorMessage(timeoutMs: number): string {
+    return [
+        `TASK_STARTUP_TIMEOUT: Async worker failed to start within ${Math.round(timeoutMs / 1000)}s (task remained pending).`,
+        `Fix: verify the detached worker can launch (Node executable, engine path, workspace permissions), then retry or increase startup_timeout_ms.`,
+    ].join(' ');
+}
+
+function buildRunnerDiedErrorMessage(pid: number): string {
+    return [
+        `TASK_RUNNER_DIED: Async worker PID ${pid} is no longer running while the task is still marked running.`,
+        `Fix: inspect detached worker crash logs, verify engine bootstrap/auth, then retry the task.`,
+    ].join(' ');
+}
+
+function isPidAlive(pid: number): boolean {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 export class TaskManifestManager {
@@ -143,10 +172,25 @@ export class TaskManifestManager {
             for (const taskId in manifest) {
                 const task = manifest[taskId];
                 if (task.status === 'running') {
+                    if (typeof task.pid === 'number' && task.pid > 0 && !isPidAlive(task.pid)) {
+                        task.status = 'failed';
+                        task.error_message = buildRunnerDiedErrorMessage(task.pid);
+                        task.completed_at = now;
+                        changed = true;
+                        try {
+                            if (task.output_path) {
+                                const dir = path.dirname(task.output_path);
+                                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                                fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
+                            }
+                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write runner-death marker: ${e.message}`); }
+                        continue;
+                    }
                     const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
                     if (now - task.heartbeatTime > effectiveTimeout) {
                         task.status = 'failed';
                         task.error_message = 'Task timed out or runner process died (reaped by Watchdog).';
+                        task.completed_at = now;
                         changed = true;
                         try {
                             if (task.output_path) {
@@ -155,6 +199,21 @@ export class TaskManifestManager {
                                 fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
                             }
                         } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write timeout marker: ${e.message}`); }
+                    }
+                } else if (task.status === 'pending') {
+                    const startupTimeout = task.startup_timeout_ms || DEFAULT_TASK_STARTUP_TIMEOUT_MS;
+                    if (now - task.startTime > startupTimeout) {
+                        task.status = 'failed';
+                        task.error_message = buildStartupTimeoutErrorMessage(startupTimeout);
+                        task.completed_at = now;
+                        changed = true;
+                        try {
+                            if (task.output_path) {
+                                const dir = path.dirname(task.output_path);
+                                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                                fs.writeFileSync(task.output_path, `❌ **Fatal Error**: ${task.error_message}\n`, 'utf8');
+                            }
+                        } catch (e: any) { console.error(`[TaskManifest] Warning: failed to write startup-timeout marker: ${e.message}`); }
                     }
                 }
             }
