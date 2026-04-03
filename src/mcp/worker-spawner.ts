@@ -27,6 +27,7 @@ import { resolveOptimusPath } from '../utils/worktree';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory, pushStreamEvent } from '../utils/agentRuntime';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { executePrompt } from '../runtime/genericExecutor';
+import { fireHook } from '../harness/lifecycle-hooks.js';
 import { TaskDelegationResult, formatTaskResultAsText } from '../types/TaskDelegationResult.js';
 import { extractTaskResult, TaskResultMetadata } from '../harness/resultFormatter.js';
 
@@ -335,6 +336,9 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const eng = masterInfo?.engine || engine;
     const mod = masterInfo?.model || model || '';
 
+    // Cache engine/model config once — used by multiple validation branches below
+    const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
+
     const existingTemplate = loadBestRoleTemplate(workspacePath, safeRole);
     if (existingTemplate) {
         const existing = existingTemplate.content;
@@ -357,7 +361,6 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
             if (masterInfo?.description || masterInfo?.engine || masterInfo?.model) {
                 const updates: Record<string, string> = {};
                 if (masterInfo.description) updates.description = `"${masterInfo.description.substring(0, 200).replace(/"/g, "'")}"`;
-                const { engines: validEngines, models: validModels } = loadValidEnginesAndModels(workspacePath);
                 if (masterInfo.engine) {
                     if (isValidEngine(masterInfo.engine, validEngines)) {
                         updates.engine = masterInfo.engine;
@@ -396,23 +399,22 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
                 // Update engine/model from Master info before writing
                 let finalContent = pluginContent;
                 const updates: Record<string, string> = {};
-                const { engines: validEnginesPlugin, models: validModelsPlugin } = loadValidEnginesAndModels(workspacePath);
                 if (eng) {
-                    if (isValidEngine(eng, validEnginesPlugin)) {
+                    if (isValidEngine(eng, validEngines)) {
                         updates.engine = eng;
                     } else {
-                        console.error(`[T2 Guard] Rejected invalid engine '${eng}' for role '${safeRole}'. Valid: ${validEnginesPlugin.join(', ')}`);
+                        console.error(`[T2 Guard] Rejected invalid engine '${eng}' for role '${safeRole}'. Valid: ${validEngines.join(', ')}`);
                     }
                 }
                 if (mod) {
                     const resolvedEngPlugin = updates.engine || eng;
-                    if (updates.engine && isValidModel(mod, resolvedEngPlugin, validModelsPlugin)) {
+                    if (updates.engine && isValidModel(mod, resolvedEngPlugin, validModels)) {
                         updates.model = mod;
                     } else if (!updates.engine) {
                         // Engine was rejected — discard model too
                         console.error(`[T2 Guard] Discarding model '${mod}' — engine was invalid for role '${safeRole}'`);
                     } else {
-                        console.error(`[T2 Guard] Rejected invalid model '${mod}' for engine '${resolvedEngPlugin}' on role '${safeRole}'. Valid: ${(validModelsPlugin[resolvedEngPlugin] || []).join(', ')}`);
+                        console.error(`[T2 Guard] Rejected invalid model '${mod}' for engine '${resolvedEngPlugin}' on role '${safeRole}'. Valid: ${(validModels[resolvedEngPlugin] || []).join(', ')}`);
                     }
                 }
                 updates.precipitated = new Date().toISOString();
@@ -452,15 +454,14 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     const currentDepthLocal = delegationDepth ?? 0;
 
     // Validate eng/mod before embedding in any template literal
-    const { engines: validEnginesFallback, models: validModelsFallback } = loadValidEnginesAndModels(workspacePath);
     let validatedEng = eng;
     let validatedMod = mod;
-    if (eng && !isValidEngine(eng, validEnginesFallback)) {
-        console.error(`[T2 Guard] Rejected invalid engine '${eng}' for role '${safeRole}'. Valid: ${validEnginesFallback.join(', ')}`);
-        validatedEng = validEnginesFallback[0] || '';
+    if (eng && !isValidEngine(eng, validEngines)) {
+        console.error(`[T2 Guard] Rejected invalid engine '${eng}' for role '${safeRole}'. Valid: ${validEngines.join(', ')}`);
+        validatedEng = validEngines[0] || '';
         validatedMod = ''; // engine invalid → discard model
-    } else if (mod && !isValidModel(mod, eng, validModelsFallback)) {
-        console.error(`[T2 Guard] Rejected invalid model '${mod}' for engine '${eng}' on role '${safeRole}'. Valid: ${(validModelsFallback[eng] || []).join(', ')}`);
+    } else if (mod && !isValidModel(mod, eng, validModels)) {
+        console.error(`[T2 Guard] Rejected invalid model '${mod}' for engine '${eng}' on role '${safeRole}'. Valid: ${(validModels[eng] || []).join(', ')}`);
         validatedMod = '';
     }
 
@@ -589,7 +590,7 @@ ${roleCreatorSkillContent ? `=== SKILL REFERENCE ===\n${roleCreatorSkillContent}
     // 5. Validate model in LLM-generated frontmatter before writing.
     // role-creator is an LLM and may hallucinate invalid model IDs from examples in its prompt.
     // Parse the generated frontmatter and sanitize the model field against available-agents.json.
-    const { engines: validEnginesGen, models: validModelsGen } = loadValidEnginesAndModels(workspacePath);
+    const { models: validModelsGen } = loadValidEnginesAndModels(workspacePath);
     const parsedGenContent = parseFrontmatter(content);
     const genEngine = parsedGenContent.frontmatter.engine || engine;
     const genModel = parsedGenContent.frontmatter.model;
@@ -676,7 +677,7 @@ export class AgentLockManager {
                 const filePath = path.join(this.lockDir, file);
                 try {
                     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                    if (content.pid && !isProcessRunning(content.pid)) {
+                    if (content.pid && !isPidAlive(content.pid)) {
                         fs.unlinkSync(filePath);
                         console.error(`[AgentLockManager] Cleaned stale lock for ${file} (PID ${content.pid} no longer running)`);
                     }
@@ -778,6 +779,9 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     const parsedRole = parseRoleSpec(roleArg, workspacePath);
     const role = sanitizeRoleName(parsedRole.role);
     const delegationStartTime = Date.now();
+
+    // Fire hook — best effort, never blocks execution
+    fireHook('PreRoleResolution', { roleArg, parsedRole: role }, { role, workspacePath }).catch(() => {});
 
     const currentDepth = parentDepth !== undefined ? parentDepth : parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10);
     const childDepth = currentDepth + 1;
@@ -987,6 +991,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     // --- Skill Pre-Flight Check ---
     // If Master specified required_skills, verify they all exist before proceeding.
     // Missing skills → reject with actionable error so Master can create them first.
+    fireHook('PreSkillLoad', { requiredSkills: masterInfo?.requiredSkills || [] }, { role, workspacePath }).catch(() => {});
     let skillContent = '';
     if (masterInfo?.requiredSkills && masterInfo.requiredSkills.length > 0) {
         const { found, missing } = checkRequiredSkills(workspacePath, masterInfo.requiredSkills);
@@ -1105,6 +1110,8 @@ Before finalizing your output, verify:
 4. If a specific format was requested: validate your output matches it.
 Do NOT skip verification. Incomplete or unverified work will be rejected by the harness.` : '';
 
+    fireHook('PrePromptConstruct', { hasPersona: !!personaContext, hasMemory: !!memoryContent, hasSkills: !!skillContent }, { role, workspacePath, engine: activeEngine, model: activeModel }).catch(() => {});
+
     const basePrompt = `You are a delegated AI Worker operating under the Spartan Swarm Protocol.
 Your Role: ${role}
 Identity: ${resolvedTier}
@@ -1210,6 +1217,7 @@ Please provide your complete execution result below.${verifySuffix}`;
         }
 
         // ── Core Execution: delegate to Agent Runtime (genericExecutor) ──
+        fireHook('PreExecute', { promptLength: basePrompt.length }, { role, workspacePath, engine: activeEngine, model: activeModel }).catch(() => {});
         const execResult = await executePrompt(basePrompt, {
             engine: activeEngine,
             model: activeModel || undefined,
@@ -1225,6 +1233,8 @@ Please provide your complete execution result below.${verifySuffix}`;
                 ? (chunk, isThinking) => pushStreamEvent(streamingRunId!, isThinking ? 'thinking' : 'text', chunk)
                 : undefined,
         });
+
+        fireHook('PostExecute', { outputLength: execResult.output?.length || 0, stopReason: execResult.stopReason, durationMs: execResult.durationMs }, { role, workspacePath, engine: activeEngine, model: activeModel, sessionId: execResult.sessionId }).catch(() => {});
 
         const response = execResult.output;
         const newSessionId = execResult.sessionId;
@@ -1315,6 +1325,7 @@ Please provide your complete execution result below.${verifySuffix}`;
         // Log any warnings from the executor's validation pass.
         if (execResult.validationWarnings && execResult.validationWarnings.length > 0) {
             console.error(`[Harness] Output warnings for ${role}: ${execResult.validationWarnings.map(w => w.split('] ')[1] || w).join(', ')}`);
+            fireHook('ValidationGate', { warnings: execResult.validationWarnings }, { role, workspacePath }).catch(() => {});
         }
 
         // ── Harness: Doom Loop Detection ──
@@ -1322,6 +1333,7 @@ Please provide your complete execution result below.${verifySuffix}`;
         const loopWarning = analyzeOutputForLoops(sessionForLoop, cleanResponse);
         if (loopWarning) {
             console.error(`[Harness] ${loopWarning.suggestion}`);
+            fireHook('LoopDetection', { warning: loopWarning }, { role, workspacePath }).catch(() => {});
         }
 
         fs.writeFileSync(outputPath, cleanResponse, 'utf8');

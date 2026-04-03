@@ -9,6 +9,7 @@ import { agentSignature } from '../utils/agentSignature';
 import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
 import { resolveOptimusPath } from '../utils/worktree';
 import { synthesizeIfRequired, injectSynthesisContext } from './synthesis-coordinator';
+import { fireHook } from '../harness/lifecycle-hooks.js';
 
 /**
  * Spawn a detached background worker for an async task.
@@ -47,6 +48,9 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
     TaskManifestManager.updateTask(workspacePath, taskId, { status: 'running', pid: process.pid });
     TaskManifestManager.heartbeat(workspacePath, taskId);
 
+    // Fire hook — best effort, never blocks execution
+    fireHook('TaskStarted', { taskId }, { taskId, workspacePath }).catch(() => {});
+
     const heartbeatInterval = setInterval(() => {
         TaskManifestManager.heartbeat(workspacePath, taskId);
     }, 15000);
@@ -54,6 +58,7 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
     try {
         let delegateResult: TaskDelegationResult | undefined;
         if (task.type === 'delegate_task') {
+            fireHook('PreDelegation', { role: task.role }, { taskId, role: task.role, workspacePath }).catch(() => {});
             delegateResult = await delegateTaskSingle(
                 task.role!,
                 task.task_artifact_path || task.task_description!,
@@ -72,6 +77,7 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
                 task.github_issue_number,
                 task.agent_id
             );
+            fireHook('PostDelegation', { status: delegateResult?.status || 'unknown' }, { taskId, role: task.role, workspacePath }).catch(() => {});
         } else if (task.type === 'dispatch_council') {
             // Council tasks still use subprocess to avoid blocking the caller
             throw new Error(`[Runner] dispatch_council not supported in-process; use spawnAsyncWorker`);
@@ -100,6 +106,7 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished in-process with status: ${verificationStatus}.`);
 
+        fireHook('TaskCompleted', { finalStatus: verificationStatus || 'completed' }, { taskId, role: task.role, workspacePath }).catch(() => {});
         if (verificationStatus === 'verified') {
             // Coordinator Synthesis Gate: synthesize findings before unblocking dependents
             try {
@@ -215,6 +222,9 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
     TaskManifestManager.updateTask(workspacePath, taskId, { status: 'running', pid: process.pid });
     TaskManifestManager.heartbeat(workspacePath, taskId);  // Immediate first heartbeat
 
+    // Fire hook — best effort, never blocks execution
+    fireHook('TaskStarted', { taskId }, { taskId, workspacePath }).catch(() => {});
+
     // Update STATUS.md to 'running' — users can distinguish queued vs. active execution
     if (task.type === 'dispatch_council' && task.output_path) {
         try {
@@ -243,6 +253,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
     try {
         let delegateResult: TaskDelegationResult | undefined;
         if (task.type === 'delegate_task') {
+            fireHook('PreDelegation', { role: task.role }, { taskId, role: task.role, workspacePath }).catch(() => {});
             delegateResult = await delegateTaskSingle(
                 task.role!,
                 task.task_artifact_path || task.task_description!,
@@ -261,6 +272,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
                 task.github_issue_number,  // auto-created tracking issue
                 task.agent_id
             );
+            fireHook('PostDelegation', { status: delegateResult?.status || 'unknown' }, { taskId, role: task.role, workspacePath }).catch(() => {});
         } else if (task.type === 'dispatch_council') {
             await dispatchCouncilConcurrent(
                 task.roles!,
@@ -424,6 +436,7 @@ Here is the synthesis report:\n\n${synthesisContent}`;
         TaskManifestManager.updateTask(workspacePath, taskId, statusUpdate);
         console.error(`[Runner] Task ${taskId} finished with status: ${verificationStatus}.`);
 
+        fireHook('TaskCompleted', { finalStatus: verificationStatus || 'completed' }, { taskId, role: task.role, workspacePath }).catch(() => {});
         // Update STATUS.md to final phase
         if (task.type === 'dispatch_council' && task.output_path) {
             try {

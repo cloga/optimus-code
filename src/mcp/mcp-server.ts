@@ -16,7 +16,7 @@ import { dispatchCouncilConcurrent, delegateTaskSingle, explainAvailableAgentsCo
 import { formatTaskResultAsText } from "../types/TaskDelegationResult.js";
 import { getMemoryFilePath, buildMemoryEntry, getUserMemoryPath, validateUserMemoryContent, appendToUserMemory, loadUserMemory } from "../managers/MemoryManager";
 import { cleanStaleAgents } from "./agent-gc";
-import { TaskManifestManager, MAX_TASK_STARTUP_TIMEOUT_MS, writeFailureMarker } from "../managers/TaskManifestManager";
+import { TaskManifestManager, writeFailureMarker, validateStartupTimeoutMs } from "../managers/TaskManifestManager";
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker, runWorkerInProcess, spawnAsyncWorker } from "./council-runner";
 import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
@@ -35,6 +35,8 @@ import { listWorktrees, createWorktree, removeWorktree, ensureWorktreeForBranch 
 import {
   resolveHeartbeatTimeout,
 } from "../runtime/agentRuntimeService";
+import { fireHook, getGlobalHookRegistry } from '../harness/lifecycle-hooks.js';
+import { taskMetricsHook } from '../harness/built-in-hooks.js';
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
 function requireParams(toolName: string, params: Record<string, any>, required: string[]): void {
@@ -123,6 +125,9 @@ const server = new Server(
     },
   }
 );
+
+// Register built-in lifecycle hooks
+getGlobalHookRegistry().register('TaskCompleted', taskMetricsHook);
 
 // 1.5 Register Resources
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
@@ -720,6 +725,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 // 3. Handle Tool Execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const toolName = request.params.name;
+  const args = request.params.arguments || {};
+  const toolWorkspace = (args as any).workspace_path as string | undefined;
+  fireHook('PreToolDispatch', { toolName, argKeys: Object.keys(args) }, { workspacePath: toolWorkspace }).catch(() => {});
 
   if (request.params.name === "create_worktree") {
     const { branch, base_branch, workspace_path } = request.params.arguments as any;
@@ -885,10 +894,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       : path.join(optimusDir, "results", path.basename(output_path));
 
     const resolvedHeartbeatTimeout = resolveHeartbeatTimeout(workspace_path, role_engine, heartbeat_timeout_ms);
-    if (startup_timeout_ms !== undefined) {
-      if (typeof startup_timeout_ms !== 'number' || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_TASK_STARTUP_TIMEOUT_MS) {
-        throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
-      }
+    try { validateStartupTimeoutMs(startup_timeout_ms); } catch (e: any) {
+      throw new McpError(ErrorCode.InvalidParams, e.message);
     }
 
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
@@ -1883,10 +1890,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Validate startup_timeout_ms if provided
-    if (startup_timeout_ms !== undefined) {
-        if (typeof startup_timeout_ms !== 'number' || startup_timeout_ms <= 0 || startup_timeout_ms > MAX_TASK_STARTUP_TIMEOUT_MS) {
-            throw new McpError(ErrorCode.InvalidParams, `startup_timeout_ms must be a number between 1 and ${MAX_TASK_STARTUP_TIMEOUT_MS} (10 min). Got: ${startup_timeout_ms}`);
-        }
+    try { validateStartupTimeoutMs(startup_timeout_ms); } catch (e: any) {
+        throw new McpError(ErrorCode.InvalidParams, e.message);
     }
 
     const crontab = loadCrontab(workspace_path) || { max_concurrent: 3, crons: [] };
