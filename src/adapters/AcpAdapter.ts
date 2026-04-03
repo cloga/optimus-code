@@ -472,7 +472,7 @@ export class AcpAdapter implements AgentAdapter {
         sessionId?: string,
         onUpdate?: (chunk: string) => void,
         extraEnv?: Record<string, string>,
-        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number; promptParts?: { sharedPrefix: string; uniqueSuffix: string; cacheKey: string } }
     ): Promise<string> {
         if (this._persistent) {
             return this._invokePersistent(prompt, mode, sessionId, onUpdate, extraEnv, options);
@@ -526,7 +526,7 @@ export class AcpAdapter implements AgentAdapter {
         sessionId?: string,
         onUpdate?: (chunk: string) => void,
         extraEnv?: Record<string, string>,
-        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number; promptParts?: { sharedPrefix: string; uniqueSuffix: string; cacheKey: string } }
     ): Promise<string> {
         debugLog('[AcpAdapter]', `Invoking persistent for ${this.name} (mode=${mode}, resume=${!!sessionId}, invocation=#${this._invocationCount + 1})`);
         this._busy = true;
@@ -561,17 +561,60 @@ export class AcpAdapter implements AgentAdapter {
             };
 
             const sendPromptWithCompatibility = async (currentSessionId: string): Promise<any> => {
+                const fullPrompt = options?.promptParts
+                    ? options.promptParts.sharedPrefix + options.promptParts.uniqueSuffix
+                    : prompt;
+
+                // Build prompt content blocks
+                let promptContent: Array<Record<string, unknown>>;
+
+                if (options?.promptParts) {
+                    // Multi-block with cache_control on shared prefix
+                    promptContent = [
+                        {
+                            type: 'text',
+                            text: options.promptParts.sharedPrefix,
+                            cache_control: { type: 'ephemeral' },
+                        },
+                        {
+                            type: 'text',
+                            text: options.promptParts.uniqueSuffix,
+                        },
+                    ];
+                } else {
+                    // Single block (original behavior)
+                    promptContent = [{ type: 'text', text: prompt }];
+                }
+
                 try {
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        prompt: [{ type: 'text', text: prompt }]
+                        prompt: promptContent,
                     });
                 } catch (err) {
+                    // If multi-block with cache_control was rejected, fall back to single block
+                    if (options?.promptParts && this.isInvalidParamsError(err)) {
+                        debugLog('[AcpAdapter]', 'Multi-block prompt with cache_control rejected; falling back to single block');
+                        try {
+                            return await this.sendRequest('session/prompt', {
+                                sessionId: currentSessionId,
+                                prompt: [{ type: 'text', text: fullPrompt }],
+                            });
+                        } catch (err2) {
+                            if (!this.isInvalidParamsError(err2)) throw err2;
+                            debugLog('[AcpAdapter]', 'session/prompt rejected content-array params; retrying text param');
+                            return await this.sendRequest('session/prompt', {
+                                sessionId: currentSessionId,
+                                text: fullPrompt,
+                            });
+                        }
+                    }
+                    // Original fallback: text param instead of prompt array
                     if (!this.isInvalidParamsError(err)) throw err;
                     debugLog('[AcpAdapter]', `session/prompt rejected content-array params; retrying text param`);
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        text: prompt
+                        text: fullPrompt,
                     });
                 }
             };
@@ -688,7 +731,7 @@ export class AcpAdapter implements AgentAdapter {
         sessionId?: string,
         onUpdate?: (chunk: string) => void,
         extraEnv?: Record<string, string>,
-        options?: { model?: string; autopilot?: boolean; maxContinues?: number }
+        options?: { model?: string; autopilot?: boolean; maxContinues?: number; promptParts?: { sharedPrefix: string; uniqueSuffix: string; cacheKey: string } }
     ): Promise<string> {
         debugLog('[AcpAdapter]', `Invoking for ${this.name} (mode=${mode}, resume=${!!sessionId})`);
 
@@ -720,19 +763,60 @@ export class AcpAdapter implements AgentAdapter {
             };
 
             const sendPromptWithCompatibility = async (currentSessionId: string): Promise<any> => {
+                const fullPrompt = options?.promptParts
+                    ? options.promptParts.sharedPrefix + options.promptParts.uniqueSuffix
+                    : prompt;
+
+                // Build prompt content blocks
+                let promptContent: Array<Record<string, unknown>>;
+
+                if (options?.promptParts) {
+                    // Multi-block with cache_control on shared prefix
+                    promptContent = [
+                        {
+                            type: 'text',
+                            text: options.promptParts.sharedPrefix,
+                            cache_control: { type: 'ephemeral' },
+                        },
+                        {
+                            type: 'text',
+                            text: options.promptParts.uniqueSuffix,
+                        },
+                    ];
+                } else {
+                    // Single block (original behavior)
+                    promptContent = [{ type: 'text', text: prompt }];
+                }
+
                 try {
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        prompt: [{ type: 'text', text: prompt }]
+                        prompt: promptContent,
                     });
                 } catch (err) {
-                    if (!this.isInvalidParamsError(err)) {
-                        throw err;
+                    // If multi-block with cache_control was rejected, fall back to single block
+                    if (options?.promptParts && this.isInvalidParamsError(err)) {
+                        debugLog('[AcpAdapter]', 'Multi-block prompt with cache_control rejected; falling back to single block');
+                        try {
+                            return await this.sendRequest('session/prompt', {
+                                sessionId: currentSessionId,
+                                prompt: [{ type: 'text', text: fullPrompt }],
+                            });
+                        } catch (err2) {
+                            if (!this.isInvalidParamsError(err2)) throw err2;
+                            debugLog('[AcpAdapter]', `session/prompt rejected content-array params; retrying text param for session ${currentSessionId}`);
+                            return await this.sendRequest('session/prompt', {
+                                sessionId: currentSessionId,
+                                text: fullPrompt,
+                            });
+                        }
                     }
+                    // Original fallback: text param instead of prompt array
+                    if (!this.isInvalidParamsError(err)) throw err;
                     debugLog('[AcpAdapter]', `session/prompt rejected content-array params; retrying text param for session ${currentSessionId}`);
                     return await this.sendRequest('session/prompt', {
                         sessionId: currentSessionId,
-                        text: prompt
+                        text: fullPrompt,
                     });
                 }
             };

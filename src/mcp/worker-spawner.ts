@@ -27,6 +27,7 @@ import { resolveOptimusPath } from '../utils/worktree';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory, pushStreamEvent } from '../utils/agentRuntime';
 import { analyzeOutputForLoops } from '../harness/loopDetector';
 import { executePrompt } from '../runtime/genericExecutor';
+import { PromptCacheManager } from '../managers/PromptCacheManager.js';
 import { fireHook } from '../harness/lifecycle-hooks.js';
 import { TaskDelegationResult, formatTaskResultAsText } from '../types/TaskDelegationResult.js';
 import { extractTaskResult, TaskResultMetadata } from '../harness/resultFormatter.js';
@@ -1133,6 +1134,9 @@ CRITICAL: Your output MUST be written to this EXACT file: ${normalizePathForAgen
 Do NOT create files with your own naming — the orchestrator expects ALL deliverable content at the path above.
 Please provide your complete execution result below.${verifySuffix}`;
 
+    // Split prompt for cache optimization (shared prefix + unique suffix)
+    const promptParts = PromptCacheManager.splitPromptForCache(basePrompt);
+
     console.error(`[Orchestrator] Prompt size: ${basePrompt.length} chars (ACP lean: ${isAcpEngine})`);
     const isT3 = resolvedTier.startsWith('T3');
 
@@ -1229,12 +1233,22 @@ Please provide your complete execution result below.${verifySuffix}`;
             role,
             verificationLevel: 'normal',
             workspacePath,
+            promptParts: {
+                sharedPrefix: promptParts.sharedPrefix,
+                uniqueSuffix: promptParts.uniqueSuffix,
+                cacheKey: promptParts.cacheKey,
+            },
             onChunk: streamingRunId
                 ? (chunk, isThinking) => pushStreamEvent(streamingRunId!, isThinking ? 'thinking' : 'text', chunk)
                 : undefined,
         });
 
         fireHook('PostExecute', { outputLength: execResult.output?.length || 0, stopReason: execResult.stopReason, durationMs: execResult.durationMs }, { role, workspacePath, engine: activeEngine, model: activeModel, sessionId: execResult.sessionId }).catch(() => {});
+
+        const cacheStats = PromptCacheManager.getCacheStats();
+        if (cacheStats.totalHits > 1) {
+            console.error(`[PromptCache] prefix=${promptParts.cacheKey.slice(0, 8)}… hits=${cacheStats.totalHits} entries=${cacheStats.entries}`);
+        }
 
         const response = execResult.output;
         const newSessionId = execResult.sessionId;

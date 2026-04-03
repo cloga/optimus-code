@@ -71,6 +71,15 @@ export interface ExecuteOptions {
     onChunk?: (chunk: string, isThinking: boolean) => void;
     /** Workspace path — when provided, loads engine config from available-agents.json instead of using hardcoded defaults */
     workspacePath?: string;
+    /** Optional prompt cache parts for LLM API prompt caching optimization */
+    promptParts?: {
+        /** Shared prefix (cacheable across parallel workers) */
+        sharedPrefix: string;
+        /** Unique suffix (per-worker content) */
+        uniqueSuffix: string;
+        /** SHA256 cache key for the prefix */
+        cacheKey: string;
+    };
 }
 
 export interface ExecuteResult {
@@ -170,7 +179,7 @@ export async function executePrompt(
             options.sessionId,
             onUpdate,
             options.extraEnv,
-            acpOptions
+            { ...acpOptions, promptParts: options.promptParts }
         );
 
         const rawOutput = timeoutPromise
