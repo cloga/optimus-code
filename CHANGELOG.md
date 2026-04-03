@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.18.0] - 2026-04-03
+
+### Features
+- **Lifecycle hooks system** — Task execution pipeline now supports lifecycle hooks for pre/post task processing, enabling custom automation at each task phase.
+
+### Improvements
+- **Shared `isPidAlive` utility** — Consolidated 3 duplicate PID-alive checks (TaskManifestManager, meta-cron-engine, worker-spawner) into a single shared utility.
+- **Optimized engine health fallback** — `pickHealthyFallbackCandidate` now uses early return for confirmed-healthy candidates instead of building a full sorted array.
+
 ## [2.17.13] - 2026-04-03
 
 ### Improvements
