@@ -810,3 +810,13 @@ author: competitive-intel-analyst
   - google-adk-v1.28.0-mcp-sampling-a2a-2026-03-31: expires 2026-04-07
   - deerflow-viral-acceleration-54k-2026-03-31: expires 2026-04-07
 
+
+---
+id: mem_acp_path_resolution
+date: 2026-04-03T09:47:00.000Z
+level: project
+category: architecture-decision
+tags: [acp, engine, path, troubleshooting, mcp-server]
+author: system
+---
+ACP engine "executable not found" is caused by PATH inheritance from the MCP server's launcher process. The MCP server (Node.js subprocess) inherits the PATH that existed when the host (VS Code/Copilot CLI) was started. If ACP tools were installed after the host started, or the host has a restricted PATH, the executables won't be found. Fix: restart host, use absolute paths in available-agents.json, or rely on acpPathResolver.ts which scans common install locations (C:\.tools\.npm-global, %APPDATA%\npm, /usr/local/bin, /opt/homebrew/bin) as fallback. This is the permanent architectural fix implemented in PR for Issue #555.

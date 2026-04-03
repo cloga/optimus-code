@@ -7,6 +7,7 @@ import * as path from 'path';
 import { debugLog } from '../debugLogger';
 import { loadProjectMcpServers } from '../utils/mcpConfig';
 import { isCopilotCliExecutable, sanitizeCopilotAuthEnv } from '../utils/copilotAuthEnv';
+import { resolveExecutablePath, buildResolutionDiagnostic } from '../utils/acpPathResolver.js';
 
 // ─── ACP Response Helpers ───
 
@@ -279,29 +280,28 @@ export class AcpAdapter implements AgentAdapter {
     // ─── Process lifecycle ───
 
     private validateExecutable(): void {
-        // If it's an absolute path, check file existence directly
-        if (path.isAbsolute(this.executable)) {
-            if (!fs.existsSync(this.executable)) {
-                throw new Error(
-                    `ACP pre-flight failed: executable not found at '${this.executable}'. ` +
-                    `Update the path in .optimus/config/available-agents.json.`
-                );
+        // Use multi-strategy resolution (PATH + common install locations)
+        const resolved = resolveExecutablePath(this.executable);
+
+        if (resolved) {
+            // Update executable to resolved absolute path for reliable spawning
+            if (resolved !== this.executable) {
+                console.error(`[AcpAdapter] Resolved '${this.executable}' → '${resolved}'`);
+                this.executable = resolved;
             }
             return;
         }
-        // Otherwise check PATH
-        try {
-            if (process.platform === 'win32') {
-                cp.execSync(`where ${this.executable}`, { stdio: 'pipe', timeout: 5000 });
-            } else {
-                cp.execSync(`which ${this.executable}`, { stdio: 'pipe', timeout: 5000 });
-            }
-        } catch {
-            throw new Error(
-                `ACP pre-flight failed: executable '${this.executable}' not found in PATH. ` +
-                `Install the CLI tool or update the path in .optimus/config/available-agents.json.`
-            );
-        }
+
+        // Resolution failed — provide actionable diagnostic
+        const diagnostic = buildResolutionDiagnostic(this.executable);
+        throw new Error(
+            `ACP pre-flight failed: executable '${this.executable}' not found in PATH or common install locations.\n` +
+            `\n${diagnostic}\n\n` +
+            `Fix options:\n` +
+            `1. Restart the host process (Copilot CLI / VS Code) to inherit updated PATH\n` +
+            `2. Set absolute path in ~/.optimus/config/available-agents.json under engines.<engine>.acp.path\n` +
+            `3. Install the tool: npm install -g @anthropic-ai/claude-code (for claude-agent-acp)\n`
+        );
     }
 
     private spawnProcess(extraEnv?: Record<string, string>): void {
