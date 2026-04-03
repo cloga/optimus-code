@@ -10,6 +10,7 @@ import path from 'path';
 import os from 'os';
 import { sanitizeExternalContent } from '../utils/sanitizeExternalContent';
 import { resolveOptimusPath } from '../utils/worktree';
+import { validatePathSecurity, normalizeCaseForComparison, rejectNullBytes } from '../utils/pathSecurity';
 
 // ─── Types ───
 
@@ -26,6 +27,7 @@ export interface MemoryEntry {
 // ─── Role Name Sanitization (mirrors worker-spawner.ts:68-70) ───
 
 function sanitizeRoleName(role: string): string {
+    rejectNullBytes(role);
     return role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
 }
 
@@ -349,7 +351,9 @@ export function loadFilteredMemory(
             openUsed += body.length + 2;
         }
 
-        return selected.join('\n\n').trim();
+        const warning = memoryFreshnessWarning(allEntries);
+        const result = selected.join('\n\n').trim();
+        return warning ? warning + '\n' + result : result;
     } catch {
         return ''; // Silent fail — memory injection is best-effort
     }
@@ -546,6 +550,9 @@ export function getMemoryFilePath(
         throw new Error('Role name is required for role-level memory');
     }
 
+    // Validate path security before resolution
+    validatePathSecurity(role);
+
     const sanitized = sanitizeRoleName(role);
     if (!sanitized) {
         throw new Error(`Invalid role name after sanitization: '${role}'`);
@@ -563,7 +570,9 @@ export function getMemoryFilePath(
     // Security validation: lexical check
     const resolvedTarget = path.resolve(targetFile);
     const resolvedRolesDir = path.resolve(rolesDir);
-    if (!resolvedTarget.startsWith(resolvedRolesDir + path.sep) && resolvedTarget !== resolvedRolesDir) {
+    const normalizedTarget = normalizeCaseForComparison(resolvedTarget);
+    const normalizedPrefix = normalizeCaseForComparison(resolvedRolesDir + path.sep);
+    if (!normalizedTarget.startsWith(normalizedPrefix) && normalizedTarget !== normalizeCaseForComparison(resolvedRolesDir)) {
         throw new Error(`Path traversal detected: resolved path '${resolvedTarget}' is outside roles directory`);
     }
 
@@ -579,6 +588,49 @@ export function getMemoryFilePath(
     }
 
     return targetFile;
+}
+
+// ─── Memory Staleness ───
+
+/**
+ * Calculate how many days old a memory entry is.
+ * Returns 0 for today, 1 for yesterday, etc.
+ */
+export function memoryAgeDays(dateStr: string): number {
+    try {
+        const entryDate = new Date(dateStr);
+        if (isNaN(entryDate.getTime())) return -1;
+        const now = new Date();
+        const diffMs = now.getTime() - entryDate.getTime();
+        return Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    } catch {
+        return -1;
+    }
+}
+
+/**
+ * Generate a staleness warning if the newest memory entry is older than 1 day.
+ * Returns empty string if memories are fresh or empty.
+ */
+export function memoryFreshnessWarning(entries: MemoryEntry[]): string {
+    if (entries.length === 0) return '';
+
+    // Find the newest entry
+    let newestAgeDays = Infinity;
+    for (const entry of entries) {
+        if (entry.date) {
+            const age = memoryAgeDays(entry.date);
+            if (age >= 0 && age < newestAgeDays) {
+                newestAgeDays = age;
+            }
+        }
+    }
+
+    if (newestAgeDays <= 1) return '';
+
+    return `⚠️ **Memory Staleness Notice** (newest entry: ${newestAgeDays} days ago)\n` +
+        `Memories are point-in-time observations, not live state — claims about code behavior ` +
+        `or file:line citations may be outdated. Verify against current code before asserting as fact.\n`;
 }
 
 // ─── User Memory System ───
@@ -803,4 +855,116 @@ function updateUserMemoryHeader(content: string): string {
     }
 
     return lines.join('\n');
+}
+
+// ─── Memory Snapshot Initialization ───
+
+/**
+ * Check if a memory snapshot exists and whether local memory needs initialization.
+ *
+ * @returns 'none' if no snapshot exists, 'initialize' if snapshot exists but local
+ *          memory hasn't been initialized from it, 'synced' if already synced.
+ */
+export function checkMemorySnapshot(workspacePath: string): 'none' | 'initialize' | 'synced' {
+    const snapshotDir = path.join(workspacePath, '.optimus', 'memory', 'snapshots');
+    const syncMarker = path.join(workspacePath, '.optimus', 'memory', '.snapshot-synced.json');
+
+    // Check if snapshot directory exists and has content
+    if (!fs.existsSync(snapshotDir)) return 'none';
+
+    let snapshotFiles: string[];
+    try {
+        snapshotFiles = fs.readdirSync(snapshotDir).filter(f => f.endsWith('.md'));
+    } catch {
+        return 'none';
+    }
+    if (snapshotFiles.length === 0) return 'none';
+
+    // Check snapshot metadata
+    const snapshotMetaPath = path.join(snapshotDir, 'snapshot.json');
+    let snapshotUpdatedAt = 0;
+    try {
+        if (fs.existsSync(snapshotMetaPath)) {
+            const meta = JSON.parse(fs.readFileSync(snapshotMetaPath, 'utf8'));
+            snapshotUpdatedAt = meta.updatedAt || 0;
+        }
+    } catch { /* ignore */ }
+
+    // Check sync marker
+    if (fs.existsSync(syncMarker)) {
+        try {
+            const synced = JSON.parse(fs.readFileSync(syncMarker, 'utf8'));
+            // Already synced and snapshot hasn't been updated since
+            if (synced.syncedAt && (!snapshotUpdatedAt || synced.syncedAt >= snapshotUpdatedAt)) {
+                return 'synced';
+            }
+        } catch { /* corrupted marker, re-initialize */ }
+    }
+
+    return 'initialize';
+}
+
+/**
+ * Initialize local memory from snapshot files.
+ * Copies snapshot .md files into the project memory directory.
+ * Creates a sync marker to prevent re-initialization.
+ */
+export function initializeFromSnapshot(workspacePath: string): { copied: number; skipped: number } {
+    const snapshotDir = path.join(workspacePath, '.optimus', 'memory', 'snapshots');
+    const memoryDir = path.join(workspacePath, '.optimus', 'memory');
+    const syncMarker = path.join(memoryDir, '.snapshot-synced.json');
+
+    let copied = 0;
+    let skipped = 0;
+
+    try {
+        const files = fs.readdirSync(snapshotDir).filter(f => f.endsWith('.md'));
+
+        for (const file of files) {
+            const srcPath = path.join(snapshotDir, file);
+            const destPath = path.join(memoryDir, file);
+
+            // Don't overwrite existing memory files
+            if (fs.existsSync(destPath)) {
+                skipped++;
+                continue;
+            }
+
+            fs.copyFileSync(srcPath, destPath);
+            copied++;
+        }
+
+        // Also copy role-specific snapshots if they exist
+        const rolesSnapshotDir = path.join(snapshotDir, 'roles');
+        if (fs.existsSync(rolesSnapshotDir)) {
+            const rolesDir = path.join(memoryDir, 'roles');
+            fs.mkdirSync(rolesDir, { recursive: true });
+
+            const roleFiles = fs.readdirSync(rolesSnapshotDir).filter(f => f.endsWith('.md'));
+            for (const file of roleFiles) {
+                const srcPath = path.join(rolesSnapshotDir, file);
+                const destPath = path.join(rolesDir, file);
+
+                if (fs.existsSync(destPath)) {
+                    skipped++;
+                    continue;
+                }
+
+                fs.copyFileSync(srcPath, destPath);
+                copied++;
+            }
+        }
+
+        // Write sync marker
+        fs.writeFileSync(syncMarker, JSON.stringify({
+            syncedAt: Date.now(),
+            copiedFiles: copied,
+            skippedFiles: skipped,
+        }, null, 2), 'utf8');
+
+    } catch (err) {
+        console.error(`[Memory] Snapshot initialization failed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    return { copied, skipped };
 }

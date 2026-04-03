@@ -21,7 +21,7 @@ import { MAX_DELEGATION_DEPTH } from "../constants";
 import { sanitizeExternalContent } from "../utils/sanitizeExternalContent";
 import { registerRole } from "../utils/resolveRoleName";
 import { normalizeAutomationPolicy } from "../utils/automationPolicy";
-import { loadFilteredMemory, migrateMemoryFile, loadUserMemory } from "../managers/MemoryManager";
+import { loadFilteredMemory, migrateMemoryFile, loadUserMemory, checkMemorySnapshot, initializeFromSnapshot } from "../managers/MemoryManager";
 import { TaskManifestManager } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from '../utils/worktree';
 import { loadAgentRuntimeRecord, saveAgentRuntimeRecord, appendAgentRuntimeHistory, pushStreamEvent } from '../utils/agentRuntime';
@@ -1059,6 +1059,15 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
                 const systemInstructions = fs.readFileSync(systemInstructionsPath, 'utf8');
                 personaContext += `\n\n--- START WORKSPACE SYSTEM INSTRUCTIONS ---\n${systemInstructions.trim()}\n--- END WORKSPACE SYSTEM INSTRUCTIONS ---`;
             } catch (e: any) { console.error(`[Orchestrator] Warning: failed to read system-instructions.md: ${e.message}`); }
+        }
+    }
+
+    // Initialize memory from snapshot if needed (before loading)
+    const snapshotStatus = checkMemorySnapshot(workspacePath);
+    if (snapshotStatus === 'initialize') {
+        const { copied, skipped } = initializeFromSnapshot(workspacePath);
+        if (copied > 0) {
+            console.error(`[Memory] Initialized from snapshot: ${copied} files copied, ${skipped} skipped`);
         }
     }
 
