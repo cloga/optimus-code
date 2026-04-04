@@ -322,12 +322,17 @@ export class AcpAdapter implements AgentAdapter {
 
         const args = [...this.defaultArgs];
 
-        debugLog('[AcpAdapter]', `Spawning: ${this.executable} ${args.join(' ')}`);
+        // On Windows, use shell mode for .cmd/.bat scripts and extensionless npm shims.
+        // Only skip shell for .exe files — cmd.exe breaks paths containing spaces (e.g. "C:\Program Files\...").
+        const needsShell = process.platform === 'win32'
+            && !/\.exe$/i.test(this.executable);
+
+        debugLog('[AcpAdapter]', `Spawning: ${this.executable} ${args.join(' ')} (shell=${needsShell})`);
         this.process = cp.spawn(this.executable, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             env,
             windowsHide: true,
-            shell: process.platform === 'win32',
+            shell: needsShell,
         });
 
         // Parse stdout as NDJSON (one JSON object per line)
