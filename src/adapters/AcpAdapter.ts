@@ -308,6 +308,18 @@ export class AcpAdapter implements AgentAdapter {
         this.validateExecutable();
         const env = { ...process.env, ...extraEnv };
         this.sanitizeSpawnEnv(env);
+
+        // Ensure Node.js bin directory is in PATH so child .cmd scripts can find `node`
+        const nodeBinDir = path.dirname(process.execPath);
+        const pathKey = process.platform === 'win32'
+            ? Object.keys(env).find(k => k.toUpperCase() === 'PATH') || 'Path'
+            : 'PATH';
+        const currentPath = env[pathKey] || '';
+        if (!currentPath.split(path.delimiter).some(p => p.toLowerCase() === nodeBinDir.toLowerCase())) {
+            env[pathKey] = `${nodeBinDir}${path.delimiter}${currentPath}`;
+            debugLog('[AcpAdapter]', `Injected Node.js bin dir into PATH: ${nodeBinDir}`);
+        }
+
         const args = [...this.defaultArgs];
 
         debugLog('[AcpAdapter]', `Spawning: ${this.executable} ${args.join(' ')}`);
