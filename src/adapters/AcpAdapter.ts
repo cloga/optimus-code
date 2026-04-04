@@ -147,10 +147,14 @@ export class AcpAdapter implements AgentAdapter {
         const code = error.code;
         const data = error.data ? ` Details: ${JSON.stringify(error.data)}` : '';
 
-        // Authentication
-        if (/auth/i.test(msg) || /unauthorized/i.test(msg) || /login/i.test(msg)) {
+        // Debug: log raw ACP error for diagnosis
+        console.error(`[AcpAdapter] Raw ACP error: code=${code}, message="${msg}", data=${JSON.stringify(error.data)}`);
+
+        // Authentication — require explicit auth keywords, not generic "login" which
+        // can appear in informational messages (e.g. "Run copilot login")
+        if (/unauthorized|403|401/i.test(msg) || /authentication required/i.test(msg)) {
             return new Error(
-                `ACP auth_failed: ${msg}. Fix: for Copilot run \`gh auth login\` (uses gh CLI auth, not env vars). For Claude run \`claude login\` or set ANTHROPIC_API_KEY.`
+                `ACP auth_failed: ${msg}. Fix: check that .env GITHUB_TOKEN is not a classic PAT (ghp_) — Copilot doesn't support those. For Claude run \`claude login\` or set ANTHROPIC_API_KEY.`
             );
         }
 
