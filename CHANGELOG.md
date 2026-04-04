@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.1] - 2026-04-04
+
+### Bug Fixes
+- **Copilot ACP auth** — Only strip classic PATs (`ghp_` prefix) from child env; preserve OAuth (`gho_`) and fine-grained (`github_pat_`) tokens to prevent "Authentication required" errors ([b6909ed](https://github.com/cloga/optimus-code/commit/b6909ed))
+- **ACP shell mode** — Use shell mode only for non-`.exe` executables on Windows to prevent double-quoting and spawn errors ([d0bceea](https://github.com/cloga/optimus-code/commit/d0bceea))
+- **ACP PATH injection** — Inject Node.js bin directory into ACP child process PATH on Windows so `node`-based executables resolve correctly ([0f67a45](https://github.com/cloga/optimus-code/commit/0f67a45))
+
 ## [2.19.0] - 2026-04-03
 
 ### Features (Claude Code Architecture Research — Issue #555)
