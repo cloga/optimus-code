@@ -18,6 +18,7 @@ export interface GenericRunRequest {
     output_schema?: unknown;
     timeout_ms?: number;
     session_id?: string;
+    workspace_path?: string;
 }
 
 export interface GenericRunEnvelope {
@@ -219,5 +220,6 @@ function toExecuteOptions(request: GenericRunRequest): ExecuteOptions {
         sessionId: request.session_id,
         outputSchema: request.output_schema,
         timeoutMs: request.timeout_ms,
+        workspacePath: request.workspace_path || process.env.OPTIMUS_WORKSPACE_ROOT,
     };
 }

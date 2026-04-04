@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.20.0] - 2026-04-04
+
+### Features
+- **Multi-session ACP concurrency** — AcpAdapter now supports multiple concurrent sessions on a single ACP process. Replaces the `_busy` single-task lock with per-session context routing via `_activeSessions` Map. Notifications are routed by `sessionId` with backward-compatible fallback for single-session mode.
+- **Runtime server proxy for delegates** — When running as MCP server (inside a host agent), all engine executions are transparently routed through the runtime HTTP server (`:3100`). This eliminates the nested Copilot auth conflict and decouples ACP process lifecycle from the MCP server.
+- **Initialization mutex** — `_readyPromise` prevents double-spawn when multiple concurrent invocations hit a cold adapter simultaneously.
+- **Per-session activity timers** — Each concurrent session has its own timeout watchdog instead of a shared global timer.
+
+### Bug Fixes
+- **Copilot delegate auth** — Fixed `Authentication required` error when delegating to `github-copilot` engine from within a Copilot CLI host. Requests are now proxied through the runtime server which runs as an independent process.
+- **Pool ephemeral fallback removed** — `AcpProcessPool` no longer spawns ephemeral processes for concurrent requests; instead reuses the persistent adapter's multi-session capability.
+- **v2 API workspace_path** — Generic runtime API now passes `workspace_path` to engine resolver, enabling custom engines (e.g. `qwen-code`) configured in `available-agents.json`.
+
 ## [2.19.1] - 2026-04-04
 
 ### Bug Fixes

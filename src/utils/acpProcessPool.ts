@@ -69,15 +69,11 @@ export class AcpProcessPool {
             }
 
             if (existing.isBusy()) {
-                // Concurrent use — ephemeral fallback
-                console.error(`[AcpPool] ⚡ Adapter for ${key} is busy, creating ephemeral adapter`);
-                this._totalCreations++;
-                return new AcpAdapter(
-                    `acp-${key}-eph-${Date.now()}`,
-                    `🚀 ${key}`,
-                    executable, args, activityTimeoutMs,
-                    false // ephemeral
-                );
+                // Multi-session concurrency: reuse the same persistent adapter
+                // AcpAdapter now supports concurrent sessions via per-session context routing
+                this._totalReuses++;
+                console.error(`[AcpPool] 🔀 Reusing busy adapter for ${key} (concurrent session, active sessions: ${existing.invocationCount})`);
+                return existing;
             }
 
             // Dead process — clean up

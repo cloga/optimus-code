@@ -131,7 +131,7 @@ describe('AcpAdapter persistent mode (integration)', () => {
     try {
       // First invocation — spawns process + initialize
       const result1 = await adapter.invoke('hello 1', 'agent');
-      expect(result1).toContain('Hello, this is a test response.');
+      expect(result1).toContain('this is a test response.');
       expect(adapter.invocationCount).toBe(1);
       expect(adapter.isAlive()).toBe(true);
       expect(adapter.isBusy()).toBe(false);
@@ -139,13 +139,13 @@ describe('AcpAdapter persistent mode (integration)', () => {
 
       // Second invocation — reuses warm process (no re-spawn, no re-initialize)
       const result2 = await adapter.invoke('hello 2', 'agent');
-      expect(result2).toContain('Hello, this is a test response.');
+      expect(result2).toContain('this is a test response.');
       expect(adapter.invocationCount).toBe(2);
       expect(adapter.isAlive()).toBe(true);
 
       // Third invocation — still warm
       const result3 = await adapter.invoke('hello 3', 'agent');
-      expect(result3).toContain('Hello, this is a test response.');
+      expect(result3).toContain('this is a test response.');
       expect(adapter.invocationCount).toBe(3);
     } finally {
       adapter.shutdown();
@@ -160,7 +160,7 @@ describe('AcpAdapter persistent mode (integration)', () => {
     try {
       // Normal invocation
       const result1 = await adapter.invoke('hello', 'agent');
-      expect(result1).toContain('Hello, this is a test response.');
+      expect(result1).toContain('this is a test response.');
       expect(adapter.invocationCount).toBe(1);
 
       // Kill the process to simulate crash
@@ -169,7 +169,7 @@ describe('AcpAdapter persistent mode (integration)', () => {
 
       // Next invocation should auto-recover (respawn + reinitialize)
       const result2 = await adapter.invoke('hello again', 'agent');
-      expect(result2).toContain('Hello, this is a test response.');
+      expect(result2).toContain('this is a test response.');
       expect(adapter.invocationCount).toBe(2);
       expect(adapter.isAlive()).toBe(true);
     } finally {
@@ -181,7 +181,7 @@ describe('AcpAdapter persistent mode (integration)', () => {
     const adapter = new AcpAdapter('eph-test', 'Eph', 'node', [MOCK_SERVER, '--ndjson'], 0, false);
 
     const result = await adapter.invoke('hello', 'agent');
-    expect(result).toContain('Hello, this is a test response.');
+    expect(result).toContain('this is a test response.');
     // Ephemeral: process is killed after invoke
     expect(adapter.isAlive()).toBe(false);
     expect(adapter.persistent).toBe(false);
@@ -196,7 +196,7 @@ describe('AcpAdapter persistent mode (integration)', () => {
 
       // Invoke to make it alive
       const result1 = await adapter.invoke('hello', 'agent');
-      expect(result1).toContain('Hello, this is a test response.');
+      expect(result1).toContain('this is a test response.');
       expect(adapter.isAlive()).toBe(true);
       expect(pool.totalCreations).toBe(1);
 
@@ -208,10 +208,11 @@ describe('AcpAdapter persistent mode (integration)', () => {
 
       // Invoke on reused adapter
       const result2 = await adapter2.invoke('hello again', 'agent');
-      expect(result2).toContain('Hello, this is a test response.');
+      expect(result2).toContain('this is a test response.');
       expect(adapter2.invocationCount).toBe(2);
     } finally {
       pool.shutdownAll();
     }
   });
 });
+

@@ -32,6 +32,7 @@ const FORCE_NDJSON = process.argv.includes('--ndjson');
 let useNdjsonOutput = FORCE_NDJSON;
 let useNdjsonInput = FORCE_NDJSON;
 let framingDetected = FORCE_NDJSON; // skip auto-detection if flag is set
+let sessionIdCounter = 0;
 
 // ─── Output Helpers ──────────────────────────────────────────────────────────
 
@@ -131,10 +132,12 @@ function handleInitialize(msg) {
 }
 
 function handleSessionNew(msg) {
+    sessionIdCounter++;
+    const sessionId = `test-session-${String(sessionIdCounter).padStart(3, '0')}`;
     sendMessage({
         jsonrpc: '2.0',
         id: msg.id,
-        result: { sessionId: 'test-session-001' }
+        result: { sessionId }
     });
 }
 
@@ -148,12 +151,15 @@ function handleSessionLoad(msg) {
 }
 
 function handleSessionPrompt(msg) {
+    const sessionId = (msg.params && msg.params.sessionId) || 'test-session-001';
+
     if (CRASH_ON_PROMPT) {
         // Send one notification then hard-crash
         sendMessage({
             jsonrpc: '2.0',
             method: 'session/update',
             params: {
+                sessionId,
                 update: {
                     sessionUpdate: 'agent_message_chunk',
                     content: { type: 'text', text: 'chunk-before-crash' }
@@ -164,32 +170,37 @@ function handleSessionPrompt(msg) {
         process.exit(1);
     }
 
-    const chunks = ['Hello, ', 'this is ', 'a test response.'];
+    const chunks = [`Hello from session ${sessionId}, `, 'this is ', 'a test response.'];
 
-    // Send 3 incremental notifications using sessionUpdate wrapper
-    for (const chunk of chunks) {
+    // Send 3 incremental notifications with sessionId for routing
+    (async () => {
+        for (const chunk of chunks) {
+            sendMessage({
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                    sessionId,
+                    update: {
+                        sessionUpdate: 'agent_message_chunk',
+                        content: { type: 'text', text: chunk }
+                    }
+                }
+            });
+            // 10ms delay between chunks for interleaving
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        // Send final response
         sendMessage({
             jsonrpc: '2.0',
-            method: 'session/update',
-            params: {
-                update: {
-                    sessionUpdate: 'agent_message_chunk',
-                    content: { type: 'text', text: chunk }
-                }
+            id: msg.id,
+            result: {
+                text: chunks.join(''),
+                stopReason: 'end_turn',
+                sessionId
             }
         });
-    }
-
-    // Send final response
-    sendMessage({
-        jsonrpc: '2.0',
-        id: msg.id,
-        result: {
-            text: chunks.join(''),
-            stopReason: 'end_turn',
-            sessionId: (msg.params && msg.params.sessionId) || 'test-session-001'
-        }
-    });
+    })();
 }
 
 function handleSessionCancel(msg) {

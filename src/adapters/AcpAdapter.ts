@@ -9,6 +9,18 @@ import { loadProjectMcpServers } from '../utils/mcpConfig';
 import { isCopilotCliExecutable, sanitizeCopilotAuthEnv } from '../utils/copilotAuthEnv';
 import { resolveExecutablePath, buildResolutionDiagnostic } from '../utils/acpPathResolver.js';
 
+// ─── Session Context for Multi-Session Concurrency ───
+
+interface SessionContext {
+    sessionId: string;
+    outputChunks: string[];
+    onUpdate?: (chunk: string) => void;
+    activityTimer?: ReturnType<typeof setInterval>;
+    lastUpdateTime: number;
+    /** Deferred resolve/reject for session-scoped failure (e.g. per-session timeout) */
+    rejectSession?: (err: Error) => void;
+}
+
 // ─── ACP Response Helpers ───
 
 /**
@@ -48,6 +60,15 @@ interface JsonRpcNotification {
 
 type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification;
 
+/** Per-session context for tracking concurrent sessions on a single ACP process. */
+interface SessionContext {
+    sessionId: string;
+    outputChunks: string[];
+    onUpdate?: (chunk: string) => void;
+    activityTimer?: ReturnType<typeof setInterval>;
+    lastUpdateTime: number;
+}
+
 /**
  * AcpAdapter: Universal Agent Client Protocol (ACP) Engine Adapter.
  *
@@ -82,16 +103,17 @@ export class AcpAdapter implements AgentAdapter {
     private pendingRequests = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
     private notificationHandlers = new Map<string, (params: any) => void>();
     private activityTimeoutMs: number;
-    private lastUpdateTime: number = 0;
-    private activityTimer?: ReturnType<typeof setInterval>;
 
     // Persistent mode state
     private _persistent: boolean;
     private _initialized: boolean = false;
-    private _busy: boolean = false;
+    private _activeSessions = new Map<string, SessionContext>();
     private _idleSince: number = 0;
     private _invocationCount: number = 0;
     private _stderrBuffer: string = '';
+
+    /** Mutex for process initialization — prevents double-spawn on concurrent cold starts */
+    private _readyPromise: Promise<void> | null = null;
 
     /** Timeout for ACP protocol handshake (initialize). Should complete in < 5s; 15s is generous. */
     private initTimeoutMs: number;
@@ -117,17 +139,21 @@ export class AcpAdapter implements AgentAdapter {
         return !!this.process && this._initialized && !this.process.killed;
     }
 
-    /** Check if the adapter is currently handling a task */
+    /** Check if the adapter is currently handling one or more sessions */
     isBusy(): boolean {
-        return this._busy;
+        return this._activeSessions.size > 0;
     }
 
     /** Graceful shutdown — kills process and resets state. Used by pool eviction. */
     shutdown(): void {
-        debugLog('[AcpAdapter]', `Shutting down adapter ${this.id} (invocations: ${this._invocationCount})`);
+        debugLog('[AcpAdapter]', `Shutting down adapter ${this.id} (invocations: ${this._invocationCount}, active sessions: ${this._activeSessions.size})`);
+        // Clear all per-session activity timers
+        for (const [, ctx] of this._activeSessions) {
+            if (ctx.activityTimer) clearInterval(ctx.activityTimer);
+        }
+        this._activeSessions.clear();
         this.cleanup();
         this._initialized = false;
-        this._busy = false;
     }
 
     private isInvalidParamsError(err: unknown): boolean {
@@ -270,14 +296,59 @@ export class AcpAdapter implements AgentAdapter {
             return;
         }
 
-        // Notification from the agent
+        // Notification from the agent — route by sessionId for session/update
         if ('method' in msg && !('id' in msg && msg.id != null)) {
+            // Try session-based routing first (for multi-session concurrency)
+            if (msg.method === 'session/update' && msg.params) {
+                const sessionId = msg.params.sessionId || msg.params.session_id;
+                if (sessionId) {
+                    const ctx = this._activeSessions.get(sessionId);
+                    if (ctx) {
+                        this._routeSessionUpdate(ctx, msg.params);
+                        return;
+                    }
+                    debugLog('[AcpAdapter]', `session/update for unknown session ${sessionId}, ${this._activeSessions.size} active`);
+                }
+                // Fallback: no sessionId in notification — route to single active session if only one
+                if (this._activeSessions.size === 1) {
+                    const [, ctx] = this._activeSessions.entries().next().value!;
+                    this._routeSessionUpdate(ctx, msg.params);
+                    return;
+                }
+                if (this._activeSessions.size > 1) {
+                    debugLog('[AcpAdapter]', `session/update without sessionId dropped — ${this._activeSessions.size} sessions active, cannot route`);
+                    return;
+                }
+            }
+
+            // Legacy fallback: use notificationHandlers map (for non-session notifications or ephemeral mode)
             const handler = this.notificationHandlers.get(msg.method);
             if (handler) {
                 handler(msg.params);
             } else {
                 debugLog('[AcpAdapter]', `Unhandled notification: ${msg.method}`);
             }
+        }
+    }
+
+    /** Route a session/update notification to the correct session context */
+    private _routeSessionUpdate(ctx: SessionContext, params: any): void {
+        ctx.lastUpdateTime = Date.now();
+        const update = params?.update;
+        if (!update) return;
+
+        if (update.sessionUpdate === 'agent_message_chunk') {
+            const text = update.content?.text || '';
+            if (text) {
+                ctx.outputChunks.push(text);
+                if (ctx.onUpdate) ctx.onUpdate(text);
+            }
+            if (update._meta?.usage) {
+                this.lastUsageLog = JSON.stringify(update._meta.usage);
+            }
+        } else if (update.sessionUpdate === 'agent_thought_chunk') {
+            const text = update.content?.text || '';
+            if (text && ctx.onUpdate) ctx.onUpdate(`[thinking] ${text}`);
         }
     }
 
@@ -408,17 +479,33 @@ export class AcpAdapter implements AgentAdapter {
             pending.reject(err);
         }
         this.pendingRequests.clear();
+        // Clear all active session contexts and their timers
+        for (const [, ctx] of this._activeSessions) {
+            if (ctx.activityTimer) clearInterval(ctx.activityTimer);
+        }
+        this._activeSessions.clear();
     }
 
     private stopActivityTimer(): void {
-        if (this.activityTimer) {
-            clearInterval(this.activityTimer);
-            this.activityTimer = undefined;
+        for (const [, ctx] of this._activeSessions) {
+            if (ctx.activityTimer) {
+                clearInterval(ctx.activityTimer);
+                ctx.activityTimer = undefined;
+            }
+        }
+    }
+
+    private stopSessionTimer(sessionId: string): void {
+        const ctx = this._activeSessions.get(sessionId);
+        if (ctx?.activityTimer) {
+            clearInterval(ctx.activityTimer);
+            ctx.activityTimer = undefined;
         }
     }
 
     private cleanup(): void {
         this.stopActivityTimer();
+        this._activeSessions.clear();
         this.notificationHandlers.clear();
         this.pendingRequests.clear();
         if (this.process) {
@@ -504,10 +591,21 @@ export class AcpAdapter implements AgentAdapter {
     /**
      * Ensure the ACP process is spawned and initialized. Idempotent.
      * Auto-recovers from process crashes by respawning.
+     * Uses a mutex (_readyPromise) to prevent double-spawn on concurrent cold starts.
      */
     private async _ensureReady(extraEnv?: Record<string, string>): Promise<void> {
         if (this.isAlive()) return;
+        // If another concurrent invoke is already initializing, await it
+        if (this._readyPromise) return this._readyPromise;
+        this._readyPromise = this._doSpawnAndInit(extraEnv);
+        try {
+            await this._readyPromise;
+        } finally {
+            this._readyPromise = null;
+        }
+    }
 
+    private async _doSpawnAndInit(extraEnv?: Record<string, string>): Promise<void> {
         // Clean up dead process if any
         if (this.process) {
             try { this.process.kill('SIGTERM'); } catch { /* already dead */ }
@@ -550,9 +648,9 @@ export class AcpAdapter implements AgentAdapter {
         options?: { model?: string; autopilot?: boolean; maxContinues?: number; promptParts?: { sharedPrefix: string; uniqueSuffix: string; cacheKey: string } }
     ): Promise<string> {
         debugLog('[AcpAdapter]', `Invoking persistent for ${this.name} (mode=${mode}, resume=${!!sessionId}, invocation=#${this._invocationCount + 1})`);
-        this._busy = true;
         this._invocationCount++;
 
+        let currentSessionId: string | undefined;
         try {
             // Step 1: Ensure process is spawned and initialized (no-op if already warm)
             await this._ensureReady(extraEnv);
@@ -640,7 +738,6 @@ export class AcpAdapter implements AgentAdapter {
                 }
             };
 
-            let currentSessionId: string;
             if (sessionId) {
                 try {
                     const loadResult = await this.sendRequest('session/load', { sessionId });
@@ -657,35 +754,22 @@ export class AcpAdapter implements AgentAdapter {
             this.lastSessionId = currentSessionId;
 
             // Step 2.5: Configure session mode (autopilot) and model if requested
-            await this.configureSession(currentSessionId, options);
+            await this.configureSession(currentSessionId!, options);
 
-            // Step 3: Register notification handler and send prompt
-            const outputChunks: string[] = [];
-            this.notificationHandlers.set('session/update', (params: any) => {
-                this.lastUpdateTime = Date.now();
-                const update = params?.update;
-                if (!update) return;
+            // Step 3: Register session context for notification routing
+            const ctx: SessionContext = {
+                sessionId: currentSessionId!,
+                outputChunks: [],
+                onUpdate,
+                lastUpdateTime: Date.now(),
+            };
+            this._activeSessions.set(currentSessionId!, ctx);
 
-                if (update.sessionUpdate === 'agent_message_chunk') {
-                    const text = update.content?.text || '';
-                    if (text) {
-                        outputChunks.push(text);
-                        if (onUpdate) onUpdate(text);
-                    }
-                    if (update._meta?.usage) {
-                        this.lastUsageLog = JSON.stringify(update._meta.usage);
-                    }
-                } else if (update.sessionUpdate === 'agent_thought_chunk') {
-                    const text = update.content?.text || '';
-                    if (text && onUpdate) onUpdate(`[thinking] ${text}`);
-                }
-            });
-
-            this.lastUpdateTime = Date.now();
             if (this.activityTimeoutMs > 0) {
                 const checkInterval = Math.min(this.activityTimeoutMs / 4, 30000);
-                this.activityTimer = setInterval(() => {
-                    const elapsed = Date.now() - this.lastUpdateTime;
+                const trackedSessionId = currentSessionId!;
+                ctx.activityTimer = setInterval(() => {
+                    const elapsed = Date.now() - ctx.lastUpdateTime;
                     if (elapsed >= this.activityTimeoutMs) {
                         const timeoutErr = new Error(
                             `ACP task_timeout: no activity from engine for ${Math.round(elapsed / 1000)}s ` +
@@ -694,7 +778,7 @@ export class AcpAdapter implements AgentAdapter {
                             `Fix: retry, or increase timeout via runtime_policy.timeout_ms or config timeout.activity_ms.`
                         );
                         debugLog('[AcpAdapter]', timeoutErr.message);
-                        this.stopActivityTimer();
+                        this.stopSessionTimer(trackedSessionId);
                         this.rejectAllPending(timeoutErr);
                     }
                 }, checkInterval);
@@ -702,20 +786,24 @@ export class AcpAdapter implements AgentAdapter {
 
             let promptResult: any;
             try {
-                promptResult = await sendPromptWithCompatibility(currentSessionId);
+                promptResult = await sendPromptWithCompatibility(currentSessionId!);
             } catch (err) {
                 if (!sessionId || !this.isInvalidParamsError(err)) throw err;
                 debugLog('[AcpAdapter]', `Persisted session rejected; retrying with fresh session`);
+                this._activeSessions.delete(currentSessionId!);
                 currentSessionId = await createSession();
                 this.lastSessionId = currentSessionId;
+                ctx.sessionId = currentSessionId;
+                ctx.outputChunks = [];
+                this._activeSessions.set(currentSessionId, ctx);
                 promptResult = await sendPromptWithCompatibility(currentSessionId);
             }
-            this.stopActivityTimer();
+            this.stopSessionTimer(currentSessionId!);
 
             // Prefer structured content from promptResult over streaming chunks.
             // ACP spec: promptResult.content is an array of { type, text } blocks.
             const structuredOutput = extractContentText(promptResult);
-            const streamOutput = outputChunks.join('');
+            const streamOutput = ctx.outputChunks.join('');
             const fullOutput = structuredOutput || streamOutput;
             this.lastStopReason = promptResult?.stopReason;
             // Capture usage from promptResult (e.g. Claude Code) or keep streaming-captured usage
@@ -735,10 +823,14 @@ export class AcpAdapter implements AgentAdapter {
             }
             throw err;
         } finally {
-            this._busy = false;
-            this._idleSince = Date.now();
-            this.stopActivityTimer();
-            this.notificationHandlers.clear();
+            // Clean up only THIS session's context
+            if (currentSessionId) {
+                this.stopSessionTimer(currentSessionId);
+                this._activeSessions.delete(currentSessionId);
+            }
+            if (this._activeSessions.size === 0) {
+                this._idleSince = Date.now();
+            }
             // Do NOT cleanup/kill process — keep alive for next invocation
         }
     }
@@ -873,44 +965,21 @@ export class AcpAdapter implements AgentAdapter {
             await this.configureSession(currentSessionId, options);
 
             // Step 4 + 5 + 6: Send prompt, collect streaming updates, await final response
-            const outputChunks: string[] = [];
+            // Register session context for notification routing (consistent with persistent path)
+            const ctx: SessionContext = {
+                sessionId: currentSessionId,
+                outputChunks: [],
+                onUpdate,
+                lastUpdateTime: Date.now(),
+            };
+            this._activeSessions.set(currentSessionId, ctx);
 
-            // Register notification handler for streaming updates
-            this.notificationHandlers.set('session/update', (params: any) => {
-                // Reset activity timer on every update
-                this.lastUpdateTime = Date.now();
-
-                const update = params?.update;
-                if (!update) return;
-
-                // Extract text from agent_message_chunk (the actual response content)
-                if (update.sessionUpdate === 'agent_message_chunk') {
-                    const text = update.content?.text || '';
-                    if (text) {
-                        outputChunks.push(text);
-                        if (onUpdate) onUpdate(text);
-                    }
-                    // Capture usage info if present
-                    if (update._meta?.usage) {
-                        this.lastUsageLog = JSON.stringify(update._meta.usage);
-                    }
-                }
-                // agent_thought_chunk can be forwarded as thinking/progress
-                else if (update.sessionUpdate === 'agent_thought_chunk') {
-                    const text = update.content?.text || '';
-                    if (text && onUpdate) {
-                        onUpdate(`[thinking] ${text}`);
-                    }
-                }
-            });
-
-            // Send prompt as ACP content array format: [{type: "text", text: "..."}]
             // Start activity watchdog before sending — any session/update resets the clock
-            this.lastUpdateTime = Date.now();
             if (this.activityTimeoutMs > 0) {
                 const checkInterval = Math.min(this.activityTimeoutMs / 4, 30000);
-                this.activityTimer = setInterval(() => {
-                    const elapsed = Date.now() - this.lastUpdateTime;
+                const trackedSessionId = currentSessionId;
+                ctx.activityTimer = setInterval(() => {
+                    const elapsed = Date.now() - ctx.lastUpdateTime;
                     if (elapsed >= this.activityTimeoutMs) {
                         const timeoutErr = new Error(
                             `ACP task_timeout: no activity from engine for ${Math.round(elapsed / 1000)}s ` +
@@ -919,7 +988,7 @@ export class AcpAdapter implements AgentAdapter {
                             `Fix: retry, or increase timeout via runtime_policy.timeout_ms or config timeout.activity_ms.`
                         );
                         debugLog('[AcpAdapter]', timeoutErr.message);
-                        this.stopActivityTimer();
+                        this.stopSessionTimer(trackedSessionId);
                         this.rejectAllPending(timeoutErr);
                         this.cleanup();
                     }
@@ -933,15 +1002,19 @@ export class AcpAdapter implements AgentAdapter {
                     throw err;
                 }
                 debugLog('[AcpAdapter]', `Persisted session ${currentSessionId} rejected prompt params; creating a fresh session and retrying once`);
+                this._activeSessions.delete(currentSessionId);
                 currentSessionId = await createSession();
                 this.lastSessionId = currentSessionId;
+                ctx.sessionId = currentSessionId;
+                ctx.outputChunks = [];
+                this._activeSessions.set(currentSessionId, ctx);
                 promptResult = await sendPromptWithCompatibility(currentSessionId);
             }
-            this.stopActivityTimer();
+            this.stopSessionTimer(currentSessionId);
 
             // Prefer structured content from promptResult over streaming chunks
             const structuredOutput = extractContentText(promptResult);
-            const streamOutput = outputChunks.join('');
+            const streamOutput = ctx.outputChunks.join('');
             const fullOutput = structuredOutput || streamOutput;
             this.lastStopReason = promptResult?.stopReason;
             if (promptResult?.usage && !this.lastUsageLog) {
