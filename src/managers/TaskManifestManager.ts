@@ -156,12 +156,67 @@ export class TaskManifestManager {
 
     static saveManifest(workspacePath: string, manifest: Record<string, TaskRecord>) {
         const manifestPath = this.getManifestPath(workspacePath);
-        const tempPath = `${manifestPath}.tmp`;
+        // Use unique tmp filename to prevent cross-process collisions
+        const tempPath = `${manifestPath}.tmp.${process.pid}.${Date.now()}`;
         const dir = path.dirname(manifestPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        fs.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), 'utf8');
-        fs.renameSync(tempPath, manifestPath);
+        const MAX_RETRIES = 5;
+        const BASE_DELAY_MS = 50;
+
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+                fs.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), 'utf8');
+                // Windows-safe atomic replace: unlink target first, then rename.
+                // Another process may hold the file briefly — retry on EPERM/EACCES/EBUSY.
+                try { fs.unlinkSync(manifestPath); } catch (e: any) {
+                    if (e.code !== 'ENOENT') {
+                        // File exists but locked — retry
+                        if ((e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'EBUSY') && attempt < MAX_RETRIES - 1) {
+                            try { fs.unlinkSync(tempPath); } catch { /* best-effort cleanup */ }
+                            const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 50;
+                            const waitUntil = Date.now() + delay;
+                            while (Date.now() < waitUntil) { /* sync busy-wait */ }
+                            continue;
+                        }
+                        throw e;
+                    }
+                }
+                try {
+                    fs.renameSync(tempPath, manifestPath);
+                } catch (renameErr: any) {
+                    if ((renameErr.code === 'EPERM' || renameErr.code === 'EACCES' || renameErr.code === 'EBUSY') && attempt < MAX_RETRIES - 1) {
+                        try { fs.unlinkSync(tempPath); } catch { /* best-effort cleanup */ }
+                        const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 50;
+                        const waitUntil = Date.now() + delay;
+                        while (Date.now() < waitUntil) { /* sync busy-wait */ }
+                        continue;
+                    }
+                    // Last resort: direct write (non-atomic but prevents data loss)
+                    try {
+                        const data = fs.readFileSync(tempPath, 'utf8');
+                        fs.writeFileSync(manifestPath, data, 'utf8');
+                        fs.unlinkSync(tempPath);
+                    } catch {
+                        throw renameErr;
+                    }
+                }
+                return; // success
+            } catch (e: any) {
+                if ((e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'EBUSY') && attempt < MAX_RETRIES - 1) {
+                    console.error(`[TaskManifest] saveManifest retry ${attempt + 1}/${MAX_RETRIES}: ${e.code} — ${e.message}`);
+                    try { fs.unlinkSync(tempPath); } catch { /* best-effort cleanup */ }
+                    const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 50;
+                    const waitUntil = Date.now() + delay;
+                    while (Date.now() < waitUntil) { /* sync busy-wait */ }
+                    continue;
+                }
+                // Clean up temp file on final failure
+                try { fs.unlinkSync(tempPath); } catch { /* best-effort */ }
+                console.error(`[TaskManifest] saveManifest failed after ${attempt + 1} attempts: ${e.message}. Manifest may be stale but process will NOT crash.`);
+                return; // graceful degradation — don't crash the process
+            }
+        }
     }
 
     static createTask(workspacePath: string, record: Omit<TaskRecord, 'status' | 'startTime' | 'heartbeatTime'>): TaskRecord {

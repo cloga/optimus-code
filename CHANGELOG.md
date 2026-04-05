@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.20.1] - 2026-04-05
+
+### Bug Fixes
+- **Manifest cross-process safety** — `saveManifest` now uses PID+timestamp-unique temp files, retry with exponential backoff on Windows `EPERM`/`EACCES`/`EBUSY`, and graceful degradation (never crashes the process). Fixes random `EPERM: operation not permitted, rename task-manifest.json.tmp` crashes when MCP server, runtime server, and cron patrol write concurrently.
+
 ## [2.20.0] - 2026-04-04
 
 ### Features
