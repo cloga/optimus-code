@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.21.0] - 2026-04-06
+
+### Features
+- **User-level HTTP Runtime** — Runtime server is now cross-project. Start once with `node ~/.optimus/dist/http-runtime.js --port 3100`, serve all workspaces via per-request `workspace_path`. No `--workspace` required.
+- **MCP auto-start uses user-level path** — `~/.optimus/dist/http-runtime.js` is the primary auto-start candidate, enabling any project's MCP server to find the runtime.
+
+### Stability
+- **Crash guard** — HTTP runtime catches `uncaughtException`/`unhandledRejection` without crashing.
+- **Session concurrency limit** — `AcpAdapter` enforces `maxConcurrentSessions` (default: 10) to prevent OOM.
+- **MCP proxy auto-reconnect** — Detects `ECONNREFUSED`/`ECONNRESET`, auto-restarts runtime server and retries.
+
+### Bug Fixes
+- **Auto-start TDZ** — Fixed `cwd` used before declaration in `ensureRuntimeServer`.
+- **No silent fallback** — Throws actionable error when runtime server unavailable instead of silently falling back to direct ACP spawn.
+- **v2 API workspace warning** — Logs warning when `workspace_path` is missing (custom engines won't resolve).
+
+### Documentation
+- Updated `runtime-integration` skill with User-Level Runtime section and cross-project examples.
+- Updated `system-instructions.md` with runtime server dependency note.
+
 ## [2.20.2] - 2026-04-06
 
 ### Stability
