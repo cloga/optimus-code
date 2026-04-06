@@ -60,7 +60,7 @@ interface ParsedArgs {
 function parseArgs(): ParsedArgs {
     const args = process.argv.slice(2);
     let port = parseInt(process.env.OPTIMUS_RUNTIME_PORT || '3100', 10);
-    let workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    let workspacePath = process.env.OPTIMUS_WORKSPACE_ROOT || '';
     let isOverflow = false;
     let idleTimeoutMs = 60_000;
 
@@ -312,7 +312,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             );
             return;
         }
-        if (!body.workspace_path) body.workspace_path = defaultWorkspacePath;
+        if (!body.workspace_path) {
+            if (defaultWorkspacePath) {
+                body.workspace_path = defaultWorkspacePath;
+            } else {
+                sendError(res, 400, 'missing_workspace',
+                    'workspace_path is required when runtime server is started without --workspace.',
+                    'Include workspace_path in the request body: { "workspace_path": "/path/to/project", ... }');
+                return;
+            }
+        }
         const request = normalizeRuntimeRequest(body);
         console.error(`[HTTP] POST /agent/run role=${request.role} engine=${request.role_engine || 'default'} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
         activeRuns++;
@@ -342,7 +351,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             );
             return;
         }
-        if (!body.workspace_path) body.workspace_path = defaultWorkspacePath;
+        if (!body.workspace_path) {
+            if (defaultWorkspacePath) {
+                body.workspace_path = defaultWorkspacePath;
+            } else {
+                sendError(res, 400, 'missing_workspace',
+                    'workspace_path is required when runtime server is started without --workspace.',
+                    'Include workspace_path in the request body: { "workspace_path": "/path/to/project", ... }');
+                return;
+            }
+        }
         const request = normalizeRuntimeRequest(body);
         console.error(`[HTTP] POST /agent/start role=${request.role} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
         activeRuns++;
@@ -709,7 +727,7 @@ function startServer() {
         const label = isOverflow ? '(overflow)' : '(primary)';
         console.error(`\n🚀 Optimus Agent Runtime — HTTP Server ${label}`);
         console.error(`   Port:      ${port}`);
-        console.error(`   Workspace: ${workspacePath}`);
+        console.error(`   Workspace: ${workspacePath || '(per-request)'}`);
         console.error(`   Max concurrent: ${MAX_CONCURRENT_RUNS}`);
         if (!isOverflow) {
             console.error(`   Max overflow:   ${MAX_OVERFLOW_INSTANCES} (total capacity: ${MAX_CONCURRENT_RUNS * (1 + MAX_OVERFLOW_INSTANCES)})`);

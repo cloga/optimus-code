@@ -116,10 +116,15 @@ async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
     runtimeServerStarting = (async () => {
         const cwd = workspacePath || process.cwd();
 
-        // Find http-runtime.js: try __dirname (same dist dir), then common locations
+        // Find http-runtime.js: prioritize user-level, then project-level
+        const homeDir = process.env.USERPROFILE || process.env.HOME || '';
         const candidates = [
+            // User-level (cross-project, preferred)
+            path.join(homeDir, '.optimus', 'dist', 'http-runtime.js'),
+            // Same dist dir as MCP server bundle
             path.join(__dirname, 'http-runtime.js'),
             path.join(__dirname, '..', 'dist', 'http-runtime.js'),
+            // Project-level fallback
             path.resolve(cwd, '.optimus', 'dist', 'http-runtime.js'),
             path.resolve(cwd, 'optimus-plugin', 'dist', 'http-runtime.js'),
         ];
@@ -136,7 +141,6 @@ async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
         runtimeServerProcess = spawn(process.execPath, [
             httpRuntimePath,
             '--port', String(RUNTIME_PORT),
-            '--workspace', cwd,
         ], {
             detached: true,
             stdio: ['ignore', 'ignore', 'pipe'],
