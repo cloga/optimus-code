@@ -114,6 +114,8 @@ async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
 
     // Auto-start the runtime server
     runtimeServerStarting = (async () => {
+        const cwd = workspacePath || process.cwd();
+
         // Find http-runtime.js: try __dirname (same dist dir), then common locations
         const candidates = [
             path.join(__dirname, 'http-runtime.js'),
@@ -129,7 +131,6 @@ async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
             return;
         }
 
-        const cwd = workspacePath || process.cwd();
         console.error(`[RuntimeProxy] Auto-starting runtime server on :${RUNTIME_PORT} (cwd=${cwd})`);
 
         runtimeServerProcess = spawn(process.execPath, [
@@ -343,7 +344,14 @@ export async function executePrompt(
             console.error(`[Executor] Routing ${engine} execution via runtime server on :${RUNTIME_PORT}`);
             return executeViaRuntimeServer(prompt, options);
         }
-        console.error(`[Executor] Runtime server not available, falling back to direct ACP spawn`);
+        // Runtime server failed to start — throw actionable error instead of
+        // silently falling back to direct ACP spawn (which will fail for copilot
+        // due to nested auth conflict, and is unreliable for other engines inside MCP).
+        throw new Error(
+            `Runtime server not available on port ${RUNTIME_PORT}. ` +
+            `Delegate execution requires the runtime server when running inside a host agent. ` +
+            `Fix: start the runtime server with: node .optimus/dist/http-runtime.js --port ${RUNTIME_PORT}`
+        );
     }
 
     const pool = AcpProcessPool.getInstance();
