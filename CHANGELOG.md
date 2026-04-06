@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.22.0] - 2026-04-06
+
+### Features
+- **User-level resource sharing** — `resolveOptimusPath` now falls back to `~/.optimus/` for shared resources (config, roles, skills, dist, memory). Resolution: project → main worktree → `~/.optimus/`. No more duplicating roles/skills/config across projects.
+- **Upgrade all projects** — `optimus upgrade` defaults to upgrading all registered projects. Use `--single` for current-dir only.
+
+### Bug Fixes
+- **role-registry.json** — Fixed hardcoded path to use `resolveOptimusPath` (was missing worktree + user-level fallback).
+- **mcp-servers.json** — Now resolves via `resolveOptimusPath` with user-level fallback.
+
 ## [2.21.1] - 2026-04-06
 
 ### Features
