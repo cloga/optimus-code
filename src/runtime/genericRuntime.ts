@@ -214,12 +214,16 @@ function validateRequest(request: GenericRunRequest): void {
 }
 
 function toExecuteOptions(request: GenericRunRequest): ExecuteOptions {
+    const workspacePath = request.workspace_path || process.env.OPTIMUS_WORKSPACE_ROOT;
+    if (!workspacePath) {
+        console.error('[GenericRuntime] ⚠️ No workspace_path in request and OPTIMUS_WORKSPACE_ROOT not set. Custom engines from available-agents.json will not be available. Fix: include workspace_path in the request body or set OPTIMUS_WORKSPACE_ROOT env var.');
+    }
     return {
         engine: request.engine,
         model: request.model,
         sessionId: request.session_id,
         outputSchema: request.output_schema,
         timeoutMs: request.timeout_ms,
-        workspacePath: request.workspace_path || process.env.OPTIMUS_WORKSPACE_ROOT,
+        workspacePath,
     };
 }
