@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { resolveOptimusPath } from "./worktree";
 
 interface RoleEntry {
     aliases: string[];
@@ -17,7 +18,7 @@ let cachedMtime: number = 0;
 let cachedPath: string = "";
 
 function getRegistryPath(workspacePath: string): string {
-    return path.join(workspacePath, ".optimus", "config", "role-registry.json");
+    return resolveOptimusPath(workspacePath, "config", "role-registry.json");
 }
 
 function loadRegistry(workspacePath: string): RoleRegistry {

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveOptimusPath } from './worktree';
 
 export type McpConfigTarget = 'runtime' | 'vscode' | 'copilot' | 'claude';
 
@@ -84,7 +85,7 @@ function renderValue(value: any, target: McpConfigTarget, workspaceRoot: string)
 }
 
 export function loadCanonicalMcpConfig(workspaceRoot: string): CanonicalMcpConfig | null {
-    const configPath = path.join(workspaceRoot, CANONICAL_MCP_CONFIG_RELATIVE_PATH);
+    const configPath = resolveOptimusPath(workspaceRoot, 'config', 'mcp-servers.json');
     if (!fs.existsSync(configPath)) {
         return null;
     }

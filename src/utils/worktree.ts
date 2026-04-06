@@ -2,6 +2,8 @@ import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 
+import os from 'os';
+
 export interface WorktreeContext {
     /** Whether the workspace is a git worktree (not the main working tree) */
     isWorktree: boolean;
@@ -117,8 +119,14 @@ export function resolveOptimusPath(workspacePath: string, ...segments: string[])
     const ctx = detectWorktreeContext(workspacePath);
 
     if (!ctx.isWorktree || segments.length === 0) {
-        // Not a worktree or root-level .optimus — use workspacePath directly
-        return path.join(workspacePath, '.optimus', ...segments);
+        // Not a worktree or root-level .optimus — use workspacePath directly,
+        // with user-level (~/.optimus/) fallback for shared resources.
+        const projectPath = path.join(workspacePath, '.optimus', ...segments);
+        if (segments.length > 0 && SHARED_DIRS.has(segments[0]) && !fs.existsSync(projectPath)) {
+            const userPath = path.join(os.homedir(), '.optimus', ...segments);
+            if (fs.existsSync(userPath)) return userPath;
+        }
+        return projectPath;
     }
 
     const topSegment = segments[0];
@@ -129,15 +137,17 @@ export function resolveOptimusPath(workspacePath: string, ...segments: string[])
     }
 
     if (SHARED_DIRS.has(topSegment)) {
-        // Shared resource — prefer main worktree
+        // Shared resource — prefer main worktree, then local, then user-level (~/.optimus/)
         const mainPath = path.join(ctx.mainRoot, '.optimus', ...segments);
         const localPath = path.join(ctx.currentRoot, '.optimus', ...segments);
+        const userPath = path.join(os.homedir(), '.optimus', ...segments);
 
-        // If the file/dir exists in main, use it; otherwise fall back to local
-        if (fs.existsSync(mainPath)) {
-            return mainPath;
-        }
-        return localPath;
+        if (fs.existsSync(mainPath)) return mainPath;
+        if (fs.existsSync(localPath)) return localPath;
+        // User-level fallback: shared resources at ~/.optimus/ (cross-project)
+        if (fs.existsSync(userPath)) return userPath;
+        // Default to main worktree path (even if doesn't exist yet — caller may create it)
+        return mainPath;
     }
 
     // Unknown segment — default to local
