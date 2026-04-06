@@ -342,11 +342,23 @@ export async function executePrompt(
         const serverReady = await ensureRuntimeServer(options.workspacePath);
         if (serverReady) {
             console.error(`[Executor] Routing ${engine} execution via runtime server on :${RUNTIME_PORT}`);
-            return executeViaRuntimeServer(prompt, options);
+            try {
+                return await executeViaRuntimeServer(prompt, options);
+            } catch (proxyErr: any) {
+                // If connection was refused/reset, the runtime server may have crashed.
+                // Reset state and try to auto-restart it once.
+                if (/ECONNREFUSED|ECONNRESET|EPIPE/.test(proxyErr.message)) {
+                    console.error(`[Executor] Runtime server connection lost: ${proxyErr.message}. Attempting auto-restart...`);
+                    runtimeServerReady = false;
+                    const restarted = await ensureRuntimeServer(options.workspacePath);
+                    if (restarted) {
+                        console.error(`[Executor] Runtime server restarted, retrying execution`);
+                        return await executeViaRuntimeServer(prompt, options);
+                    }
+                }
+                throw proxyErr;
+            }
         }
-        // Runtime server failed to start — throw actionable error instead of
-        // silently falling back to direct ACP spawn (which will fail for copilot
-        // due to nested auth conflict, and is unreliable for other engines inside MCP).
         throw new Error(
             `Runtime server not available on port ${RUNTIME_PORT}. ` +
             `Delegate execution requires the runtime server when running inside a host agent. ` +

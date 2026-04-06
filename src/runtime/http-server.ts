@@ -671,6 +671,16 @@ function startServer() {
     // Ensure state directories exist
     ensureWorktreeStateDirs(workspacePath);
 
+    // ── Process crash guards ──
+    // Keep the server alive on unexpected errors. Log but don't crash.
+    process.on('uncaughtException', (err) => {
+        console.error(`[HTTP] ⚠️ Uncaught exception (server stays alive): ${err.message}`);
+        console.error(err.stack);
+    });
+    process.on('unhandledRejection', (reason) => {
+        console.error(`[HTTP] ⚠️ Unhandled rejection (server stays alive): ${reason}`);
+    });
+
     const server = http.createServer(async (req, res) => {
         try {
             await handleRequest(req, res, workspacePath, port);

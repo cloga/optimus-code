@@ -111,6 +111,7 @@ export class AcpAdapter implements AgentAdapter {
     private _idleSince: number = 0;
     private _invocationCount: number = 0;
     private _stderrBuffer: string = '';
+    private _maxConcurrentSessions: number;
 
     /** Mutex for process initialization — prevents double-spawn on concurrent cold starts */
     private _readyPromise: Promise<void> | null = null;
@@ -118,7 +119,7 @@ export class AcpAdapter implements AgentAdapter {
     /** Timeout for ACP protocol handshake (initialize). Should complete in < 5s; 15s is generous. */
     private initTimeoutMs: number;
 
-    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false, initTimeoutMs: number = 15_000) {
+    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false, initTimeoutMs: number = 15_000, maxConcurrentSessions: number = 10) {
         this.id = id;
         this.name = name;
         this.executable = executable;
@@ -126,6 +127,7 @@ export class AcpAdapter implements AgentAdapter {
         this.activityTimeoutMs = activityTimeoutMs;
         this._persistent = persistent;
         this.initTimeoutMs = initTimeoutMs;
+        this._maxConcurrentSessions = maxConcurrentSessions;
     }
 
     // --- Pool management API ---
@@ -133,6 +135,7 @@ export class AcpAdapter implements AgentAdapter {
     get persistent(): boolean { return this._persistent; }
     get idleSince(): number { return this._idleSince; }
     get invocationCount(): number { return this._invocationCount; }
+    get maxConcurrentSessions(): number { return this._maxConcurrentSessions; }
 
     /** Check if the adapter's process is alive and initialized */
     isAlive(): boolean {
@@ -647,6 +650,12 @@ export class AcpAdapter implements AgentAdapter {
         extraEnv?: Record<string, string>,
         options?: { model?: string; autopilot?: boolean; maxContinues?: number; promptParts?: { sharedPrefix: string; uniqueSuffix: string; cacheKey: string } }
     ): Promise<string> {
+        // Session concurrency gate — wait if at capacity
+        while (this._activeSessions.size >= this._maxConcurrentSessions) {
+            debugLog('[AcpAdapter]', `Session limit reached (${this._activeSessions.size}/${this._maxConcurrentSessions}), waiting...`);
+            await new Promise(r => setTimeout(r, 500));
+        }
+        
         debugLog('[AcpAdapter]', `Invoking persistent for ${this.name} (mode=${mode}, resume=${!!sessionId}, invocation=#${this._invocationCount + 1})`);
         this._invocationCount++;
 
