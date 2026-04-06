@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.20.2] - 2026-04-06
+
+### Stability
+- **Crash guard** — HTTP runtime server now catches `uncaughtException` and `unhandledRejection` without crashing, keeping the server alive for subsequent requests.
+- **Session concurrency limit** — `AcpAdapter` enforces `maxConcurrentSessions` (default: 10) to prevent unbounded session growth on a single ACP process.
+- **MCP proxy auto-reconnect** — When runtime server connection drops (`ECONNREFUSED`/`ECONNRESET`), the MCP proxy automatically restarts it and retries once.
+
+### Bug Fixes
+- **Auto-start TDZ** — Fixed `cwd` variable used before declaration in `ensureRuntimeServer`, preventing runtime server auto-start from working.
+- **No silent fallback** — When runtime server fails to start, throws actionable error instead of silently falling back to direct ACP spawn (which fails for copilot).
+
 ## [2.20.1] - 2026-04-05
 
 ### Bug Fixes
