@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.21.1] - 2026-04-06
+
+### Features
+- **Upgrade all projects** — `optimus upgrade` now defaults to upgrading all registered projects in `~/.optimus/projects.json`. Use `--single` for current-directory only.
+
 ## [2.21.0] - 2026-04-06
 
 ### Features
