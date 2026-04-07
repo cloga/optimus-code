@@ -8,6 +8,15 @@
 ### Bug Fixes
 - **Cold start concurrency** — Adapter pool reuses initializing adapters instead of spawning duplicates, eliminating race conditions on parallel cold-start requests.
 
+## [2.22.1] - 2026-04-07
+
+### Bug Fixes
+- **Cold start concurrency** — Pool no longer replaces initializing adapters with new ones. Multiple concurrent tasks on a cold pool now share the same spawn+init via `_readyPromise` mutex instead of racing with duplicate processes.
+- **Init timeout** — Increased ACP handshake timeout from 15s to 30s for cold start resilience.
+
+### Features
+- **Pool preheat API** — `AcpProcessPool.preheatEngines()` enables eager warm-up of engine processes at startup.
+
 ## [2.22.0] - 2026-04-06
 
 ### Features
