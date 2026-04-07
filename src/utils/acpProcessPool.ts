@@ -70,9 +70,16 @@ export class AcpProcessPool {
 
             if (existing.isBusy()) {
                 // Multi-session concurrency: reuse the same persistent adapter
-                // AcpAdapter now supports concurrent sessions via per-session context routing
                 this._totalReuses++;
                 console.error(`[AcpPool] 🔀 Reusing busy adapter for ${key} (concurrent session, active sessions: ${existing.invocationCount})`);
+                return existing;
+            }
+
+            if (existing.isInitializing) {
+                // Adapter is cold-starting (spawn + init handshake in progress).
+                // Return it — the caller's _ensureReady() will await the shared _readyPromise.
+                this._totalReuses++;
+                console.error(`[AcpPool] ⏳ Reusing initializing adapter for ${key} (cold start in progress)`);
                 return existing;
             }
 
@@ -137,6 +144,31 @@ export class AcpProcessPool {
             }
         }
         this.pool.clear();
+    }
+
+    /**
+     * Pre-spawn and initialize adapters for given engines.
+     * Called at startup to eliminate cold-start latency on first delegate.
+     * Each engine gets one invoke('', 'agent') that triggers spawn + init.
+     * Failures are logged but don't prevent startup.
+     */
+    async preheatEngines(engines: Array<{ key: string; executable: string; args: string[]; activityTimeoutMs: number }>): Promise<void> {
+        console.error(`[AcpPool] 🔥 Preheating ${engines.length} engine(s): ${engines.map(e => e.key).join(', ')}`);
+        const results = await Promise.allSettled(
+            engines.map(async ({ key, executable, args, activityTimeoutMs }) => {
+                const adapter = this.getOrCreateAdapter(key, executable, args, activityTimeoutMs);
+                // Trigger _ensureReady by invoking with empty prompt — it will spawn + init
+                // then immediately fail on session/new or session/prompt, but the process stays warm
+                try {
+                    await adapter.invoke('', 'agent');
+                } catch {
+                    // Expected to fail (empty prompt) — but the ACP process is now warm
+                }
+                return key;
+            })
+        );
+        const succeeded = results.filter(r => r.status === 'fulfilled').length;
+        console.error(`[AcpPool] 🔥 Preheat complete: ${succeeded}/${engines.length} engines warm`);
     }
 
     // --- Stats ---

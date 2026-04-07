@@ -116,10 +116,12 @@ export class AcpAdapter implements AgentAdapter {
     /** Mutex for process initialization — prevents double-spawn on concurrent cold starts */
     private _readyPromise: Promise<void> | null = null;
 
-    /** Timeout for ACP protocol handshake (initialize). Should complete in < 5s; 15s is generous. */
+    /** Check if the adapter is currently initializing (spawn + handshake in progress) */
+    get isInitializing(): boolean { return this._readyPromise !== null; }
+    /** Timeout for ACP protocol handshake (initialize). Cold starts with multiple concurrent engines can take longer. */
     private initTimeoutMs: number;
 
-    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false, initTimeoutMs: number = 15_000, maxConcurrentSessions: number = 10) {
+    constructor(id: string, name: string, executable: string, defaultArgs: string[] = [], activityTimeoutMs: number = 0, persistent: boolean = false, initTimeoutMs: number = 30_000, maxConcurrentSessions: number = 10) {
         this.id = id;
         this.name = name;
         this.executable = executable;
