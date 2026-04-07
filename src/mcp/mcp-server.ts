@@ -37,6 +37,7 @@ import {
 } from "../runtime/agentRuntimeService";
 import { fireHook, getGlobalHookRegistry } from '../harness/lifecycle-hooks.js';
 import { taskMetricsHook } from '../harness/built-in-hooks.js';
+import { ensureRuntimeServer } from '../runtime/genericExecutor';
 
 /** Validate required params and throw actionable McpError listing exactly which are missing. */
 function requireParams(toolName: string, params: Record<string, any>, required: string[]): void {
@@ -2130,6 +2131,18 @@ if (process.argv.includes("--run-task")) {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("Optimus Spartan Swarm MCP server running on stdio");
+
+    // Pre-start the HTTP runtime server so first delegate doesn't wait on cold start
+    const workspaceRootPreheat = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+    ensureRuntimeServer(workspaceRootPreheat).then(ready => {
+      if (ready) {
+        console.error('[MCP] HTTP runtime server pre-heated and ready');
+      } else {
+        console.error('[MCP] ⚠️ HTTP runtime server failed to pre-start. Delegates will attempt auto-start on first use.');
+      }
+    }).catch(err => {
+      console.error(`[MCP] ⚠️ HTTP runtime preheat error: ${err.message}`);
+    });
 
     // Agent GC: clean up stale T1 instances on startup
     const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();

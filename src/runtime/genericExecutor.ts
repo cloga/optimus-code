@@ -95,7 +95,7 @@ function wouldCauseNestedConflict(executable: string): boolean {
  * Ensure the runtime HTTP server is running. Auto-starts it if needed.
  * Returns true when the server is ready to accept requests.
  */
-async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
+export async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
     if (runtimeServerReady) return true;
     if (runtimeServerStarting) {
         await runtimeServerStarting;
@@ -149,14 +149,21 @@ async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
         });
         runtimeServerProcess.unref();
 
-        // Wait for the server to become ready (max 15s)
+        // Wait for the server to become ready (max 15s), with early exit on crash
         const deadline = Date.now() + 15_000;
         let lastStderr = '';
+        let processExited = false;
+        let exitCode: number | null = null;
+
         runtimeServerProcess.stderr?.on('data', (chunk: Buffer) => {
             lastStderr += chunk.toString();
         });
+        runtimeServerProcess.on('exit', (code) => {
+            processExited = true;
+            exitCode = code;
+        });
 
-        while (Date.now() < deadline) {
+        while (Date.now() < deadline && !processExited) {
             await new Promise(r => setTimeout(r, 500));
             try {
                 const isUp = await httpGet(`http://127.0.0.1:${RUNTIME_PORT}/api/v2/health`);
@@ -167,7 +174,12 @@ async function ensureRuntimeServer(workspacePath?: string): Promise<boolean> {
                 }
             } catch { /* not ready yet */ }
         }
-        console.error(`[RuntimeProxy] Runtime server failed to start within 15s. Last stderr: ${lastStderr.slice(-300)}`);
+
+        if (processExited) {
+            console.error(`[RuntimeProxy] Runtime server process exited during startup (code=${exitCode}). Stderr: ${lastStderr.slice(-300)}`);
+        } else {
+            console.error(`[RuntimeProxy] Runtime server failed to start within 15s. Last stderr: ${lastStderr.slice(-300)}`);
+        }
     })();
 
     try {
