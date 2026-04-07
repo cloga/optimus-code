@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.23.0] - 2026-04-07
+
+### Features
+- **Runtime server preheat** — MCP startup now preheats the runtime server and detects spawn crashes early, preventing cold-start latency and surfacing failures before the first delegate call.
+
+### Bug Fixes
+- **Cold start concurrency** — Adapter pool reuses initializing adapters instead of spawning duplicates, eliminating race conditions on parallel cold-start requests.
+
 ## [2.22.0] - 2026-04-06
 
 ### Features
