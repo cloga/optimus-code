@@ -24,7 +24,8 @@
  * Logs/traces are written to stderr, never mixed into response body.
  */
 import http from 'http';
-import { spawn, ChildProcess } from 'child_process';
+import os from 'os';
+import { spawn, execSync, ChildProcess } from 'child_process';
 import {
     normalizeRuntimeRequest,
     runSync,
@@ -44,6 +45,8 @@ import {
 import { subscribeToEvents, getEventBuffer } from '../utils/agentRuntime';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+import { AcpProcessPool } from '../utils/acpProcessPool';
 import { ensureWorktreeStateDirs } from '../utils/worktree';
 
 declare const OPTIMUS_VERSION: string;
@@ -689,6 +692,35 @@ function startServer() {
     // Ensure state directories exist
     ensureWorktreeStateDirs(workspacePath);
 
+    // ── Orphan process cleanup ──
+    // Kill leftover ACP processes from a previous runtime server instance
+    const pidFilePath = path.join(os.homedir(), '.optimus', 'state', 'runtime-server.pid');
+    try {
+        const pidDir = path.dirname(pidFilePath);
+        if (!fs.existsSync(pidDir)) fs.mkdirSync(pidDir, { recursive: true });
+
+        if (fs.existsSync(pidFilePath)) {
+            const oldPid = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+            if (oldPid && oldPid !== process.pid) {
+                try {
+                    process.kill(oldPid, 0); // throws if dead
+                    console.error(`[Startup] Killing previous runtime server PID ${oldPid} and its process tree`);
+                    if (process.platform === 'win32') {
+                        execSync(`taskkill /T /F /PID ${oldPid}`, { stdio: 'ignore', timeout: 5000 });
+                    } else {
+                        process.kill(-oldPid, 'SIGTERM');
+                    }
+                } catch { /* already dead */ }
+            }
+        }
+        fs.writeFileSync(pidFilePath, String(process.pid), 'utf8');
+        process.on('exit', () => {
+            try { fs.unlinkSync(pidFilePath); } catch { /* best-effort */ }
+        });
+    } catch (err: any) {
+        console.error(`[Startup] PID file management failed: ${err.message} (non-fatal)`);
+    }
+
     // ── Process crash guards ──
     // Keep the server alive on unexpected errors. Log but don't crash.
     process.on('uncaughtException', (err) => {
@@ -759,13 +791,14 @@ function startServer() {
     }
 
     process.on('SIGTERM', () => {
-        // Gracefully shutdown overflow instances
         overflowPool.forEach(inst => inst.process.kill('SIGTERM'));
+        try { AcpProcessPool.getInstance().shutdownAll(); } catch { /* best-effort */ }
         server.close();
         process.exit(0);
     });
     process.on('SIGINT', () => {
         overflowPool.forEach(inst => inst.process.kill('SIGTERM'));
+        try { AcpProcessPool.getInstance().shutdownAll(); } catch { /* best-effort */ }
         server.close();
         process.exit(0);
     });

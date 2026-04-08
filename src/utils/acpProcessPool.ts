@@ -34,6 +34,10 @@ export class AcpProcessPool {
         if (!AcpProcessPool._instance) {
             AcpProcessPool._instance = new AcpProcessPool();
             AcpProcessPool._instance.startIdleSweep();
+            // Kill all ACP child processes when the host process exits
+            process.on('exit', () => {
+                try { AcpProcessPool._instance?.shutdownAll(); } catch { /* best-effort */ }
+            });
         }
         return AcpProcessPool._instance;
     }

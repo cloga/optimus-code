@@ -111,6 +111,7 @@ export class AcpAdapter implements AgentAdapter {
     private _idleSince: number = 0;
     private _invocationCount: number = 0;
     private _stderrBuffer: string = '';
+    private _spawnedWithShell: boolean = false;
     private _maxConcurrentSessions: number;
 
     /** Mutex for process initialization — prevents double-spawn on concurrent cold starts */
@@ -408,6 +409,7 @@ export class AcpAdapter implements AgentAdapter {
             && !/\.exe$/i.test(this.executable);
 
         debugLog('[AcpAdapter]', `Spawning: ${this.executable} ${args.join(' ')} (shell=${needsShell})`);
+        this._spawnedWithShell = needsShell;
         this.process = cp.spawn(this.executable, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             env,
@@ -515,8 +517,25 @@ export class AcpAdapter implements AgentAdapter {
         this.pendingRequests.clear();
         if (this.process) {
             const proc = this.process;
-            this.process = undefined; // Clear reference first to prevent stale exit handler from clobbering new process
-            proc.kill('SIGTERM');
+            const pid = proc.pid;
+            this.process = undefined;
+
+            // On Windows with shell:true, proc.kill() only kills cmd.exe,
+            // not the actual child process (copilot/claude). Use taskkill /T
+            // to kill the entire process tree and prevent zombie accumulation.
+            if (process.platform === 'win32' && pid && this._spawnedWithShell) {
+                try {
+                    cp.execSync(`taskkill /T /F /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
+                    debugLog('[AcpAdapter]', `Killed process tree for PID ${pid}`);
+                } catch {
+                    try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+                }
+            } else {
+                try { proc.kill('SIGTERM'); } catch { /* already dead */ }
+                setTimeout(() => {
+                    try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+                }, 2000).unref();
+            }
         }
     }
 
