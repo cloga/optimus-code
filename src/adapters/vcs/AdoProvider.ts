@@ -1,9 +1,13 @@
 import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, PullRequestResult, CommentResult, MergeResult, AdoWorkItemOptions, VcsComment, WorkItemUpdate } from './IVcsProvider';
 import { marked } from 'marked';
 import * as childProcess from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { buildResolutionDiagnostic, resolveExecutablePath } from '../../utils/acpPathResolver.js';
 
 const AZ_CLI_TIMEOUT_MS = 8000;
 const ADO_REQUEST_TIMEOUT_MS = 15000;
+let resolvedAzureCliPath: string | null | undefined;
 
 /**
  * Azure DevOps VCS Provider Implementation
@@ -27,6 +31,51 @@ function isGuidLike(value: string): boolean {
 
 function trimTrailingSlash(value: string): string {
     return value.replace(/\/+$/, '');
+}
+
+function getAzureCliCandidatePaths(): string[] {
+    const candidates: string[] = [];
+    if (process.env.AZURE_CLI_PATH) {
+        candidates.push(process.env.AZURE_CLI_PATH);
+    }
+
+    if (process.platform === 'win32') {
+        const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+        const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+        candidates.push(
+            path.join(programFilesX86, 'Microsoft SDKs', 'Azure', 'CLI2', 'wbin', 'az.cmd'),
+            path.join(programFiles, 'Microsoft SDKs', 'Azure', 'CLI2', 'wbin', 'az.cmd')
+        );
+    }
+
+    return candidates;
+}
+
+function resolveAzureCliPath(): string | null {
+    if (resolvedAzureCliPath !== undefined) {
+        return resolvedAzureCliPath;
+    }
+
+    let resolved = resolveExecutablePath('az');
+    if (!resolved) {
+        for (const candidate of getAzureCliCandidatePaths()) {
+            if (fs.existsSync(candidate)) {
+                resolved = candidate;
+                break;
+            }
+        }
+    }
+
+    resolvedAzureCliPath = resolved;
+    return resolvedAzureCliPath;
+}
+
+function buildAzureCliDiagnostic(): string {
+    return [
+        buildResolutionDiagnostic('az'),
+        `Azure CLI fallback candidates:`,
+        ...getAzureCliCandidatePaths().map(candidate => `  ${fs.existsSync(candidate) ? '✅' : '❌'} ${candidate}`)
+    ].join('\n');
 }
 
 export class AdoProvider implements IVcsProvider {
@@ -58,8 +107,12 @@ export class AdoProvider implements IVcsProvider {
         this.webBaseUrl = trimTrailingSlash(webBaseUrl || `https://${organization}.visualstudio.com`);
         this.authMode = authMode;
         this.azCliTokenProvider = azCliTokenProvider || (() => {
+            const azExecutable = resolveAzureCliPath();
+            if (!azExecutable) {
+                throw new Error(`Azure CLI executable not found.\n${buildAzureCliDiagnostic()}`);
+            }
             return childProcess.execSync(
-                'az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv',
+                `"${azExecutable}" account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv`,
                 {
                     encoding: 'utf8',
                     stdio: ['pipe', 'pipe', 'pipe'],

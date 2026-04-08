@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.23.4] - 2026-04-08
+
+### Bug Fixes
+- **Azure CLI path fallback** — ADO auth now resolves `az` via explicit executable lookup and Windows Azure CLI install paths, so VCS tools still work when the MCP process starts with an incomplete PATH.
+- **Actionable Azure CLI diagnostics** — When Azure CLI still cannot be found, the error now reports the executable resolution diagnostics and checked fallback locations instead of only saying `'az' is not recognized'`.
+
 ## [2.23.3] - 2026-04-08
 
 ### Bug Fixes

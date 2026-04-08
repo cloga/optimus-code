@@ -24,6 +24,7 @@ function createFetchMockWithRequests(seenRequests: SeenRequest[]) {
 const originalFetch = globalThis.fetch;
 const originalAdoPat = process.env.ADO_PAT;
 const originalAzureDevopsPat = process.env.AZURE_DEVOPS_PAT;
+const originalAzureCliPath = process.env.AZURE_CLI_PATH;
 
 afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -37,6 +38,11 @@ afterEach(() => {
         delete process.env.AZURE_DEVOPS_PAT;
     } else {
         process.env.AZURE_DEVOPS_PAT = originalAzureDevopsPat;
+    }
+    if (originalAzureCliPath === undefined) {
+        delete process.env.AZURE_CLI_PATH;
+    } else {
+        process.env.AZURE_CLI_PATH = originalAzureCliPath;
     }
 });
 
