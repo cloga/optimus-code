@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.23.1] - 2026-04-08
+
+### Features
+- **Cursor IDE support** — Added `.cursor/rules/optimus.mdc` for Cursor IDE multi-agent orchestration, bringing Cursor in line with VS Code/Copilot IDE support.
+- **Copilot launcher scripts** — Added `copilot-optimus` (bash), `copilot-optimus.cmd` (Windows CMD), and `copilot-optimus.ps1` (PowerShell) convenience launcher scripts that start Copilot with the Optimus MCP config.
+
+### Tests
+- **delegate_task compat test** — Added `src/test/delegate-task-compat.test.ts` to validate that `delegate_task` is properly advertised as a blocking compatibility wrapper and enforces `workspace_path`.
+
+### Bug Fixes
+- **package-lock.json version sync** — Fixed `optimus-plugin/package-lock.json` version stale at 2.17.13; synced to match current 2.22.1/2.23.1 release.
+
+### Chores
+- Added PATH note comments to `.copilot/mcp-config.json` and `.mcp.json` to guide ACP executable path debugging.
+- Pruned stale MCP delegate proxy and user-level runtime sections from `runtime-integration` skill docs.
+- Added `nul` to `.gitignore` (Windows filesystem artifact).
+
 ## [2.23.0] - 2026-04-07
 
 ### Features
