@@ -66,6 +66,32 @@ function formatSelectionReason(reason: string | undefined): string {
     .trim();
 }
 
+function formatVcsDiagnosticBlock(workspacePath: string): string {
+  try {
+    const diagnostics = VcsProviderFactory.getConfigDiagnostics(workspacePath);
+    const cacheText = diagnostics.cacheHit
+      ? `hit (${diagnostics.cacheAgeMs ?? 0}ms old)`
+      : 'miss';
+    return [
+      '',
+      `**Resolved Config:** ${diagnostics.resolvedConfigPath}`,
+      `**Configured Provider:** ${diagnostics.configuredProvider}`,
+      `**Git Remote:** ${diagnostics.gitRemote}`,
+      `**Provider Cache:** ${cacheText}`,
+      `**Resolution Chain:**`,
+      ...diagnostics.resolutionChain.map(line => `- ${line}`)
+    ].join('\n');
+  } catch (error: any) {
+    return `\n\n**VCS Diagnostics:** unavailable (${error.message})`;
+  }
+}
+
+function formatVcsUnavailableMessage(action: string, error: unknown, workspacePath: string, fallbackNote?: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const suffix = fallbackNote ? ` ${fallbackNote}` : '';
+  return `⚠️ VCS unavailable — failed to ${action}: ${message}.${suffix}${formatVcsDiagnosticBlock(workspacePath)}`;
+}
+
 // Load environment variables: prefer DOTENV_PATH from mcp.json env mount, fallback to cwd
 function reloadEnv() {
   if (process.env.DOTENV_PATH) {
@@ -215,6 +241,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 type: "string",
                 description: "Absolute path to the project workspace root."
               }
+            },
+            required: ["workspace_path"]
+          }
+        },
+        {
+          name: "vcs_config_diagnostics",
+          description: "Show which VCS config file was resolved, the configured provider, git remote, and provider cache status for a workspace.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace_path: { type: "string", description: "Absolute path to the project workspace root." }
             },
             required: ["workspace_path"]
           }
@@ -1187,6 +1224,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{ type: "text", text: statusText + '\n\n```json\n' + JSON.stringify(status, null, 2) + '\n```' }]
       };
+        } else if (request.params.name === "vcs_config_diagnostics") {
+      const { workspace_path } = request.params.arguments as any;
+      requireParams("vcs_config_diagnostics", request.params.arguments as any, ["workspace_path"]);
+
+      const diagnostics = VcsProviderFactory.getConfigDiagnostics(workspace_path);
+      const cacheText = diagnostics.cacheHit ? `hit (${diagnostics.cacheAgeMs ?? 0}ms old)` : 'miss';
+      return {
+        content: [{
+          type: "text",
+          text: [
+            `**Workspace:** ${diagnostics.workspacePath}`,
+            `**Resolved Config:** ${diagnostics.resolvedConfigPath}`,
+            `**File Exists:** ${diagnostics.fileExists ? 'yes' : 'no'}`,
+            `**Configured Provider:** ${diagnostics.configuredProvider}`,
+            `**Git Remote:** ${diagnostics.gitRemote}`,
+            `**Provider Cache:** ${cacheText}`,
+            `**Config Hash:** ${diagnostics.configHash ?? '(missing)'}`,
+            '',
+            `**Resolution Chain:**`,
+            ...diagnostics.resolutionChain.map(line => `- ${line}`)
+          ].join('\n')
+        }]
+      };
         } else if (request.params.name === "append_memory") {
       let { category, tags, content, level } = request.params.arguments as any;
       requireParams("append_memory", request.params.arguments as any, ["category", "content"]);
@@ -1572,7 +1632,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to create work item: ${error.message}. The agent should continue without Issue tracking.` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('create work item', error, workspace_path, 'The agent should continue without Issue tracking.') }] };
     }
   } else if (request.params.name === "vcs_create_pr") {
     const { title, body, head, base, workspace_path, agent_role } = request.params.arguments as any;
@@ -1597,7 +1657,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to create pull request: ${error.message}` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('create pull request', error, workspace_path) }] };
     }
   } else if (request.params.name === "vcs_merge_pr") {
     const { pull_request_id, commit_title, merge_method, workspace_path } = request.params.arguments as any;
@@ -1707,7 +1767,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to merge pull request: ${error.message}` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('merge pull request', error, workspace_path) }] };
     }
   } else if (request.params.name === "vcs_add_comment") {
     const { item_type, item_id, comment, workspace_path, agent_role } = request.params.arguments as any;
@@ -1725,7 +1785,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to add comment: ${error.message}` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('add comment', error, workspace_path) }] };
     }
   } else if (request.params.name === "vcs_update_work_item") {
     const { item_id, state, title, description, assigned_to, priority, labels_add, labels_remove, workspace_path } = request.params.arguments as any;
@@ -1752,7 +1812,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — failed to update work item: ${error.message}` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('update work item', error, workspace_path) }] };
     }
   } else if (request.params.name === "vcs_list_work_items") {
     const { state, labels, limit, workspace_path } = request.params.arguments as any;
@@ -1770,7 +1830,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — could not list work items: ${error.message}. Returning empty list.` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('list work items', error, workspace_path, 'Returning empty list.') }] };
     }
   } else if (request.params.name === "vcs_list_pull_requests") {
     const { state, limit, workspace_path } = request.params.arguments as any;
@@ -1788,7 +1848,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
     } catch (error: any) {
-      return { content: [{ type: "text", text: `⚠️ VCS unavailable — could not list pull requests: ${error.message}. Returning empty list.` }] };
+      return { content: [{ type: "text", text: formatVcsUnavailableMessage('list pull requests', error, workspace_path, 'Returning empty list.') }] };
     }
   } else if (request.params.name === "write_blackboard_artifact") {
     const { artifact_path, content, workspace_path } = request.params.arguments as any;

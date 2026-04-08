@@ -1,8 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { VcsProviderFactory } from '../adapters/vcs/VcsProviderFactory.js';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // The regex used internally by VcsProviderFactory.getGitHubInfo (private)
 const GITHUB_REGEX = /github\.com[\/:]+([^\/]+)\/([^\/.]+)/;
+
+afterEach(() => {
+  VcsProviderFactory.clearCache();
+});
 
 describe('VcsProviderFactory', () => {
   it('module imports without throwing', () => {
@@ -47,6 +54,35 @@ describe('VcsProviderFactory', () => {
       const url = 'https://dev.azure.com/org/project/_git/repo';
       const match = url.match(GITHUB_REGEX);
       expect(match).toBeNull();
+    });
+  });
+
+  describe('config diagnostics', () => {
+    it('reports the resolved config path and cache state for an explicit project config', async () => {
+      const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'optimus-vcs-diag-'));
+      const optimusConfigDir = path.join(workspace, '.optimus', 'config');
+      fs.mkdirSync(optimusConfigDir, { recursive: true });
+      fs.writeFileSync(path.join(optimusConfigDir, 'vcs.json'), JSON.stringify({
+        provider: 'github',
+        github: {
+          owner: 'cloga',
+          repo: 'optimus-code'
+        }
+      }), 'utf8');
+
+      const before = VcsProviderFactory.getConfigDiagnostics(workspace);
+      expect(before.resolvedConfigPath).toBe(path.join(workspace, '.optimus', 'config', 'vcs.json'));
+      expect(before.fileExists).toBe(true);
+      expect(before.cacheHit).toBe(false);
+      expect(before.configuredProvider).toBe('github');
+
+      const provider = await VcsProviderFactory.getProvider(workspace);
+      expect(provider.getProviderName()).toBe('github');
+
+      const after = VcsProviderFactory.getConfigDiagnostics(workspace);
+      expect(after.cacheHit).toBe(true);
+      expect(after.cacheAgeMs).toBeTypeOf('number');
+      expect(after.resolutionChain.some(line => line.includes('[exists]'))).toBe(true);
     });
   });
 });

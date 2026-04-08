@@ -2,6 +2,9 @@ import { IVcsProvider, WorkItemResult, WorkItemListItem, PullRequestListItem, Pu
 import { marked } from 'marked';
 import * as childProcess from 'child_process';
 
+const AZ_CLI_TIMEOUT_MS = 8000;
+const ADO_REQUEST_TIMEOUT_MS = 15000;
+
 /**
  * Azure DevOps VCS Provider Implementation
  *
@@ -40,6 +43,7 @@ export class AdoProvider implements IVcsProvider {
         assigned_to?: string;
         auto_tags?: string[];
     };
+    private lastAuthFailure?: string;
 
     constructor(organization: string, project: string, defaults?: {
         work_item_type?: string;
@@ -58,19 +62,47 @@ export class AdoProvider implements IVcsProvider {
                 'az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv',
                 {
                     encoding: 'utf8',
-                    stdio: ['pipe', 'pipe', 'pipe']
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    timeout: AZ_CLI_TIMEOUT_MS
                 }
             ).trim();
         });
     }
 
     private getMissingTokenError(): Error {
-        return new Error('ADO authentication token not found. Set ADO_PAT or AZURE_DEVOPS_PAT, or configure ado.auth = "az-cli" and ensure `az login` has an active session.');
+        const authHint = this.lastAuthFailure
+            ? ` Last az-cli error: ${this.lastAuthFailure}`
+            : '';
+        return new Error(`ADO authentication token not found. Set ADO_PAT or AZURE_DEVOPS_PAT, or configure ado.auth = "az-cli" and ensure \`az login\` has an active session.${authHint}`);
+    }
+
+    private async adoFetch(url: string, init: RequestInit, operation: string): Promise<Response> {
+        if (init.signal) {
+            throw new Error(`ADO request for ${operation} received a pre-existing AbortSignal. Merge external cancellation with adoFetch before passing a signal.`);
+        }
+
+        const controller = new AbortController();
+        const timeoutHandle = setTimeout(() => controller.abort(), ADO_REQUEST_TIMEOUT_MS);
+
+        try {
+            return await fetch(url, {
+                ...init,
+                signal: controller.signal
+            });
+        } catch (error: any) {
+            if (error?.name === 'AbortError') {
+                throw new Error(`ADO request timed out after ${ADO_REQUEST_TIMEOUT_MS}ms during ${operation}. Verify org/project in .optimus/config/vcs.json and prefer ADO_PAT over az-cli if Azure CLI is unresponsive.`);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutHandle);
+        }
     }
 
     private getAuthCredential(): { authorization: string } | undefined {
         const envToken = process.env.ADO_PAT || process.env.AZURE_DEVOPS_PAT;
         if (envToken) {
+            this.lastAuthFailure = undefined;
             return {
                 authorization: `Basic ${Buffer.from(`:${envToken}`).toString('base64')}`
             };
@@ -81,12 +113,14 @@ export class AdoProvider implements IVcsProvider {
                 const accessToken = this.azCliTokenProvider();
 
                 if (accessToken) {
+                    this.lastAuthFailure = undefined;
                     return {
                         authorization: `Bearer ${accessToken}`
                     };
                 }
             } catch (error: any) {
                 const message = error instanceof Error ? error.message : String(error);
+                this.lastAuthFailure = message;
                 console.error(`[AdoProvider] az-cli token acquisition failed: ${message}`);
                 return undefined;
             }
@@ -112,7 +146,7 @@ export class AdoProvider implements IVcsProvider {
         }
 
         try {
-            const response = await fetch(
+            const response = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/_apis/projects/${this.project}?api-version=7.0`,
                 {
                     headers: {
@@ -120,7 +154,8 @@ export class AdoProvider implements IVcsProvider {
                         'Accept': 'application/json',
                         'User-Agent': 'Optimus-Agent'
                     }
-                }
+                },
+                'project metadata lookup'
             );
 
             if (response.ok) {
@@ -220,13 +255,14 @@ export class AdoProvider implements IVcsProvider {
                 });
             }
 
-            const response = await fetch(
+            const response = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitems/$${resolvedType}?api-version=7.0`,
                 {
                     method: 'POST',
                     headers: this.buildAdoAuthHeaders('application/json-patch+json'),
                     body: JSON.stringify(patchDocument)
-                }
+                },
+                'create work item'
             );
 
             if (!response.ok) {
@@ -254,11 +290,12 @@ export class AdoProvider implements IVcsProvider {
     ): Promise<PullRequestResult> {
         try {
             // First, we need to get the repository details
-            const repoResponse = await fetch(
+            const repoResponse = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories?api-version=7.0`,
                 {
                     headers: this.buildAdoAuthHeaders()
-                }
+                },
+                'list repositories for pull request creation'
             );
 
             if (!repoResponse.ok) {
@@ -281,13 +318,14 @@ export class AdoProvider implements IVcsProvider {
                 reviewers: []
             };
 
-            const response = await fetch(
+            const response = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests?api-version=7.0`,
                 {
                     method: 'POST',
                     headers: this.buildAdoAuthHeaders('application/json'),
                     body: JSON.stringify(pullRequestData)
-                }
+                },
+                'create pull request'
             );
 
             if (!response.ok) {
@@ -314,11 +352,12 @@ export class AdoProvider implements IVcsProvider {
     ): Promise<MergeResult> {
         try {
             // First get repository info to get the repository ID
-            const repoResponse = await fetch(
+            const repoResponse = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories?api-version=7.0`,
                 {
                     headers: this.buildAdoAuthHeaders()
-                }
+                },
+                'list repositories for pull request merge'
             );
 
             if (!repoResponse.ok) {
@@ -339,11 +378,12 @@ export class AdoProvider implements IVcsProvider {
             let headBranch: string | undefined;
             let baseBranch: string | undefined;
             try {
-                const prResponse = await fetch(
+                const prResponse = await this.adoFetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
                     {
                         headers: this.buildAdoAuthHeaders()
-                    }
+                    },
+                    'fetch pull request details'
                 );
                 if (prResponse.ok) {
                     const prData = await prResponse.json() as any;
@@ -368,13 +408,14 @@ export class AdoProvider implements IVcsProvider {
                 mergeData.completionOptions.mergeCommitMessage = commitTitle;
             }
 
-            const response = await fetch(
+            const response = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullrequests/${prId}?api-version=7.0`,
                 {
                     method: 'PATCH',
                     headers: this.buildAdoAuthHeaders('application/json'),
                     body: JSON.stringify(mergeData)
-                }
+                },
+                'merge pull request'
             );
 
             return { merged: response.ok, headBranch, baseBranch };
@@ -395,13 +436,14 @@ export class AdoProvider implements IVcsProvider {
             if (itemType === 'workitem') {
                 // Add comment to work item — convert Markdown to HTML for ADO rendering
                 const htmlComment = await marked.parse(comment);
-                const response = await fetch(
+                const response = await this.adoFetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${id}/comments?api-version=7.0-preview.3`,
                     {
                         method: 'POST',
                         headers: this.buildAdoAuthHeaders('application/json'),
                         body: JSON.stringify({ text: htmlComment })
-                    }
+                    },
+                    'add work item comment'
                 );
 
                 if (!response.ok) {
@@ -416,11 +458,12 @@ export class AdoProvider implements IVcsProvider {
                 };
             } else {
                 // Add comment to pull request - need repository ID
-                const repoResponse = await fetch(
+                const repoResponse = await this.adoFetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories?api-version=7.0`,
                     {
                         headers: this.buildAdoAuthHeaders()
-                    }
+                    },
+                    'list repositories for pull request comment'
                 );
 
                 if (!repoResponse.ok) {
@@ -431,7 +474,7 @@ export class AdoProvider implements IVcsProvider {
                 const repositoryId = repos.value[0].id;
 
                 const htmlPrComment = await marked.parse(comment);
-                const response = await fetch(
+                const response = await this.adoFetch(
                     `https://dev.azure.com/${this.organization}/${this.project}/_apis/git/repositories/${repositoryId}/pullRequests/${id}/threads?api-version=7.0`,
                     {
                         method: 'POST',
@@ -444,7 +487,8 @@ export class AdoProvider implements IVcsProvider {
                             }],
                             status: 'active'
                         })
-                    }
+                    },
+                    'add pull request comment'
                 );
 
                 if (!response.ok) {
@@ -516,13 +560,14 @@ export class AdoProvider implements IVcsProvider {
         }
 
         try {
-            const response = await fetch(
+            const response = await this.adoFetch(
                 `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitems/${id}?api-version=7.0`,
                 {
                     method: 'PATCH',
                     headers: this.buildAdoAuthHeaders('application/json-patch+json'),
                     body: JSON.stringify(patchDocument)
-                }
+                },
+                'update work item'
             );
 
             if (!response.ok) {

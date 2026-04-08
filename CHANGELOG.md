@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.23.3] - 2026-04-08
+
+### Bug Fixes
+- **Azure DevOps timeout resilience** — Added explicit timeouts for `az account get-access-token` and Azure DevOps HTTP requests so a degraded ADO or Azure CLI session no longer hangs the whole VCS tool path.
+- **VCS config diagnostics** — Added `vcs_config_diagnostics` plus richer VCS failure output so users can see the resolved `vcs.json`, configured provider, git remote, and provider-cache status when troubleshooting.
+- **Provider cache correctness** — VCS provider caching now keys on workspace, resolved config path, and git remote to avoid stale provider reuse after repo/config changes.
+
 ## [2.23.2] - 2026-04-08
 
 ### Bug Fixes

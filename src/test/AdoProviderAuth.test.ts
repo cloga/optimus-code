@@ -70,4 +70,28 @@ describe('AdoProvider authentication', () => {
         expect(azCliTokenProvider).not.toHaveBeenCalled();
         expect((seenRequests[0].init?.headers as Record<string, string>).Authorization).toBe(`Basic ${Buffer.from(':env-pat').toString('base64')}`);
     });
+
+    it('surfaces az-cli acquisition failures in the final auth error', async () => {
+        delete process.env.ADO_PAT;
+        delete process.env.AZURE_DEVOPS_PAT;
+
+        const azCliTokenProvider = vi.fn(() => {
+            throw new Error('spawnSync az ETIMEDOUT');
+        });
+
+        const provider = new AdoProvider('o365exchange', 'O365 Core', undefined, 'https://o365exchange.visualstudio.com', 'az-cli', azCliTokenProvider);
+
+        await expect(provider.createWorkItem('Created item', 'Body')).rejects.toThrow(/Last az-cli error: spawnSync az ETIMEDOUT/);
+    });
+
+    it('rejects pre-existing AbortSignal usage in adoFetch helper', async () => {
+        process.env.ADO_PAT = 'env-pat';
+        delete process.env.AZURE_DEVOPS_PAT;
+
+        const provider = new AdoProvider('o365exchange', 'O365 Core', undefined, 'https://o365exchange.visualstudio.com');
+        const controller = new AbortController();
+
+        await expect((provider as any).adoFetch('https://example.test', { signal: controller.signal }, 'test operation'))
+            .rejects.toThrow(/pre-existing AbortSignal/);
+    });
 });
