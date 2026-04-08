@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.23.2] - 2026-04-08
+
+### Bug Fixes
+- **Windows ACP process cleanup** — `AcpAdapter.cleanup()` now uses `taskkill /T /F` for shell-spawned ACP processes on Windows so Copilot/Claude child processes do not survive after the wrapper shell exits.
+- **Runtime shutdown hygiene** — HTTP runtime shutdown now drains `AcpProcessPool` on `SIGTERM`/`SIGINT`, and startup cleans up the previous runtime PID tree before binding the port.
+- **Pool exit cleanup** — `AcpProcessPool` now shuts down all adapters on host process exit, preventing stale warm-pool workers from accumulating across sessions.
+
 ## [2.23.1] - 2026-04-08
 
 ### Features
