@@ -219,51 +219,12 @@ current list. Common roles:
 
 - All transports share one `AcpProcessPool` — warm agent processes are reused
   across HTTP, CLI, SDK, and MCP calls
-- **MCP delegate proxy**: When running inside a host agent (Copilot/Claude Code),
-  the MCP server automatically routes delegate executions through the HTTP Runtime
-  server (port 3100). This avoids nested-engine auth conflicts and decouples ACP
-  lifecycle from the MCP process. The HTTP Runtime must be running for delegates.
 - The service layer (`agentRuntimeService.ts`) runs tasks **in-process** (not
   subprocess), enabling warm pool sharing
-- AcpAdapter supports multi-session concurrency — multiple delegate tasks share
-  a single ACP engine process via independent sessions
 - Results persist to `.optimus/results/agent-runtime/` and
   `.optimus/state/agent-runtime/` on disk
 - CORS is enabled on the HTTP server (`Access-Control-Allow-Origin: *`)
 - Max request body: 10 MB
-
-## User-Level Runtime (Cross-Project)
-
-The HTTP Runtime can run as a **user-level service** that serves all projects:
-
-```bash
-# Start once, serves all projects (no --workspace needed)
-node ~/.optimus/dist/http-runtime.js --port 3100
-```
-
-Each request provides its own `workspace_path`, so one runtime instance handles multiple projects:
-
-```bash
-# Project A
-curl -X POST http://localhost:3100/api/v1/agent/run -d '{
-  "role": "dev", "input": "fix bug",
-  "workspace_path": "/home/user/project-a"
-}'
-
-# Project B (same runtime instance)
-curl -X POST http://localhost:3100/api/v1/agent/run -d '{
-  "role": "dev", "input": "add feature",
-  "workspace_path": "/home/user/project-b"
-}'
-```
-
-**MCP delegate auto-proxy**: When running inside a host agent (Copilot/Claude Code),
-the MCP server automatically detects it needs the runtime server and attempts to
-auto-start `~/.optimus/dist/http-runtime.js`. If auto-start fails, delegates throw
-an actionable error with the manual start command.
-
-**ACP process sharing**: All projects share the same `AcpProcessPool` — an ACP engine
-process started for project A can be reused by project B if they use the same engine.
 
 ## Anti-Patterns
 
@@ -302,7 +263,7 @@ The ACP process pool keeps engine processes alive between tasks:
 - **First request** to an engine → cold start (~2–5s spawn + ACP initialize)
 - **Subsequent requests** → reuse warm process (~0s spawn overhead)
 - **Idle timeout** → adapter evicted after 5 minutes of inactivity (configurable via `timeout.activity_ms`)
-- **Concurrent requests** → same warm adapter handles multiple sessions in parallel (multi-session ACP concurrency, no ephemeral fallback)
+- **Concurrent requests** → if the warm adapter is busy, an ephemeral adapter is spawned
 - **Cross-model reuse** → same `copilot --acp` process can switch models between tasks
 
 Pool status is logged to stderr:

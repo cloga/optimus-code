@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CONFIG_PATH="$SCRIPT_DIR/.copilot/mcp-config.json"
+
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "Missing Copilot MCP config: $CONFIG_PATH" >&2
+  echo "Run 'optimus init' or 'optimus upgrade' first." >&2
+  exit 1
+fi
+
+cd "$SCRIPT_DIR"
+exec copilot --additional-mcp-config "@$CONFIG_PATH" "$@"

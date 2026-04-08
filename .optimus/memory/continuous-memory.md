@@ -719,96 +719,151 @@ category: competitive-intel-session
 tags: [competitive-intel, session-state, baselines, run11]
 author: competitive-intel-analyst
 ---
-## Competitive Intel Session State — 2026-04-03 (Run #11)
+## Competitive Intel Session State — 2026-04-07 (Run #14)
 
-### Mode: MONITOR (Friday; discovery_day=Monday)
+### Mode: DISCOVERY + MONITOR (Monday; discovery_day=Monday; last discovery > 6 days ago)
 
 ### Per-Competitor Updated State
 
 **CrewAI (crewAIInc/crewAI)**
 - last_seen_release: 1.13.0 (2026-04-02, stable)
-- last_seen_star_count: 47,865
-- 7d_star_baseline: 47,786 (Run #10)
+- last_seen_star_count: 48,173
+- 7d_star_baseline: 48,104 (Run #13)
 - last_reported_event_fingerprint: crewai-1.13.0-stable-a2ui-2026-04-03
 - last_reported_at: 2026-04-03T08:00Z
-- open_hypotheses: ["Will A2UI gain adoption? Watch for blog/issues/stars acceleration.", "Will 1.14.0 add MCP-native tooling or IDE integration?"]
-- trend_label: stable (high shipping velocity, feature breadth expanding)
-
-**DeerFlow (bytedance/deer-flow)**
-- last_seen_star_count: 56,680
-- 7d_star_baseline: 56,009 (Run #10)
-- star_delta_7d: +671 (+1.2%) — decelerating from 53% spike
-- cool_down_active: expires 2026-04-07
-- trend_label: accelerating (multi-cycle) but decelerating
-
-**Google ADK (google/adk-python)**
-- last_seen_release: v1.28.1 (2026-04-02)
-- last_seen_star_count: 18,714
-- cool_down_active: expires 2026-04-07
-- trend_label: accelerating (weekly releases, Google backing)
-- open_hypotheses: ["Will ADK v2.0.0 go beta or GA?"]
-
-**OpenAI Agents SDK (openai/openai-agents-python)**
-- last_seen_release: v0.13.4 (2026-04-01)
-- last_seen_star_count: 20,521
-- cool_down_active: expires 2026-04-09
+- open_hypotheses: ["Will A2UI gain a third adopter? (after CrewAI + AG2)", "Will 1.14.0 add MCP-native tooling?"]
 - trend_label: stable
 
+**DeerFlow (bytedance/deer-flow)**
+- last_seen_star_count: 58,612
+- 7d_star_baseline: 58,231 (Run #13)
+- star_delta_3d: +381 (+0.65%) — decelerating, cool-down expired today
+- weekly_extrapolated: ~889 (+1.5%) — BELOW 3% threshold
+- cool_down_active: EXPIRED today
+- trend_label: decelerating (was accelerating; now dropping below brief threshold)
+
+**Google ADK (google/adk-python)**
+- last_seen_release: v1.28.1 stable; v2.0.0a2 pre-release (2026-03-27)
+- last_seen_star_count: 18,781
+- cool_down_active: EXPIRED today; no new release; stars +19 = noise
+- trend_label: stable (weekly releases, Google backing)
+- open_hypotheses: ["Will ADK v2.0.0 go beta or GA? v2.0.0a2 exists since 2026-03-27."]
+
+**OpenAI Agents SDK (openai/openai-agents-python)**
+- last_seen_release: v0.13.5 (2026-04-06) — callable approval policies for local MCP servers + flush_traces API
+- last_seen_star_count: 20,613
+- last_reported_event_fingerprint: openai-agents-sdk-callable-mcp-approval-v0.13.5-2026-04-07
+- last_reported_at: 2026-04-07T00:00Z
+- cool_down_active: expires 2026-04-14
+- open_hypotheses: ["Will callable approval policies expand to remote/hosted MCP servers in v0.14.0?"]
+- trend_label: stable (consistent shipping)
+
 **LangGraph (langchain-ai/langgraph)**
-- last_seen_release: 1.1.4 (2026-03-31) — dep bumps only
-- last_seen_star_count: 28,264
+- last_seen_release: 1.1.6 (2026-04-03)
+- last_seen_star_count: 28,542
+- last_reported_event_fingerprint: langgraph-v1.1.5-remote-build-2026-04-06
+- last_reported_at: 2026-04-06T00:00Z
+- cool_down_active: expires 2026-04-13
+- open_hypotheses: ["Will remote build lead to A2A/LangGraph Cloud convergence?"]
 - trend_label: stable
 
 **Vibe Kanban (BloopAI/vibe-kanban)**
-- last_seen_release: v0.1.40 (2026-04-01, pre-release)
-- last_seen_star_count: 24,269
+- last_seen_release: v0.1.41-20260403 (2026-04-03)
+- last_seen_star_count: 24,498
 - trend_label: stable (active pre-release cadence)
 
 **Coder Mux (coder/mux)**
-- last_seen_release: v0.22.0 stable; v0.22.1 nightly active
-- last_seen_star_count: 1,575
+- last_seen_release: v0.22.0 stable
+- last_seen_star_count: 1,605
 - cool_down_active: expires 2026-04-09
 - trend_label: stable
 
 **Superset (superset-sh/superset)**
-- last_seen_release: desktop-v1.4.6 (2026-04-02)
-- last_seen_star_count: 8,520
-- trend_label: stable
+- last_seen_release: desktop-v1.4.7 (2026-04-03); desktop-canary pushed 2026-04-06
+- last_seen_star_count: 8,763
+- last_reported_event_fingerprint: superset-v1.4.7-agent-registry-2026-04-06
+- last_reported_at: 2026-04-06T00:00Z
+- cool_down_active: expires 2026-04-13
+- open_hypotheses: ["Will custom agent CRUD surface in UI in v1.4.8?"]
+- trend_label: accelerating
 
 **Ruflo (ruvnet/ruflo)**
-- last_seen_star_count: 29,419
-- dispatch_active: Issue #548 from Run #9 — outcome unknown
-- trend_label: accelerating (3 consecutive cycles)
+- last_seen_release: v3.5.59 (2026-04-06) — 314 MCP tools, 60+ agent types, 22 plugins, 291 tests
+- last_seen_star_count: 30,366
+- 7d_star_baseline: 30,095 (Run #13)
+- last_reported_event_fingerprint: ruflo-v3.5.59-platform-scale-2026-04-07
+- last_reported_at: 2026-04-07T00:00Z
+- cool_down_active: expires 2026-04-14
+- open_hypotheses: ["Will v3.6.0 introduce MCP marketplace or multi-model broker features?"]
+- trend_label: accelerating (5th consecutive cycle of growth; v3.5.59 hardening milestone)
 
 **1Code (21st-dev/1code)**
-- last_seen_star_count: ~5,360
-- last_pushed: 2026-03-06
+- last_seen_star_count: 5,382
+- last_pushed: 2026-03-06 (now 32 days inactive)
 - recommended_removal: true (set Run #11)
 - trend_label: cooling
 
 **AG2 (ag2ai/ag2)**
-- last_seen_release: v0.11.2 (2026-02-27)
-- last_seen_star_count: 4,347
-- trend_label: stable
+- last_seen_release: v0.11.5 (2026-04-04)
+- last_seen_star_count: 4,369
+- last_reported_event_fingerprint: ag2-v0.11.5-cli-a2uiagent-2026-04-06
+- last_reported_at: 2026-04-06T00:00Z
+- cool_down_active: expires 2026-04-13
+- open_hypotheses: ["When do AG2 beta features promote to stable?", "A2UI convergence — watching for third adopter."]
+- trend_label: accelerating
 
 **Composio (ComposioHQ/agent-orchestrator)**
-- last_seen_star_count: 5,683
-- last_release: v0.2.2 (dep bump, closed as noise)
+- last_seen_star_count: 5,810
+- last_release: v0.2.2 (dep bump, 03-29)
 - trend_label: stable
 
-### System-Wide State (Run #11)
-- briefs_written_this_cycle: 1 (crewai-1.13.0-stable-a2ui)
-- dispatches_this_cycle: 0
+**Oh My OpenAgent (code-yeongyu/oh-my-openagent)**
+- last_seen_release: v3.15.3 (2026-04-06); 3 releases in 2 days (v3.15.1/2/3)
+- last_seen_star_count: 48,864
+- 7d_star_baseline: 48,600 (Run #13 add)
+- dispatch_active: Issue #556 (task_1775520476533_z8fx3g) — delegate-task convergence analysis
+- cool_down_active: expires [pending dispatch result — no brief written; dispatch taken instead]
+- open_hypotheses: ["Is 'delegate-task' terminology convergence architectural or coincidental?", "Boulder state = Optimus task object? Atlas = Optimus task registry?"]
+- trend_label: accelerating (rapid release cadence, architectural depth expanding)
+
+**Emdash (generalaction/emdash)**
+- last_seen_release: v0.4.47 (2026-04-06) — Automations beta badge, Forge provider
+- last_seen_star_count: 3,698
+- trend_label: stable (active development)
+
+**Oh My Codex (Yeachan-Heo/oh-my-codex)**
+- last_seen_release: v0.11.13 (2026-04-04)
+- last_seen_star_count: 17,454
+- 7d_star_baseline: 16,600 (Run #13 add)
+- star_delta: +854 (+5.1%) — decelerating from +13k/wk viral (no brief threshold crossed)
+- trend_label: decelerating from viral peak (still growing but slowing)
+
+### New Entries (Discovery Run #3 — 2026-04-07)
+- **builderz-labs/mission-control** (score 8/8, 3.8k stars) — self-hosted agent orchestration platform
+- **abhi1693/openclaw-mission-control** (score 6/8, 3.5k stars) — OpenClaw-based agent management dashboard
+- **SmythOS/sre** (score 5/8, 1.25k stars) — cloud-native agent runtime environment
+
+### System-Wide State (Run #14)
+- briefs_written_this_cycle: 2 (openai-agents-sdk-callable-mcp-approval-v0.13.5, ruflo-v3.5.59-platform-scale)
+- dispatches_this_cycle: 1 (oh-my-openagent-v3.15.x-delegate-task-convergence, Issue #556)
 - human_escalations_this_cycle: 0
-- api_failures: [microsoft/* — persistent SAML 403]
-- watchlist_mutations: 1Code recommended_removal:true
+- api_failures: [] (no failures this cycle)
+- watchlist_mutations: +3 auto-discovered (builderz, openclaw-mission-control, smythos-sre); cap now 10/10
+- strategic_signal: OpenAI Agents SDK ships callable MCP approval policies — may establish a developer expectation standard for fine-grained orchestration control that Optimus should address. Oh My OpenAgent v3.15.x uses identical "delegate-task" terminology as Optimus internal APIs — possible paradigm convergence signal, dispatched for specialist analysis.
+- discovery_state:
+  - last_discovery_run: 2026-04-07T00:00Z
+  - queries_executed: ["multi-agent AI orchestration TypeScript", "coding agent MCP orchestration TypeScript", "task delegation agent framework"]
+  - candidates_evaluated: 17
+  - candidates_added: 3
+  - rejected_fingerprints_added: ["jayminwest/overstory", "truffle-ai/dexto"]
 - event_fingerprints_cooldown:
   - crewai-1.13.0-stable-a2ui-2026-04-03: expires 2026-04-10
-  - openai-agents-sdk-mcp-resources-v0.13.0-2026-04-02: expires 2026-04-09
+  - openai-agents-sdk-callable-mcp-approval-v0.13.5-2026-04-07: expires 2026-04-14
   - coder-mux-v0.22.0-agent-browser-2026-04-02: expires 2026-04-09
-  - crewai-1.12.x-agent-skills-2026-03-31: expires 2026-04-07
-  - google-adk-v1.28.0-mcp-sampling-a2a-2026-03-31: expires 2026-04-07
-  - deerflow-viral-acceleration-54k-2026-03-31: expires 2026-04-07
+  - ag2-v0.11.5-cli-a2uiagent-2026-04-06: expires 2026-04-13
+  - superset-v1.4.7-agent-registry-2026-04-06: expires 2026-04-13
+  - langgraph-v1.1.5-remote-build-2026-04-06: expires 2026-04-13
+  - ruflo-v3.5.59-platform-scale-2026-04-07: expires 2026-04-14
 
 
 ---
@@ -820,3 +875,76 @@ tags: [acp, engine, path, troubleshooting, mcp-server]
 author: system
 ---
 ACP engine "executable not found" is caused by PATH inheritance from the MCP server's launcher process. The MCP server (Node.js subprocess) inherits the PATH that existed when the host (VS Code/Copilot CLI) was started. If ACP tools were installed after the host started, or the host has a restricted PATH, the executables won't be found. Fix: restart host, use absolute paths in available-agents.json, or rely on acpPathResolver.ts which scans common install locations (C:\.tools\.npm-global, %APPDATA%\npm, /usr/local/bin, /opt/homebrew/bin) as fallback. This is the permanent architectural fix implemented in PR for Issue #555.
+---
+id: mem_1775274992961_bcte7a
+date: 2026-04-04T03:56:32.961Z
+level: project
+category: bug-fix
+tags: [copilot, acp, authentication, classic-pat, dotenv, bug-fix]
+author: unknown
+---
+## Copilot ACP Auth — Corrected Understanding (2026-04-04)
+
+Previous memory entry `mem_copilot_acp_auth_20260322` was WRONG. Corrected facts:
+
+- Copilot CLI uses its own credential store (from `copilot login` or gh CLI OAuth)
+- Copilot ACP child processes CAN access the credential store — they DO NOT need env tokens
+- **BUT**: if `GITHUB_TOKEN` contains a classic PAT (`ghp_`), Copilot tries to use it INSTEAD of the credential store, fails with "Authentication required", and does NOT fall back
+- Fix: `sanitizeCopilotAuthEnv` must delete only classic PATs (`ghp_` prefix), keep OAuth (`gho_`) and fine-grained (`github_pat_`) tokens
+- The `.env` file loads `GITHUB_TOKEN=ghp_...` via dotenv — this is for Optimus GitHub API, NOT for Copilot auth
+- `.optimus/dist/mcp-server.js` must be synced after build — it's the file actually loaded by the MCP server (not `optimus-plugin/dist/`)
+
+---
+id: mem_1775437674165_jcqwpt
+date: 2026-04-06T01:07:54.165Z
+level: project
+category: competitive-intel
+tags: [competitive-intel, discovery, watchlist, weekly-cron]
+author: unknown
+---
+## Competitive Monitor State — 2026-04-08 (Run #15)
+
+### Last Discovery: 2026-04-07 (Run #14, Monday) — 3 new entries added (builderz-labs/mission-control 8/8, openclaw-mission-control 6/8, SmythOS/sre 5/8)
+
+### Watchlist Status After Run #15
+- Total entries: 25
+- Auto-discovered: 10/10 (at cap)
+- Flagged for removal: `21st-dev/1code` (recommended_removal=true, 30+ days inactive) — human action needed to free slot
+- MetaGPT: No release in 12+ months — candidate for recommended_removal next cycle
+
+### Active Cool-downs (expires)
+- CrewAI 1.14.0 checkpointing+executor-refactor: 2026-04-15
+- OpenAI Agents SDK v0.13.5 callable-MCP-approval: 2026-04-14
+- Ruflo v3.5.59 platform-scale-milestone: 2026-04-14
+- Oh My Codex multi-cycle brief: 2026-04-13
+- Superset desktop-v1.4.7: 2026-04-13
+- AG2 v0.11.5: 2026-04-13
+- LangGraph 1.1.6: 2026-04-13
+
+### Active Dispatch
+- Oh My OpenAgent v3.15.x delegate-task convergence — specialist task_1775520476533_z8fx3g in-flight (dispatched Run #14)
+
+### Star Baselines (post-Run #15)
+- oh-my-openagent: 49,290 (accelerating)
+- oh-my-codex: 18,206 (accelerating, +752/day)
+- crewai: 48,276 (approaching 50k)
+- deer-flow: 59,107 (single-cycle spike watch — needs 2 more cycles to confirm trend)
+- ruflo: 30,616
+- vibe-kanban: 24,576
+- superset: 8,914
+- langgraph: 28,647
+- openai-agents: 20,633
+- emdash: 3,718
+- mux-coder: 1,611
+- google-adk: 18,797
+- ag2: 4,373
+
+### Strategic Signal: CrewAI Closing Task-Persistence Gap
+CrewAI 1.14.0 (Apr 7) shipped runtime state checkpointing (SqliteProvider, CheckpointConfig) — previously a differentiator for Optimus. Optimus should sharpen its checkpoint/resume story in docs.
+
+### Strategic Signal: "oh-my-X" Harness Pattern (persists)
+Both oh-my-codex and oh-my-openagent use `.omx/` project directory, skills, named roles, and Claude Code compatibility — identical philosophy to Optimus `.optimus/`. Specialist analysis in-flight.
+
+### AutoGen (MSFT) Monitoring Gap
+microsoft/autogen API calls blocked by SAML org enforcement. Requires PAT with microsoft org SAML authorization for reliable monitoring.
+

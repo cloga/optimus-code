@@ -20,3 +20,6 @@ temp_debug/
 /temp_scripts/
 .optimus/
 temp_data/
+
+# Windows dev artifacts
+nul
