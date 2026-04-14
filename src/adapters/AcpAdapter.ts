@@ -200,7 +200,7 @@ export class AcpAdapter implements AgentAdapter {
         // Model not found
         if (/model.*not.*found/i.test(msg) || /invalid.*model/i.test(msg) || /unknown.*model/i.test(msg)) {
             return new Error(
-                `ACP invalid_model: ${msg}. Fix: remove role_model to use the default, or check available_models in .optimus/config/available-agents.json.`
+                `ACP invalid_model: ${msg}. Fix: omit role_model to use the engine default, or verify the model name is correct.`
             );
         }
 

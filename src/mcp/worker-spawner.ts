@@ -732,6 +732,30 @@ export class ConcurrencyGovernor {
 }
 
 /**
+ * Check if an error is a model-related error (invalid/unknown/not-found model).
+ */
+function isModelError(e: any): boolean {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /invalid_model/i.test(msg) || /invalid.*model/i.test(msg) || /model.*not.*found/i.test(msg) || /unknown.*model/i.test(msg);
+}
+
+/**
+ * Auto-repair a stale T2 role template by clearing an obsolete `model:` field from frontmatter.
+ * Returns the old model name if repaired, or null if no repair was needed.
+ */
+function repairStaleT2Model(workspacePath: string, role: string): string | null {
+    const t2RolePath = resolveOptimusPath(workspacePath, 'roles', `${sanitizeRoleName(role)}.md`);
+    if (!fs.existsSync(t2RolePath)) return null;
+    const t2Content = fs.readFileSync(t2RolePath, 'utf8');
+    const fm = parseFrontmatter(t2Content);
+    const staleModel = fm.frontmatter.model;
+    if (!staleModel) return null;
+    const repaired = updateFrontmatter(t2Content, { model: '' });
+    fs.writeFileSync(t2RolePath, repaired, 'utf8');
+    return staleModel;
+}
+
+/**
  * Classify worker execution errors into agent-friendly messages with recovery guidance.
  */
 function classifyWorkerError(role: string, engine: string, e: any): string {
@@ -927,7 +951,7 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     if (activeModel) {
         try {
             const engineConfig = getEngineConfig(activeEngine, workspacePath);
-            if (engineConfig?.available_models && Array.isArray(engineConfig.available_models)) {
+            if (Array.isArray(engineConfig?.available_models) && engineConfig.available_models.length > 0) {
                 const allowedModels: string[] = engineConfig.available_models;
                 if (!allowedModels.includes(activeModel)) {
                     if (modelWasExplicitFromCaller) {
@@ -957,12 +981,14 @@ export async function delegateTaskSingle(roleArg: string, taskPath: string, outp
     // --- Engine Health Check & Fallback ---
     let wasFallback = false;
     const engineBeforeFallback = activeEngine;
-    if (activeModel) {
-        const resolved = resolveHealthyModel(workspacePath, activeEngine, activeModel);
-        if (resolved.engine !== activeEngine || resolved.model !== activeModel) {
-            console.error(`[EngineHealth] Fallback: ${activeEngine}/${activeModel} → ${resolved.engine}/${resolved.model}`);
+    {
+        const healthModel = activeModel || 'default';
+        const resolved = resolveHealthyModel(workspacePath, activeEngine, healthModel);
+        const resolvedModel = resolved.model === 'default' ? '' : resolved.model;
+        if (resolved.engine !== activeEngine || resolvedModel !== activeModel) {
+            console.error(`[EngineHealth] Fallback: ${activeEngine}/${activeModel || 'default'} → ${resolved.engine}/${resolved.model}`);
             activeEngine = resolved.engine;
-            activeModel = resolved.model;
+            activeModel = resolvedModel;
             wasFallback = true;
         }
     }
@@ -1162,6 +1188,9 @@ Please provide your complete execution result below.${verifySuffix}`;
     const lockKey = agentId || `${role}_ephemeral_${crypto.randomUUID().slice(0, 8)}`;
     const lockManager = getLockManager(workspacePath);
     await lockManager.acquireLock(lockKey);
+    // Hoisted for access in catch block (T2 auto-repair retry)
+    let retryExtraEnv: Record<string, string> | undefined;
+    let retryAutomationPolicy: ReturnType<typeof normalizeAutomationPolicy> | null = null;
     try {
         await ConcurrencyGovernor.acquire();
 
@@ -1215,6 +1244,8 @@ Please provide your complete execution result below.${verifySuffix}`;
         const engineConfig = getEngineConfig(activeEngine, workspacePath);
         const hasAutomation = !!engineConfig?.automation && typeof engineConfig.automation === 'object';
         const automationPolicy = hasAutomation ? normalizeAutomationPolicy(engineConfig.automation) : null;
+        retryExtraEnv = extraEnv;
+        retryAutomationPolicy = automationPolicy;
 
         // ── Agent Runtime: mark run as running ──
         if (_fallbackSessionId.startsWith('async_')) {
@@ -1452,10 +1483,8 @@ Please provide your complete execution result below.${verifySuffix}`;
         if (isT3) {
             trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
         }
-        // Track engine+model health on success
-        if (activeModel) {
-            trackEngineHealth(workspacePath, activeEngine, activeModel, true);
-        }
+        // Track engine+model health on success (use 'default' sentinel for engine-default mode)
+        trackEngineHealth(workspacePath, activeEngine, activeModel || 'default', true);
 
         const tierValue: 'T1' | 'T2' | 'T3' = resolvedTier.includes('T1') ? 'T1' : resolvedTier.includes('T2') ? 'T2' : 'T3';
 
@@ -1471,6 +1500,51 @@ Please provide your complete execution result below.${verifySuffix}`;
 
         return extractTaskResult(execResult, taskResultMeta, delegationStartTime);
     } catch (e: any) {
+        // ── T2 Auto-Repair: clear stale model from role template and retry once ──
+        if (isModelError(e)) {
+            const staleModel = repairStaleT2Model(workspacePath, role);
+            if (staleModel) {
+                console.error(`[T2 AutoRepair] Cleared stale model '${staleModel}' from role template for ${role}. Retrying with engine default.`);
+                try {
+                    activeModel = '';
+                    const retryResult = await executePrompt(basePrompt, {
+                        engine: activeEngine,
+                        model: undefined,
+                        mode: activeMode,
+                        sessionId: undefined,
+                        extraEnv: retryExtraEnv || {},
+                        autopilot: retryAutomationPolicy ? retryAutomationPolicy.continuation === 'autopilot' : false,
+                        maxContinues: retryAutomationPolicy?.maxContinues,
+                        role,
+                        verificationLevel: 'normal',
+                        workspacePath,
+                        promptParts: {
+                            sharedPrefix: promptParts.sharedPrefix,
+                            uniqueSuffix: promptParts.uniqueSuffix,
+                            cacheKey: promptParts.cacheKey,
+                        },
+                    });
+                    const retryResponse = retryResult.output;
+                    const retrySessionId = retryResult.sessionId;
+                    const cleanRetryResponse = stripTraceLines(retryResponse);
+                    const dir = path.dirname(outputPath);
+                    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                    fs.writeFileSync(outputPath, cleanRetryResponse, 'utf8');
+                    if (isT3) {
+                        trackT3Usage(workspacePath, role, true, activeEngine, activeModel);
+                    }
+                    const tierValue: 'T1' | 'T2' | 'T3' = resolvedTier.includes('T1') ? 'T1' : resolvedTier.includes('T2') ? 'T2' : 'T3';
+                    return extractTaskResult(retryResult, {
+                        taskId: _fallbackSessionId.startsWith('async_') ? _fallbackSessionId.replace('async_', '') : (_fallbackSessionId || 'unknown'),
+                        role, engine: activeEngine, model: activeModel, outputPath, tierResolved: tierValue, sessionId: retrySessionId,
+                    }, delegationStartTime);
+                } catch (retryErr: any) {
+                    console.error(`[T2 AutoRepair] Retry after model repair also failed: ${retryErr.message?.slice(0, 200)}`);
+                    // Fall through to normal error handling (don't track as engine health — config issue)
+                }
+            }
+        }
+
         // ── Agent Runtime: mark run as failed ──
         if (_fallbackSessionId.startsWith('async_')) {
             try {
@@ -1487,9 +1561,9 @@ Please provide your complete execution result below.${verifySuffix}`;
         if (isT3) {
             trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
         }
-        // Track engine+model health on failure
-        if (activeModel) {
-            trackEngineHealth(workspacePath, activeEngine, activeModel, false);
+        // Track engine+model health on failure — skip for model config errors (not engine health)
+        if (!isModelError(e)) {
+            trackEngineHealth(workspacePath, activeEngine, activeModel || 'default', false);
         }
         // Check quarantine threshold: 3+ consecutive failures with 0 successes
         // Don't quarantine role if failure was due to engine/model health (wasFallback)

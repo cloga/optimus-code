@@ -18,10 +18,45 @@ import { fireHook } from '../harness/lifecycle-hooks.js';
 export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
     // __filename resolves to the compiled mcp-server.js at runtime (council-runner is bundled alongside)
     const mcpServerPath = path.join(__dirname, 'mcp-server.js');
+
+    // Validate the entry point exists before spawning — fail fast with actionable error
+    if (!fs.existsSync(mcpServerPath)) {
+        console.error(`[Runner] ❌ Cannot spawn async worker: ${mcpServerPath} not found`);
+        TaskManifestManager.updateTask(workspacePath, taskId, {
+            status: 'failed',
+            error_message: `SPAWN_FAILED: mcp-server.js not found at ${mcpServerPath}. Fix: run 'npx github:cloga/optimus-code upgrade' to reinstall.`,
+            completed_at: Date.now(),
+        });
+        return;
+    }
+
+    // Log worker stderr to a file for debugging (instead of stdio: "ignore" which swallows all errors)
+    const logsDir = resolveOptimusPath(workspacePath, 'logs');
+    try { if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true }); } catch { /* best-effort */ }
+    let stderrStream: fs.WriteStream | 'ignore' = 'ignore';
+    try {
+        stderrStream = fs.createWriteStream(path.join(logsDir, `worker-${taskId}.log`), { flags: 'a' });
+    } catch { /* fall back to ignore if log creation fails */ }
+
     const child = spawn(process.execPath, [mcpServerPath, "--run-task", taskId, workspacePath], {
-        detached: true, stdio: "ignore", windowsHide: true, cwd: workspacePath
+        detached: true,
+        stdio: ['ignore', 'ignore', stderrStream === 'ignore' ? 'ignore' : stderrStream],
+        windowsHide: true,
+        cwd: workspacePath,
     });
+
+    // If spawn itself fails, record immediately
+    child.on('error', (err) => {
+        console.error(`[Runner] ❌ Async worker spawn error for ${taskId}: ${err.message}`);
+        TaskManifestManager.updateTask(workspacePath, taskId, {
+            status: 'failed',
+            error_message: `SPAWN_FAILED: ${err.message}`,
+            completed_at: Date.now(),
+        });
+    });
+
     child.unref();
+    console.error(`[Runner] Spawned async worker for ${taskId} (pid=${child.pid}, log=${typeof stderrStream === 'string' ? 'none' : path.join(logsDir, `worker-${taskId}.log`)})`);
 }
 
 /**

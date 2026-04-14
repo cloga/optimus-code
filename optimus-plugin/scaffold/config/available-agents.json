@@ -1,18 +1,15 @@
 {
   "$schema": "./available-agents.schema.json",
   "_schema_version": 1,
-  "_comment": "Default user-level engine and model configuration. Store your primary config in ~/.optimus/config/available-agents.json (or OPTIMUS_USER_AVAILABLE_AGENTS_PATH). Project-level .optimus/config/available-agents.json remains an optional opt-in override.",
+  "_comment": "Default user-level engine configuration. Models are auto-resolved by each engine CLI. Add 'available_models' per engine to explicitly restrict model choices.",
   "engines": {
     "claude-code": {
-      "available_models": ["claude-opus-4.6-1m", "gpt-5.4", "gemini-3-pro-preview"],
       "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 }
     },
     "github-copilot": {
-      "available_models": ["gemini-3-pro-preview", "gpt-5.4", "claude-opus-4.6-1m"],
       "timeout": { "heartbeat_ms": 600000 }
     },
     "qwen-code": {
-      "available_models": ["qwen3-coder"],
       "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 },
       "acp": { "path": "auto", "args": ["--acp"] },
       "_comment": "path 'auto' = auto-discover from VS Code extensions"

@@ -109,7 +109,8 @@
             "family": { "type": "string" },
             "available_models": {
               "type": "array",
-              "items": { "type": "string", "minLength": 1 }
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Optional whitelist of allowed models. When omitted or empty, the engine CLI selects its default model automatically."
             },
             "automation": { "$ref": "#/$defs/automationConfig" },
             "acp": { "$ref": "#/$defs/transportConfig" },

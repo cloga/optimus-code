@@ -425,7 +425,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             role_model: {
               type: "string",
-              description: "Which model this role should use (e.g., 'claude-opus-4.6', 'gpt-5.4'). If omitted, uses the first available model for the engine.",
+              description: "Optional. Which model this role should use (e.g., 'claude-opus-4.6', 'gpt-5.4'). If omitted, the engine CLI selects its default model. If available_models is configured for the engine, must be from that list.",
             },
             task_description: {
               type: "string",
@@ -485,7 +485,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             role_model: {
               type: "string",
-              description: "Which model this role should use (e.g., 'claude-opus-4.6'). If omitted, uses default.",
+              description: "Optional. Which model this role should use (e.g., 'claude-opus-4.6'). If omitted, the engine CLI selects its default model.",
             },
             task_description: {
               type: "string",
@@ -989,6 +989,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (!isBlocked) {
+        // Ensure HTTP runtime server is ready BEFORE spawning the async worker.
+        // The child process (stdio: "ignore") also detects isInsideHostAgent=true
+        // and needs the runtime server to execute. Pre-starting prevents silent failures.
+        try {
+            await ensureRuntimeServer(workspace_path);
+        } catch (e: any) {
+            console.error(`[MCP] ⚠️ Runtime server pre-start for async worker failed: ${e.message}`);
+        }
         // Spawn background process using centralized helper
         spawnAsyncWorker(taskId, workspace_path);
     }
@@ -1085,6 +1093,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
     }
     
+    // Ensure runtime server before spawning council workers
+    try {
+        await ensureRuntimeServer(workspace_path);
+    } catch (e: any) {
+        console.error(`[MCP] ⚠️ Runtime server pre-start for council failed: ${e.message}`);
+    }
     // Spawn background process using centralized helper
     spawnAsyncWorker(taskId, workspace_path);
 
@@ -1378,7 +1392,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         Object.keys(config.engines).forEach(engine => {
           const explanation = explanations[engine];
           const statusMatch = explanation?.status ? ` *[Status: ${explanation.status}]*` : '';
-          const models = Array.isArray(explanation?.availableModels) ? explanation.availableModels.join(', ') : '';
+          const models = Array.isArray(explanation?.availableModels) && explanation.availableModels.length > 0 ? explanation.availableModels.join(', ') : 'not configured — engine uses its default';
           const resolvedProtocol = explanation?.selectedProtocol || 'invalid';
           roster += `- [Engine: ${engine}] Protocol: ${explanation?.configuredProtocol || 'cli'} -> ${resolvedProtocol} | Automation: ${formatAutomationForDisplay(explanation?.requestedAutomation)} | Models: [${models}]${statusMatch}\n`;
           roster += `  Why: ${formatSelectionReason(explanation?.error || explanation?.selectionReason)}\n`;

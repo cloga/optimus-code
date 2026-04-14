@@ -208,7 +208,8 @@ export function trackEngineHealth(workspacePath: string, engine: string, model: 
 
 export function resolveHealthyModel(workspacePath: string, engine: string, model: string): { engine: string; model: string } {
     const health = loadEngineHealth(workspacePath);
-    const key = `${engine}:${model}`;
+    const healthModel = model || 'default';
+    const key = `${engine}:${healthModel}`;
     const entry = health[key];
 
     // If no entry or healthy → return as-is
@@ -233,15 +234,26 @@ export function resolveHealthyModel(workspacePath: string, engine: string, model
     const now = Date.now();
     const fallbackCandidates: Array<{ engine: string; model: string; scope: 'same-engine' | 'cross-engine' }> = [];
 
-    for (const candidateModel of availModels[engine] || []) {
-        if (candidateModel === model) continue;
-        fallbackCandidates.push({ engine, model: candidateModel, scope: 'same-engine' });
+    const sameEngineModels = availModels[engine] || [];
+    if (sameEngineModels.length === 0) {
+        // Engine has no explicit models — add empty-model (engine default) as candidate
+        if (model !== '') fallbackCandidates.push({ engine, model: '', scope: 'same-engine' });
+    } else {
+        for (const candidateModel of sameEngineModels) {
+            if (candidateModel === model) continue;
+            fallbackCandidates.push({ engine, model: candidateModel, scope: 'same-engine' });
+        }
     }
 
     for (const candidateEngine of availEngines) {
         if (candidateEngine === engine) continue;
-        for (const candidateModel of availModels[candidateEngine] || []) {
-            fallbackCandidates.push({ engine: candidateEngine, model: candidateModel, scope: 'cross-engine' });
+        const crossModels = availModels[candidateEngine] || [];
+        if (crossModels.length === 0) {
+            fallbackCandidates.push({ engine: candidateEngine, model: '', scope: 'cross-engine' });
+        } else {
+            for (const candidateModel of crossModels) {
+                fallbackCandidates.push({ engine: candidateEngine, model: candidateModel, scope: 'cross-engine' });
+            }
         }
     }
 
@@ -843,6 +855,8 @@ export function isStaticallyValid(eng: string, mdl: string, workspacePath?: stri
         // An engine with missing/non-string/blank path is not runnable.
         const enginePath = transportConfig?.path;
         if (enginePath !== 'auto' && (typeof enginePath !== 'string' || enginePath.trim() === '')) return false;
+        // 'default' sentinel represents engine-default mode — always valid
+        if (mdl === 'default') return true;
         // If the engine declares concrete models, each combo model must be a non-empty string.
         if (Array.isArray(engineConfig.available_models) && engineConfig.available_models.length > 0) {
             if (typeof mdl !== 'string' || mdl.trim() === '') return false;

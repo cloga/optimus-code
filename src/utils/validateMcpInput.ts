@@ -26,8 +26,8 @@ export function validateEngineAndModel(
     if (model && engine && !isValidModel(model, engine, validModels)) {
         const allowed = validModels[engine] || [];
         const hint = allowed.length > 0
-            ? `Valid models for engine '${engine}': ${allowed.join(', ')}. Remove role_model to use the default.`
-            : `No models configured for engine '${engine}' in available-agents.json.`;
+            ? `Valid models for engine '${engine}': ${allowed.join(', ')}. Remove role_model to use the engine default.`
+            : `Engine '${engine}' has no model whitelist configured — omit role_model to let the engine select its default.`;
         throw new McpError(ErrorCode.InvalidParams, `Invalid model '${model}' for engine '${engine}'. ${hint}`);
     }
 }

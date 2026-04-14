@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.24.0] - 2026-04-14
+
+### Features
+- **Models now optional** — `available_models` in `available-agents.json` is no longer required. Users only need to configure engines; the engine CLI selects its default model automatically. Explicit `available_models` still works as a whitelist for backward compatibility.
+- **Engine-default health tracking** — Health tracking and cross-engine fallback now work in engine-default mode (no model specified), using a `"default"` sentinel for consistent health keys.
+- **T2 auto-repair on stale models** — When a T2 role template has an obsolete `model:` that the CLI no longer supports, the system automatically clears it and retries with the engine default instead of quarantining the role.
+
+### Bug Fixes
+- **delegate_task_async startup timeout** — Fixed `TASK_STARTUP_TIMEOUT` where async workers failed silently because the HTTP runtime server wasn't ready. The MCP server now awaits `ensureRuntimeServer()` before spawning async workers.
+- **Silent worker death** — Async worker stderr is now logged to `.optimus/logs/worker-{taskId}.log` instead of being swallowed by `stdio: "ignore"`. Spawn errors are immediately recorded as task failures.
+- **Spawn path validation** — `spawnAsyncWorker` now validates `mcp-server.js` exists before spawning, providing an immediate actionable error instead of a 120-second timeout.
+- **Pre-flight validation for empty models** — Fixed `available_models: []` being treated as a valid whitelist (empty array is truthy). Now correctly treated as "no whitelist".
+
 ## [2.23.4] - 2026-04-08
 
 ### Bug Fixes
