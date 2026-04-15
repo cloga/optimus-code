@@ -1,5 +1,27 @@
-import { describe, it, expect } from 'vitest';
-import { resolveEngineConfig, getBuiltinEngines } from '../runtime/genericExecutor';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+    resolveEngineConfig,
+    getBuiltinEngines,
+    isRuntimeServerProcess,
+    shouldRouteViaRuntimeServer,
+    resolveRuntimeProxyTimeoutMs,
+} from '../runtime/genericExecutor';
+
+const originalArgv = [...process.argv];
+const originalRuntimeServerFlag = process.env.OPTIMUS_RUNTIME_SERVER;
+const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+
+afterEach(() => {
+    process.argv = [...originalArgv];
+    if (originalRuntimeServerFlag === undefined) {
+        delete process.env.OPTIMUS_RUNTIME_SERVER;
+    } else {
+        process.env.OPTIMUS_RUNTIME_SERVER = originalRuntimeServerFlag;
+    }
+    if (originalIsTTY) {
+        Object.defineProperty(process.stdin, 'isTTY', originalIsTTY);
+    }
+});
 
 describe('genericExecutor', () => {
     describe('getBuiltinEngines', () => {
@@ -28,6 +50,35 @@ describe('genericExecutor', () => {
         it('throws for unknown engine with helpful message', () => {
             expect(() => resolveEngineConfig('unknown-engine')).toThrow(/Unknown engine/);
             expect(() => resolveEngineConfig('unknown-engine')).toThrow(/Available engines/);
+        });
+    });
+
+    describe('runtime proxy guards', () => {
+        it('detects http-runtime.js as a runtime server process', () => {
+            process.argv[1] = 'C:/Users/lochen/.optimus/dist/http-runtime.js';
+            expect(isRuntimeServerProcess()).toBe(true);
+        });
+
+        it('does not route via runtime server from the runtime server process itself', () => {
+            process.argv[1] = 'C:/Users/lochen/.optimus/dist/http-runtime.js';
+            Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+            expect(shouldRouteViaRuntimeServer()).toBe(false);
+        });
+
+        it('routes via runtime server for non-runtime detached host-agent processes', () => {
+            process.argv[1] = 'C:/Users/lochen/optimus-code/.optimus/dist/mcp-server.js';
+            Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+            expect(shouldRouteViaRuntimeServer()).toBe(true);
+        });
+    });
+
+    describe('resolveRuntimeProxyTimeoutMs', () => {
+        it('uses timeoutMs plus grace when an explicit timeout is provided', () => {
+            expect(resolveRuntimeProxyTimeoutMs(45_000, 300_000)).toBe(75_000);
+        });
+
+        it('falls back to the engine activity timeout plus grace', () => {
+            expect(resolveRuntimeProxyTimeoutMs(undefined, 300_000)).toBe(330_000);
         });
     });
 });

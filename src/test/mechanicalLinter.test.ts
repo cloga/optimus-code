@@ -65,7 +65,33 @@ You are an expert code reviewer.
 - Review caching strategy
 - Ensure proper cleanup
 - Check resource limits
-- Verify monitoring hooks`;
+- Verify monitoring hooks
+
+## Workflow
+- Clarify scope before reviewing
+- Inspect diffs and surrounding context
+- Prioritize correctness, risk, and regressions
+- Hand back actionable findings with file-level specificity
+
+## Quality Standards
+- Focus on bugs, security risks, and broken behavior
+- Keep findings evidence-based and reproducible
+- Avoid style-only comments unless they hide a correctness issue
+
+## Constraints
+- Do not rewrite code unless explicitly asked
+- Do not speculate beyond the changed scope without evidence
+- Do not report trivial formatting issues as findings
+
+## Collaboration Contract
+- Escalate uncertain cases as questions, not facts
+- Coordinate with implementation agents through concrete handoffs
+- Summarize the highest-risk items first
+
+## Output Guidelines
+- Use concise, scan-friendly markdown
+- Include why the issue matters, not just what changed
+- Reference exact files or locations when possible`;
 
         it('passes valid role template', () => {
             const result = lintRoleTemplate(validRole, 'test.md');
@@ -98,6 +124,23 @@ You are an expert code reviewer.
         it('warns on thin template', () => {
             const result = lintRoleTemplate('---\nrole: test\ndescription: test\nengine: x\n---\n# Short\nJust a few lines.', 'test.md');
             expect(result.issues.find(i => i.rule === 'role-thin-template')).toBeDefined();
+        });
+
+        it('warns when recommended rich sections are missing', () => {
+            const result = lintRoleTemplate(`---
+role: test
+tier: T2
+description: "Role without full structure"
+engine: claude-code
+---
+# Test
+
+## Core Responsibilities
+- Do useful work
+`, 'test.md');
+            const sectionWarnings = result.issues.filter(i => i.rule === 'role-section-missing');
+            expect(sectionWarnings.length).toBeGreaterThanOrEqual(5);
+            expect(sectionWarnings.some(i => i.message.includes('## Workflow'))).toBe(true);
         });
 
         it('fails on invalid status', () => {

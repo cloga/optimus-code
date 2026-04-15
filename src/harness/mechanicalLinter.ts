@@ -51,6 +51,14 @@ export function parseFrontmatter(content: string): { meta: Record<string, string
 
 const VALID_ROLE_NAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 const ROLE_REQUIRED_FIELDS = ['role', 'description', 'engine'];
+const ROLE_RECOMMENDED_SECTIONS = [
+    'Core Responsibilities',
+    'Workflow',
+    'Quality Standards',
+    'Constraints',
+    'Collaboration Contract',
+    'Output Guidelines',
+];
 
 export function lintRoleTemplate(content: string, filePath: string): LintResult {
     const issues: LintIssue[] = [];
@@ -109,6 +117,18 @@ export function lintRoleTemplate(content: string, filePath: string): LintResult 
             message: `Role body has only ${contentLines.length} non-empty lines (min 25 for rich template).`,
             severity: 'warning',
         });
+    }
+
+    for (const section of ROLE_RECOMMENDED_SECTIONS) {
+        const sectionPattern = new RegExp(`^##\\s+${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'mi');
+        if (!sectionPattern.test(body)) {
+            issues.push({
+                rule: 'role-section-missing',
+                file: filePath,
+                message: `Recommended section '## ${section}' is missing from role template body.`,
+                severity: 'warning',
+            });
+        }
     }
 
     // Status field validation

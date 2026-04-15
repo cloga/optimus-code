@@ -11,9 +11,29 @@ import { resolveOptimusPath } from '../utils/worktree';
 import { synthesizeIfRequired, injectSynthesisContext } from './synthesis-coordinator';
 import { fireHook } from '../harness/lifecycle-hooks.js';
 
+export function openWorkerLogFd(logsDir: string, taskId: string): number | 'ignore' {
+    try {
+        if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+    } catch {
+        return 'ignore';
+    }
+
+    try {
+        return fs.openSync(path.join(logsDir, `worker-${taskId}.log`), 'a');
+    } catch {
+        return 'ignore';
+    }
+}
+
 /**
  * Spawn a detached background worker for an async task.
  * Centralized helper used by delegate_task_async, dispatch_council_async, and dependency unblocking.
+ *
+ * Windows note: passing a raw fd number directly to stdio[2] can cause the child process to crash
+ * when the parent closes the fd immediately after spawn (fd=null error in child). On Windows,
+ * the underlying Win32 HANDLE may not be properly inherited before the parent closes it.
+ * Fix: use 'pipe' for stderr and pipe child.stderr to a WriteStream (keeping it alive until exit),
+ * or fall back to 'ignore' when log capture is not available.
  */
 export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
     // __filename resolves to the compiled mcp-server.js at runtime (council-runner is bundled alongside)
@@ -30,20 +50,56 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
         return;
     }
 
-    // Log worker stderr to a file for debugging (instead of stdio: "ignore" which swallows all errors)
+    // Resolve the log file path for debugging (used with 'pipe' approach below)
     const logsDir = resolveOptimusPath(workspacePath, 'logs');
-    try { if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true }); } catch { /* best-effort */ }
-    let stderrStream: fs.WriteStream | 'ignore' = 'ignore';
-    try {
-        stderrStream = fs.createWriteStream(path.join(logsDir, `worker-${taskId}.log`), { flags: 'a' });
-    } catch { /* fall back to ignore if log creation fails */ }
+    const logPath = path.join(logsDir, `worker-${taskId}.log`);
 
-    const child = spawn(process.execPath, [mcpServerPath, "--run-task", taskId, workspacePath], {
-        detached: true,
-        stdio: ['ignore', 'ignore', stderrStream === 'ignore' ? 'ignore' : stderrStream],
-        windowsHide: true,
-        cwd: workspacePath,
-    });
+    // Prepare log write stream. We use 'pipe' for child stderr and pipe it to a WriteStream
+    // instead of passing a raw fd number — this avoids the Windows fd=null crash where the
+    // parent closing the fd immediately after spawn invalidates the child's stderr handle.
+    let logStream: fs.WriteStream | null = null;
+    let hasLogStream = false;
+    try {
+        if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+        logStream = fs.createWriteStream(logPath, { flags: 'a' });
+        hasLogStream = true;
+    } catch {
+        // Fall back to no logging — child will use 'ignore'
+    }
+
+    let child;
+    try {
+        child = spawn(process.execPath, [mcpServerPath, "--run-task", taskId, workspacePath], {
+            detached: true,
+            // Use 'pipe' when we have a log stream (safe on Windows), otherwise 'ignore'.
+            // Never pass a raw fd number — on Windows this causes fd=null crash in the child
+            // when the parent closes the fd immediately after spawn.
+            stdio: ['ignore', 'ignore', hasLogStream ? 'pipe' : 'ignore'],
+            windowsHide: true,
+            cwd: workspacePath,
+        });
+    } catch (err) {
+        if (logStream) { try { logStream.destroy(); } catch { /* best-effort */ } }
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[Runner] ❌ Async worker spawn threw for ${taskId}: ${message}`);
+        TaskManifestManager.updateTask(workspacePath, taskId, {
+            status: 'failed',
+            error_message: `SPAWN_FAILED: ${message}`,
+            completed_at: Date.now(),
+        });
+        return;
+    }
+
+    // Pipe child stderr to the log file (kept alive until child exits — no premature close)
+    if (hasLogStream && logStream && child.stderr) {
+        child.stderr.pipe(logStream);
+        child.on('close', () => {
+            try { logStream!.end(); } catch { /* best-effort */ }
+        });
+    } else if (logStream) {
+        // No child.stderr (shouldn't happen with 'pipe', but be defensive)
+        try { logStream.destroy(); } catch { /* best-effort */ }
+    }
 
     // If spawn itself fails, record immediately
     child.on('error', (err) => {
@@ -56,7 +112,7 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
     });
 
     child.unref();
-    console.error(`[Runner] Spawned async worker for ${taskId} (pid=${child.pid}, log=${typeof stderrStream === 'string' ? 'none' : path.join(logsDir, `worker-${taskId}.log`)})`);
+    console.error(`[Runner] Spawned async worker for ${taskId} (pid=${child.pid}, log=${hasLogStream ? logPath : 'none'})`);
 }
 
 /**

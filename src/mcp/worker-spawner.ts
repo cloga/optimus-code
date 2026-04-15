@@ -32,6 +32,7 @@ import { PromptCacheManager } from '../managers/PromptCacheManager.js';
 import { fireHook } from '../harness/lifecycle-hooks.js';
 import { TaskDelegationResult, formatTaskResultAsText } from '../types/TaskDelegationResult.js';
 import { extractTaskResult, TaskResultMetadata } from '../harness/resultFormatter.js';
+import { buildRoleCreatorPrompt, buildStructuredRoleTemplate, normalizeGeneratedRoleTemplate } from './role-template-quality';
 
 // Re-export extracted modules for backward compatibility
 export {
@@ -470,20 +471,15 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
     if (META_ROLES.includes(safeRoleCheck) || currentDepthLocal >= MAX_DELEGATION_DEPTH - 1) {
         // Bootstrap paradox or depth budget exhausted — fall back to thin template
         console.error(`[Precipitation] Falling back to thin template for '${safeRole}' (meta-role: ${META_ROLES.includes(safeRoleCheck)}, depth: ${currentDepthLocal}/${MAX_DELEGATION_DEPTH})`);
-        const template = `---
-role: ${safeRole}
-tier: T2
-thin: true
-description: "${desc.substring(0, 200).replace(/"/g, "'")}"
-engine: ${validatedEng}
-model: ${validatedMod}
-precipitated: ${new Date().toISOString()}
----
-
-# ${formattedRole}
-
-${desc}
-`;
+        const template = buildStructuredRoleTemplate({
+            role: safeRole,
+            displayName: formattedRole,
+            description: desc,
+            engine: validatedEng,
+            model: validatedMod,
+            precipitatedAt: new Date().toISOString(),
+            thin: true,
+        });
         fs.writeFileSync(t2Path, template, 'utf8');
         console.error(`[Precipitation] T3 role '${safeRole}' promoted to T2 (thin) at ${t2Path}`);
         registerRole(workspacePath, safeRole, desc);
@@ -529,42 +525,17 @@ async function generateRichT2Role(
         .split(/[-_]+/)
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
+    const precipitatedAt = new Date().toISOString();
 
     // 2. Construct the prompt
-    const prompt = `You are a role-creation specialist. Your task is to create a professional-grade T2 role template.
-
-Role name: ${safeRole}
-Role display name: ${formattedRole}
-Role description: ${description}
-Engine: ${engine}
-Model: ${model || 'default'}
-
-Using the role-creator skill guidance below, produce a COMPLETE role definition file.
-
-The output MUST be a valid markdown file with YAML frontmatter. Output ONLY the file content — no explanations, no code fences around it.
-
-Required frontmatter fields:
----
-role: ${safeRole}
-tier: T2
-description: "<rich 1-2 sentence description>"
-engine: ${engine}
-model: ${model || ''}
-precipitated: ${new Date().toISOString()}
-auto_created: true
----
-
-Required body sections:
-# ${formattedRole}
-<2-3 sentence purpose statement>
-## Core Responsibilities
-- <3-5 specific actionable responsibilities>
-## Quality Standards
-- <2-3 measurable quality criteria>
-## Constraints
-- <2-3 behavioral boundaries>
-
-${roleCreatorSkillContent ? `=== SKILL REFERENCE ===\n${roleCreatorSkillContent}\n=== END SKILL REFERENCE ===` : ''}`;
+    const prompt = buildRoleCreatorPrompt({
+        role: safeRole,
+        displayName: formattedRole,
+        description,
+        engine,
+        model,
+        precipitatedAt,
+    }, roleCreatorSkillContent);
 
     // 3. Get adapter and invoke
     const adapter = getAdapterForEngine(engine, undefined, model);
@@ -578,10 +549,17 @@ ${roleCreatorSkillContent ? `=== SKILL REFERENCE ===\n${roleCreatorSkillContent}
 
     // 4. Parse the response — look for frontmatter start
     const fmStart = roleContent.indexOf('---');
-    if (fmStart === -1) {
-        throw new Error('role-creator response did not contain valid frontmatter (no --- found)');
-    }
-    const content = roleContent.slice(fmStart).trim();
+    const content = normalizeGeneratedRoleTemplate(
+        fmStart === -1 ? roleContent : roleContent.slice(fmStart).trim(),
+        {
+            role: safeRole,
+            displayName: formattedRole,
+            description,
+            engine,
+            model,
+            precipitatedAt,
+        }
+    );
 
     // Validate that we have a closing frontmatter delimiter
     const secondDash = content.indexOf('---', 3);

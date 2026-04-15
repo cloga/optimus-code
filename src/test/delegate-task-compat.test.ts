@@ -47,6 +47,17 @@ describe('delegate_task compatibility layer', () => {
         expect(delegateTool?.description).toContain('Prefer delegate_task_async');
     });
 
+    it('advertises dispatch_plan_async for fleet-like batch orchestration', async () => {
+        const data = await connectClient();
+
+        const tools = await data.client.listTools();
+        const planTool = tools.tools.find(tool => tool.name === 'dispatch_plan_async');
+
+        expect(planTool).toBeDefined();
+        expect(planTool?.description).toContain('batch of work items');
+        expect(planTool?.description).toContain('dependency edges');
+    });
+
     it('rejects synchronous delegate_task calls without workspace_path', async () => {
         const data = await connectClient();
 

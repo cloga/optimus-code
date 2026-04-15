@@ -20,6 +20,7 @@ import { TaskManifestManager, writeFailureMarker, validateStartupTimeoutMs } fro
 import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker, runWorkerInProcess, spawnAsyncWorker } from "./council-runner";
 import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
+import { canonicalizeDelegateOutputPath, createAsyncDelegateTask, prepareAsyncPlanDispatch, writeDelegateTaskArtifact } from "./async-plan-dispatch";
 import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
@@ -106,14 +107,6 @@ reloadEnv();
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function writeDelegateTaskArtifact(workspacePath: string, taskId: string, taskDescription: string): string {
-  const tasksDir = resolveOptimusPath(workspacePath, "tasks");
-  fs.mkdirSync(tasksDir, { recursive: true });
-  const taskArtifactPath = path.join(tasksDir, `${taskId}.md`);
-  fs.writeFileSync(taskArtifactPath, taskDescription, 'utf8');
-  return taskArtifactPath;
 }
 
 function persistAsyncRunnerFatalFailure(taskId: string, workspacePath: string, error: unknown): void {
@@ -547,6 +540,93 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "dispatch_plan_async",
+        description: "Register a batch of work items with explicit item IDs and dependency edges, spawn all ready items in parallel, and auto-unblock dependent items as prerequisites verify. Use this when you already decomposed a task into a fleet-like execution plan.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: {
+              type: "string",
+              description: "Absolute path to the project workspace root.",
+            },
+            items: {
+              type: "array",
+              description: "Work items to enqueue. Each item needs a stable id, a role, a task description, and an output path. Dependencies should reference other item ids in this same array or existing task IDs.",
+              items: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                    description: "Stable plan item identifier. Use short kebab-case or snake_case IDs because other items depend on these values.",
+                  },
+                  role: {
+                    type: "string",
+                    description: "The expert role that should execute this work item.",
+                  },
+                  role_description: {
+                    type: "string",
+                    description: "Optional description used if the role must be created or updated.",
+                  },
+                  role_engine: {
+                    type: "string",
+                    description: "Optional execution engine override for this item.",
+                  },
+                  role_model: {
+                    type: "string",
+                    description: "Optional model override for this item.",
+                  },
+                  task_description: {
+                    type: "string",
+                    description: "Detailed work item instructions for the assigned role.",
+                  },
+                  output_path: {
+                    type: "string",
+                    description: "Where the worker should write its final result. Paths outside .optimus/ are automatically scoped into .optimus/results/.",
+                  },
+                  context_files: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Optional workspace-relative context files that the worker must read before execution.",
+                  },
+                  required_skills: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Optional skills required by this item.",
+                  },
+                  depends_on: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Optional prerequisite item IDs (from this plan) or existing task IDs that must reach verified before this item starts.",
+                  },
+                  heartbeat_timeout_ms: {
+                    type: "number",
+                    description: "Optional heartbeat timeout override for this item.",
+                  },
+                  startup_timeout_ms: {
+                    type: "number",
+                    description: "Optional startup timeout override for this item.",
+                  },
+                  synthesis_required: {
+                    type: "boolean",
+                    description: "If true, findings from this item are synthesized before dependents are unblocked.",
+                  },
+                  synthesis_role: {
+                    type: "string",
+                    description: "Optional synthesis role override.",
+                  },
+                },
+                required: ["id", "role", "task_description", "output_path"],
+              },
+            },
+            parent_issue_number: {
+              type: "number",
+              description: "The GitHub issue number of the parent epic or task. Used for lineage across all spawned items.",
+            },
+          },
+          required: ["workspace_path", "items"],
+        }
+      },
+      {
         name: "dispatch_council_async",
         description: "Trigger an async map-reduce multi-expert review for a problem statement or architectural proposal. The proposal_path can point to a 00-PROBLEM.md or PROPOSAL file in .optimus/specs/.",
         inputSchema: {
@@ -923,52 +1003,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const parentIssueNumber = (request.params.arguments as any).parent_issue_number
         ?? (Number.isNaN(rawParentAsync) ? undefined : rawParentAsync);
 
-    // Canonicalize output_path: resolve relative paths and scope to .optimus/results/ when needed
-    // (mirrors the sync delegate_task handler to prevent path escaping .optimus/)
-    const optimusDir = path.join(workspace_path, ".optimus");
-    const resolvedOutputPath = path.resolve(workspace_path, output_path);
-    output_path = resolvedOutputPath.startsWith(optimusDir)
-      ? resolvedOutputPath
-      : path.join(optimusDir, "results", path.basename(output_path));
-
     const resolvedHeartbeatTimeout = resolveHeartbeatTimeout(workspace_path, role_engine, heartbeat_timeout_ms);
     try { validateStartupTimeoutMs(startup_timeout_ms); } catch (e: any) {
       throw new McpError(ErrorCode.InvalidParams, e.message);
     }
 
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
-    const taskArtifactPath = writeDelegateTaskArtifact(workspace_path, taskId, task_description);
-    TaskManifestManager.createTask(workspace_path, {
-        taskId, type: "delegate_task", role, task_description, task_artifact_path: taskArtifactPath, output_path, workspacePath: workspace_path, context_files: context_files || [],
-        role_description, role_engine, role_model, required_skills,
-        delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
+    const createdTask = createAsyncDelegateTask({
+        role,
+        task_description,
+        output_path,
+        workspace_path,
+        role_description,
+        role_engine,
+        role_model,
+        context_files,
+        required_skills,
         parent_issue_number: parentIssueNumber,
-        agent_id: agent_id || undefined,
-        depends_on: Array.isArray(depends_on) && depends_on.length > 0 ? depends_on : undefined,
+        agent_id,
+        depends_on,
         heartbeat_timeout_ms: resolvedHeartbeatTimeout,
-        startup_timeout_ms: startup_timeout_ms,
-        synthesis_required: synthesis_required || undefined,
-        synthesis_role: synthesis_role || undefined,
+        startup_timeout_ms,
+        synthesis_required,
+        synthesis_role,
+        delegation_depth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
     });
-
-    // Dependency check: determine if task should be blocked
-    let isBlocked = false;
-    let blockedBy: string[] = [];
-    if (Array.isArray(depends_on) && depends_on.length > 0) {
-        const manifest = TaskManifestManager.loadManifest(workspace_path);
-        blockedBy = depends_on.filter((depId: string) => {
-            const dep = manifest[depId];
-            return !dep || dep.status !== 'verified';
-        });
-        if (blockedBy.length > 0) {
-            isBlocked = true;
-            // Synchronously update to blocked status before any spawn
-            TaskManifestManager.updateTask(workspace_path, taskId, {
-                status: 'blocked',
-                blocked_by: blockedBy
-            });
-        }
-    }
+    const taskId = createdTask.taskId;
+    output_path = createdTask.outputPath;
+    const blockedBy = createdTask.blockedBy;
+    const isBlocked = blockedBy.length > 0;
 
     // Best-effort: auto-create GitHub Issue for traceability
     let issueInfo = '';
@@ -1024,6 +1086,107 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: `⏳ Task queued with dependencies.\n\n**Task ID**: ${taskId}\n**Role**: ${role}\n**Status**: blocked\n**Blocked by**: ${blockedBy.map(id => `\`${id}\``).join(', ')}${issueInfo}\n\nTask will auto-start when all dependencies reach \`verified\` status. Use check_task_status to monitor.${contextHint}` }] };
     }
     return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status to retrieve structured execution metadata (tokens, timing, status) after completion.${contextHint}` }] };
+  }
+
+  if (request.params.name === "dispatch_plan_async") {
+    let { workspace_path, items } = request.params.arguments as any;
+    requireParams("dispatch_plan_async", request.params.arguments as any, ["workspace_path", "items"]);
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for dispatch_plan_async: 'items' must be a non-empty array.");
+    }
+
+    const rawParentPlan = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
+    const parentIssueNumber = (request.params.arguments as any).parent_issue_number
+      ?? (Number.isNaN(rawParentPlan) ? undefined : rawParentPlan);
+
+    const normalizedItems = items.map((rawItem: any, index: number) => {
+      requireParams(`dispatch_plan_async.items[${index}]`, rawItem, ["id", "role", "task_description", "output_path"]);
+      const resolvedRole = resolveRoleName(rawItem.role, workspace_path);
+      validateRoleNotModelName(resolvedRole);
+      validateEngineAndModel(rawItem.role_engine, rawItem.role_model, workspace_path);
+      try { validateStartupTimeoutMs(rawItem.startup_timeout_ms); } catch (e: any) {
+        throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for dispatch_plan_async.items[${index}]: ${e.message}`);
+      }
+      return {
+        id: rawItem.id,
+        role: resolvedRole,
+        role_description: rawItem.role_description,
+        role_engine: rawItem.role_engine,
+        role_model: rawItem.role_model,
+        task_description: rawItem.task_description,
+        output_path: rawItem.output_path,
+        context_files: rawItem.context_files || [],
+        required_skills: rawItem.required_skills,
+        depends_on: rawItem.depends_on,
+        heartbeat_timeout_ms: resolveHeartbeatTimeout(workspace_path, rawItem.role_engine, rawItem.heartbeat_timeout_ms),
+        startup_timeout_ms: rawItem.startup_timeout_ms,
+        synthesis_required: rawItem.synthesis_required,
+        synthesis_role: rawItem.synthesis_role,
+      };
+    });
+
+    let preparedPlan;
+    try {
+      preparedPlan = prepareAsyncPlanDispatch({
+        workspacePath: workspace_path,
+        items: normalizedItems,
+        parentIssueNumber,
+        delegationDepth: parseInt(process.env.OPTIMUS_DELEGATION_DEPTH || '0', 10),
+      });
+    } catch (e: any) {
+      throw new McpError(ErrorCode.InvalidParams, e.message);
+    }
+
+    let issueInfo = '';
+    const remote = parseGitRemote(workspace_path);
+    if (remote) {
+      const createdIssues: Array<{ taskId: string; url: string }> = [];
+      for (const task of preparedPlan.tasks) {
+        const manifestTask = TaskManifestManager.loadManifest(workspace_path)[task.taskId];
+        const taskDescription = manifestTask?.task_description || task.taskId;
+        const truncDesc = taskDescription.length > 300 ? taskDescription.substring(0, 300) + '...' : taskDescription;
+        const shortTitle = taskDescription.split('\n')[0].substring(0, 80).trim();
+        const parentRef = parentIssueNumber ? `**Parent Epic:** #${parentIssueNumber}\n\n` : '';
+        const issue = await createGitHubIssue(
+          remote.owner,
+          remote.repo,
+          `[Task] ${task.role}: ${shortTitle}...`,
+          `${parentRef}## Auto-generated Swarm Task Tracker\n\n**Task ID:** \`${task.taskId}\`\n**Role:** \`${task.role}\`\n**Output Path:** \`${task.outputPath}\`\n\n### Task Description\n${truncDesc}` + agentSignature(task.role, task.taskId),
+          ['swarm-task', 'optimus-bot']
+        );
+        if (issue) {
+          TaskManifestManager.updateTask(workspace_path, task.taskId, { github_issue_number: issue.number });
+          createdIssues.push({ taskId: task.taskId, url: issue.html_url });
+        }
+      }
+      if (createdIssues.length > 0) {
+        issueInfo = `\n\n**GitHub Issues**\n${createdIssues.map(issue => `- \`${issue.taskId}\`: ${issue.url}`).join('\n')}`;
+      }
+    }
+
+    if (preparedPlan.readyTaskIds.length > 0) {
+      try {
+        await ensureRuntimeServer(workspace_path);
+      } catch (e: any) {
+        console.error(`[MCP] ⚠️ Runtime server pre-start for dispatch_plan_async failed: ${e.message}`);
+      }
+      for (const readyTaskId of preparedPlan.readyTaskIds) {
+        spawnAsyncWorker(readyTaskId, workspace_path);
+      }
+    }
+
+    const itemMappings = Object.entries(preparedPlan.itemTaskIds)
+      .map(([itemId, taskId]) => `- \`${itemId}\` → \`${taskId}\``)
+      .join('\n');
+    const blockedSummary = preparedPlan.blockedTaskIds.length > 0
+      ? `\n**Blocked Tasks**: ${preparedPlan.blockedTaskIds.map(id => `\`${id}\``).join(', ')}`
+      : '';
+    return {
+      content: [{
+        type: "text",
+        text: `✅ Plan dispatched successfully in background.\n\n**Plan ID**: ${preparedPlan.planId}\n**Ready Tasks Spawned**: ${preparedPlan.readyTaskIds.length}\n**Blocked Tasks Queued**: ${preparedPlan.blockedTaskIds.length}${blockedSummary}\n\n**Item → Task Mapping**\n${itemMappings}${issueInfo}\n\nDependent tasks will auto-start when their prerequisites reach \`verified\` status. Use check_task_status with the mapped task IDs to monitor execution.`
+      }]
+    };
   }
   
   if (request.params.name === "dispatch_council_async") {
@@ -1565,11 +1728,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Canonicalize output_path: if it does not already live under this workspace's .optimus/,
     // scope it to .optimus/results/<basename> so no files escape to the workspace root.
-    const optimusDir = path.join(workspacePath, ".optimus");
-    const resolvedOutputPath = path.resolve(workspacePath, output_path);
-    const canonicalOutputPath = resolvedOutputPath.startsWith(optimusDir)
-      ? resolvedOutputPath
-      : path.join(optimusDir, "results", path.basename(output_path));
+    const canonicalOutputPath = canonicalizeDelegateOutputPath(workspacePath, output_path);
 
     // 1. Write the task description into a Blackboard Artifact so sync and async
     // share the same task payload shape when invoking delegateTaskSingle.
