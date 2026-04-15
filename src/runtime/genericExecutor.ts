@@ -13,7 +13,7 @@ import { AcpProcessPool } from '../utils/acpProcessPool';
 import { AcpAdapter } from '../adapters/AcpAdapter';
 import { extractJsonFromText } from '../utils/agentRuntime';
 import { validateOutput, formatValidationIssues } from '../harness/outputValidator';
-import { getEngineConfig, buildResolvedTransportForProtocol, loadEngineActivityTimeout } from '../mcp/engine-resolver';
+import { getEngineConfig, buildResolvedTransportForProtocol, loadEngineActivityTimeout, loadEngineHeartbeatTimeout } from '../mcp/engine-resolver';
 import { isCopilotCliExecutable } from '../utils/copilotAuthEnv';
 import http from 'http';
 import { spawn, ChildProcess } from 'child_process';
@@ -60,9 +60,24 @@ export function resolveEngineConfig(engine: string): EngineConfig {
 // ─── Runtime Server Proxy (for nested-engine conflict avoidance) ───
 
 const RUNTIME_PORT = parseInt(process.env.OPTIMUS_RUNTIME_PORT || '3100', 10);
+const RUNTIME_PROXY_TIMEOUT_GRACE_MS = 30_000;
 let runtimeServerProcess: ChildProcess | null = null;
 let runtimeServerReady = false;
 let runtimeServerStarting: Promise<void> | null = null;
+
+export function isRuntimeServerProcess(argv1 = process.argv[1], env = process.env): boolean {
+    const scriptName = path.basename(argv1 || '').toLowerCase();
+    return env.OPTIMUS_RUNTIME_SERVER === '1' || scriptName === 'http-runtime.js';
+}
+
+export function shouldRouteViaRuntimeServer(argv1 = process.argv[1], env = process.env): boolean {
+    return !isRuntimeServerProcess(argv1, env) && !process.stdin.isTTY;
+}
+
+export function resolveRuntimeProxyTimeoutMs(timeoutMs: number | undefined, activityTimeoutMs: number): number {
+    const baseTimeoutMs = timeoutMs && timeoutMs > 0 ? timeoutMs : activityTimeoutMs;
+    return Math.max(30_000, baseTimeoutMs + RUNTIME_PROXY_TIMEOUT_GRACE_MS);
+}
 
 /**
  * Detect if spawning the given executable would create a nested-engine conflict.
@@ -145,7 +160,7 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
             detached: true,
             stdio: ['ignore', 'ignore', 'pipe'],
             windowsHide: true,
-            env: { ...process.env },
+            env: { ...process.env, OPTIMUS_RUNTIME_SERVER: '1' },
         });
         runtimeServerProcess.unref();
 
@@ -205,7 +220,8 @@ function httpGet(url: string): Promise<boolean> {
 /** Execute a prompt via the runtime HTTP server (v2 API) */
 async function executeViaRuntimeServer(
     prompt: string,
-    options: ExecuteOptions
+    options: ExecuteOptions,
+    proxyTimeoutMs: number
 ): Promise<ExecuteResult> {
     const startTime = Date.now();
     const body = JSON.stringify({
@@ -218,13 +234,28 @@ async function executeViaRuntimeServer(
     });
 
     return new Promise<ExecuteResult>((resolve, reject) => {
+        let settled = false;
+        let proxyTimer: NodeJS.Timeout | undefined;
+        const finishReject = (err: Error) => {
+            if (settled) return;
+            settled = true;
+            if (proxyTimer) clearTimeout(proxyTimer);
+            reject(err);
+        };
+        const finishResolve = (result: ExecuteResult) => {
+            if (settled) return;
+            settled = true;
+            if (proxyTimer) clearTimeout(proxyTimer);
+            resolve(result);
+        };
+
         const req = http.request({
             hostname: '127.0.0.1',
             port: RUNTIME_PORT,
             path: '/api/v2/agent/run',
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-            timeout: 0, // no HTTP timeout — agent tasks can run long
+            timeout: proxyTimeoutMs,
         }, (res) => {
             const chunks: Buffer[] = [];
             res.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -236,7 +267,7 @@ async function executeViaRuntimeServer(
                         const output = typeof envelope.result === 'string'
                             ? envelope.result
                             : JSON.stringify(envelope.result, null, 2);
-                        resolve({
+                        finishResolve({
                             output,
                             parsed: typeof envelope.result !== 'string' ? envelope.result : undefined,
                             sessionId: envelope.metadata?.session_id,
@@ -245,18 +276,32 @@ async function executeViaRuntimeServer(
                             durationMs,
                         });
                     } else {
-                        reject(new Error(
+                        finishReject(new Error(
                             `Runtime server returned status '${envelope.status}': ${envelope.error?.message || 'unknown error'}. ` +
                             `Fix: ${envelope.error?.fix || 'check runtime server logs'}`
                         ));
                     }
                 } catch (e: any) {
-                    reject(new Error(`Failed to parse runtime server response: ${e.message}`));
+                    finishReject(new Error(`Failed to parse runtime server response: ${e.message}`));
                 }
             });
         });
+        proxyTimer = setTimeout(() => {
+            req.destroy();
+            finishReject(new Error(
+                `Runtime server proxy timed out after ${proxyTimeoutMs}ms. ` +
+                `Fix: increase timeout_ms, reduce runtime concurrency, or inspect runtime server logs.`
+            ));
+        }, proxyTimeoutMs);
+        req.on('timeout', () => {
+            req.destroy();
+            finishReject(new Error(
+                `Runtime server proxy timed out after ${proxyTimeoutMs}ms. ` +
+                `Fix: increase timeout_ms, reduce runtime concurrency, or inspect runtime server logs.`
+            ));
+        });
         req.on('error', (err) => {
-            reject(new Error(
+            finishReject(new Error(
                 `Runtime server proxy failed: ${err.message}. ` +
                 `Fix: ensure runtime server is running on port ${RUNTIME_PORT} (node .optimus/dist/http-runtime.js --port ${RUNTIME_PORT})`
             ));
@@ -353,13 +398,23 @@ export async function executePrompt(
     //   1. Avoids nested-engine auth conflicts (copilot-in-copilot)
     //   2. Decouples ACP process lifecycle from the MCP server process
     //   3. Enables runtime server's warm pool, auto-scaling, and retry
-    const isInsideHostAgent = !process.stdin.isTTY;
-    if (isInsideHostAgent) {
+    if (shouldRouteViaRuntimeServer()) {
         const serverReady = await ensureRuntimeServer(options.workspacePath);
+        // Use heartbeatTimeoutMs as proxy base when it's larger than activityTimeoutMs.
+        // heartbeatTimeoutMs (e.g. 600s) is the total wall-clock budget for the task;
+        // activityTimeoutMs (e.g. 300s) is only the inactivity window between ACP messages.
+        // A multi-step agent task (read files, write code, build) easily exceeds 300s
+        // of total elapsed time even if individual ACP messages arrive within 300s —
+        // so the proxy must wait at least heartbeatTimeoutMs for the response.
+        const heartbeatTimeoutMs = options.workspacePath
+            ? (loadEngineHeartbeatTimeout(options.workspacePath, engine) ?? activityTimeoutMs)
+            : activityTimeoutMs;
+        const effectiveTimeoutMs = Math.max(activityTimeoutMs, heartbeatTimeoutMs);
+        const proxyTimeoutMs = resolveRuntimeProxyTimeoutMs(options.timeoutMs, effectiveTimeoutMs);
         if (serverReady) {
             console.error(`[Executor] Routing ${engine} execution via runtime server on :${RUNTIME_PORT}`);
             try {
-                return await executeViaRuntimeServer(prompt, options);
+                return await executeViaRuntimeServer(prompt, options, proxyTimeoutMs);
             } catch (proxyErr: any) {
                 // If connection was refused/reset, the runtime server may have crashed.
                 // Reset state and try to auto-restart it once.
@@ -369,7 +424,7 @@ export async function executePrompt(
                     const restarted = await ensureRuntimeServer(options.workspacePath);
                     if (restarted) {
                         console.error(`[Executor] Runtime server restarted, retrying execution`);
-                        return await executeViaRuntimeServer(prompt, options);
+                        return await executeViaRuntimeServer(prompt, options, proxyTimeoutMs);
                     }
                 }
                 throw proxyErr;
