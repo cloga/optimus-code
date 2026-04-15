@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.24.1] - 2026-04-16
+
+### Bug Fixes
+- **Windows async spawn proxy timeout (P1)** — Fixed `Runtime server proxy timed out after 330000ms` on Windows. The proxy timeout was based on `activityTimeoutMs` (300s inactivity window) instead of `heartbeatTimeoutMs` (600s total task budget). Multi-step agent tasks (reading files, writing code, building TypeScript) easily exceed 5.5 minutes total elapsed time even if individual ACP messages arrive within 300s. Fix increases the proxy budget to 630s (heartbeatTimeoutMs + 30s grace), resolving Issue #568. ([#568](https://github.com/cloga/optimus-code/issues/568))
+- **Runtime server process detection** — Extracted `isRuntimeServerProcess()`, `shouldRouteViaRuntimeServer()`, and `resolveRuntimeProxyTimeoutMs()` as standalone testable functions; added `OPTIMUS_RUNTIME_SERVER=1` env var to the runtime server child process for reliable detection without process name inspection.
+- **Proxy double-settle guard** — Added `settled`/`finishReject`/`finishResolve` guards in `executeViaRuntimeServer` to prevent both `req.timeout` and `proxyTimer` from firing on the same request.
+
 ## [2.24.0] - 2026-04-14
 
 ### Features
