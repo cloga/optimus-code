@@ -3,6 +3,101 @@ import * as path from 'path';
 import { TaskManifestManager } from '../managers/TaskManifestManager';
 
 /**
+ * Phase 1 of End-to-End Accountability: Synthesis Quality Gate.
+ *
+ * A single synthesis object describing how strong a piece of heuristic synthesis
+ * is. Stored alongside the findings in the task manifest so dependent agents
+ * and human reviewers can tell at a glance whether the synthesized context is
+ * reliable or low-signal fallback.
+ */
+export interface SynthesisQuality {
+    /** Overall 0..1 quality score (1.0 == best) */
+    score: number;
+    /** Human-readable flags describing weaknesses (empty on high-quality synthesis) */
+    flags: string[];
+    /** True when the extractor had to fall back to "first N lines" mode */
+    fallback_only: boolean;
+    /** True when the source output was truncated before extraction */
+    truncated: boolean;
+}
+
+const QUALITY_THRESHOLD = 0.3;
+
+/**
+ * Score the quality of a heuristic synthesis.
+ *
+ * Inputs:
+ *   - output: the raw predecessor output that was synthesized (possibly truncated)
+ *   - findings: the markdown produced by extractKeyFindings()
+ *   - truncated: whether `output` was truncated before extraction
+ *
+ * The scorer rewards presence of Document Structure, Key Conclusions, and
+ * Notable Points sections, and penalizes fallback-only synthesis, very short
+ * findings, and truncated source output.
+ */
+export function scoreSynthesisQuality(
+    output: string,
+    findings: string,
+    truncated: boolean,
+): SynthesisQuality {
+    const flags: string[] = [];
+    let score = 1.0;
+
+    const hasStructure = /^### Document Structure$/m.test(findings);
+    const hasConclusions = /^### Key Conclusions$/m.test(findings);
+    const hasNotablePoints = /^### Notable Points$/m.test(findings);
+    const fallbackOnly = /^### Output Summary \(first 30 non-empty lines\)$/m.test(findings)
+        && !hasConclusions && !hasNotablePoints;
+
+    if (fallbackOnly) {
+        score -= 0.6;
+        flags.push('fallback_only: extractor found no headings, conclusions, or key bullets');
+    }
+
+    if (!hasStructure) {
+        score -= 0.1;
+        flags.push('missing_document_structure');
+    }
+    if (!hasConclusions) {
+        score -= 0.15;
+        flags.push('missing_key_conclusions');
+    }
+    if (!hasNotablePoints) {
+        score -= 0.1;
+        flags.push('missing_notable_points');
+    }
+
+    const findingsWithoutBoilerplate = findings.replace(/\*Synthesized at.*\*/g, '').trim();
+    if (findingsWithoutBoilerplate.length < 200) {
+        score -= 0.2;
+        flags.push(`synthesis_too_short: ${findingsWithoutBoilerplate.length} chars`);
+    }
+
+    if (truncated) {
+        score -= 0.1;
+        flags.push(`source_truncated: predecessor output exceeded extractor cap (length=${output.length})`);
+    }
+
+    if (output.trim().length === 0) {
+        score = 0;
+        flags.push('empty_source: predecessor produced no output');
+    }
+
+    score = Math.max(0, Math.min(1, score));
+
+    return {
+        score: Math.round(score * 100) / 100,
+        flags,
+        fallback_only: fallbackOnly,
+        truncated,
+    };
+}
+
+export function isLowQualitySynthesis(quality: SynthesisQuality): boolean {
+    return quality.score < QUALITY_THRESHOLD;
+}
+
+/**
  * Synthesize findings from a completed research task.
  * Reads the task output, generates a structured synthesis, and stores it in the manifest.
  * 
@@ -50,17 +145,26 @@ export async function synthesizeFindings(
     }
     
     const maxChars = options?.maxOutputChars ?? 15000;
-    const truncatedOutput = output.length > maxChars 
-        ? output.slice(0, maxChars) + '\n\n[... truncated ...]' 
+    const truncated = output.length > maxChars;
+    const truncatedOutput = truncated
+        ? output.slice(0, maxChars) + '\n\n[... truncated ...]'
         : output;
     
     // Generate synthesis using a structured extraction approach
     // Instead of delegating to another LLM (which would require engine availability),
     // we extract a structured summary from the output
     const findings = extractKeyFindings(truncatedOutput, task.role || 'unknown');
-    
-    // Store in manifest
-    TaskManifestManager.markSynthesized(workspacePath, taskId, findings);
+
+    // Phase 1: score quality and log; non-blocking so we never strand dependents.
+    const quality = scoreSynthesisQuality(output, findings, truncated);
+    const severity = isLowQualitySynthesis(quality) ? 'LOW' : 'OK';
+    console.error(
+        `[Synthesis] task=${taskId} role=${task.role || 'unknown'} quality=${severity} ` +
+        `score=${quality.score} fallback=${quality.fallback_only} flags=${JSON.stringify(quality.flags)}`
+    );
+
+    // Store in manifest (findings + quality together)
+    TaskManifestManager.markSynthesized(workspacePath, taskId, findings, quality);
     
     return findings;
 }
@@ -182,20 +286,50 @@ export function injectSynthesisContext(workspacePath: string, taskId: string): v
     if (!task || !task.depends_on || task.depends_on.length === 0) return;
 
     const synthesisParts: string[] = [];
+    const lowQualityBanners: string[] = [];
     for (const depId of task.depends_on) {
         const findings = TaskManifestManager.getSynthesizedFindings(workspacePath, depId);
         if (findings) {
             synthesisParts.push(findings);
+            // Phase 1: if this predecessor's synthesis was low quality, emit a
+            // per-predecessor banner so the dependent agent knows exactly which
+            // input is weak (per rubber-duck: never lose provenance on merge).
+            const quality = TaskManifestManager.getSynthesisQuality(workspacePath, depId);
+            if (quality && isLowQualitySynthesis(quality)) {
+                lowQualityBanners.push(
+                    `- Predecessor \`${depId}\` synthesis quality **LOW** ` +
+                    `(score=${quality.score}, fallback_only=${quality.fallback_only}). ` +
+                    `Flags: ${quality.flags.join('; ') || '(none)'}. ` +
+                    `Consider reading the predecessor's raw output directly before proceeding.`
+                );
+            }
         }
     }
     if (synthesisParts.length === 0) return;
 
-    const synthesisContext = [
+    const header: string[] = [
         '# Context from Prior Research',
         '',
         'The following synthesized findings were produced by predecessor research tasks.',
         'Use them as context for your implementation work.',
         '',
+    ];
+
+    if (lowQualityBanners.length > 0) {
+        header.push(
+            '> ⚠️ **Synthesis Quality Warning**',
+            '>',
+            '> One or more predecessor syntheses scored below the quality threshold.',
+            '> The heuristic extractor produced weak or fallback-only results. Treat the',
+            '> injected context as a starting hint, not a reliable summary.',
+            '>',
+            ...lowQualityBanners.map(b => `> ${b}`),
+            '',
+        );
+    }
+
+    const synthesisContext = [
+        ...header,
         '---',
         '',
         synthesisParts.join('\n\n---\n\n'),

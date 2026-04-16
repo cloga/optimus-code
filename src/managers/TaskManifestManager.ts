@@ -100,6 +100,14 @@ export interface TaskRecord {
     synthesized_at?: number;
     /** Task ID of the synthesis sub-task, if synthesis was delegated */
     synthesis_task_id?: string;
+    /** Quality score of the synthesized findings (0..1). See scoreSynthesisQuality(). */
+    synthesis_quality_score?: number;
+    /** Human-readable flags describing weaknesses in the synthesis (empty when high quality). */
+    synthesis_quality_flags?: string[];
+    /** True when the heuristic extractor fell back to "first N lines" mode. */
+    synthesis_fallback_only?: boolean;
+    /** True when the source output was truncated before synthesis. */
+    synthesis_truncated?: boolean;
 }
 
 export const DEFAULT_TASK_STARTUP_TIMEOUT_MS = 2 * 60 * 1000;
@@ -488,12 +496,43 @@ export class TaskManifestManager {
 
     /**
      * Mark a task's synthesis as complete with the given findings.
+     * Optionally includes a quality score (Phase 1 of E2E Accountability).
      */
-    static markSynthesized(workspacePath: string, taskId: string, findings: string): void {
-        this.updateTask(workspacePath, taskId, {
+    static markSynthesized(
+        workspacePath: string,
+        taskId: string,
+        findings: string,
+        quality?: { score: number; flags: string[]; fallback_only: boolean; truncated: boolean },
+    ): void {
+        const update: Partial<TaskRecord> = {
             synthesized_findings: findings,
             synthesized_at: Date.now(),
-        });
+        };
+        if (quality) {
+            update.synthesis_quality_score = quality.score;
+            update.synthesis_quality_flags = quality.flags;
+            update.synthesis_fallback_only = quality.fallback_only;
+            update.synthesis_truncated = quality.truncated;
+        }
+        this.updateTask(workspacePath, taskId, update);
+    }
+
+    /**
+     * Retrieve the structured synthesis quality record for a task, if present.
+     */
+    static getSynthesisQuality(
+        workspacePath: string,
+        taskId: string,
+    ): { score: number; flags: string[]; fallback_only: boolean; truncated: boolean } | undefined {
+        const manifest = this.loadManifest(workspacePath);
+        const task = manifest[taskId];
+        if (!task || task.synthesis_quality_score === undefined) return undefined;
+        return {
+            score: task.synthesis_quality_score,
+            flags: task.synthesis_quality_flags || [],
+            fallback_only: task.synthesis_fallback_only === true,
+            truncated: task.synthesis_truncated === true,
+        };
     }
 
     /**

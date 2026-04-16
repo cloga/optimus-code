@@ -22,6 +22,7 @@ import { runAsyncWorker, runWorkerInProcess, spawnAsyncWorker } from "./council-
 import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
 import { canonicalizeDelegateOutputPath, createAsyncDelegateTask, prepareAsyncPlanDispatch, writeDelegateTaskArtifact } from "./async-plan-dispatch";
 import { buildOptimusDispatchPlan, renderOptimusSummary, summarizeOptimusTaskSettlement } from "./optimus-orchestrator";
+import { appendPlanAudit } from "./plan-audit-log";
 import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
@@ -1474,6 +1475,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         completionTimeoutMs: resolvedCompletionTimeoutMs,
       })
     );
+
+    // Phase 0: End-to-End Accountability — record the strategy decision to the
+    // plan audit log before returning. Best-effort (never throws).
+    await appendPlanAudit({
+      workspacePath: workspace_path,
+      plan: optimusPlan,
+      plannerMode: 'code',
+      taskDescription: task_description,
+      taskIds,
+      parentIssueNumber,
+      dispatchOutcome: taskIds.length > 0 ? 'dispatched' : 'failed',
+    });
 
     if (shouldWaitForCompletion && taskIds.length > 0) {
       const waited = await waitForOptimusTasksToSettle(workspace_path, taskIds, resolvedCompletionTimeoutMs);
