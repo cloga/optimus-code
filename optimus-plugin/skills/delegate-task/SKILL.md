@@ -5,7 +5,9 @@ description: Dispatches a task to a specialized agent role using async-first, no
 
 # Delegate Task (The Spartan Dispatch)
 
-This skill activates when the user asks to assign a specific task to an agent, delegate work, or spawn a specialized worker.
+This skill activates when the user asks to assign a **specific already-scoped task** to an agent, delegate a concrete execution step, or spawn a specialized worker.
+
+If the request is broad, vague, or clearly multi-step (feature delivery, refactor, investigation with unknown scope, "handle this end-to-end"), do **not** start with this skill. Route through `optimus_orchestrate` so Optimus chooses the internal delegate/council/plan flow first.
 
 ## Core Rule: Async-First, Non-Blocking Delegation
 
@@ -14,6 +16,18 @@ All delegation MUST use `delegate_task_async` by default. This is a **hard rule*
 - **Default**: `delegate_task_async` — fire-and-forget background dispatch.
 - **Exception**: `delegate_task` (synchronous) ONLY if the user explicitly requests blocking/synchronous execution.
 - After dispatching async, you MUST NOT block, loop, sleep, or poll in a tight wait. Inform the user the task is running in the background and continue productive work.
+
+## Entry-Point Rule: Use the Right Optimus Surface
+
+Choose the Optimus entry point before selecting a role:
+
+| Request shape | Correct entry point |
+|---------------|---------------------|
+| Broad / multi-step / needs decomposition | `optimus_orchestrate` |
+| Already decomposed into multiple explicit dependent items | `dispatch_plan_async` |
+| Single already-scoped worker task | `delegate_task_async` |
+
+Do not bypass this by reaching for external built-in sub-agent features first. The master agent should use the same Optimus-native orchestration model the product exposes.
 
 ## The Spartan Swarm Pre-Dispatch Doctrine
 
@@ -29,19 +43,20 @@ You cannot command an army blindly.
 
 ### Step 2: Manpower Assessment
 
-Analyze the user's task request against the roster you just retrieved. **First, classify the task scope using the Decision Matrix below, then select the appropriate role.**
+Analyze the user's task request against the roster you just retrieved. **First, verify that this really is a direct `delegate_task_async` case, then classify the task scope using the Decision Matrix below, then select the appropriate role.**
 
 #### Step 2.0: Scope Classification (Do This First)
 
 Before picking a T1/T2/T3 role, decide *which category of role* the task requires:
 
-| If the task is… | Delegate to… |
-|-----------------|--------------|
-| Vague scope, multi-file, needs decomposition, feature request without exact file/location, or needs PR review coordination | **pm** — PM runs the full feature-dev workflow |
-| Specific, single-file or well-scoped change, bug fix with known root cause, "quick fix" or "just change X in file Y" | **dev** directly — no PM decomposition needed |
-| Review/audit, security scan, QA verification, or domain expertise request | matching **specialist** (security, qa-engineer, etc.) |
+| If the task is… | Action |
+|-----------------|--------|
+| Vague scope, multi-file, needs decomposition, feature request without exact file/location, or needs PR review coordination | **Stop and use `optimus_orchestrate` instead** |
+| Already decomposed into multiple explicit items or dependency edges | **Stop and use `dispatch_plan_async` instead** |
+| Specific, single-file or well-scoped change, bug fix with known root cause, "quick fix" or "just change X in file Y" | Continue and send to **dev** directly |
+| Review/audit, security scan, QA verification, or domain expertise request with clear scope | Continue and send to matching **specialist** (security, qa-engineer, etc.) |
 
-**Anti-patterns:** Never send an entire Epic directly to `dev`. Never route a one-liner fix through PM.
+**Anti-patterns:** Never send an entire Epic directly to `dev`. Never use this skill as a substitute for `optimus_orchestrate`. Never route a one-liner fix through PM.
 
 * **T1 Priority (Local Project Experts)**: If the task requires deep domain knowledge of this specific project, and there is a matching T1 Expert, they MUST be your first choice.
 * **T2 Priority (Project Roles)**: If it's a general architectural, security, or universal pattern task, and a T2 Role exists, use them.

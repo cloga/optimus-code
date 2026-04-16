@@ -466,7 +466,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "delegate_task_async",
-        description: "Delegate a specific execution task to a designated expert role asynchronously without blocking the master agent.",
+        description: "Delegate a specific already-scoped execution task to a designated expert role asynchronously without blocking the master agent. For broad or multi-step requests, prefer optimus_orchestrate first.",
         inputSchema: {
           type: "object",
           properties: {
@@ -547,7 +547,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "optimus_orchestrate",
-        description: "Analyze a broad engineering task, choose the best orchestration mode, and dispatch work through Optimus async delegation primitives with as much safe parallelism as possible.",
+        description: "Preferred entry point for broad or multi-step engineering requests. Analyze the task, choose the best orchestration mode, and dispatch work through Optimus async delegation primitives with as much safe parallelism as possible.",
         inputSchema: {
           type: "object",
           properties: {
@@ -590,7 +590,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "dispatch_plan_async",
-        description: "Register a batch of work items with explicit item IDs and dependency edges, spawn all ready items in parallel, and auto-unblock dependent items as prerequisites verify. Use this when you already decomposed a task into a optimus-like execution plan.",
+        description: "Register a batch of work items with explicit item IDs and dependency edges, spawn all ready items in parallel, and auto-unblock dependent items as prerequisites verify. Use this when you already decomposed a task into an explicit Optimus execution plan; otherwise start with optimus_orchestrate.",
         inputSchema: {
           type: "object",
           properties: {

@@ -448,7 +448,9 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 | Tool | Purpose |
 |------|---------|
 | `roster_check` | List all available agent roles (T1 local + T2 global) |
+| `optimus_orchestrate` | **Preferred entry point for broad or multi-step requests** — lets Optimus choose delegate/council/plan |
 | `delegate_task_async` / `delegate_task` | Dispatch a task to a specialized agent role (`delegate_task` is the blocking compatibility variant; **prefer async**) |
+| `dispatch_plan_async` | Execute a known multi-item dependency plan inside Optimus |
 | `dispatch_council_async` / `dispatch_council` | Spawn parallel expert review council (**prefer async**) |
 | `check_task_status` | Poll the status of async queues |
 | `vcs_create_work_item` | Create GitHub Issue / ADO Work Item |
@@ -462,16 +464,18 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 | `register_meta_cron` / `list_meta_crons` / `remove_meta_cron` | Scheduled task management |
 | `hello` | Health check |
 
-**Rule**: Always prefer `_async` variants for delegation and council. Treat synchronous `delegate_task` / `dispatch_council` as blocking compatibility tools.
+**Rule**: Broad or multi-step user requests should start with `optimus_orchestrate`, not external built-in sub-agent tooling. Inside Optimus, always prefer `_async` variants for delegation and council. Treat synchronous `delegate_task` / `dispatch_council` as blocking compatibility tools.
 
 ### Skills Quick Reference
 
 #### delegate-task (Spartan Dispatch)
+0. **Entry-point check**: If the request is broad, vague, or multi-step, use `optimus_orchestrate` instead. If you already have multiple explicit dependent work items, use `dispatch_plan_async`.
 1. **Camp Inspection**: Call `roster_check` to retrieve registered personnel. **Never skip.**
 2. **Manpower Assessment**: Match task to T1 (local instances), T2 (project roles), or T3 (dynamic outsourcing).
 3. **Deployment**: Call `delegate_task_async` with `role`, `task_description`, and `output_path`. **NEVER simulate the work yourself when delegation is requested.**
 
 **Critical constraints:**
+- **`delegate_task_async` is for a single already-scoped worker task** — not for top-level broad request routing
 - **Always use `_async` variants** (`delegate_task_async`, not `delegate_task`) for normal orchestration; use sync only when the caller explicitly wants blocking behavior
 - **Always call `roster_check` first** — even if you think you know the available roles
 - **Always provide `output_path`** inside `.optimus/` (check the Artifact Directory Routing Table above)
@@ -504,20 +508,23 @@ The Optimus MCP server (`spartan-swarm`) provides these tools:
 
 ### Delegation Scope Decision Matrix
 
-Before calling `delegate_task_async` / `delegate_task` or `dispatch_council_async` / `dispatch_council`, the Master Agent MUST classify the task using this table:
+Before calling `optimus_orchestrate`, `delegate_task_async` / `delegate_task`, or `dispatch_council_async` / `dispatch_council`, the Master Agent MUST classify the task using this table:
 
-| Situation | Delegate To | Rationale |
-|-----------|-------------|-----------|
-| Task involves multiple files/modules, needs decomposition into sub-tasks, has vague scope ("implement X feature"), or requires architecture decisions / PR review coordination | **pm** | PM runs feature-dev workflow — explores codebase, designs, delegates to dev, reviews, merges |
-| Task is a specific well-scoped code change: single file, clear location, known root cause bug fix, or user says "quick fix" / "just change X in file Y" | **dev** (directly) | No decomposition needed — overhead of PM phase adds no value |
-| Task explicitly requires domain expertise (security audit, QA testing, performance profiling) or is a review/audit rather than implementation | **specialist** (security, qa-engineer, etc.) | Use the role whose description matches the domain |
+| Situation | Preferred entry point | Internal routing rationale |
+|-----------|-----------------------|----------------------------|
+| Task involves multiple files/modules, needs decomposition into sub-tasks, has vague scope ("implement X feature"), or requires architecture decisions / PR review coordination | **`optimus_orchestrate`** | Broad requests should enter Optimus's own orchestrator, which can choose PM/delegate/council/plan internally |
+| You already have 2+ explicit work items with dependency edges | **`dispatch_plan_async`** | The plan is already known, so register it directly and let Optimus execute/unblock it |
+| Task is a specific well-scoped code change: single file, clear location, known root cause bug fix, or user says "quick fix" / "just change X in file Y" | **`delegate_task_async` → `dev`** | No decomposition needed — dispatch the implementer directly |
+| Task explicitly requires domain expertise (security audit, QA testing, performance profiling) or is a review/audit rather than implementation | **`delegate_task_async` → specialist** | Use the role whose description matches the domain |
 
 **Decision rule in plain language:**
-- Vague or multi-file → PM first
-- Precise and single-file → dev directly
-- Domain expertise needed → specialist
+- Broad or multi-step → `optimus_orchestrate`
+- Explicit dependency plan → `dispatch_plan_async`
+- Precise and single-file → `delegate_task_async` to dev directly
+- Domain expertise needed → `delegate_task_async` to a specialist
 
 **Anti-patterns to avoid:**
+- Reaching for external built-in sub-agent features before Optimus orchestration tools
 - Sending an entire Epic directly to `dev` — dev is an implementer, not a planner
 - Sending a one-liner fix through PM — wastes phases and delays delivery
 - Skipping PM's decomposition when scope is unclear — produces incomplete or wrong implementation

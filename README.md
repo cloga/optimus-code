@@ -180,8 +180,9 @@ Once the server is running, your AI assistant gains these tools:
 | `resume_agent_run` | Resume a run blocked on manual intervention by supplying the human answer directly |
 | `cancel_agent_run` | Cancel an active Agent Runtime run |
 | `delegate_task` | Assign a task to a specialized agent with structured role info |
-| `delegate_task_async` | Same as above, non-blocking (preferred) |
-| `optimus_orchestrate` | Analyze a broad task, choose delegate/council/plan automatically, and dispatch the best async orchestration path |
+| `delegate_task_async` | Same as above, non-blocking (preferred for a single already-scoped worker task) |
+| `optimus_orchestrate` | **Preferred entry point for broad or multi-step requests** — analyze the task, choose delegate/council/plan automatically, and dispatch the best async orchestration path |
+| `dispatch_plan_async` | Execute a known dependency-aware plan directly inside Optimus when the work items are already decomposed |
 | `dispatch_council` | Spawn parallel expert review (Map-Reduce pattern) |
 | `dispatch_council_async` | Same as above, non-blocking (preferred) |
 | `check_task_status` | Poll async task/council completion |
@@ -211,6 +212,16 @@ Typical flow:
 3. `get_agent_run_status` to poll a normalized envelope
 4. `resume_agent_run` when status is `blocked_manual_intervention`
 5. `cancel_agent_run` to stop an active run
+
+### Choosing the orchestration entry point
+
+When integrating Optimus into an agent workflow, prefer Optimus's own orchestration surfaces over any external built-in sub-agent feature:
+
+- **Broad or multi-step request** → start with `optimus_orchestrate`
+- **Already decomposed dependency graph** → use `dispatch_plan_async`
+- **Single already-scoped worker task** → use `delegate_task_async`
+
+This keeps the master agent aligned with the same delegate-first orchestration model that Optimus exposes to end users.
 
 ### delegate_task Extended Parameters
 
@@ -267,17 +278,22 @@ Typical flow:
 ```
 User request → Master Agent
                    │
-                   ├─① roster_check (see who's available)
+                   ├─① Choose entry point
+                   │     ├─ broad / multi-step → optimus_orchestrate
+                   │     ├─ explicit dependency graph → dispatch_plan_async
+                   │     └─ single scoped task → delegate_task_async
                    │
-                   ├─② Select/create role (role-creator meta-skill)
+                   ├─② roster_check (see who's available)
+                   │
+                   ├─③ Select/create role (role-creator meta-skill)
                    │     └─ T3 first use → auto-creates T2 role template
                    │
-                   ├─③ Check/create skills (skill-creator meta-skill)
+                   ├─④ Check/create skills (skill-creator meta-skill)
                    │     └─ Missing? → delegate to skill-creator → retry
                    │
-                   ├─④ delegate_task_async → agent executes
+                   ├─⑤ delegate_task_async / dispatch_plan_async executes
                    │
-                   └─⑤ Session captured → T2 instantiates to T1
+                   └─⑥ Session captured → T2 instantiates to T1
 ```
 
 | Tier | Location | What It Is | Created By |

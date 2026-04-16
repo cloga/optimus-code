@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.27.1] - 2026-04-16
+
+### Improvements
+- **Delegate-first fleet guidance** — Updated the shipped README, architecture docs, scaffold instructions, onboarding guidance, and MCP tool descriptions so broad or multi-step requests now clearly start with `optimus_orchestrate`, while `delegate_task_async` is reserved for already-scoped single-worker execution and `dispatch_plan_async` for explicit dependency graphs.
+
+### Bug Fixes
+- **Blocked task dependency healing** — `TaskManifestManager.reapStaleTasks()` now synchronously reconciles blocked tasks so downstream work no longer hangs forever when an upstream dependency failed, disappeared, or was already verified. Added machine-readable failure classifications for dependency and watchdog timeout outcomes, plus regression tests covering dependency failure propagation and automatic unblock recovery.
+
 ## [2.25.0] - 2026-04-16
 
 ### Features

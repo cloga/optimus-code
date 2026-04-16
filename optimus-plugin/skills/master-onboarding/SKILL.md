@@ -38,6 +38,8 @@ The Optimus SDLC follows a **Problem-First** lifecycle:
 ## Step 4: Know the Critical Rules
 
 - **Always use `_async` variants** for delegation and councils
+- **Broad or multi-step requests should enter through `optimus_orchestrate` first** — let Optimus choose delegate/council/plan unless you already have the exact internal execution shape
+- **Use `delegate_task_async` for a single already-scoped worker task; use `dispatch_plan_async` when you already have 2+ explicit items/dependencies**
 - **Always call `roster_check` before delegating** — even if you think you know the roster
 - **Always pass `parent_issue_number`** when delegating sub-tasks under an epic
 - **Never simulate a worker's output** — physically call `delegate_task_async`

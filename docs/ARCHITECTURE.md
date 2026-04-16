@@ -175,7 +175,15 @@ The Spartan Swarm Protocol defines how the Master Agent discovers, selects, and 
 
 ### The Delegation Pipeline
 
-Every task delegation follows a strict 3-step pipeline:
+Before selecting a worker, the Master first chooses the **Optimus entry point**:
+
+- **`optimus_orchestrate`** — preferred for broad or multi-step requests; it chooses delegate/council/plan inside Optimus
+- **`dispatch_plan_async`** — for already-decomposed work with explicit dependency edges
+- **`delegate_task_async`** — for a single already-scoped worker task
+
+This is intentional: the master agent should use the same Optimus-native orchestration surface that end users are given, rather than reaching for some separate built-in sub-agent model first.
+
+Once a direct delegation path is appropriate, every task delegation follows a strict 3-step pipeline:
 
 **Step 1 — Camp Inspection (`roster_check`)**
 
@@ -223,7 +231,7 @@ Invalid engine or model names are rejected at the gateway with an actionable err
 
 ### Anti-Simulation Rule
 
-The Master Agent must **physically invoke** the `delegate_task` MCP tool when delegating. It is strictly prohibited from simulating a worker's response in plain text or writing ad-hoc scripts to play the role of a subordinate. This is the **Strict Delegation Protocol**.
+The Master Agent must **physically invoke** the Optimus MCP tools when orchestrating work (`optimus_orchestrate`, `dispatch_plan_async`, `delegate_task_async`, `dispatch_council_async`). It is strictly prohibited from simulating a worker's response in plain text or writing ad-hoc scripts to play the role of a subordinate. This is the **Strict Delegation Protocol**.
 
 ---
 
