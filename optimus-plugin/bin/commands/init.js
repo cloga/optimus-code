@@ -198,18 +198,23 @@ module.exports = function init() {
   // These provide rich persona definitions for common roles (architect, pm, qa-engineer, etc.)
   const os = require('os');
   const userOptimusDir = process.env.OPTIMUS_USER_HOME || path.join(os.homedir(), '.optimus');
+  const copilotSkillsDir = path.join(os.homedir(), '.copilot', 'skills');
+  const claudeSkillsDir = path.join(os.homedir(), '.claude', 'skills');
+
   const rolesSrc = path.join(pluginRoot, 'roles');
   if (fs.existsSync(rolesSrc)) {
     console.log('\n👥 Installing starter role templates (T2 personas) to user-level directory...');
     copyDirRecursive(rolesSrc, path.join(userOptimusDir, 'roles'));
   }
 
-  // 3. Meta-Skills: Copy universal skills to User-Level Directory (~/.optimus/skills)
+  // 3. Meta-Skills: Copy universal skills to User-Level Directory and IDE Registries
   // Skills teach the AI how to use MCP tools (dispatch_council, delegate_task, etc.)
   const skillsSrc = path.join(pluginRoot, 'skills');
   if (fs.existsSync(skillsSrc)) {
-    console.log('\n📚 Installing universal meta-skills to user-level directory...');
+    console.log('\n📚 Installing universal meta-skills to user-level directory and IDE registries...');
     copyDirRecursive(skillsSrc, path.join(userOptimusDir, 'skills'));
+    copyDirRecursive(skillsSrc, copilotSkillsDir);
+    copyDirRecursive(skillsSrc, claudeSkillsDir);
   }
 
   // 3.5 Copy the MCP server bundle into the workspace for all local clients

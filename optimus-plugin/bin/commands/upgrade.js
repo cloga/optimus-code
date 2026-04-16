@@ -94,6 +94,8 @@ function upgradeProject(projectPath, pluginRoot, options = {}) {
     // User-Level Directory for Universal Meta Skills and Roles
     const os = require('os');
     const userOptimusDir = process.env.OPTIMUS_USER_HOME || path.join(os.homedir(), '.optimus');
+    const copilotSkillsDir = path.join(os.homedir(), '.copilot', 'skills');
+    const claudeSkillsDir = path.join(os.homedir(), '.claude', 'skills');
 
     let skillCount = 0;
     let roleCount = 0;
@@ -104,11 +106,13 @@ function upgradeProject(projectPath, pluginRoot, options = {}) {
     const agentsPath = path.join(projectConfigDir, 'available-agents.json');
     const projectSamplePath = path.join(projectConfigDir, 'available-agents.project.sample.json');
 
-    // 1. Meta-Skills: Copy to User-Level Directory (~/.optimus/skills)
+    // 1. Meta-Skills: Copy to User-Level Directory (~/.optimus/skills) and IDE native registries
     const skillsSrc = path.join(pluginRoot, 'skills');
     if (fs.existsSync(skillsSrc)) {
-      if (!quiet) console.log('📚 Upgrading universal meta-skills to user-level directory...');
+      if (!quiet) console.log('📚 Upgrading universal meta-skills to user-level directory and IDE registries...');
       skillCount = copyDirForceOverwrite(skillsSrc, path.join(userOptimusDir, 'skills'), quiet);
+      copyDirForceOverwrite(skillsSrc, copilotSkillsDir, true);
+      copyDirForceOverwrite(skillsSrc, claudeSkillsDir, true);
     }
 
     // 2. Meta-Roles: Copy to User-Level Directory (~/.optimus/roles)
