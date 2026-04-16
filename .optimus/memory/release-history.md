@@ -1,5 +1,11 @@
 # Release History
 
+## 2026-04-16T~00:30Z — v2.25.0 (Run #94)
+- Bump: minor (feat(skill): add optimus-fleet wrapper skill; within max_auto_bump: minor)
+- Commits: 2 (9c34c8e feat(skill): add optimus-fleet wrapper skill for deterministic MCP dispatch; 38f4567 refactor(mcp): rename fleet orchestrator to optimus_orchestrate)
+- Gate results: cooldown=clear (34.1 min since last commit), unreleased_commits=2 (1 feat, 1 refactor), build=pass (npm run build v2.25.0), extra_gates=skip
+- Tag pushed: v2.25.0 → confirmed on origin (3dc703d) at refs/tags/v2.25.0
+
 ## 2026-04-08T00:37Z — v2.23.1 (Run #68)
 - Bump: minor (feat: Cursor IDE + Copilot launcher scripts; within max_auto_bump: minor)
 - Commits: 2 (4b855ee feat: add Cursor IDE rules, Copilot launcher scripts, delegate-task compat test; 7bc86f5 chore(release): v2.23.1)

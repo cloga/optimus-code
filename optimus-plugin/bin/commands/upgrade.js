@@ -91,6 +91,10 @@ function upgradeProject(projectPath, pluginRoot, options = {}) {
       return { success: false, error: "No .optimus/ directory found. Run 'optimus init' first." };
     }
 
+    // User-Level Directory for Universal Meta Skills and Roles
+    const os = require('os');
+    const userOptimusDir = process.env.OPTIMUS_USER_HOME || path.join(os.homedir(), '.optimus');
+
     let skillCount = 0;
     let roleCount = 0;
     let configCount = 0;
@@ -100,18 +104,18 @@ function upgradeProject(projectPath, pluginRoot, options = {}) {
     const agentsPath = path.join(projectConfigDir, 'available-agents.json');
     const projectSamplePath = path.join(projectConfigDir, 'available-agents.project.sample.json');
 
-    // 1. Skills: FORCE OVERWRITE
+    // 1. Meta-Skills: Copy to User-Level Directory (~/.optimus/skills)
     const skillsSrc = path.join(pluginRoot, 'skills');
     if (fs.existsSync(skillsSrc)) {
-      if (!quiet) console.log('📚 Upgrading skills...');
-      skillCount = copyDirForceOverwrite(skillsSrc, path.join(optimusDir, 'skills'), quiet);
+      if (!quiet) console.log('📚 Upgrading universal meta-skills to user-level directory...');
+      skillCount = copyDirForceOverwrite(skillsSrc, path.join(userOptimusDir, 'skills'), quiet);
     }
 
-    // 2. Roles: FORCE OVERWRITE plugin roles only (leave user-created roles untouched)
+    // 2. Meta-Roles: Copy to User-Level Directory (~/.optimus/roles)
     const rolesSrc = path.join(pluginRoot, 'roles');
     if (fs.existsSync(rolesSrc)) {
-      if (!quiet) console.log('\n👥 Upgrading canonical roles...');
-      roleCount = copyDirForceOverwrite(rolesSrc, path.join(optimusDir, 'roles'), quiet);
+      if (!quiet) console.log('\n👥 Upgrading universal meta-roles to user-level directory...');
+      roleCount = copyDirForceOverwrite(rolesSrc, path.join(userOptimusDir, 'roles'), quiet);
     }
 
     // 3. Config: MERGE (preserve user values in JSON files)

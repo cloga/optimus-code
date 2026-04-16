@@ -943,8 +943,145 @@ author: unknown
 CrewAI 1.14.0 (Apr 7) shipped runtime state checkpointing (SqliteProvider, CheckpointConfig) — previously a differentiator for Optimus. Optimus should sharpen its checkpoint/resume story in docs.
 
 ### Strategic Signal: "oh-my-X" Harness Pattern (persists)
-Both oh-my-codex and oh-my-openagent use `.omx/` project directory, skills, named roles, and Claude Code compatibility — identical philosophy to Optimus `.optimus/`. Specialist analysis in-flight.
+Both oh-my-codex and oh-my-openagent use skills, named roles, and Claude Code compatibility — identical philosophy to Optimus `.optimus/`. Specialist analysis in-flight.
+**CORRECTION (Run #21)**: oh-my-openagent uses `.sisyphus/` state dir and `.opencode/` config — NOT `.omx/`. oh-my-codex uses `.omx/` for project state. They are distinct projects with different directories. Specialist confirmed: omoa is OpenCode-terminal-coupled; Optimus is MCP-native and boundary-agnostic. "delegate-task" naming is coincidental, not paradigm convergence.
 
 ### AutoGen (MSFT) Monitoring Gap
 microsoft/autogen API calls blocked by SAML org enforcement. Requires PAT with microsoft org SAML authorization for reliable monitoring.
+
+---
+id: mem_1776298013436_run21ci
+date: 2026-04-16T08:00:00Z
+level: project
+category: competitive-intel
+tags: [competitive-intel, session-state, baselines, run21]
+author: competitive-intel-analyst
+---
+## Competitive Monitor State — 2026-04-16 (Run #21)
+
+### Mode: MONITOR (Wednesday; discovery_day=Monday; last discovery 2026-04-07)
+
+### Prior Dispatch Resolved
+- task_1775520476533_z8fx3g (oh-my-openagent v3.15.x): ✅ VERIFIED
+  - Boulder = task session state (.sisyphus/boulder.json); Atlas = auto-continuation agent
+  - "delegate-task" naming: coincidental, NOT paradigm convergence
+  - omoa uses .sisyphus/ (state) and .opencode/ (config) — NOT .omx/ as previously stored
+  - Strategic: paradigm peers via convergent evolution; NOT direct competitors (omoa = OpenCode-terminal-coupled; Optimus = MCP-native, boundary-agnostic)
+  - Watch trigger: experimental.task_system default flip to true
+
+### Active Dispatch (Run #21)
+- OpenAI Agents SDK v0.14.0 Sandbox Agents — task_1776298013436_5p76v2 (Issue #581)
+
+### Active Cool-downs (expires)
+- oh-my-codex v0.12.6 OMX wiki: 2026-04-23
+- oh-my-openagent v3.17.x custom agents: 2026-04-23
+- crewai 1.14.1 checkpoint browser: 2026-04-23
+
+### Per-Competitor Updated State
+
+**Oh My OpenAgent (code-yeongyu/oh-my-openagent)**
+- last_seen_release: v3.17.3 (2026-04-15)
+- last_seen_star_count: 51,869
+- 7d_star_baseline: 49,290 (Run #15)
+- star_delta_8d: +2,579 (+5.2%/wk) — multi-cycle confirmed acceleration
+- last_reported_event_fingerprint: oh-my-openagent-v3.17.x-custom-agents-2026-04-16
+- last_reported_at: 2026-04-16T08:00Z
+- cool_down_active: expires 2026-04-23
+- open_hypotheses: ["Watch experimental.task_system default flip to true — production stability signal", "Any commercial announcement or partnership?"]
+- trend_label: accelerating
+- state_dir_correction: .sisyphus/ (NOT .omx/)
+
+**Oh My Codex (Yeachan-Heo/oh-my-codex)**
+- last_seen_release: v0.12.6 (2026-04-13)
+- last_seen_star_count: 23,196
+- 7d_star_baseline: 18,206 (Run #15)
+- star_delta_8d: +4,990 (+27%) — exceptional multi-cycle acceleration
+- last_reported_event_fingerprint: oh-my-codex-v0.12.6-wiki-2026-04-16
+- last_reported_at: 2026-04-16T08:00Z
+- cool_down_active: expires 2026-04-23
+- open_hypotheses: ["Will OMX wiki gain multi-project/remote wiki support?"]
+- trend_label: accelerating (strongest in watchlist)
+
+**CrewAI (crewAIInc/crewAI)**
+- last_seen_release: 1.14.1 (2026-04-08)
+- last_seen_star_count: 48,969
+- 7d_star_baseline: 48,276 (Run #15)
+- last_reported_event_fingerprint: crewai-1.14.1-checkpoint-browser-2026-04-16
+- last_reported_at: 2026-04-16T08:00Z
+- cool_down_active: expires 2026-04-23
+- open_hypotheses: ["50k star milestone ~1 week away — ecosystem attention event", "v1.15.0 expected with MCP/A2A integration"]
+- trend_label: stable (growing toward milestone)
+
+**OpenAI Agents SDK (openai/openai-agents-python)**
+- last_seen_release: v0.14.1 (2026-04-15) — Sandbox Agents (SandboxAgent, Manifest, SandboxRunConfig, skills, memory, snapshot/resume, multi-provider)
+- last_seen_star_count: 20,834
+- last_reported_event_fingerprint: pending-specialist-task_1776298013436_5p76v2
+- open_hypotheses: ["Is Sandbox Agents a direct threat to Optimus's positioning? Specialist in-flight.", "Will sandbox memory + skills establish a new developer expectation for agent persistence?"]
+- trend_label: accelerating (major capability jump)
+
+**DeerFlow (bytedance/deer-flow)**
+- last_seen_star_count: 61,801
+- star_delta_8d: +2,694 (+4.6%/wk) — sustained multi-cycle acceleration confirmed (2/3 cycles above 3% threshold)
+- no releases (community-driven growth only)
+- trend_label: accelerating (confirmed)
+- open_hypotheses: ["Will DeerFlow add MCP/Claude Code integration? Would escalate overlap."]
+
+**LangGraph (langchain-ai/langgraph)**
+- last_seen_release: checkpoint==4.0.2 (2026-04-15, prerelease family); 1.1.7a2 (2026-04-14)
+- last_seen_star_count: 29,365
+- trend_label: stable (active prerelease cadence)
+- open_hypotheses: ["When does 1.1.7 stable ship?"]
+
+**Superset (superset-sh/superset)**
+- last_seen_release: desktop-v1.5.5 (2026-04-15, UX patches only)
+- last_seen_star_count: 9,643
+- trend_label: accelerating (stars +729 in 8d)
+
+**Ruflo (ruvnet/ruflo)**
+- last_seen_release: v3.5.80 (2026-04-11)
+- last_seen_star_count: 31,985
+- trend_label: accelerating (5th+ consecutive cycle of growth)
+
+**Emdash (generalaction/emdash)**
+- last_seen_release: v0.4.48 (2026-04-14)
+- last_seen_star_count: 3,919
+- notable: License changed MIT → Apache 2.0 (2026-04-14) — potential enterprise commercialization signal
+- open_hypotheses: ["Apache 2.0 license change — enterprise readiness or commercialization intent?"]
+- trend_label: stable
+
+**Coder Mux (coder/mux)**
+- last_seen_release: v0.23.0 (2026-04-15)
+- last_seen_star_count: 1,647
+
+**Google ADK (google/adk-python)**
+- last_seen_release: v1.29.0 (2026-04-09)
+- last_seen_star_count: 19,002
+
+**AG2 (ag2ai/ag2)**
+- last_seen_release: v0.11.5 (2026-04-04, unchanged)
+- last_seen_star_count: 4,402
+
+**MetaGPT (FoundationAgents/MetaGPT)**
+- last_seen_star_count: 67,113
+- last_pushed: 2026-01-21
+- last_release: 2025-04-22 (v0.8.1)
+- recommended_removal: candidate (12+ months no release, 3+ months no push)
+- trend_label: inactive
+
+**1Code (21st-dev/1code)**
+- last_pushed: 2026-03-06 (41+ days inactive)
+- recommended_removal: true (set Run #11)
+
+### System-Wide State (Run #21)
+- briefs_written: 3 (oh-my-codex-v0.12.6-wiki, oh-my-openagent-v3.17.x-custom-agents, crewai-1.14.1-checkpoint-browser)
+- dispatches: 1 (openai-agents-v0.14.0-sandbox-agents, Issue #581)
+- human_escalations: 0
+- api_failures: [] (no failures this cycle)
+- event_fingerprints_cooldown:
+  - oh-my-codex-v0.12.6-wiki-2026-04-16: expires 2026-04-23
+  - oh-my-openagent-v3.17.x-custom-agents-2026-04-16: expires 2026-04-23
+  - crewai-1.14.1-checkpoint-browser-2026-04-16: expires 2026-04-23
+
+### Strategic Alert: OpenAI Sandbox Agents (Maximum Priority)
+OpenAI v0.14.0 (2026-04-15) ships SandboxAgent + Manifest + SandboxRunConfig + skills capability + memory capability + snapshot/resume + multi-provider backends. Score 12/12. Directly overlaps Optimus's architectural differentiators. Specialist dispatched. Human escalation pending specialist result.
 
