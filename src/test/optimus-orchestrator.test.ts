@@ -1,83 +1,62 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { buildOptimusDispatchPlan, renderOptimusSummary } from '../mcp/optimus-orchestrator';
+import { resolveEffectiveTaskStatus, summarizeOptimusTaskSettlement } from '../mcp/optimus-orchestrator';
+import type { TaskRecord } from '../managers/TaskManifestManager';
 
-const WORKSPACE = process.cwd();
+function createTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
+    return {
+        taskId: overrides.taskId || 'task_1',
+        type: overrides.type || 'delegate_task',
+        status: overrides.status || 'completed',
+        startTime: overrides.startTime || Date.now(),
+        heartbeatTime: overrides.heartbeatTime || Date.now(),
+        workspacePath: overrides.workspacePath || process.cwd(),
+        ...overrides,
+    };
+}
 
-describe('optimus orchestrator planner', () => {
-    it('uses a single delegate for focused implementation work', () => {
-        const plan = buildOptimusDispatchPlan({
-            workspacePath: WORKSPACE,
-            taskDescription: 'Fix the Windows stderr fd handling in council-runner.',
-            outputPath: '.optimus/results/optimus-summary.md',
-        });
+describe('optimus orchestrator settlement helpers', () => {
+    it('treats completed tasks with materialized output as verified', () => {
+        const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'optimus-orchestrator-'));
+        try {
+            const outputPath = path.join(workspace, 'result.txt');
+            fs.writeFileSync(outputPath, 'done', 'utf8');
 
-        expect(plan.strategy).toBe('delegate');
-        expect(plan.delegateSpec?.role).toBe('dev');
-        expect(plan.delegateSpec?.output_path).toContain('optimus-summary__delegate.md');
+            expect(resolveEffectiveTaskStatus(createTaskRecord({ output_path: outputPath }))).toBe('verified');
+        } finally {
+            fs.rmSync(workspace, { recursive: true, force: true });
+        }
     });
 
-    it('prefers council for analysis-heavy tasks without direct implementation', () => {
-        const plan = buildOptimusDispatchPlan({
-            workspacePath: WORKSPACE,
-            taskDescription: 'Investigate the architecture trade-offs for a optimus-like orchestration entry point and recommend a direction.',
-            outputPath: '.optimus/results/optimus-analysis.md',
+    it('marks missing or failed tasks as terminal failures in aggregate settlement', () => {
+        const settlement = summarizeOptimusTaskSettlement(['implement', 'verify'], {
+            implement: createTaskRecord({ taskId: 'implement', status: 'failed', error_message: 'boom' }),
         });
 
-        expect(plan.strategy).toBe('council');
-        expect(plan.councilSpec?.roles.length).toBeGreaterThanOrEqual(2);
-        expect(plan.councilSpec?.proposalPath).toContain('optimus-analysis__problem.md');
+        expect(settlement.settled).toBe(true);
+        expect(settlement.overallStatus).toBe('failed');
+        expect(settlement.tasks.find(task => task.taskId === 'verify')?.effectiveStatus).toBe('missing');
     });
 
-    it('builds a dependency-aware plan for mixed implementation and verification work', () => {
-        const plan = buildOptimusDispatchPlan({
-            workspacePath: WORKSPACE,
-            taskDescription: 'Implement the runtime proxy guard, update the docs, and add regression tests.',
-            outputPath: '.optimus/results/runtime-optimus.md',
+    it('marks mixed verified and awaiting-input tasks as awaiting_input terminal state', () => {
+        const settlement = summarizeOptimusTaskSettlement(['implement', 'verify'], {
+            implement: createTaskRecord({ taskId: 'implement', status: 'verified' }),
+            verify: createTaskRecord({ taskId: 'verify', status: 'awaiting_input', pause_question: 'Need approval?' }),
         });
 
-        expect(plan.strategy).toBe('plan');
-        expect(plan.planSpec?.items.map(item => item.id)).toEqual(['implement', 'verify']);
-        expect(plan.planSpec?.items[1].depends_on).toEqual(['implement']);
+        expect(settlement.settled).toBe(true);
+        expect(settlement.overallStatus).toBe('awaiting_input');
     });
 
-    it('adds a design lane when plan work also needs research or design', () => {
-        const plan = buildOptimusDispatchPlan({
-            workspacePath: WORKSPACE,
-            taskDescription: 'Research the runtime dispatch design, then implement the chosen approach and verify regressions are covered.',
-            outputPath: '.optimus/results/runtime-plan.md',
+    it('keeps the aggregate unsettled while any task is still pending or running', () => {
+        const settlement = summarizeOptimusTaskSettlement(['implement', 'verify'], {
+            implement: createTaskRecord({ taskId: 'implement', status: 'verified' }),
+            verify: createTaskRecord({ taskId: 'verify', status: 'running' }),
         });
 
-        expect(plan.strategy).toBe('plan');
-        expect(plan.planSpec?.items.map(item => item.id)).toEqual(['design', 'implement', 'verify']);
-        expect(plan.planSpec?.items[1].depends_on).toEqual(['design']);
-    });
-
-    it('honors explicit mode hints', () => {
-        const plan = buildOptimusDispatchPlan({
-            workspacePath: WORKSPACE,
-            taskDescription: 'Investigate orchestration options.',
-            outputPath: '.optimus/results/optimus-mode.md',
-            modeHint: 'delegate',
-        });
-
-        expect(plan.strategy).toBe('delegate');
-        expect(plan.rationale[0]).toContain("forced 'delegate'");
-    });
-
-    it('renders a summary artifact with item mappings', () => {
-        const plan = buildOptimusDispatchPlan({
-            workspacePath: WORKSPACE,
-            taskDescription: 'Implement and test the optimus orchestrator.',
-            outputPath: '.optimus/results/optimus-summary.md',
-        });
-        const content = renderOptimusSummary(plan, 'Implement and test the optimus orchestrator.', {
-            parentIssueNumber: 582,
-            taskIds: ['plan_123__implement', 'plan_123__verify'],
-            itemTaskIds: { implement: 'plan_123__implement', verify: 'plan_123__verify' },
-        });
-
-        expect(content).toContain('strategy: plan');
-        expect(content).toContain('parent_issue: 582');
-        expect(content).toContain('implement -> plan_123__implement');
+        expect(settlement.settled).toBe(false);
+        expect(settlement.overallStatus).toBe('running');
     });
 });

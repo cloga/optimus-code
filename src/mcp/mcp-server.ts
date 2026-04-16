@@ -21,7 +21,7 @@ import { parseGitRemote, createGitHubIssue } from "../utils/githubApi";
 import { runAsyncWorker, runWorkerInProcess, spawnAsyncWorker } from "./council-runner";
 import { prepareAsyncCouncilDispatch } from "./async-council-dispatch";
 import { canonicalizeDelegateOutputPath, createAsyncDelegateTask, prepareAsyncPlanDispatch, writeDelegateTaskArtifact } from "./async-plan-dispatch";
-import { buildOptimusDispatchPlan, renderOptimusSummary } from "./optimus-orchestrator";
+import { buildOptimusDispatchPlan, renderOptimusSummary, summarizeOptimusTaskSettlement } from "./optimus-orchestrator";
 import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { VcsProviderFactory } from "../adapters/vcs/VcsProviderFactory";
@@ -108,6 +108,79 @@ reloadEnv();
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+const DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS = 20 * 60 * 1000;
+const MAX_OPTIMUS_COMPLETION_TIMEOUT_MS = 60 * 60 * 1000;
+const OPTIMUS_COMPLETION_POLL_INTERVAL_MS = 2000;
+
+function validateCompletionTimeoutMs(value: unknown): void {
+  if (value == null) return;
+  if (typeof value !== "number" || value <= 0 || value > MAX_OPTIMUS_COMPLETION_TIMEOUT_MS) {
+    throw new Error(`completion_timeout_ms must be a number between 1 and ${MAX_OPTIMUS_COMPLETION_TIMEOUT_MS}. Got: ${value}`);
+  }
+}
+
+async function waitForOptimusTasksToSettle(workspacePath: string, taskIds: string[], timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let settlement = summarizeOptimusTaskSettlement(taskIds, TaskManifestManager.loadManifest(workspacePath));
+
+  while (!settlement.settled && Date.now() < deadline) {
+    await sleep(OPTIMUS_COMPLETION_POLL_INTERVAL_MS);
+    TaskManifestManager.reapStaleTasks(workspacePath);
+    settlement = summarizeOptimusTaskSettlement(taskIds, TaskManifestManager.loadManifest(workspacePath));
+  }
+
+  return {
+    timedOut: !settlement.settled,
+    settlement: settlement.settled
+      ? settlement
+      : { ...settlement, overallStatus: "timed_out" as const },
+  };
+}
+
+function formatOptimusCompletionResponse(
+  responseText: string,
+  strategy: string,
+  summaryOutputPath: string,
+  settlement: Awaited<ReturnType<typeof waitForOptimusTasksToSettle>>["settlement"],
+  optimusIssueUrl?: string,
+): string {
+  const header = settlement.overallStatus === "verified"
+    ? "✅ Optimus completed inside fleet control."
+    : settlement.overallStatus === "timed_out"
+      ? "⏱️ Optimus is still running after the fleet wait window."
+      : settlement.overallStatus === "awaiting_input"
+        ? "⏸️ Optimus reached a human-input checkpoint."
+        : settlement.overallStatus === "failed"
+          ? "❌ Optimus finished with terminal failures."
+          : "⚠️ Optimus reached a mixed terminal state.";
+
+  const taskLines = settlement.tasks.map(task => {
+    const fragments = [`- \`${task.taskId}\` → **${task.effectiveStatus}**`];
+    if (task.githubIssueNumber) fragments.push(`issue #${task.githubIssueNumber}`);
+    if (task.outputPath) fragments.push(`output \`${task.outputPath}\``);
+    if (task.errorMessage && task.effectiveStatus !== "verified") fragments.push(`error: ${task.errorMessage}`);
+    return fragments.join(" | ");
+  }).join("\n");
+
+  const nextAction = settlement.overallStatus === "timed_out"
+    ? "\n\nContinue with `check_task_status` on the listed task IDs if you need another progress snapshot."
+    : "";
+
+  return [
+    responseText,
+    "",
+    header,
+    "",
+    `**Strategy**: ${strategy}`,
+    `**Optimus Summary**: \`${summaryOutputPath}\``,
+    ...(optimusIssueUrl ? [`**Optimus Issue**: ${optimusIssueUrl}`] : []),
+    "",
+    "**Fleet Task Statuses**",
+    taskLines,
+    nextAction,
+  ].filter(Boolean).join("\n");
 }
 
 function persistAsyncRunnerFatalFailure(taskId: string, workspacePath: string, error: unknown): void {
@@ -568,6 +641,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               items: { type: "string" },
               description: "Optional workspace-relative files that should be passed into generated tasks.",
             },
+            intent_signals: {
+              type: "object",
+              description: "Agent-native intent classification of the user's request. Used to dynamically build the orchestration plan instead of hardcoded regex logic.",
+              properties: {
+                wantsImplementation: { type: "boolean", description: "Involves modifying code, writing features, or fixing bugs." },
+                wantsVerification: { type: "boolean", description: "Requires testing, QA, validation, or reviewing." },
+                wantsArchitecture: { type: "boolean", description: "Request for system design, structural planning, or architecture." },
+                wantsResearch: { type: "boolean", description: "Requires investigating code logic or comparing approaches." },
+                wantsSecurity: { type: "boolean", description: "Related to auth, permissions, or security hardening." },
+                wantsPerformance: { type: "boolean", description: "Focused on latency, scaling, or performance optimization." },
+                wantsDocs: { type: "boolean", description: "Focused on writing or updating documentation." },
+                looksMultiStep: { type: "boolean", description: "Implicitly or explicitly requires multiple steps to be completed safely." }
+              }
+            },
             mode_hint: {
               type: "string",
               description: "Optional strategy override: 'auto', 'delegate', 'council', or 'plan'.",
@@ -583,6 +670,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             startup_timeout_ms: {
               type: "number",
               description: "Optional startup timeout forwarded to generated worker tasks when applicable.",
+            },
+            wait_for_completion: {
+              type: "boolean",
+              description: "When true, keep the request inside Optimus fleet control by polling spawned tasks until they reach a terminal state (or the completion timeout elapses). Recommended for /optimus-fleet style end-to-end execution.",
+            },
+            completion_timeout_ms: {
+              type: "number",
+              description: `Optional timeout for wait_for_completion in milliseconds. Defaults to ${DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS}.`,
             },
           },
           required: ["workspace_path", "task_description", "output_path"],
@@ -1138,17 +1233,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (request.params.name === "optimus_orchestrate") {
-    let { workspace_path, task_description, output_path, context_files, mode_hint, heartbeat_timeout_ms, startup_timeout_ms } = request.params.arguments as any;
+    let { workspace_path, task_description, output_path, intent_signals, context_files, mode_hint, heartbeat_timeout_ms, startup_timeout_ms, wait_for_completion, completion_timeout_ms } = request.params.arguments as any;
     requireParams("optimus_orchestrate", request.params.arguments as any, ["workspace_path", "task_description", "output_path"]);
 
     try { validateStartupTimeoutMs(startup_timeout_ms); } catch (e: any) {
       throw new McpError(ErrorCode.InvalidParams, e.message);
+    }
+    try { validateCompletionTimeoutMs(completion_timeout_ms); } catch (e: any) {
+      throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for optimus_orchestrate: ${(e as Error).message}`);
     }
 
     const normalizedModeHint = (mode_hint == null ? 'auto' : String(mode_hint).toLowerCase()) as 'auto' | 'delegate' | 'council' | 'plan';
     if (!['auto', 'delegate', 'council', 'plan'].includes(normalizedModeHint)) {
       throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for optimus_orchestrate: mode_hint must be one of auto, delegate, council, or plan. Received '${mode_hint}'.`);
     }
+    const shouldWaitForCompletion = wait_for_completion === true;
+    const resolvedCompletionTimeoutMs = completion_timeout_ms ?? DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS;
 
     const rawParentOptimus = process.env.OPTIMUS_PARENT_ISSUE ? parseInt(process.env.OPTIMUS_PARENT_ISSUE, 10) : undefined;
     let parentIssueNumber = (request.params.arguments as any).parent_issue_number
@@ -1158,6 +1258,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       workspacePath: workspace_path,
       taskDescription: task_description,
       outputPath: output_path,
+      intentSignals: intent_signals,
       contextFiles: context_files || [],
       modeHint: normalizedModeHint,
       registeredRoles: getRegisteredRoles(workspace_path),
@@ -1369,8 +1470,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         taskIds,
         itemTaskIds,
         reviewsPath,
+        waitForCompletion: shouldWaitForCompletion,
+        completionTimeoutMs: resolvedCompletionTimeoutMs,
       })
     );
+
+    if (shouldWaitForCompletion && taskIds.length > 0) {
+      const waited = await waitForOptimusTasksToSettle(workspace_path, taskIds, resolvedCompletionTimeoutMs);
+      writeTextArtifact(
+        optimusPlan.summaryOutputPath,
+        renderOptimusSummary(optimusPlan, task_description, {
+          parentIssueNumber,
+          optimusIssueUrl,
+          taskIds,
+          itemTaskIds,
+          reviewsPath,
+          status: waited.settlement.overallStatus,
+          finalTasks: waited.settlement.tasks,
+          waitForCompletion: true,
+          completionTimeoutMs: resolvedCompletionTimeoutMs,
+        })
+      );
+
+      return {
+        content: [{
+          type: "text",
+          text: formatOptimusCompletionResponse(
+            responseText,
+            optimusPlan.strategy,
+            optimusPlan.summaryOutputPath,
+            waited.settlement,
+            optimusIssueUrl,
+          ),
+        }]
+      };
+    }
 
     return {
       content: [{

@@ -67,6 +67,9 @@ describe('delegate_task compatibility layer', () => {
         expect(optimusTool).toBeDefined();
         expect(optimusTool?.description).toContain('choose the best orchestration mode');
         expect(optimusTool?.description).toContain('safe parallelism');
+        const schemaProperties = (optimusTool?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties || {};
+        expect(schemaProperties).toHaveProperty('wait_for_completion');
+        expect(schemaProperties).toHaveProperty('completion_timeout_ms');
     });
 
     it('rejects synchronous delegate_task calls without workspace_path', async () => {

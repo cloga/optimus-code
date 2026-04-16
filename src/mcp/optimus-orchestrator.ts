@@ -1,5 +1,7 @@
+import fs from 'fs';
 import path from 'path';
 import { AsyncPlanItem, canonicalizeDelegateOutputPath } from './async-plan-dispatch';
+import type { TaskRecord } from '../managers/TaskManifestManager';
 
 export type OptimusStrategy = 'delegate' | 'council' | 'plan';
 export type OptimusModeHint = 'auto' | OptimusStrategy;
@@ -19,6 +21,7 @@ export interface OptimusPlannerInput {
     workspacePath: string;
     taskDescription: string;
     outputPath: string;
+    intentSignals?: Partial<OptimusSignalSet>;
     contextFiles?: string[];
     modeHint?: OptimusModeHint;
     registeredRoles?: Array<{ canonical: string; aliases: string[]; category?: string }>;
@@ -57,6 +60,104 @@ export interface OptimusDispatchPlan {
     planSpec?: OptimusPlanSpec;
 }
 
+export type OptimusEffectiveTaskStatus = TaskRecord['status'] | 'missing' | 'verified' | 'partial';
+export type OptimusCompletionState = 'queued' | 'running' | 'verified' | 'awaiting_input' | 'failed' | 'mixed' | 'timed_out';
+
+export interface OptimusTaskSnapshot {
+    taskId: string;
+    status: TaskRecord['status'] | 'missing';
+    effectiveStatus: OptimusEffectiveTaskStatus;
+    outputPath?: string;
+    errorMessage?: string;
+    githubIssueNumber?: number;
+}
+
+export interface OptimusTaskSettlement {
+    settled: boolean;
+    overallStatus: OptimusCompletionState;
+    tasks: OptimusTaskSnapshot[];
+}
+
+function outputArtifactExists(task: TaskRecord): boolean {
+    if (!task.output_path) return false;
+    try {
+        const stat = fs.statSync(task.output_path);
+        return stat.isFile() ? stat.size > 0 : fs.readdirSync(task.output_path).length > 0;
+    } catch {
+        return false;
+    }
+}
+
+export function resolveEffectiveTaskStatus(task?: TaskRecord): OptimusEffectiveTaskStatus {
+    if (!task) return 'missing';
+    if (task.status === 'completed') {
+        return outputArtifactExists(task) ? 'verified' : 'partial';
+    }
+    return task.status;
+}
+
+export function isSettledTaskStatus(status: OptimusEffectiveTaskStatus): boolean {
+    return new Set<OptimusEffectiveTaskStatus>([
+        'verified',
+        'failed',
+        'partial',
+        'degraded',
+        'expired',
+        'cancelled',
+        'awaiting_input',
+        'blocked_human_intervention',
+        'missing',
+    ]).has(status);
+}
+
+export function summarizeOptimusTaskSettlement(taskIds: string[], manifest: Record<string, TaskRecord>): OptimusTaskSettlement {
+    const tasks = taskIds.map(taskId => {
+        const task = manifest[taskId];
+        const effectiveStatus = resolveEffectiveTaskStatus(task);
+        return {
+            taskId,
+            status: task?.status ?? 'missing',
+            effectiveStatus,
+            outputPath: task?.output_path,
+            errorMessage: task?.error_message,
+            githubIssueNumber: task?.github_issue_number,
+        } satisfies OptimusTaskSnapshot;
+    });
+
+    const settled = tasks.every(task => isSettledTaskStatus(task.effectiveStatus));
+    if (!settled) {
+        return { settled: false, overallStatus: 'running', tasks };
+    }
+
+    if (tasks.length === 0) {
+        return { settled: true, overallStatus: 'failed', tasks };
+    }
+
+    if (tasks.every(task => task.effectiveStatus === 'verified')) {
+        return { settled: true, overallStatus: 'verified', tasks };
+    }
+
+    const hasAwaitingInput = tasks.some(task => task.effectiveStatus === 'awaiting_input' || task.effectiveStatus === 'blocked_human_intervention');
+    const hasFailures = tasks.some(task => new Set<OptimusEffectiveTaskStatus>([
+        'failed',
+        'partial',
+        'degraded',
+        'expired',
+        'cancelled',
+        'missing',
+    ]).has(task.effectiveStatus));
+
+    if (hasAwaitingInput && !hasFailures) {
+        return { settled: true, overallStatus: 'awaiting_input', tasks };
+    }
+
+    if (hasFailures && tasks.every(task => task.effectiveStatus !== 'verified')) {
+        return { settled: true, overallStatus: 'failed', tasks };
+    }
+
+    return { settled: true, overallStatus: 'mixed', tasks };
+}
+
 function includesAny(text: string, patterns: RegExp[]): boolean {
     return patterns.some(pattern => pattern.test(text));
 }
@@ -65,33 +166,41 @@ function collectSignals(taskDescription: string): OptimusSignalSet {
     const text = taskDescription.toLowerCase();
     const wantsImplementation = includesAny(text, [
         /\bimplement\b/, /\bbuild\b/, /\bfix\b/, /\badd\b/, /\bupdate\b/, /\bchange\b/,
-        /\bmodify\b/, /\brefactor\b/, /\bwire\b/, /\bintegrat(e|ion)\b/, /\bstart implementation\b/
+        /\bmodify\b/, /\brefactor\b/, /\bwire\b/, /\bintegrat(e|ion)\b/, /\bstart implementation\b/,
+        /实现/, /修复/, /添加/, /更新/, /修改/, /重构/, /写代码/, /发包/, /发布/, /版本/, /构建/, /做一下/
     ]);
     const wantsVerification = includesAny(text, [
         /\btest\b/, /\btests\b/, /\bverify\b/, /\bvalidation\b/, /\bvalidate\b/, /\bsmoke\b/,
-        /\bqa\b/, /\breview\b/, /\baudit\b/
+        /\bqa\b/, /\breview\b/, /\baudit\b/,
+        /测试/, /验证/, /审查/, /跑一下/, /报错/, /查bug/, /检查/
     ]);
     const wantsArchitecture = includesAny(text, [
         /\barchitect(?:ure)?\b/, /\bdesign\b/, /\bproposal\b/, /\bprotocol\b/, /\bschema\b/,
-        /\btrade-?off\b/, /\bdirection\b/, /\bapproach\b/, /\bmigration\b/
+        /\btrade-?off\b/, /\bdirection\b/, /\bapproach\b/, /\bmigration\b/,
+        /架构/, /设计/, /方案/, /蓝图/, /技术选型/, /结构/
     ]);
     const wantsResearch = includesAny(text, [
         /\bresearch\b/, /\binvestigat(e|ion)\b/, /\banaly(s|z)e\b/, /\banalysis\b/, /\bcompare\b/,
-        /\bexplore\b/, /\bplan\b/
+        /\bexplore\b/, /\bplan\b/,
+        /调研/, /分析/, /研究/, /排查/, /探索/
     ]);
     const wantsSecurity = includesAny(text, [
         /\bsecurity\b/, /\bauth\b/, /\bpermission\b/, /\bcredential\b/, /\bsecret\b/,
-        /\bvulnerab(?:ility|le)\b/, /\bharden\b/
+        /\bvulnerab(?:ility|le)\b/, /\bharden\b/,
+        /安全/, /漏洞/, /权限/, /认证/, /密码/, /加密/
     ]);
     const wantsPerformance = includesAny(text, [
         /\bperformance\b/, /\blatency\b/, /\bthroughput\b/, /\bscale\b/, /\bscalability\b/,
-        /\bconcurrency\b/, /\bruntime\b/
+        /\bconcurrency\b/, /\bruntime\b/,
+        /性能/, /延迟/, /吞吐/, /并发/, /提速/, /卡顿/, /内存泄漏/
     ]);
     const wantsDocs = includesAny(text, [
-        /\bdocument\b/, /\bdocumentation\b/, /\breadme\b/, /\bchangelog\b/, /\bdocs\b/
+        /\bdocument\b/, /\bdocumentation\b/, /\breadme\b/, /\bchangelog\b/, /\bdocs\b/,
+        /文档/, /说明/, /注释/
     ]);
     const looksMultiStep = /\n\s*(?:[-*]|\d+\.)\s+/.test(taskDescription)
         || /\b(?:first|then|finally)\b/.test(text)
+        || /然后|接着|最后|第一步|其次|首先/.test(text)
         || (wantsImplementation && (wantsVerification || wantsArchitecture || wantsResearch || wantsDocs));
 
     return {
@@ -245,13 +354,35 @@ function buildPlanSpec(input: OptimusPlannerInput, summaryOutputPath: string, si
         required_skills: signals.wantsPerformance || signals.wantsVerification ? ['runtime-integration'] : undefined,
     });
 
+    items.push({
+        id: 'reflect',
+        role: selectRole(['architect', 'code-architect', 'senior-full-stack-builder', 'dev'], knownRoles),
+        task_description: [
+            'Evaluate the implementation and review any errors encountered during the task.',
+            'Identify new insights, architectural patterns, or recurring mistakes to avoid in the future.',
+            'If the task was trivial (e.g. simple typo fix, simple version bump) or encountered no meaningful errors, simply output a short acknowledgment and DO NOT append memory.',
+            'If you found structural insights or recurring pitfalls, use the `append_memory` tool (level: "repo", category: "workflow-or-architecture") to permanently store these learnings for system self-evolution.',
+            '',
+            '## Original Request',
+            input.taskDescription,
+        ].join('\n'),
+        output_path: buildSiblingOutputPath(summaryOutputPath, 'reflect'),
+        context_files: contextFiles,
+        depends_on: ['verify'],
+    });
+
     return { items };
 }
 
 export function buildOptimusDispatchPlan(input: OptimusPlannerInput): OptimusDispatchPlan {
     const summaryOutputPath = canonicalizeDelegateOutputPath(input.workspacePath, input.outputPath);
-    const signals = collectSignals(input.taskDescription);
+    const regexSignals = collectSignals(input.taskDescription);
+    const signals: OptimusSignalSet = { ...regexSignals, ...input.intentSignals };
     const rationale: string[] = [];
+
+    if (input.intentSignals) {
+        rationale.push('Used agent-provided explicit intent classification (agent-native fallback overrides skipped).');
+    }
 
     let strategy: OptimusStrategy;
     if (input.modeHint && input.modeHint !== 'auto') {
@@ -298,11 +429,15 @@ export function renderOptimusSummary(plan: OptimusDispatchPlan, taskDescription:
     taskIds?: string[];
     itemTaskIds?: Record<string, string>;
     reviewsPath?: string;
+    status?: OptimusCompletionState;
+    finalTasks?: OptimusTaskSnapshot[];
+    waitForCompletion?: boolean;
+    completionTimeoutMs?: number;
 }): string {
     const lines: string[] = [
         '---',
         'type: report',
-        'status: queued',
+        `status: ${metadata?.status || 'queued'}`,
         `strategy: ${plan.strategy}`,
         ...(typeof metadata?.parentIssueNumber === 'number' ? [`parent_issue: ${metadata.parentIssueNumber}`] : []),
         '---',
@@ -313,6 +448,7 @@ export function renderOptimusSummary(plan: OptimusDispatchPlan, taskDescription:
         ...plan.rationale.map(reason => `- Rationale: ${reason}`),
         ...(metadata?.optimusIssueUrl ? [`- Optimus Issue: ${metadata.optimusIssueUrl}`] : []),
         ...(metadata?.reviewsPath ? [`- Reviews Path: ${metadata.reviewsPath}`] : []),
+        ...(metadata?.waitForCompletion ? [`- Wait For Completion: enabled (${Math.round((metadata.completionTimeoutMs || 0) / 1000)}s timeout)`] : []),
         '',
         '## Original Request',
         taskDescription,
@@ -329,6 +465,17 @@ export function renderOptimusSummary(plan: OptimusDispatchPlan, taskDescription:
         lines.push('', '## Item Mapping');
         for (const [itemId, taskId] of Object.entries(metadata.itemTaskIds)) {
             lines.push(`- ${itemId} -> ${taskId}`);
+        }
+    }
+
+    if (metadata?.finalTasks && metadata.finalTasks.length > 0) {
+        lines.push('', '## Final Task Statuses');
+        for (const task of metadata.finalTasks) {
+            const fragments = [`- ${task.taskId}: ${task.effectiveStatus}`];
+            if (task.githubIssueNumber) fragments.push(`issue #${task.githubIssueNumber}`);
+            if (task.outputPath) fragments.push(`output ${task.outputPath}`);
+            if (task.errorMessage && task.effectiveStatus !== 'verified') fragments.push(`error ${task.errorMessage}`);
+            lines.push(fragments.join(' | '));
         }
     }
 
