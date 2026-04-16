@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.28.0] - 2026-04-16
+
+### Added
+- **Agent-native intent classification**: Added `intent_signals` to `mcp_spartan-swarm_optimus_orchestrate` schema to allow LLMs to actively classify intent instead of relying on regex detection, improving internationalization (e.g. Chinese requests).
+
 ## [2.27.1] - 2026-04-16
 
 ### Improvements
