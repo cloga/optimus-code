@@ -166,7 +166,7 @@ function formatOptimusCompletionResponse(
   }).join("\n");
 
   const nextAction = settlement.overallStatus === "timed_out"
-    ? "\n\nContinue with `check_task_status` on the listed task IDs if you need another progress snapshot."
+    ? "\n\n🚨 STATUS: TIMED_OUT. ACTION REQUIRED: The task is still running, but the wait window expired. You MUST invoke `check_task_status` immediately to continue checking progress until it completes."
     : "";
 
   return [
@@ -615,6 +615,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Custom role for synthesis (currently unused — synthesis uses heuristic extraction). Reserved for future LLM-based synthesis."
             },
+            wait_for_completion: {
+              type: "boolean",
+              description: "When true, hold the connection and block until the task reaches a terminal state (verified, failed, or timed_out). Recommended for 'end-to-end' verification."
+            },
+            completion_timeout_ms: {
+              type: "number",
+              description: "Optional timeout for wait_for_completion. Defaults to 1200000ms (20 minutes). If exceeded, you'll receive a timed_out status."
+            },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
         }
@@ -766,6 +774,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             parent_issue_number: {
               type: "number",
               description: "The GitHub issue number of the parent epic or task. Used for lineage across all spawned items.",
+            },
+            wait_for_completion: {
+              type: "boolean",
+              description: "When true, hold the connection and block until all tasks in the plan reach a terminal state. Recommended for 'end-to-end' verification."
+            },
+            completion_timeout_ms: {
+              type: "number",
+              description: "Optional timeout for wait_for_completion. Defaults to 1200000ms (20 minutes). If exceeded, you'll receive a timed_out status."
             },
           },
           required: ["workspace_path", "items"],
@@ -1230,8 +1246,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (isBlocked) {
         return { content: [{ type: "text", text: `⏳ Task queued with dependencies.\n\n**Task ID**: ${taskId}\n**Role**: ${role}\n**Status**: blocked\n**Blocked by**: ${blockedBy.map(id => `\`${id}\``).join(', ')}${issueInfo}\n\nTask will auto-start when all dependencies reach \`verified\` status. Use check_task_status to monitor.${contextHint}` }] };
     }
-    return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status to retrieve structured execution metadata (tokens, timing, status) after completion.${contextHint}` }] };
-  }
+
+        const wait_for_completion = (request.params.arguments as any).wait_for_completion ?? true;
+        const completion_timeout_ms = (request.params.arguments as any).completion_timeout_ms;
+
+        if (wait_for_completion) {
+          const timeout = typeof completion_timeout_ms === 'number' && !isNaN(completion_timeout_ms) && completion_timeout_ms > 0
+            ? completion_timeout_ms
+            : DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS;
+          
+          const settlement = await waitForOptimusTasksToSettle(workspace_path, [taskId], timeout);
+          return formatOptimusCompletionResponse(settlement, workspace_path, issueInfo);
+        }
+
+        return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status to retrieve structured execution metadata (tokens, timing, status) after completion.${contextHint}` }] };
+      }
 
   if (request.params.name === "optimus_orchestrate") {
     let { workspace_path, task_description, output_path, intent_signals, context_files, mode_hint, heartbeat_timeout_ms, startup_timeout_ms, wait_for_completion, completion_timeout_ms } = request.params.arguments as any;
@@ -1620,6 +1649,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const blockedSummary = preparedPlan.blockedTaskIds.length > 0
       ? `\n**Blocked Tasks**: ${preparedPlan.blockedTaskIds.map(id => `\`${id}\``).join(', ')}`
       : '';
+      
+    const wait_for_completion = (request.params.arguments as any).wait_for_completion ?? true;
+    const completion_timeout_ms = (request.params.arguments as any).completion_timeout_ms;
+
+    if (wait_for_completion) {
+      const timeout = typeof completion_timeout_ms === 'number' && !isNaN(completion_timeout_ms) && completion_timeout_ms > 0
+        ? completion_timeout_ms
+        : DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS;
+      
+      const allTaskIds = Object.values(preparedPlan.itemTaskIds) as string[];
+      const settlement = await waitForOptimusTasksToSettle(workspace_path, allTaskIds, timeout);
+      return formatOptimusCompletionResponse(settlement, workspace_path, issueInfo);
+    }
+
     return {
       content: [{
         type: "text",
@@ -1762,7 +1805,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       ],
     };
-        } else if (request.params.name === "get_user_memory") {
+  } else if (request.params.name === "get_user_memory") {
       const content = loadUserMemory(2000);
       if (!content) {
         return {

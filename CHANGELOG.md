@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.29.0] - 2026-04-17
+
+### Features
+- **End-to-End Async Task Orchestration**: Standardized `wait_for_completion` with timeouts across all async MCP tools (`optimus_orchestrate`, `delegate_task_async`, `dispatch_plan_async`). Added mandatory post-execution artifact verification rules to prevent agents from hallucinating task results and abandoning background tasks.
+
 ## [2.28.0] - 2026-04-16
 
 ### Added
