@@ -264,8 +264,8 @@ export function buildOptimusDispatchPlan(input: OptimusPlannerInput): OptimusDis
         strategy = 'plan';
         rationale.push('Request mixes implementation with validation/design/doc work, so dependency-aware orchestration is a better fit than a single worker.');
     } else {
-        strategy = 'delegate';
-        rationale.push('Request is focused enough for a single execution lane.');
+        strategy = 'plan';
+        rationale.push('E2E Default: Request focuses on implementation, automatically wrapped in an End-to-End Implementation -> Verification plan for self-healing.');
     }
 
     if (signals.wantsSecurity) {

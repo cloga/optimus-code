@@ -23,7 +23,8 @@ function withManifestLock<T>(fn: () => T): Promise<T> {
 export interface TaskRecord {
     taskId: string;
     type: 'delegate_task' | 'dispatch_council';
-    status: 'pending' | 'blocked' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired' | 'cancelled';
+    status: 'pending' | 'blocked' | 'blocked_human_intervention' | 'running' | 'completed' | 'partial' | 'verified' | 'failed' | 'degraded' | 'awaiting_input' | 'expired' | 'cancelled';
+    retry_count?: number;
     role?: string;
     roles?: string[];
     task_description?: string;
@@ -81,6 +82,8 @@ export interface TaskRecord {
         output_tokens?: number;
         total_tokens?: number;
     };
+    /** Machine-readable classification for terminal failures */
+    failure_classification?: 'activity_timeout' | 'heartbeat_timeout' | 'startup_timeout' | 'process_died' | 'dependency_failed' | 'dependency_missing';
     /** Validation warnings from the harness */
     validation_warnings?: string[];
     /** Structured execution status */
@@ -121,6 +124,99 @@ function buildRunnerDiedErrorMessage(pid: number): string {
         `TASK_RUNNER_DIED: Async worker PID ${pid} is no longer running while the task is still marked running.`,
         `Fix: inspect detached worker crash logs, verify engine bootstrap/auth, then retry the task.`,
     ].join(' ');
+}
+
+function buildHeartbeatTimeoutErrorMessage(timeoutMs: number): string {
+    return [
+        `TASK_HEARTBEAT_TIMEOUT: No detached-worker heartbeat was received for ${Math.round(timeoutMs / 1000)}s while the task remained running.`,
+        `Fix: inspect worker logs for hangs, verify the engine can continue emitting progress, then retry or increase heartbeat_timeout_ms.`,
+    ].join(' ');
+}
+
+function buildDependencyFailureErrorMessage(taskId: string, dependencies: Array<{ taskId: string; status: string }>): string {
+    return [
+        `TASK_DEPENDENCY_FAILED: Task '${taskId}' cannot continue because prerequisite task(s) failed or exited in a non-verified terminal state: ${dependencies.map(dep => `${dep.taskId} (${dep.status})`).join(', ')}.`,
+        `Fix: inspect the failed dependency output, repair the upstream task, and then rerun this task or recreate the async plan.`,
+    ].join(' ');
+}
+
+function buildDependencyMissingErrorMessage(taskId: string, missingDependencies: string[]): string {
+    return [
+        `TASK_DEPENDENCY_MISSING: Task '${taskId}' is blocked on prerequisite task record(s) that no longer exist: ${missingDependencies.join(', ')}.`,
+        `Fix: recreate the missing dependency task or regenerate the plan so dependency tracking can be rebuilt.`,
+    ].join(' ');
+}
+
+function reconcileBlockedTasksInManifest(manifest: Record<string, TaskRecord>, now: number): boolean {
+    let changed = false;
+    const nonVerifiedTerminalStatuses = new Set(['failed', 'partial', 'degraded', 'expired', 'cancelled']);
+
+    for (const [taskId, task] of Object.entries(manifest)) {
+        if (task.status !== 'blocked') continue;
+
+        const declaredDependencies = task.depends_on || task.blocked_by || [];
+        if (declaredDependencies.length === 0) {
+            task.status = 'pending';
+            task.blocked_by = undefined;
+            changed = true;
+            continue;
+        }
+
+        const missingDependencies: string[] = [];
+        const failedDependencies: Array<{ taskId: string; status: string }> = [];
+        const unresolvedDependencies: string[] = [];
+
+        for (const dependencyId of declaredDependencies) {
+            const dependency = manifest[dependencyId];
+            if (!dependency) {
+                missingDependencies.push(dependencyId);
+                continue;
+            }
+            if (dependency.status === 'verified') {
+                continue;
+            }
+            if (nonVerifiedTerminalStatuses.has(dependency.status)) {
+                failedDependencies.push({ taskId: dependencyId, status: dependency.status });
+                continue;
+            }
+            unresolvedDependencies.push(dependencyId);
+        }
+
+        if (missingDependencies.length > 0) {
+            task.status = 'failed';
+            task.blocked_by = undefined;
+            task.completed_at = now;
+            task.failure_classification = 'dependency_missing';
+            task.error_message = buildDependencyMissingErrorMessage(taskId, missingDependencies);
+            changed = true;
+            continue;
+        }
+
+        if (failedDependencies.length > 0) {
+            task.status = 'failed';
+            task.blocked_by = undefined;
+            task.completed_at = now;
+            task.failure_classification = 'dependency_failed';
+            task.error_message = buildDependencyFailureErrorMessage(taskId, failedDependencies);
+            changed = true;
+            continue;
+        }
+
+        const nextBlockedBy = unresolvedDependencies.length > 0 ? unresolvedDependencies : undefined;
+        const blockedByChanged = JSON.stringify(task.blocked_by || []) !== JSON.stringify(nextBlockedBy || []);
+        if (blockedByChanged) {
+            task.blocked_by = nextBlockedBy;
+            changed = true;
+        }
+
+        if (!nextBlockedBy) {
+            task.status = 'pending';
+            task.blocked_by = undefined;
+            changed = true;
+        }
+    }
+
+    return changed;
 }
 
 function writeFailureMarker(outputPath: string | undefined, errorMessage: string): void {
@@ -257,46 +353,50 @@ export class TaskManifestManager {
     }
 
     static reapStaleTasks(workspacePath: string) {
-        withManifestLock(() => {
-            const manifest = this.loadManifest(workspacePath);
-            const now = Date.now();
-            const TIMEOUT_MS = 1000 * 60 * 3; // 3 minutes timeout
-            let changed = false;
+        const manifest = this.loadManifest(workspacePath);
+        const now = Date.now();
+        const TIMEOUT_MS = 1000 * 60 * 3; // 3 minutes timeout
+        let changed = false;
 
-            for (const taskId in manifest) {
-                const task = manifest[taskId];
-                if (task.status === 'running') {
-                    if (typeof task.pid === 'number' && task.pid > 0 && !isPidAlive(task.pid)) {
-                        task.status = 'failed';
-                        task.error_message = buildRunnerDiedErrorMessage(task.pid);
-                        task.completed_at = now;
-                        changed = true;
-                        writeFailureMarker(task.output_path, task.error_message);
-                        continue;
-                    }
-                    const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
-                    if (now - task.heartbeatTime > effectiveTimeout) {
-                        task.status = 'failed';
-                        task.error_message = 'Task timed out or runner process died (reaped by Watchdog).';
-                        task.completed_at = now;
-                        changed = true;
-                        writeFailureMarker(task.output_path, task.error_message);
-                    }
-                } else if (task.status === 'pending') {
-                    const startupTimeout = task.startup_timeout_ms || DEFAULT_TASK_STARTUP_TIMEOUT_MS;
-                    if (now - task.startTime > startupTimeout) {
-                        task.status = 'failed';
-                        task.error_message = buildStartupTimeoutErrorMessage(startupTimeout);
-                        task.completed_at = now;
-                        changed = true;
-                        writeFailureMarker(task.output_path, task.error_message);
-                    }
+        for (const taskId in manifest) {
+            const task = manifest[taskId];
+            if (task.status === 'running') {
+                if (typeof task.pid === 'number' && task.pid > 0 && !isPidAlive(task.pid)) {
+                    task.status = 'failed';
+                    task.error_message = buildRunnerDiedErrorMessage(task.pid);
+                    task.failure_classification = 'process_died';
+                    task.completed_at = now;
+                    changed = true;
+                    writeFailureMarker(task.output_path, task.error_message);
+                    continue;
+                }
+                const effectiveTimeout = task.heartbeat_timeout_ms || TIMEOUT_MS;
+                if (now - task.heartbeatTime > effectiveTimeout) {
+                    task.status = 'failed';
+                    task.error_message = buildHeartbeatTimeoutErrorMessage(effectiveTimeout);
+                    task.failure_classification = 'heartbeat_timeout';
+                    task.completed_at = now;
+                    changed = true;
+                    writeFailureMarker(task.output_path, task.error_message);
+                }
+            } else if (task.status === 'pending') {
+                const startupTimeout = task.startup_timeout_ms || DEFAULT_TASK_STARTUP_TIMEOUT_MS;
+                if (now - task.startTime > startupTimeout) {
+                    task.status = 'failed';
+                    task.error_message = buildStartupTimeoutErrorMessage(startupTimeout);
+                    task.failure_classification = 'startup_timeout';
+                    task.completed_at = now;
+                    changed = true;
+                    writeFailureMarker(task.output_path, task.error_message);
                 }
             }
-            if (changed) {
-                this.saveManifest(workspacePath, manifest);
-            }
-        });
+        }
+        if (reconcileBlockedTasksInManifest(manifest, now)) {
+            changed = true;
+        }
+        if (changed) {
+            this.saveManifest(workspacePath, manifest);
+        }
     }
 
     /**

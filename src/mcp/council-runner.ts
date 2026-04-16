@@ -224,17 +224,18 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
         }
 
         await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
+
+        if (verificationStatus !== 'verified') {
+            await handleTaskFailureAndRecoverIfPossible(workspacePath, taskId, errorMessage || 'Validation failed without error message');
+        }
+
         return delegateResult;
     } catch (err: any) {
         console.error(`[Runner] Task ${taskId} failed (in-process):`, err);
         const latestManifest = TaskManifestManager.loadManifest(workspacePath);
         const latestTask = latestManifest[taskId];
         if (latestTask?.status !== 'cancelled') {
-            TaskManifestManager.updateTask(workspacePath, taskId, {
-                status: 'failed',
-                error_message: err.message,
-                completed_at: Date.now()
-            });
+            await handleTaskFailureAndRecoverIfPossible(workspacePath, taskId, err.message);
         }
         if (latestTask?.status !== 'cancelled') {
             await updateTaskGitHubIssue(workspacePath, taskId, 'failed', undefined, err.message);
@@ -243,6 +244,77 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
         clearInterval(heartbeatInterval);
         // No process.exit() — caller stays alive
     }
+}
+
+async function handleTaskFailureAndRecoverIfPossible(workspacePath: string, taskId: string, errorMessage: string) {
+    const manifest = TaskManifestManager.loadManifest(workspacePath);
+    const failedTask = manifest[taskId];
+    if (!failedTask) return;
+
+    const retryCount = failedTask.retry_count || 0;
+    if (retryCount >= 3) {
+        console.error(`[Runner] Task ${taskId} exceeded max retries (3/3). Escalating to human.`);
+        TaskManifestManager.updateTask(workspacePath, taskId, {
+            status: 'blocked_human_intervention',
+            error_message: `Repeated failures: ${errorMessage}`,
+            completed_at: Date.now()
+        });
+        return;
+    }
+
+    const newRetryCount = retryCount + 1;
+    console.error(`[Runner] Task ${taskId} failed. Initiating self-healing loop (${newRetryCount}/3)`);
+    
+    TaskManifestManager.updateTask(workspacePath, taskId, {
+        status: 'degraded',
+        error_message: `Healing loop ${newRetryCount}/3: ${errorMessage}`,
+        retry_count: newRetryCount,
+        completed_at: Date.now()
+    });
+
+    // We inject a reviewer task to figure out what went wrong.
+    const reviewerTaskId = `fix_${taskId}_${newRetryCount}`;
+    const fixPrompt = [
+        '# SELF-HEALING DIAGNOSTICS',
+        'A worker agent attempted a task but failed verification or compilation.',
+        '',
+        '## Original Task',
+        failedTask.task_description || failedTask.task_artifact_path || 'Unknown',
+        '',
+        '## Error Encountered',
+        errorMessage,
+        '',
+        '## Your Objective',
+        '- Analyze the failure using read tools',
+        '- Determine the exact root cause',
+        '- Output a concrete, step-by-step FIX PLAN to correct the issue',
+    ].join('\n');
+
+    const reviewerOutputPath = failedTask.output_path ? path.resolve(path.dirname(failedTask.output_path), 'orchestration.md') : '';
+
+    TaskManifestManager.createTask(workspacePath, {
+        taskId: reviewerTaskId,
+        type: 'delegate_task',
+        role: 'code-reviewer',
+        task_description: fixPrompt,
+        context_files: failedTask.context_files,
+        output_path: reviewerOutputPath,
+        github_issue_number: failedTask.github_issue_number,
+        parent_issue_number: failedTask.parent_issue_number,
+        workspacePath
+    });
+
+    // Make the failed task heavily depend on the reviewer task
+    const currentDependsOn = failedTask.depends_on || [];
+    TaskManifestManager.updateTask(workspacePath, taskId, {
+        depends_on: [...currentDependsOn, reviewerTaskId],
+        status: 'blocked' // This forces the dag engine to wait for the reviewer and re-run this logic
+    });
+
+    console.error(`[Runner] Spawning reviewer sub-task: ${reviewerTaskId}`);
+    // Run the reviewer asynchronously or in process depending on current flow
+    // spawnAsyncWorker handles background daemon running for the new sub node.
+    spawnAsyncWorker(reviewerTaskId, workspacePath);
 }
 
 function verifyOutputPath(outputPath: string | undefined): 'verified' | 'partial' | 'failed' {
@@ -574,16 +646,17 @@ Here is the synthesis report:\n\n${synthesisContent}`;
 
         // Best-effort: update GitHub Issue with completion status
         await updateTaskGitHubIssue(workspacePath, taskId, verificationStatus, task.output_path);
+
+        if (verificationStatus !== 'verified') {
+            await handleTaskFailureAndRecoverIfPossible(workspacePath, taskId, errorMessage || 'Validation failed without error message');
+        }
+
     } catch (err: any) {
         console.error(`[Runner] Task ${taskId} failed:`, err);
         const latestManifest = TaskManifestManager.loadManifest(workspacePath);
         const latestTask = latestManifest[taskId];
         if (latestTask?.status !== 'cancelled') {
-            TaskManifestManager.updateTask(workspacePath, taskId, {
-                status: 'failed',
-                error_message: err.message,
-                completed_at: Date.now()
-            });
+            await handleTaskFailureAndRecoverIfPossible(workspacePath, taskId, err.message);
         }
 
         // Best-effort: comment failure on GitHub Issue
