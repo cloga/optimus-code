@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.25.0] - 2026-04-16
+
+### Features
+- **optimus-fleet wrapper skill** — Added `optimus-fleet` skill providing a deterministic MCP dispatch layer. Enables structured orchestration patterns with explicit fleet routing for multi-agent coordination. ([feat(skill): add optimus-fleet wrapper skill for deterministic MCP dispatch](https://github.com/cloga/optimus-code/commit/9c34c8e))
+
+### Improvements
+- **optimus_orchestrate rename** — Renamed fleet orchestrator tool to `optimus_orchestrate` for consistency with the MCP tool naming convention. ([refactor(mcp): rename fleet orchestrator to optimus_orchestrate](https://github.com/cloga/optimus-code/commit/38f4567))
+
 ## [2.24.1] - 2026-04-16
 
 ### Bug Fixes
