@@ -181,6 +181,7 @@ Once the server is running, your AI assistant gains these tools:
 | `cancel_agent_run` | Cancel an active Agent Runtime run |
 | `delegate_task` | Assign a task to a specialized agent with structured role info |
 | `delegate_task_async` | Same as above, non-blocking (preferred) |
+| `optimus_orchestrate` | Analyze a broad task, choose delegate/council/plan automatically, and dispatch the best async orchestration path |
 | `dispatch_council` | Spawn parallel expert review (Map-Reduce pattern) |
 | `dispatch_council_async` | Same as above, non-blocking (preferred) |
 | `check_task_status` | Poll async task/council completion |

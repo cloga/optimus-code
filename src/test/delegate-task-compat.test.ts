@@ -47,7 +47,7 @@ describe('delegate_task compatibility layer', () => {
         expect(delegateTool?.description).toContain('Prefer delegate_task_async');
     });
 
-    it('advertises dispatch_plan_async for fleet-like batch orchestration', async () => {
+    it('advertises dispatch_plan_async for optimus-like batch orchestration', async () => {
         const data = await connectClient();
 
         const tools = await data.client.listTools();
@@ -56,6 +56,17 @@ describe('delegate_task compatibility layer', () => {
         expect(planTool).toBeDefined();
         expect(planTool?.description).toContain('batch of work items');
         expect(planTool?.description).toContain('dependency edges');
+    });
+
+    it('advertises optimus_orchestrate for automatic orchestration selection', async () => {
+        const data = await connectClient();
+
+        const tools = await data.client.listTools();
+        const optimusTool = tools.tools.find(tool => tool.name === 'optimus_orchestrate');
+
+        expect(optimusTool).toBeDefined();
+        expect(optimusTool?.description).toContain('choose the best orchestration mode');
+        expect(optimusTool?.description).toContain('safe parallelism');
     });
 
     it('rejects synchronous delegate_task calls without workspace_path', async () => {
