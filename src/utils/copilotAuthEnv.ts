@@ -16,18 +16,42 @@ export function isCopilotCliExecutable(executable: string): boolean {
  * However, if GITHUB_TOKEN contains a classic PAT (ghp_), Copilot will
  * try to use it, fail, and report "Authentication required" instead of
  * falling back to its credential store. So we must remove classic PATs.
+ *
+ * Also strips master-scoped BYOM (Bring-Your-Own-Model) env vars so that
+ * sub-agent workers are not forced onto the master's custom provider
+ * (e.g. Agent Maestro / Gemini). Workers must honor their own
+ * role-configured engine/model. Set `OPTIMUS_ALLOW_BYOM_PROPAGATION=1`
+ * to opt out of the strip (rare — e.g. all sub-agents should share the
+ * master's BYOM endpoint).
  */
+const BYOM_ENV_KEYS = [
+    'COPILOT_PROVIDER_TYPE',
+    'COPILOT_PROVIDER_BASE_URL',
+    'COPILOT_PROVIDER_API_KEY',
+    'COPILOT_PROVIDER_BEARER_TOKEN',
+    'COPILOT_PROVIDER_WIRE_API',
+    'COPILOT_PROVIDER_AZURE_API_VERSION',
+    'COPILOT_PROVIDER_MODEL_ID',
+    'COPILOT_MODEL',
+];
+
 export function sanitizeCopilotAuthEnv(env: NodeJS.ProcessEnv): void {
-    if (env.COPILOT_GITHUB_TOKEN) {
-        return;
+    if (!env.COPILOT_GITHUB_TOKEN) {
+        // Remove classic PATs (ghp_) — they poison Copilot's auth flow.
+        // Keep OAuth tokens (gho_) and fine-grained PATs (github_pat_) intact.
+        if (env.GITHUB_TOKEN?.startsWith('ghp_')) {
+            delete env.GITHUB_TOKEN;
+        }
+        if (env.GH_TOKEN?.startsWith('ghp_')) {
+            delete env.GH_TOKEN;
+        }
     }
 
-    // Remove classic PATs (ghp_) — they poison Copilot's auth flow.
-    // Keep OAuth tokens (gho_) and fine-grained PATs (github_pat_) intact.
-    if (env.GITHUB_TOKEN?.startsWith('ghp_')) {
-        delete env.GITHUB_TOKEN;
-    }
-    if (env.GH_TOKEN?.startsWith('ghp_')) {
-        delete env.GH_TOKEN;
+    if (env.OPTIMUS_ALLOW_BYOM_PROPAGATION !== '1') {
+        for (const key of BYOM_ENV_KEYS) {
+            if (env[key] !== undefined) {
+                delete env[key];
+            }
+        }
     }
 }

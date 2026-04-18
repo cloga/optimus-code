@@ -22,7 +22,7 @@ This project does **NOT** publish to npm. Releases go to **GitHub** via `gh rele
 2. Update `CHANGELOG.md` with the new version entry
 3. `npm run build` (rebuilds dist bundles with new version)
 4. `git add` the changed files (see Windows caveats below) and commit
-5. `git tag v{version}` and `git push origin master --tags`
+5. `git tag v{version}`, then push the branch and the new release tag explicitly: `git push origin master` and `git push origin v{version}`. Avoid `git push --tags` because unrelated local tags can cause a false failure even when the release tag itself is valid.
 6. Load token: `$env:GITHUB_TOKEN = (Select-String 'GITHUB_TOKEN=(.+)' .env).Matches.Groups[1].Value`
 7. `gh release create v{version} --title "v{version} — {summary}" --notes "{release notes}"`
 
@@ -50,8 +50,16 @@ Users install and upgrade from GitHub directly (not npm):
 
 - MCP tools are accessed via the `spartan-swarm` MCP server connection.
 - In GitHub Copilot, tool names use `mcp_spartan-swarm_` prefix (e.g., `mcp_spartan-swarm_delegate_task`).
+- Tool availability is dynamic. If a referenced `spartan-swarm` tool is unavailable in the current session, do not fail the workflow waiting for it; acknowledge the missing tool, skip that mandatory-first-action step, and continue with the best available local/runtime path.
 - When launching a swarm, use the **async** versions (`delegate_task_async`, `dispatch_council_async`) to avoid blocking your own process.
+- For Optimus/fleet/orchestration work inside this repository, prefer Optimus's own orchestration surfaces (`optimus_orchestrate`, `dispatch_plan_async`, `delegate_task_async`) over generic external sub-agents. If manual takeover becomes necessary, state explicitly that the result was not fleet-native end-to-end completion.
+- For orchestration design or runtime changes, prefer the agent-planned path in `optimus_orchestrate` (`planner_mode=auto` or `planner_mode=agent`) over forcing code-only heuristics. Use `planner_mode=code` only when you explicitly need deterministic fallback behavior or are debugging the heuristic path itself.
 - When self-healing MCP failures specific to the Optimus codebase, investigate `src/mcp/mcp-server.ts`, fix, and rebuild via `cd optimus-plugin && npm run build`.
+- After changing `src/mcp/mcp-server.ts`, MCP tool schemas/descriptions, or shipped skill wiring that feeds the bundled MCP server, run `npm run build` before running `src/test/delegate-task-compat.test.ts` because that test reads `optimus-plugin/dist/mcp-server.js`, not the source file directly.
+
+## Instruction File Maintenance
+
+- Do not edit the auto-managed Optimus block between `<!-- optimus-instructions v3 -->` and `<!-- /optimus-instructions -->` directly. Add repository-specific clarifications outside that block instead.
 
 ## Architecture Overview
 

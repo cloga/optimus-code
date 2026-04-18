@@ -674,14 +674,40 @@ export class AgentLockManager {
 
 import { isPidAlive } from '../utils/isPidAlive';
 
-// Module-level singleton; initialized lazily per workspace
-let lockManagerInstance: AgentLockManager | null = null;
-function getLockManager(workspacePath: string): AgentLockManager {
-    if (!lockManagerInstance) {
-        lockManagerInstance = new AgentLockManager(workspacePath);
-        lockManagerInstance.cleanStaleLocks();
+const lockManagerInstances = new Map<string, AgentLockManager>();
+
+function getLockManagerCacheKey(workspacePath: string): string {
+    const resolvedPath = path.resolve(workspacePath);
+    let canonicalPath = resolvedPath;
+
+    try {
+        canonicalPath = fs.realpathSync.native
+            ? fs.realpathSync.native(resolvedPath)
+            : fs.realpathSync(resolvedPath);
+    } catch {
+        canonicalPath = resolvedPath;
     }
-    return lockManagerInstance;
+
+    return process.platform === 'win32'
+        ? canonicalPath.toLowerCase()
+        : canonicalPath;
+}
+
+export function getLockManager(workspacePath: string): AgentLockManager {
+    const cacheKey = getLockManagerCacheKey(workspacePath);
+    let lockManager = lockManagerInstances.get(cacheKey);
+
+    if (!lockManager) {
+        lockManager = new AgentLockManager(workspacePath);
+        lockManager.cleanStaleLocks();
+        lockManagerInstances.set(cacheKey, lockManager);
+    }
+
+    return lockManager;
+}
+
+export function resetLockManagerCacheForTests(): void {
+    lockManagerInstances.clear();
 }
 
 export class ConcurrencyGovernor {
