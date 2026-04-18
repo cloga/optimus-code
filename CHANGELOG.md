@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.30.1] - 2026-04-18
+
+### Improvements
+- **Agent-friendly runtime guidance** — Added explicit shipped guidance across system instructions, master onboarding, and default scaffold prompts so upgraded workspaces immediately understand the current runtime model: a per-user multi-workspace HTTP daemon routed by `workspace_path` and `X-Optimus-Workspace`.
+
 ## [2.30.0] - 2026-04-18
 
 ### Features
