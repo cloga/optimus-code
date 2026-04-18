@@ -343,79 +343,113 @@ export function releaseSchedulerLock(workspacePath: string): void {
 
 // ─── Core Engine ───
 
+interface SchedulerState {
+    workspacePath: string;
+    interval: ReturnType<typeof setInterval> | null;
+    runningCount: number;
+    isLeader: boolean;
+}
+
 export class MetaCronEngine {
-    private static interval: ReturnType<typeof setInterval> | null = null;
-    private static workspacePath: string = '';
-    private static runningCount: number = 0;
-    private static isLeader: boolean = false;
+    private static readonly schedulers = new Map<string, SchedulerState>();
+
+    private static getWorkspaceKey(workspacePath: string): string {
+        const resolved = path.resolve(workspacePath);
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    }
+
+    private static stopScheduler(workspaceKey: string, releaseLock: boolean, reason?: string): void {
+        const state = this.schedulers.get(workspaceKey);
+        if (!state) return;
+        if (state.interval) {
+            clearInterval(state.interval);
+            state.interval = null;
+        }
+        if (releaseLock && state.isLeader) {
+            releaseSchedulerLock(state.workspacePath);
+        }
+        if (reason) {
+            console.error(reason);
+        }
+        this.schedulers.delete(workspaceKey);
+    }
 
     static init(workspacePath: string): void {
-        this.workspacePath = workspacePath;
+        const workspaceKey = this.getWorkspaceKey(workspacePath);
+        const resolvedWorkspacePath = path.resolve(workspacePath);
+        if (this.schedulers.has(workspaceKey)) {
+            console.error(`[Meta-Cron] Scheduler already initialized for workspace '${workspacePath}'`);
+            return;
+        }
 
         // Single-leader election: only one MCP server process per workspace runs the scheduler.
-        if (!tryAcquireSchedulerLock(workspacePath)) {
+        if (!tryAcquireSchedulerLock(resolvedWorkspacePath)) {
             console.error('[Meta-Cron] Another process is the scheduler leader — skipping init');
             return;
         }
-        this.isLeader = true;
+        const state: SchedulerState = {
+            workspacePath: resolvedWorkspacePath,
+            interval: null,
+            runningCount: 0,
+            isLeader: true,
+        };
+        this.schedulers.set(workspaceKey, state);
         console.error(`[Meta-Cron] This process (PID ${process.pid}) elected as scheduler leader`);
 
-        const crontab = loadCrontab(workspacePath);
+        const crontab = loadCrontab(state.workspacePath);
         if (!crontab) {
             console.error('[Meta-Cron] No crontab found — engine idle');
         } else {
             console.error(`[Meta-Cron] Loaded ${crontab.crons.length} cron entries`);
         }
-        this.interval = setInterval(() => { this.tick(); }, 60_000);
-        if (this.interval && typeof this.interval.unref === 'function') {
-            this.interval.unref();
+        state.interval = setInterval(() => { this.tick(workspaceKey); }, 60_000);
+        if (state.interval && typeof state.interval.unref === 'function') {
+            state.interval.unref();
         }
     }
 
-    static shutdown(): void {
-        if (this.interval) {
-            clearInterval(this.interval);
-            this.interval = null;
-            console.error('[Meta-Cron] Engine shut down');
+    static shutdown(workspacePath?: string): void {
+        if (workspacePath) {
+            const workspaceKey = this.getWorkspaceKey(workspacePath);
+            if (this.schedulers.has(workspaceKey)) {
+                this.stopScheduler(workspaceKey, true, '[Meta-Cron] Engine shut down');
+            }
+            return;
         }
-        if (this.isLeader) {
-            releaseSchedulerLock(this.workspacePath);
-            this.isLeader = false;
+        for (const workspaceKey of Array.from(this.schedulers.keys())) {
+            this.stopScheduler(workspaceKey, true, '[Meta-Cron] Engine shut down');
         }
     }
 
-    private static tick(): void {
+    private static tick(workspaceKey: string): void {
+        const state = this.schedulers.get(workspaceKey);
+        if (!state) return;
+
         try {
             // Re-validate scheduler leadership on every tick.
             // If another process acquired the leader lock (e.g., after we were briefly
             // unresponsive or our PID was recycled), stop this scheduler to prevent
             // dual-scheduler overlap (Issue #511).
             try {
-                const leaderPath = getSchedulerLockPath(this.workspacePath);
+                const leaderPath = getSchedulerLockPath(state.workspacePath);
                 const leaderData = JSON.parse(fs.readFileSync(leaderPath, 'utf8')) as { pid?: number };
                 if (leaderData.pid !== process.pid) {
-                    console.error(`[Meta-Cron] Leader lock held by PID ${leaderData.pid}, not us (${process.pid}) — stopping scheduler`);
-                    if (this.interval) {
-                        clearInterval(this.interval);
-                        this.interval = null;
-                    }
-                    this.isLeader = false;
+                    this.stopScheduler(
+                        workspaceKey,
+                        false,
+                        `[Meta-Cron] Leader lock held by PID ${leaderData.pid}, not us (${process.pid}) — stopping scheduler`
+                    );
                     return;
                 }
             } catch {
                 // If we can't read the leader lock (deleted, corrupted), stop — we may no longer be leader
-                console.error('[Meta-Cron] Cannot verify leader lock — stopping scheduler');
-                if (this.interval) {
-                    clearInterval(this.interval);
-                    this.interval = null;
-                }
-                this.isLeader = false;
+                this.stopScheduler(workspaceKey, false, '[Meta-Cron] Cannot verify leader lock — stopping scheduler');
                 return;
             }
 
             // Clean up old tick dedup files (older than 2 hours)
             try {
-                const lockDir = getLockDir(this.workspacePath);
+                const lockDir = getLockDir(state.workspacePath);
                 if (fs.existsSync(lockDir)) {
                     const cutoff = Date.now() - 2 * 60 * 60 * 1000;
                     for (const file of fs.readdirSync(lockDir)) {
@@ -429,14 +463,14 @@ export class MetaCronEngine {
                 }
             } catch { /* tick dedup cleanup is non-critical */ }
 
-            const crontab = loadCrontab(this.workspacePath);
+            const crontab = loadCrontab(state.workspacePath);
             if (!crontab) return;
             const now = new Date();
             let mutated = false;
             for (const entry of crontab.crons) {
                 if (!entry.enabled) continue;
                 if (!matchesCronExpression(entry.cron_expression, now)) continue;
-                if (this.runningCount >= crontab.max_concurrent) {
+                if (state.runningCount >= crontab.max_concurrent) {
                     console.error(`[Meta-Cron] Skipping '${entry.id}' — max concurrent reached`);
                     continue;
                 }
@@ -444,7 +478,7 @@ export class MetaCronEngine {
                 // Previous code used isLocked() here then createLock() later in fire(), creating
                 // a TOCTOU gap where two ticks could both see isLocked()=false before either locked.
                 if (entry.concurrency_policy === 'Forbid') {
-                    if (!createLock(this.workspacePath, entry.id)) {
+                    if (!createLock(state.workspacePath, entry.id)) {
                         console.error(`[Meta-Cron] Skipping '${entry.id}' — lock held (Forbid)`);
                         continue;
                     }
@@ -457,28 +491,28 @@ export class MetaCronEngine {
                     );
                     entry.dry_run_remaining--;
                     // Release the lock acquired above — dry runs don't actually fire
-                    if (entry.concurrency_policy === 'Forbid') deleteLock(this.workspacePath, entry.id);
+                    if (entry.concurrency_policy === 'Forbid') deleteLock(state.workspacePath, entry.id);
                     mutated = true;
                     continue;
                 }
-                this.fire(entry, crontab);
+                this.fire(state, entry, crontab);
                 mutated = true;
             }
-            if (mutated) saveCrontab(this.workspacePath, crontab);
+            if (mutated) saveCrontab(state.workspacePath, crontab);
         } catch (e: any) {
             console.error(`[Meta-Cron] Tick error during crontab evaluation: ${e.message}. Check .optimus/system/meta-crontab.json for syntax errors.`);
         }
     }
 
-    private static fire(entry: CronEntry, _crontab: CrontabData): void {
+    private static fire(state: SchedulerState, entry: CronEntry, _crontab: CrontabData): void {
         // Defense-in-depth: per-tick deduplication prevents duplicate tasks even if
         // leader election is somehow bypassed (e.g., stale leader lock cleanup race).
         // The tick key is based on cron minute granularity — one fire per ID per minute.
         const now = new Date();
         const tickKey = `${entry.id}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
-        const tickLockPath = path.join(getLockDir(this.workspacePath), `tick_${tickKey}.lock`);
+        const tickLockPath = path.join(getLockDir(state.workspacePath), `tick_${tickKey}.lock`);
         try {
-            const tickDir = getLockDir(this.workspacePath);
+            const tickDir = getLockDir(state.workspacePath);
             if (!fs.existsSync(tickDir)) fs.mkdirSync(tickDir, { recursive: true });
             const fd = fs.openSync(tickLockPath, 'wx');
             fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, tick: tickKey }), 'utf8');
@@ -487,7 +521,7 @@ export class MetaCronEngine {
             if (e?.code === 'EEXIST') {
                 console.error(`[Meta-Cron] Tick dedup: '${entry.id}' already fired for this minute — skipping`);
                 // Release the concurrency lock since we won't actually run
-                if (entry.concurrency_policy === 'Forbid') deleteLock(this.workspacePath, entry.id);
+                if (entry.concurrency_policy === 'Forbid') deleteLock(state.workspacePath, entry.id);
                 return;
             }
             // Non-EEXIST errors: log but proceed (don't block the cron on dedup failures)
@@ -499,7 +533,7 @@ export class MetaCronEngine {
         entry.last_run = new Date().toISOString();
         entry.last_status = 'running';
         entry.run_count++;
-        this.runningCount++;
+        state.runningCount++;
 
         const taskDescription =
             `You have been awakened by Meta-Cron (cron ID: ${entry.id}). ` +
@@ -509,31 +543,31 @@ export class MetaCronEngine {
             `**Run number:** ${entry.run_count}`;
 
         const taskId = `cron_${entry.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        TaskManifestManager.createTask(this.workspacePath, {
+        TaskManifestManager.createTask(state.workspacePath, {
             taskId,
             type: 'delegate_task' as const,
             role: entry.role,
             role_description: entry.role_description || `System role '${entry.role}' responsible for automated ${entry.capability_tier}-tier operations. Equipped with skills: ${(entry.required_skills || []).join(', ')}.`,
             task_description: taskDescription,
             output_path: `.optimus/reports/cron-${entry.id}-${new Date().toISOString().slice(0, 10)}.md`,
-            workspacePath: this.workspacePath,
+            workspacePath: state.workspacePath,
             required_skills: entry.required_skills,
             delegation_depth: 0,
             agent_id: entry.last_agent_id,
         });
 
         // Capture child stdout/stderr to a log file for diagnostics (was stdio:'ignore' — Issue #326).
-        const logDir = resolveOptimusPath(this.workspacePath, 'system', 'cron-logs');
+        const logDir = resolveOptimusPath(state.workspacePath, 'system', 'cron-logs');
         if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
         const logFile = path.join(logDir, `${entry.id}_${new Date().toISOString().slice(0, 10)}.log`);
         const logFd = fs.openSync(logFile, 'a');
 
         const child = spawn(process.execPath, [
             __filename,
-            '--run-task', taskId, this.workspacePath
+            '--run-task', taskId, state.workspacePath
         ], {
             detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true,
-            cwd: this.workspacePath,
+            cwd: state.workspacePath,
             env: { ...process.env, OPTIMUS_DELEGATION_DEPTH: '0', OPTIMUS_CRON_TRIGGERED: 'true' }
         });
         child.unref();
@@ -543,11 +577,11 @@ export class MetaCronEngine {
         // not the MCP server. This prevents stale-lock false positives when the server
         // restarts but the worker child is still alive (root cause of Issue #511).
         if (child.pid) {
-            updateLockPid(this.workspacePath, entry.id, child.pid);
+            updateLockPid(state.workspacePath, entry.id, child.pid);
         }
 
         const entryId = entry.id;
-        const ws = this.workspacePath;
+        const ws = state.workspacePath;
         const fireTime = Date.now();
 
         // Safety timer prevents leaked locks when tasks hang forever (2h hard ceiling).
@@ -571,7 +605,7 @@ export class MetaCronEngine {
                     clearInterval(checkInterval);
                     if (safetyTimer) clearTimeout(safetyTimer);
                     deleteLock(ws, entryId);
-                    MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
+                    state.runningCount = Math.max(0, state.runningCount - 1);
                     const freshCrontab = loadCrontab(ws);
                     if (freshCrontab) {
                         const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
@@ -588,7 +622,7 @@ export class MetaCronEngine {
                     clearInterval(checkInterval);
                     if (safetyTimer) clearTimeout(safetyTimer);
                     deleteLock(ws, entryId);
-                    MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
+                    state.runningCount = Math.max(0, state.runningCount - 1);
                     const freshCrontab = loadCrontab(ws);
                     if (freshCrontab) {
                         const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
@@ -610,7 +644,7 @@ export class MetaCronEngine {
         safetyTimer = setTimeout(() => {
             clearInterval(checkInterval);
             deleteLock(ws, entryId);
-            MetaCronEngine.runningCount = Math.max(0, MetaCronEngine.runningCount - 1);
+            state.runningCount = Math.max(0, state.runningCount - 1);
             // Update crontab so last_status doesn't stay "running" forever
             const freshCrontab = loadCrontab(ws);
             if (freshCrontab) {
