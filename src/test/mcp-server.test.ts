@@ -24,4 +24,18 @@ describe('mcp-server bundle', () => {
     // The critical failure mode is module errors, not runtime config errors
     expect(hasModuleError).toBe(false);
   });
+
+  it('does not start the server when required as a module', () => {
+    const bundlePath = path.resolve(process.cwd(), 'optimus-plugin/dist/mcp-server.js');
+    const escapedPath = bundlePath.replace(/\\/g, '\\\\');
+    const result = spawnSync('node', ['-e', `require('${escapedPath}')`], {
+      timeout: 3000,
+      encoding: 'utf8',
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(0);
+    expect(result.stderr || '').not.toContain('Optimus Spartan Swarm MCP server running on stdio');
+  });
 });

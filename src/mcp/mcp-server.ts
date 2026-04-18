@@ -2814,105 +2814,106 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // 4. CLI entry point: either run as MCP server or as async task runner
-if (process.argv.includes("--run-task")) {
-  const idx = process.argv.indexOf("--run-task");
-  const taskId = process.argv[idx + 1];
-  const workspacePath = process.argv[idx + 2];
-  if (!taskId || !workspacePath) {
-    console.error("[Runner] Usage: --run-task <taskId> <workspacePath>");
-    process.exit(1);
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("Optimus Spartan Swarm MCP server running on stdio");
+
+  // Pre-start the HTTP runtime server so first delegate doesn't wait on cold start
+  const workspaceRootPreheat = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+  ensureRuntimeServer(workspaceRootPreheat).then(ready => {
+    if (ready) {
+      console.error('[MCP] HTTP runtime server pre-heated and ready');
+    } else {
+      console.error('[MCP] ⚠️ HTTP runtime server failed to pre-start. Delegates will attempt auto-start on first use.');
+    }
+  }).catch(err => {
+    console.error(`[MCP] ⚠️ HTTP runtime preheat error: ${err.message}`);
+  });
+
+  // Agent GC: clean up stale T1 instances on startup
+  const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
+  ensureWorktreeStateDirs(workspaceRoot);
+  try {
+    cleanStaleAgents(workspaceRoot);
+  } catch (e: any) {
+    console.error(`[Agent GC] Warning: ${e.message}`);
   }
-  let fatalRecorded = false;
-  const recordFatalAndExit = (error: unknown, label: string) => {
-    if (!fatalRecorded) {
-      fatalRecorded = true;
-      persistAsyncRunnerFatalFailure(taskId, workspacePath, error);
-    }
-    console.error(`[Runner] ${label}:`, error);
-    process.exit(1);
-  };
-  process.on('uncaughtException', (error) => {
-    recordFatalAndExit(error, 'Uncaught exception');
-  });
-  process.on('unhandledRejection', (reason) => {
-    recordFatalAndExit(reason, 'Unhandled rejection');
-  });
-  runAsyncWorker(taskId, workspacePath).catch((err) => {
-    recordFatalAndExit(err, 'Fatal');
-  });
-} else {
-  // Standard MCP stdio transport
-  async function main() {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error("Optimus Spartan Swarm MCP server running on stdio");
 
-    // Pre-start the HTTP runtime server so first delegate doesn't wait on cold start
-    const workspaceRootPreheat = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    ensureRuntimeServer(workspaceRootPreheat).then(ready => {
-      if (ready) {
-        console.error('[MCP] HTTP runtime server pre-heated and ready');
-      } else {
-        console.error('[MCP] ⚠️ HTTP runtime server failed to pre-start. Delegates will attempt auto-start on first use.');
-      }
-    }).catch(err => {
-      console.error(`[MCP] ⚠️ HTTP runtime preheat error: ${err.message}`);
-    });
-
-    // Agent GC: clean up stale T1 instances on startup
-    const workspaceRoot = process.env.OPTIMUS_WORKSPACE_ROOT || process.cwd();
-    ensureWorktreeStateDirs(workspaceRoot);
-    try {
-      cleanStaleAgents(workspaceRoot);
-    } catch (e: any) {
-      console.error(`[Agent GC] Warning: ${e.message}`);
-    }
-
-    // Thin T2 template scanner: warn about templates that will be regenerated
-    try {
-      const rolesDir = resolveOptimusPath(workspaceRoot, 'roles');
-      if (fs.existsSync(rolesDir)) {
-        const roleFiles = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md'));
-        for (const file of roleFiles) {
-          const filePath = path.join(rolesDir, file);
-          const content = fs.readFileSync(filePath, 'utf8');
-          // Strip YAML frontmatter to count body lines only
-          const bodyMatch = content.replace(/\r\n/g, '\n').match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
-          const body = bodyMatch ? bodyMatch[1] : content;
-          const contentLineCount = body.split('\n').filter((l: string) => l.trim().length > 0).length;
-          if (contentLineCount < 25) {
-            console.error(`[Warning] Thin T2 template: ${file} (${contentLineCount} lines). Will regenerate on next use.`);
-          }
+  // Thin T2 template scanner: warn about templates that will be regenerated
+  try {
+    const rolesDir = resolveOptimusPath(workspaceRoot, 'roles');
+    if (fs.existsSync(rolesDir)) {
+      const roleFiles = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md'));
+      for (const file of roleFiles) {
+        const filePath = path.join(rolesDir, file);
+        const content = fs.readFileSync(filePath, 'utf8');
+        // Strip YAML frontmatter to count body lines only
+        const bodyMatch = content.replace(/\r\n/g, '\n').match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+        const body = bodyMatch ? bodyMatch[1] : content;
+        const contentLineCount = body.split('\n').filter((l: string) => l.trim().length > 0).length;
+        if (contentLineCount < 25) {
+          console.error(`[Warning] Thin T2 template: ${file} (${contentLineCount} lines). Will regenerate on next use.`);
         }
       }
-    } catch (e: any) {
-      console.error(`[Thin Scanner] Warning: ${e.message}`);
     }
-
-    // Meta-Cron: start the in-process scheduler
-    try {
-      MetaCronEngine.init(workspaceRoot);
-    } catch (e: any) {
-      console.error(`[Meta-Cron] Init failed: ${e.message}`);
-    }
-
-    // Resume checker: periodically check for human answers on paused tasks
-    const resumeInterval = setInterval(async () => {
-      try {
-        const result = await checkAndResumeAwaitingTasks(workspaceRoot);
-        if (result) console.error(`[ResumeChecker] ${result}`);
-      } catch (e: any) {
-        console.error(`[ResumeChecker] Error: ${e.message}`);
-      }
-    }, 5 * 60 * 1000); // every 5 minutes
-    if (typeof resumeInterval.unref === 'function') resumeInterval.unref();
-
-    process.on('SIGTERM', () => { MetaCronEngine.shutdown(); AcpProcessPool.getInstance().shutdownAll(); });
-    process.on('SIGINT', () => { MetaCronEngine.shutdown(); AcpProcessPool.getInstance().shutdownAll(); });
+  } catch (e: any) {
+    console.error(`[Thin Scanner] Warning: ${e.message}`);
   }
 
-  main().catch((error) => {
-    console.error("Server error:", error);
-    process.exit(1);
-  });
+  // Meta-Cron: start the in-process scheduler
+  try {
+    MetaCronEngine.init(workspaceRoot);
+  } catch (e: any) {
+    console.error(`[Meta-Cron] Init failed: ${e.message}`);
+  }
+
+  // Resume checker: periodically check for human answers on paused tasks
+  const resumeInterval = setInterval(async () => {
+    try {
+      const result = await checkAndResumeAwaitingTasks(workspaceRoot);
+      if (result) console.error(`[ResumeChecker] ${result}`);
+    } catch (e: any) {
+      console.error(`[ResumeChecker] Error: ${e.message}`);
+    }
+  }, 5 * 60 * 1000); // every 5 minutes
+  if (typeof resumeInterval.unref === 'function') resumeInterval.unref();
+
+  process.on('SIGTERM', () => { MetaCronEngine.shutdown(); AcpProcessPool.getInstance().shutdownAll(); });
+  process.on('SIGINT', () => { MetaCronEngine.shutdown(); AcpProcessPool.getInstance().shutdownAll(); });
+}
+
+if (require.main === module) {
+  if (process.argv.includes("--run-task")) {
+    const idx = process.argv.indexOf("--run-task");
+    const taskId = process.argv[idx + 1];
+    const workspacePath = process.argv[idx + 2];
+    if (!taskId || !workspacePath) {
+      console.error("[Runner] Usage: --run-task <taskId> <workspacePath>");
+      process.exit(1);
+    }
+    let fatalRecorded = false;
+    const recordFatalAndExit = (error: unknown, label: string) => {
+      if (!fatalRecorded) {
+        fatalRecorded = true;
+        persistAsyncRunnerFatalFailure(taskId, workspacePath, error);
+      }
+      console.error(`[Runner] ${label}:`, error);
+      process.exit(1);
+    };
+    process.on('uncaughtException', (error) => {
+      recordFatalAndExit(error, 'Uncaught exception');
+    });
+    process.on('unhandledRejection', (reason) => {
+      recordFatalAndExit(reason, 'Unhandled rejection');
+    });
+    runAsyncWorker(taskId, workspacePath).catch((err) => {
+      recordFatalAndExit(err, 'Fatal');
+    });
+  } else {
+    main().catch((error) => {
+      console.error("Server error:", error);
+      process.exit(1);
+    });
+  }
 }
