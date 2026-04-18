@@ -9,6 +9,15 @@
 ## Issue First Protocol
 Before any work begins, a GitHub Issue must be created to acquire an `#ID`. All local task files (`.optimus/tasks/`) must be bound to this ID.
 
+## Runtime Routing Protocol
+Optimus currently treats the runtime as a **per-user multi-workspace HTTP daemon**, not a repo-local singleton bound to the current checkout.
+
+Agents MUST internalize these rules before using runtime-backed flows:
+- Treat `workspace_path` as the routing key for run creation and any body-driven runtime request.
+- Treat `X-Optimus-Workspace` as the routing key for status and stream lookups when the transport expects headers.
+- Do NOT assume the daemon process identity is the current repository root; workspace is request-scoped.
+- Do NOT assume named pipes or WebSockets exist. The current stable runtime slice is the HTTP daemon model unless a future instruction explicitly says otherwise.
+
 ## Artifact Isolation
 ALL generated reports, tasks, and memory artifacts MUST be saved inside `.optimus/` subdirectories. Never write loose files to the repository root.
 
