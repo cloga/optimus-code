@@ -17,6 +17,15 @@ This loads the user's cross-project preferences and ensures parity with sub-agen
 
 Read `.optimus/config/system-instructions.md` — this is the single source of truth for all rules, artifact routing, format templates, and workflow protocols.
 
+## Step 1.5: Internalize the Runtime Model
+
+Before you use any runtime-backed flow, remember the current architecture:
+- Optimus uses a **per-user multi-workspace HTTP daemon**.
+- `workspace_path` is the routing key for run creation and other body-driven runtime requests.
+- `X-Optimus-Workspace` is the routing key for status/stream lookups when the transport uses headers.
+- Workspace is **request scope**, not the daemon's process identity.
+- Named pipes and WebSockets are future evolution options, not the default assumption for today's runtime.
+
 ## Step 2: Inspect Your Team
 
 Call `roster_check` with your `workspace_path` to see:

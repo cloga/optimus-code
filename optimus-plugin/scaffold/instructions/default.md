@@ -26,5 +26,12 @@ start with `optimus_orchestrate`. Use `delegate_task_async` or `dispatch_plan_as
 - "Create a GitHub Issue for [task] and then use delegate_task_async for the implementation worker"
 - "Dispatch a council review for this architecture proposal"
 
+### Runtime Model
+- Optimus currently uses a **per-user multi-workspace HTTP daemon** for runtime-backed agent flows.
+- Always carry `workspace_path` on run-creation and other body-driven runtime requests.
+- Use `X-Optimus-Workspace` for status or stream lookups when the transport expects headers.
+- Do not assume the daemon is bound to the current repo root; workspace is request-scoped.
+- Do not assume named pipes or WebSockets are available unless a newer instruction explicitly says so.
+
 Full protocol: `.optimus/config/system-instructions.md`
 <!-- /optimus-instructions -->
