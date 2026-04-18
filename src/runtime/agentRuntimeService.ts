@@ -131,9 +131,36 @@ function createRuntimeRecord(request: AgentRuntimeRequest, runId: string, traceI
             runtime_policy: request.runtime_policy
         },
         history: [
-            { task_id: taskId, status: 'pending', at: now, note: 'Run created' }
+            { task_id: taskId, status: 'queued', at: now, note: 'Run admitted to the runtime queue' }
         ]
     };
+}
+
+function enqueueInProcessRun(runId: string, workspacePath: string): void {
+    setImmediate(() => {
+        updateAgentRuntimeRecord(workspacePath, runId, (current) => ({
+            ...current,
+            updated_at: new Date().toISOString(),
+            history: [
+                ...current.history,
+                { task_id: current.active_task_id, status: 'starting', at: new Date().toISOString(), note: 'Worker accepted and scheduling in-process execution' }
+            ]
+        }));
+        pushStreamEvent(runId, 'status', 'starting');
+        const execution = runWorkerInProcess(runId, workspacePath);
+        pushStreamEvent(runId, 'status', 'running');
+        execution
+            .then(() => {
+                pushStreamEvent(runId, 'status', 'completed');
+                markStreamComplete(runId);
+            })
+            .catch(err => {
+                pushStreamEvent(runId, 'error', err.message || 'Execution failed');
+                pushStreamEvent(runId, 'status', 'failed');
+                markStreamComplete(runId);
+                console.error(`[AgentRuntime] In-process run ${runId} failed:`, err.message);
+            });
+    });
 }
 
 // ─── Input normalization ───
@@ -238,19 +265,9 @@ export function startRun(request: AgentRuntimeRequest): AgentRuntimeEnvelope {
     const { runId } = createRun(request);
     createEventBuffer(runId);
     pushStreamEvent(runId, 'status', 'queued');
-    // Fire-and-forget: run in-process for warm pool reuse, don't await
-    runWorkerInProcess(runId, request.workspace_path)
-        .then(() => {
-            pushStreamEvent(runId, 'status', 'completed');
-            markStreamComplete(runId);
-        })
-        .catch(err => {
-            pushStreamEvent(runId, 'error', err.message || 'Execution failed');
-            pushStreamEvent(runId, 'status', 'failed');
-            markStreamComplete(runId);
-            console.error(`[AgentRuntime] In-process run ${runId} failed:`, err.message);
-        });
-    return getRunStatus(request.workspace_path, runId);
+    const envelope = getRunStatus(request.workspace_path, runId);
+    enqueueInProcessRun(runId, request.workspace_path);
+    return envelope;
 }
 
 /**
@@ -417,7 +434,7 @@ export function resumeRun(workspacePath: string, runId: string, humanAnswer: str
         updated_at: now,
         history: [
             ...existing.history,
-            { task_id: resumeTaskId, status: 'pending', at: now, note: 'Run resumed with direct human answer' }
+            { task_id: resumeTaskId, status: 'queued', at: now, note: 'Run resumed and re-admitted to the runtime queue' }
         ]
     }));
 

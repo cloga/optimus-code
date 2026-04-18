@@ -15,6 +15,7 @@ import { extractJsonFromText } from '../utils/agentRuntime';
 import { validateOutput, formatValidationIssues } from '../harness/outputValidator';
 import { getEngineConfig, buildResolvedTransportForProtocol, loadEngineActivityTimeout, loadEngineHeartbeatTimeout } from '../mcp/engine-resolver';
 import { isCopilotCliExecutable } from '../utils/copilotAuthEnv';
+import { resolveOptimusPath, resolveWorkspaceRoot } from '../utils/worktree';
 import http from 'http';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
@@ -79,6 +80,29 @@ export function resolveRuntimeProxyTimeoutMs(timeoutMs: number | undefined, acti
     return Math.max(30_000, baseTimeoutMs + RUNTIME_PROXY_TIMEOUT_GRACE_MS);
 }
 
+export function isRuntimeServerHealthyPayload(payload: unknown): boolean {
+    if (!payload || typeof payload !== 'object') return false;
+    const candidate = payload as Record<string, unknown>;
+    return candidate.status === 'ok'
+        && Array.isArray(candidate.engines)
+        && typeof candidate.uptime_ms === 'number';
+}
+
+export function getRuntimeServerBootstrapCandidates(workspacePath?: string, env = process.env): string[] {
+    const workspaceRoot = resolveWorkspaceRoot(workspacePath)
+        || resolveWorkspaceRoot(process.cwd())
+        || process.cwd();
+    const homeDir = env.USERPROFILE || env.HOME || '';
+    const candidates = [
+        homeDir ? path.join(homeDir, '.optimus', 'dist', 'http-runtime.js') : '',
+        path.join(__dirname, 'http-runtime.js'),
+        path.join(__dirname, '..', 'dist', 'http-runtime.js'),
+        resolveOptimusPath(workspaceRoot, 'dist', 'http-runtime.js'),
+        path.resolve(workspaceRoot, 'optimus-plugin', 'dist', 'http-runtime.js'),
+    ].filter(Boolean);
+    return [...new Set(candidates)];
+}
+
 /**
  * Detect if spawning the given executable would create a nested-engine conflict.
  * This happens when the MCP server runs inside a Copilot CLI host process
@@ -129,20 +153,12 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
 
     // Auto-start the runtime server
     runtimeServerStarting = (async () => {
-        const cwd = workspacePath || process.cwd();
+        const workspaceRoot = resolveWorkspaceRoot(workspacePath)
+            || resolveWorkspaceRoot(process.cwd())
+            || process.cwd();
 
         // Find http-runtime.js: prioritize user-level, then project-level
-        const homeDir = process.env.USERPROFILE || process.env.HOME || '';
-        const candidates = [
-            // User-level (cross-project, preferred)
-            path.join(homeDir, '.optimus', 'dist', 'http-runtime.js'),
-            // Same dist dir as MCP server bundle
-            path.join(__dirname, 'http-runtime.js'),
-            path.join(__dirname, '..', 'dist', 'http-runtime.js'),
-            // Project-level fallback
-            path.resolve(cwd, '.optimus', 'dist', 'http-runtime.js'),
-            path.resolve(cwd, 'optimus-plugin', 'dist', 'http-runtime.js'),
-        ];
+        const candidates = getRuntimeServerBootstrapCandidates(workspaceRoot, process.env);
         const httpRuntimePath = candidates.find(p => {
             try { return require('fs').existsSync(p); } catch { return false; }
         });
@@ -151,7 +167,7 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
             return;
         }
 
-        console.error(`[RuntimeProxy] Auto-starting runtime server on :${RUNTIME_PORT} (cwd=${cwd})`);
+        console.error(`[RuntimeProxy] Auto-starting runtime server on :${RUNTIME_PORT} (workspace=${workspaceRoot})`);
 
         runtimeServerProcess = spawn(process.execPath, [
             httpRuntimePath,
@@ -205,12 +221,24 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
     return runtimeServerReady;
 }
 
-/** Simple HTTP GET that resolves true if status 200, false otherwise */
+/** Runtime health probe that only resolves true for a valid v2 runtime health response. */
 function httpGet(url: string): Promise<boolean> {
     return new Promise((resolve) => {
         const req = http.get(url, { timeout: 2000 }, (res) => {
-            res.resume(); // drain
-            resolve(res.statusCode === 200);
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => {
+                if (res.statusCode !== 200) {
+                    resolve(false);
+                    return;
+                }
+                try {
+                    const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                    resolve(isRuntimeServerHealthyPayload(payload));
+                } catch {
+                    resolve(false);
+                }
+            });
         });
         req.on('error', () => resolve(false));
         req.on('timeout', () => { req.destroy(); resolve(false); });
@@ -230,7 +258,7 @@ async function executeViaRuntimeServer(
         model: options.model,
         session_id: options.sessionId,
         timeout_ms: options.timeoutMs,
-        workspace_path: options.workspacePath,
+        workspace_path: resolveWorkspaceRoot(options.workspacePath),
     });
 
     return new Promise<ExecuteResult>((resolve, reject) => {

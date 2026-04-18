@@ -5,6 +5,8 @@ import {
     isRuntimeServerProcess,
     shouldRouteViaRuntimeServer,
     resolveRuntimeProxyTimeoutMs,
+    getRuntimeServerBootstrapCandidates,
+    isRuntimeServerHealthyPayload,
 } from '../runtime/genericExecutor';
 
 const originalArgv = [...process.argv];
@@ -69,6 +71,32 @@ describe('genericExecutor', () => {
             process.argv[1] = 'C:/Users/lochen/optimus-code/.optimus/dist/mcp-server.js';
             Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
             expect(shouldRouteViaRuntimeServer()).toBe(true);
+        });
+
+        it('resolves bootstrap candidates from the workspace root instead of a nested cwd', () => {
+            const nestedWorkspace = 'C:\\Users\\lochen\\optimus-code\\src\\runtime';
+            const candidates = getRuntimeServerBootstrapCandidates(nestedWorkspace, {
+                ...process.env,
+                USERPROFILE: 'C:\\Users\\lochen',
+                HOME: 'C:\\Users\\lochen',
+            });
+            expect(candidates).toContain('C:\\Users\\lochen\\optimus-code\\.optimus\\dist\\http-runtime.js');
+            expect(candidates).not.toContain('C:\\Users\\lochen\\optimus-code\\src\\runtime\\.optimus\\dist\\http-runtime.js');
+        });
+    });
+
+    describe('runtime health readiness', () => {
+        it('accepts the expected runtime v2 health payload', () => {
+            expect(isRuntimeServerHealthyPayload({
+                status: 'ok',
+                engines: ['github-copilot'],
+                uptime_ms: 1234,
+            })).toBe(true);
+        });
+
+        it('rejects unrelated 200 responses as not-ready', () => {
+            expect(isRuntimeServerHealthyPayload({ status: 'ok' })).toBe(false);
+            expect(isRuntimeServerHealthyPayload({ status: 'ok', engines: 'github-copilot', uptime_ms: 1234 })).toBe(false);
         });
     });
 

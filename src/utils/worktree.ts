@@ -75,6 +75,19 @@ export function detectWorktreeContext(workspacePath: string): WorktreeContext {
     }
 }
 
+/**
+ * Resolve any path inside a workspace to the owning workspace root.
+ *
+ * - For normal repos, returns the git toplevel.
+ * - For linked worktrees, returns the current worktree root (not the main repo root).
+ * - For non-git directories, returns the absolute path unchanged.
+ */
+export function resolveWorkspaceRoot(workspacePath?: string): string | undefined {
+    if (!workspacePath) return undefined;
+    const resolved = path.resolve(workspacePath);
+    return detectWorktreeContext(resolved).currentRoot;
+}
+
 // ---------------------------------------------------------------------------
 // Centralized .optimus path resolution
 // ---------------------------------------------------------------------------

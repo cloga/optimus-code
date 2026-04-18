@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import path from 'path';
 import {
     runGenericSync,
     startGenericRun,
@@ -46,26 +47,39 @@ describe('genericRuntime', () => {
 
     describe('getGenericRunStatus', () => {
         it('returns status for known run', () => {
-            const started = startGenericRun({ prompt: 'hello', engine: 'github-copilot' });
-            const status = getGenericRunStatus(started.run_id);
+            const workspaceRoot = process.cwd();
+            const started = startGenericRun({ prompt: 'hello', engine: 'github-copilot', workspace_path: path.join(workspaceRoot, 'src', 'runtime') });
+            const status = getGenericRunStatus(started.run_id, path.join(workspaceRoot, 'src', 'runtime'));
             expect(status.run_id).toBe(started.run_id);
+            expect(status.status).toBe('running');
         });
 
         it('throws for unknown run', () => {
             expect(() => getGenericRunStatus('nonexistent')).toThrow(/not found/i);
         });
+
+        it('rejects status lookups from a different workspace', () => {
+            const started = startGenericRun({ prompt: 'hello', engine: 'github-copilot', workspace_path: 'C:\\workspace-a' });
+            expect(() => getGenericRunStatus(started.run_id, 'C:\\workspace-b')).toThrow(/workspace/i);
+        });
     });
 
     describe('cancelGenericRun', () => {
         it('cancels a running run', () => {
-            const started = startGenericRun({ prompt: 'hello', engine: 'github-copilot' });
-            const cancelled = cancelGenericRun(started.run_id);
+            const workspaceRoot = process.cwd();
+            const started = startGenericRun({ prompt: 'hello', engine: 'github-copilot', workspace_path: path.join(workspaceRoot, 'src') });
+            const cancelled = cancelGenericRun(started.run_id, workspaceRoot);
             expect(cancelled.status).toBe('cancelled');
             expect(cancelled.error?.code).toBe('cancelled');
         });
 
         it('throws for unknown run', () => {
             expect(() => cancelGenericRun('nonexistent')).toThrow(/not found/i);
+        });
+
+        it('rejects cancellation from a different workspace', () => {
+            const started = startGenericRun({ prompt: 'hello', engine: 'github-copilot', workspace_path: 'C:\\workspace-a' });
+            expect(() => cancelGenericRun(started.run_id, 'C:\\workspace-b')).toThrow(/workspace/i);
         });
     });
 });

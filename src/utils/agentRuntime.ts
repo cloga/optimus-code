@@ -63,6 +63,32 @@ export interface AgentRuntimeRecord {
     }>;
 }
 
+function mapRuntimeHistoryStatusToRuntimeStatus(status: string | undefined): AgentRuntimeStatus {
+    switch (status) {
+        case 'queued':
+        case 'pending':
+        case 'starting':
+        case 'blocked':
+            return 'queued';
+        case 'running':
+            return 'running';
+        case 'awaiting_input':
+        case 'expired':
+        case 'blocked_manual_intervention':
+            return 'blocked_manual_intervention';
+        case 'cancelled':
+            return 'cancelled';
+        case 'verified':
+        case 'completed':
+            return 'completed';
+        case 'partial':
+        case 'degraded':
+        case 'failed':
+        default:
+            return 'failed';
+    }
+}
+
 export interface AgentRuntimeEnvelope {
     run_id: string;
     trace_id: string;
@@ -383,11 +409,38 @@ function readOutputArtifact(outputPath: string): { exists: boolean; rawText?: st
     };
 }
 
-function buildFailureFields(task: TaskRecord | null | undefined, record: AgentRuntimeRecord, outputInfo: ReturnType<typeof readOutputArtifact>): Pick<AgentRuntimeEnvelope, 'error_code' | 'error_message' | 'action_required'> {
+function buildFailureFields(
+    task: TaskRecord | null | undefined,
+    record: AgentRuntimeRecord,
+    outputInfo: ReturnType<typeof readOutputArtifact>,
+    status: AgentRuntimeStatus
+): Pick<AgentRuntimeEnvelope, 'error_code' | 'error_message' | 'action_required'> {
     if (!task) {
+        if (status === 'queued' || status === 'running') {
+            return {};
+        }
+        if (status === 'blocked_manual_intervention') {
+            return {
+                error_code: 'manual_intervention_required',
+                error_message: 'Human input is required to continue this run.',
+                action_required: 'Resume the run with POST /api/v1/agent/runs/:id/resume once you have the answer.'
+            };
+        }
+        if (status === 'cancelled') {
+            return {
+                error_code: 'run_cancelled',
+                error_message: 'The run was cancelled.'
+            };
+        }
+        if (status === 'completed' && !outputInfo.exists) {
+            return {
+                error_code: 'missing_output_artifact',
+                error_message: `Run finished without producing an output artifact at '${record.output_path}'.`
+            };
+        }
         return {
-            error_code: 'run_not_found',
-            error_message: `Agent Runtime run '${record.run_id}' was not found in the task manifest.`
+            error_code: 'runtime_execution_failed',
+            error_message: `Agent Runtime run '${record.run_id}' no longer has a task manifest entry. Check runtime logs for the final worker outcome.`
         };
     }
 
@@ -430,7 +483,8 @@ export function buildAgentRuntimeEnvelope(
     record: AgentRuntimeRecord,
     task: TaskRecord | null | undefined
 ): AgentRuntimeEnvelope {
-    const mappedStatus = mapTaskStatusToRuntimeStatus(task);
+    const historyStatus = mapRuntimeHistoryStatusToRuntimeStatus(record.history[record.history.length - 1]?.status);
+    const mappedStatus = task ? mapTaskStatusToRuntimeStatus(task) : historyStatus;
     const outputInfo = readOutputArtifact(record.output_path);
     const durationMs = task ? Math.max(0, (task.completed_at || Date.now()) - task.startTime) : undefined;
     const retriesAttempted = Math.max(0, record.history.length - 1);
@@ -455,7 +509,7 @@ export function buildAgentRuntimeEnvelope(
 
     const failureFields = status === 'completed'
         ? {}
-        : buildFailureFields(task, record, outputInfo);
+        : buildFailureFields(task, record, outputInfo, status);
 
     return {
         run_id: record.run_id,
@@ -472,7 +526,7 @@ export function buildAgentRuntimeEnvelope(
             ...(task?.resolved_engine ? { engine: task.resolved_engine } : task?.role_engine ? { engine: task.role_engine } : {}),
             ...(task?.resolved_model ? { model: task.resolved_model } : task?.role_model ? { model: task.role_model } : {}),
             ...(task?.session_id ? { session_id: task.session_id } : {}),
-            ...(task?.taskId ? { task_id: task.taskId } : {}),
+            ...((task?.taskId || record.active_task_id) ? { task_id: task?.taskId || record.active_task_id } : {}),
             ...(task?.agent_id ? { agent_id: task.agent_id } : record.request.agent_id ? { agent_id: record.request.agent_id } : {}),
             ...(durationMs !== undefined ? { duration_ms: durationMs } : {}),
             output_path: record.output_path,

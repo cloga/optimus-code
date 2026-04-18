@@ -130,6 +130,12 @@ Resolution order: `--cli` flag → project `preferredCli` → global `defaults.c
 
 Optimus now treats `.optimus/config/mcp-servers.json` as the single source of truth for workspace MCP server definitions. Edit that file when you want to customize the local Optimus server entry, then run `optimus upgrade` (or regenerate via init in a fresh workspace) to project the same server into each supported client config.
 
+### Runtime model
+
+Optimus currently treats the runtime as a **user-level HTTP daemon**. The preferred auto-start target is `~/.optimus/dist/http-runtime.js`, and the daemon serves **multiple workspaces** by carrying `workspace_path` in request bodies (or `X-Optimus-Workspace` for status/stream lookups). In other words, workspace is a **request/session scope**, not the daemon's process identity.
+
+This is the current completion target for the runtime architecture: **HTTP per-user multi-workspace daemon with warm pool reuse and explicit workspace routing**. Transports such as named pipes or WebSockets remain future evolution options; they are not required for the current runtime slice.
+
 ### Step 3: (Optional) Enable GitHub integration
 
 Create a `.env` file in your project root:

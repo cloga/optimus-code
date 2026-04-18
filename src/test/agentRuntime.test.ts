@@ -265,6 +265,19 @@ describe('agent runtime — envelope construction', () => {
         expect(envelope.error_message).toContain('User requested cancellation');
     });
 
+    it('keeps queued registry runs queryable before a manifest task is visible', () => {
+        const record = makeRecord({
+            active_task_id: 'run_admitted',
+            history: [{ task_id: 'run_admitted', status: 'queued', at: '2026-03-22T00:00:00.000Z' }]
+        });
+
+        const envelope = buildAgentRuntimeEnvelope(record, undefined);
+
+        expect(envelope.status).toBe('queued');
+        expect(envelope.error_code).toBeUndefined();
+        expect(envelope.runtime_metadata.task_id).toBe('run_admitted');
+    });
+
     it('includes engine/model/session metadata when available', () => {
         const tmpDir = makeTmpDir();
         const outputPath = path.join(tmpDir, 'result.json');

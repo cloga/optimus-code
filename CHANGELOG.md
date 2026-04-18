@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.30.0] - 2026-04-18
+
+### Features
+- **HTTP per-user multi-workspace daemon completion** — Hardened the user-level runtime into the current release target: a shared HTTP daemon with explicit workspace-scoped routing, stricter runtime readiness checks, and overflow workers that preserve the same per-request workspace model instead of binding themselves to a single repo.
+
+### Improvements
+- **Runtime admission and queryability** — `/api/v1/agent/start` now behaves more like a strict admission boundary: runs are persisted before async execution proceeds, immediate status recovery is more reliable, and runtime metadata remains visible even when the task manifest has not fully caught up yet.
+- **Workspace root normalization** — Nested project paths and linked worktrees now normalize to the correct workspace root before runtime bootstrap, status lookups, and generic runtime operations, reducing repo-bound leakage in the daemon layer.
+
+### Tests
+- Added targeted runtime regression coverage for per-request workspace enforcement, immediate run lookup after admission, bootstrap candidate resolution, and worktree-root normalization.
+
 ## [2.29.0] - 2026-04-17
 
 ### Features

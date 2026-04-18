@@ -36,6 +36,12 @@ import {
     RuntimeError
 } from './agentRuntimeService';
 import {
+    buildHeartbeatSseFrame,
+    buildOverflowRuntimeArgs,
+    resolveWorkspaceFromBody,
+    resolveWorkspaceFromHeader,
+} from './httpRuntimeHelpers';
+import {
     runGenericSync,
     startGenericRun,
     getGenericRunStatus,
@@ -82,7 +88,12 @@ function parseArgs(): ParsedArgs {
         }
     }
 
-    return { port, workspacePath, isOverflow, idleTimeoutMs };
+    return {
+        port,
+        workspacePath: workspacePath ? resolveWorkspaceFromBody('', workspacePath) : '',
+        isOverflow,
+        idleTimeoutMs
+    };
 }
 
 // ─── HTTP Helpers ───
@@ -315,16 +326,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             );
             return;
         }
-        if (!body.workspace_path) {
-            if (defaultWorkspacePath) {
-                body.workspace_path = defaultWorkspacePath;
-            } else {
-                sendError(res, 400, 'missing_workspace',
-                    'workspace_path is required when runtime server is started without --workspace.',
-                    'Include workspace_path in the request body: { "workspace_path": "/path/to/project", ... }');
-                return;
-            }
-        }
+        body.workspace_path = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
         const request = normalizeRuntimeRequest(body);
         console.error(`[HTTP] POST /agent/run role=${request.role} engine=${request.role_engine || 'default'} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
         activeRuns++;
@@ -354,21 +356,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             );
             return;
         }
-        if (!body.workspace_path) {
-            if (defaultWorkspacePath) {
-                body.workspace_path = defaultWorkspacePath;
-            } else {
-                sendError(res, 400, 'missing_workspace',
-                    'workspace_path is required when runtime server is started without --workspace.',
-                    'Include workspace_path in the request body: { "workspace_path": "/path/to/project", ... }');
-                return;
-            }
-        }
+        body.workspace_path = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
         const request = normalizeRuntimeRequest(body);
-        console.error(`[HTTP] POST /agent/start role=${request.role} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
+        const envelope = startRun(request);
         activeRuns++;
         lastActivity = Date.now();
-        const envelope = startRun(request);
+        console.error(`[HTTP] POST /agent/start role=${request.role} admitted run=${envelope.run_id} (active: ${activeRuns}/${MAX_CONCURRENT_RUNS})`);
         // Track when async run completes to release the slot
         const runId = envelope.run_id;
         if (runId) {
@@ -394,7 +387,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // GET /api/v1/agent/runs/:id
     if ((params = matchRoute(method, url, '/api/v1/agent/runs/:id', 'GET'))) {
-        const workspacePath = (req.headers['x-optimus-workspace'] as string) || defaultWorkspacePath;
+        const workspacePath = resolveWorkspaceFromHeader(defaultWorkspacePath, req.headers['x-optimus-workspace'] as string | undefined);
         console.error(`[HTTP] GET /agent/runs/${params.id}`);
         const envelope = getRunStatus(workspacePath, params.id);
         sendJson(res, 200, envelope);
@@ -404,6 +397,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // GET /api/v1/agent/runs/:id/stream — SSE streaming endpoint
     if ((params = matchRoute(method, url, '/api/v1/agent/runs/:id/stream', 'GET'))) {
         const runId = params.id;
+        resolveWorkspaceFromHeader(defaultWorkspacePath, req.headers['x-optimus-workspace'] as string | undefined);
         const urlObj = new URL(`http://localhost${req.url}`);
         const since = parseInt(urlObj.searchParams.get('since') || '0', 10);
         console.error(`[HTTP] GET /agent/runs/${runId}/stream (SSE, since=${since})`);
@@ -432,7 +426,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         });
 
         const heartbeat = setInterval(() => {
-            try { res.write(': heartbeat\n\n'); } catch { /* ignore */ }
+            try {
+                res.write(': heartbeat\n\n');
+                res.write(buildHeartbeatSseFrame(runId));
+            } catch { /* ignore */ }
         }, 15000);
 
         if (alreadyDone) {
@@ -464,7 +461,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // POST /api/v1/agent/runs/:id/resume
     if ((params = matchRoute(method, url, '/api/v1/agent/runs/:id/resume', 'POST'))) {
         const body = parseJsonBody(await readBody(req));
-        const workspacePath = body.workspace_path || defaultWorkspacePath;
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
         if (!body.human_answer) {
             throw new RuntimeError('Missing required field: human_answer', 'missing_params', 400,
                 'Include human_answer in the JSON body: { "human_answer": "<your-response>" }. This is the answer to the question the agent asked during the run.'
@@ -480,7 +477,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if ((params = matchRoute(method, url, '/api/v1/agent/runs/:id/cancel', 'POST'))) {
         const body = await readBody(req);
         const parsed = body.trim() ? JSON.parse(body) : {};
-        const workspacePath = parsed.workspace_path || defaultWorkspacePath;
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
         console.error(`[HTTP] POST /agent/runs/${params.id}/cancel`);
         const envelope = await cancelRun(workspacePath, params.id, parsed.reason);
         sendJson(res, 200, envelope);
@@ -503,6 +500,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // POST /api/v2/agent/run — synchronous generic run
     if ((params = matchRoute(method, url, '/api/v2/agent/run', 'POST'))) {
         const parsed = parseJsonBody(await readBody(req));
+        if (!parsed.workspace_path && defaultWorkspacePath) {
+            parsed.workspace_path = defaultWorkspacePath;
+        } else if (parsed.workspace_path) {
+            parsed.workspace_path = resolveWorkspaceFromBody('', parsed.workspace_path);
+        }
         console.error(`[HTTP] POST /api/v2/agent/run engine=${parsed.engine || 'default'}`);
         const envelope = await runGenericSync(parsed);
         sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
@@ -512,6 +514,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // POST /api/v2/agent/start — async generic start
     if ((params = matchRoute(method, url, '/api/v2/agent/start', 'POST'))) {
         const parsed = parseJsonBody(await readBody(req));
+        if (!parsed.workspace_path && defaultWorkspacePath) {
+            parsed.workspace_path = defaultWorkspacePath;
+        } else if (parsed.workspace_path) {
+            parsed.workspace_path = resolveWorkspaceFromBody('', parsed.workspace_path);
+        }
         console.error(`[HTTP] POST /api/v2/agent/start engine=${parsed.engine || 'default'}`);
         const envelope = startGenericRun(parsed);
         sendJson(res, 202, envelope);
@@ -520,14 +527,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // GET /api/v2/agent/runs/:id — generic status
     if ((params = matchRoute(method, url, '/api/v2/agent/runs/:id', 'GET'))) {
-        const envelope = getGenericRunStatus(params.id!);
+        const workspacePath = ((req.headers['x-optimus-workspace'] as string | undefined) || defaultWorkspacePath || '').trim();
+        const envelope = getGenericRunStatus(
+            params.id!,
+            workspacePath ? resolveWorkspaceFromHeader('', workspacePath) : undefined
+        );
         sendJson(res, 200, envelope);
         return;
     }
 
     // POST /api/v2/agent/runs/:id/cancel — cancel generic run
     if ((params = matchRoute(method, url, '/api/v2/agent/runs/:id/cancel', 'POST'))) {
-        const envelope = cancelGenericRun(params.id!);
+        const body = await readBody(req);
+        const parsed = body.trim() ? JSON.parse(body) : {};
+        const workspacePath = (parsed.workspace_path || (req.headers['x-optimus-workspace'] as string | undefined) || defaultWorkspacePath || '').trim();
+        const envelope = cancelGenericRun(
+            params.id!,
+            workspacePath ? resolveWorkspaceFromBody('', workspacePath) : undefined
+        );
         sendJson(res, 200, envelope);
         return;
     }
@@ -556,7 +573,7 @@ function findAvailableOverflow(): OverflowInstance | undefined {
     return overflowPool.find(inst => inst.ready && inst.activeRuns < MAX_CONCURRENT_RUNS);
 }
 
-function spawnOverflowInstance(basePort: number, workspacePath: string): OverflowInstance | null {
+function spawnOverflowInstance(basePort: number): OverflowInstance | null {
     if (overflowPool.length >= MAX_OVERFLOW_INSTANCES) {
         return null;
     }
@@ -569,10 +586,7 @@ function spawnOverflowInstance(basePort: number, workspacePath: string): Overflo
     const scriptPath = process.argv[1]; // path to http-runtime.js
     const child = spawn(process.execPath, [
         scriptPath,
-        '--port', String(overflowPort),
-        '--workspace', workspacePath,
-        '--overflow',
-        '--idle-timeout', String(OVERFLOW_IDLE_TIMEOUT_S)
+        ...buildOverflowRuntimeArgs(overflowPort, OVERFLOW_IDLE_TIMEOUT_S)
     ], {
         stdio: ['ignore', 'ignore', 'pipe'], // capture stderr for logs
         env: { ...process.env }
@@ -651,12 +665,12 @@ function proxyToOverflow(instance: OverflowInstance, req: http.IncomingMessage, 
  * Try to handle overflow: find or spawn an overflow instance and proxy to it.
  * Returns true if proxied, false if no capacity.
  */
-async function tryOverflow(basePort: number, workspacePath: string, req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<boolean> {
+async function tryOverflow(basePort: number, _workspacePath: string, req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<boolean> {
     // Try existing overflow instances first
     let instance: OverflowInstance | null | undefined = findAvailableOverflow();
     if (!instance) {
         // Spawn a new one
-        instance = spawnOverflowInstance(basePort, workspacePath);
+        instance = spawnOverflowInstance(basePort);
         if (!instance) {
             return false; // max overflow reached
         }
@@ -690,7 +704,9 @@ function startServer() {
     }
 
     // Ensure state directories exist
-    ensureWorktreeStateDirs(workspacePath);
+    if (workspacePath) {
+        ensureWorktreeStateDirs(workspacePath);
+    }
 
     // ── Orphan process cleanup ──
     // Kill leftover ACP processes from a previous runtime server instance

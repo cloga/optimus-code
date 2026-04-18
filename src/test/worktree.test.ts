@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
     detectWorktreeContext,
     resolveOptimusPath,
+    resolveWorkspaceRoot,
     resolveSharedPath,
     resolveStatePath,
     ensureWorktreeStateDirs,
@@ -70,6 +71,11 @@ describe('worktree path resolution — non-worktree', () => {
         const cwd = process.cwd();
         const result = resolveOptimusPath(cwd, 'state', 'task-manifest.json');
         expect(result).toBe(path.join(cwd, '.optimus', 'state', 'task-manifest.json'));
+    });
+
+    it('normalizes nested paths to the workspace root', () => {
+        const nestedPath = path.join(process.cwd(), 'src', 'runtime');
+        expect(resolveWorkspaceRoot(nestedPath)).toBe(process.cwd());
     });
 
     it('resolves roles, skills, agents correctly', () => {
@@ -188,6 +194,16 @@ describe('worktree path resolution — with real worktree', () => {
         // Should NOT create shared dirs in worktree
         expect(fs.existsSync(path.join(worktreeDir, '.optimus', 'config'))).toBe(false);
         expect(fs.existsSync(path.join(worktreeDir, '.optimus', 'roles'))).toBe(false);
+    });
+
+    it('normalizes nested paths to the current worktree root', () => {
+        setupWorktree();
+        if (!hasWorktree) return;
+
+        clearWorktreeCache();
+        const nestedPath = path.join(worktreeDir, 'src', 'nested');
+        fs.mkdirSync(nestedPath, { recursive: true });
+        expect(resolveWorkspaceRoot(nestedPath)).toBe(path.resolve(worktreeDir));
     });
 });
 

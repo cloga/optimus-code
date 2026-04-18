@@ -6,6 +6,7 @@
  */
 import crypto from 'crypto';
 import { executePrompt, ExecuteResult, ExecuteOptions, getBuiltinEngines } from './genericExecutor';
+import { resolveWorkspaceRoot } from '../utils/worktree';
 
 // ─── Types ───
 
@@ -33,6 +34,7 @@ export interface GenericRunEnvelope {
         engine?: string;
         model?: string;
         session_id?: string;
+        workspace_path?: string;
         duration_ms?: number;
         usage?: Record<string, unknown>;
         stop_reason?: string;
@@ -72,6 +74,7 @@ function buildEnvelope(record: RunRecord): GenericRunEnvelope {
             engine: record.request.engine,
             model: record.request.model,
             session_id: r?.sessionId,
+            workspace_path: record.request.workspace_path,
             duration_ms: r?.durationMs,
             usage: r?.usage,
             stop_reason: r?.stopReason,
@@ -88,6 +91,7 @@ function buildEnvelope(record: RunRecord): GenericRunEnvelope {
  */
 export async function runGenericSync(request: GenericRunRequest): Promise<GenericRunEnvelope> {
     validateRequest(request);
+    request = normalizeRequest(request);
     const runId = generateRunId();
     const now = new Date().toISOString();
 
@@ -123,6 +127,7 @@ export async function runGenericSync(request: GenericRunRequest): Promise<Generi
  */
 export function startGenericRun(request: GenericRunRequest): GenericRunEnvelope {
     validateRequest(request);
+    request = normalizeRequest(request);
     const runId = generateRunId();
     const now = new Date().toISOString();
 
@@ -157,7 +162,7 @@ export function startGenericRun(request: GenericRunRequest): GenericRunEnvelope 
 /**
  * Get run status.
  */
-export function getGenericRunStatus(runId: string): GenericRunEnvelope {
+export function getGenericRunStatus(runId: string, workspacePath?: string): GenericRunEnvelope {
     const record = runStore.get(runId);
     if (!record) {
         throw Object.assign(
@@ -165,13 +170,14 @@ export function getGenericRunStatus(runId: string): GenericRunEnvelope {
             { statusCode: 404 }
         );
     }
+    assertWorkspaceMatch(record, workspacePath);
     return buildEnvelope(record);
 }
 
 /**
  * Cancel a running run (best-effort).
  */
-export function cancelGenericRun(runId: string): GenericRunEnvelope {
+export function cancelGenericRun(runId: string, workspacePath?: string): GenericRunEnvelope {
     const record = runStore.get(runId);
     if (!record) {
         throw Object.assign(
@@ -179,6 +185,7 @@ export function cancelGenericRun(runId: string): GenericRunEnvelope {
             { statusCode: 404 }
         );
     }
+    assertWorkspaceMatch(record, workspacePath);
     if (record.status === 'running') {
         record.status = 'cancelled';
         record.error = { code: 'cancelled', message: 'Run was cancelled by user.' };
@@ -213,8 +220,27 @@ function validateRequest(request: GenericRunRequest): void {
     }
 }
 
+function normalizeRequest(request: GenericRunRequest): GenericRunRequest {
+    const workspacePath = resolveWorkspaceRoot(request.workspace_path);
+    return {
+        ...request,
+        workspace_path: workspacePath,
+    };
+}
+
+function assertWorkspaceMatch(record: RunRecord, workspacePath?: string): void {
+    const requestedWorkspace = resolveWorkspaceRoot(workspacePath);
+    if (!requestedWorkspace) return;
+    if (record.request.workspace_path !== requestedWorkspace) {
+        throw Object.assign(
+            new Error(`Run '${record.runId}' not found in workspace '${requestedWorkspace}'. Fix: use the workspace that started the run.`),
+            { statusCode: 404 }
+        );
+    }
+}
+
 function toExecuteOptions(request: GenericRunRequest): ExecuteOptions {
-    const workspacePath = request.workspace_path || process.env.OPTIMUS_WORKSPACE_ROOT;
+    const workspacePath = request.workspace_path || resolveWorkspaceRoot(process.env.OPTIMUS_WORKSPACE_ROOT);
     if (!workspacePath) {
         console.error('[GenericRuntime] ⚠️ No workspace_path in request and OPTIMUS_WORKSPACE_ROOT not set. Custom engines from available-agents.json will not be available. Fix: include workspace_path in the request body or set OPTIMUS_WORKSPACE_ROOT env var.');
     }
