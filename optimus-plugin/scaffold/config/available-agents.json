@@ -7,7 +7,7 @@
       "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 }
     },
     "github-copilot": {
-      "timeout": { "heartbeat_ms": 600000 }
+      "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 }
     },
     "qwen-code": {
       "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 },

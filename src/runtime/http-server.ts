@@ -367,19 +367,23 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         // Track when async run completes to release the slot
         const runId = envelope.run_id;
         if (runId) {
+            let released = false;
             const checkCompletion = setInterval(() => {
+                const release = () => {
+                    if (released) return;
+                    released = true;
+                    activeRuns = Math.max(0, activeRuns - 1);
+                    lastActivity = Date.now();
+                    clearInterval(checkCompletion);
+                };
                 try {
                     const status = getRunStatus(request.workspace_path, runId);
                     const terminal = ['completed', 'failed', 'cancelled', 'verified', 'partial', 'degraded'];
                     if (terminal.includes(status.status)) {
-                        activeRuns--;
-                        lastActivity = Date.now();
-                        clearInterval(checkCompletion);
+                        release();
                     }
                 } catch {
-                    activeRuns--;
-                    lastActivity = Date.now();
-                    clearInterval(checkCompletion);
+                    release();
                 }
             }, 5000);
         }

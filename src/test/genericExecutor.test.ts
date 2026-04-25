@@ -127,7 +127,7 @@ describe('genericExecutor', () => {
         });
 
         it('falls back to the engine activity timeout plus grace', () => {
-            expect(resolveRuntimeProxyTimeoutMs(undefined, 300_000)).toBe(330_000);
+            expect(resolveRuntimeProxyTimeoutMs(undefined, 300_000)).toBe(345_000);
         });
     });
 

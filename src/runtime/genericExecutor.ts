@@ -78,7 +78,8 @@ export function shouldRouteViaRuntimeServer(argv1 = process.argv[1], env = proce
 
 export function resolveRuntimeProxyTimeoutMs(timeoutMs: number | undefined, activityTimeoutMs: number): number {
     const baseTimeoutMs = timeoutMs && timeoutMs > 0 ? timeoutMs : activityTimeoutMs;
-    return Math.max(30_000, baseTimeoutMs + RUNTIME_PROXY_TIMEOUT_GRACE_MS);
+    const dynamicGraceMs = Math.max(RUNTIME_PROXY_TIMEOUT_GRACE_MS, Math.ceil(baseTimeoutMs * 0.15));
+    return Math.max(30_000, baseTimeoutMs + dynamicGraceMs);
 }
 
 export function isRuntimeServerHealthyPayload(payload: unknown): boolean {
@@ -262,6 +263,11 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
                 console.error(`[RuntimeProxy] Runtime server ready on :${RUNTIME_PORT} (workspace=${workspaceRoot}, httpRuntimePath=${httpRuntimePath}, pid=${runtimeServerProcess?.pid ?? 'unknown'})`);
                 return;
             }
+        }
+        if (!processExited && await httpGet(`http://127.0.0.1:${RUNTIME_PORT}/api/v2/health`)) {
+            runtimeServerReady = true;
+            console.error(`[RuntimeProxy] Runtime server ready on final startup probe :${RUNTIME_PORT} (workspace=${workspaceRoot}, httpRuntimePath=${httpRuntimePath}, pid=${runtimeServerProcess?.pid ?? 'unknown'})`);
+            return;
         }
 
         const details: RuntimeStartupFailureDetails = {

@@ -6,6 +6,7 @@ import { getConfiguredEngineNames, getEngineConfig, isStaticallyValid, loadAvail
 
 const createdPaths = new Set<string>();
 const ORIGINAL_USER_CONFIG_PATH = process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+const USER_CONFIG_ENV = 'OPTIMUS_USER_AVAILABLE_AGENTS_PATH';
 
 function createTempDir(prefix: string): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -41,12 +42,30 @@ function createHomeDir(userConfig?: unknown): string {
     return homePath;
 }
 
+function clearUserConfigEnv(): void {
+    for (const key of Object.keys(process.env)) {
+        if (key.toLowerCase() === USER_CONFIG_ENV.toLowerCase()) {
+            delete process.env[key];
+        }
+    }
+}
+
+function setUserConfigEnv(value: string): void {
+    for (const key of Object.keys(process.env)) {
+        if (key.toLowerCase() === USER_CONFIG_ENV.toLowerCase()) {
+            process.env[key] = value;
+        }
+    }
+    process.env[USER_CONFIG_ENV] = value;
+}
+
 afterEach(() => {
     vi.restoreAllMocks();
+    clearUserConfigEnv();
     if (ORIGINAL_USER_CONFIG_PATH === undefined) {
-        delete process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+        clearUserConfigEnv();
     } else {
-        process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH = ORIGINAL_USER_CONFIG_PATH;
+        setUserConfigEnv(ORIGINAL_USER_CONFIG_PATH);
     }
 
     for (const targetPath of createdPaths) {
@@ -67,7 +86,7 @@ describe('available-agents config hierarchy', () => {
                 },
             },
         });
-        process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH = userConfigPath;
+        setUserConfigEnv(userConfigPath);
 
         const config = loadAvailableAgentsConfig(workspacePath);
 
@@ -88,7 +107,7 @@ describe('available-agents config hierarchy', () => {
                 },
             },
         });
-        delete process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+        clearUserConfigEnv();
         vi.spyOn(os, 'homedir').mockReturnValue(homePath);
 
         const config = getEngineConfig('claude-code', workspacePath);
@@ -132,7 +151,7 @@ describe('available-agents config hierarchy', () => {
                 },
             },
         });
-        process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH = userConfigPath;
+        setUserConfigEnv(userConfigPath);
 
         const config = getEngineConfig('claude-code', workspacePath);
 
@@ -160,6 +179,40 @@ describe('available-agents config hierarchy', () => {
         expect(config.acp.capabilities.automation_continuations).toEqual(['single']);
     });
 
+    it('injects system defaults for known engines even when user config declares protocol only', () => {
+        const workspacePath = createWorkspace();
+        const userConfigPath = path.join(createTempDir('available-agents-user-known-engine-'), 'available-agents.json');
+        writeJson(userConfigPath, {
+            engines: {
+                'github-copilot': {
+                    protocol: 'acp',
+                    available_models: ['gpt-5.5'],
+                    timeout: { heartbeat_ms: 600000 },
+                },
+            },
+        });
+        setUserConfigEnv(userConfigPath);
+
+        const config = getEngineConfig('github-copilot', workspacePath);
+
+        expect(config).toMatchObject({
+            protocol: 'acp',
+            available_models: ['gpt-5.5'],
+            automation: {
+                mode: 'auto-approve',
+                continuation: 'autopilot',
+            },
+            acp: {
+                path: 'copilot',
+                args: ['--acp', '--stdio'],
+            },
+            timeout: {
+                heartbeat_ms: 600000,
+                activity_ms: 300000,
+            },
+        });
+    });
+
     it('falls back to project config when user config fails validation', () => {
         const workspacePath = createWorkspace({
             engines: {
@@ -179,7 +232,7 @@ describe('available-agents config hierarchy', () => {
                 },
             },
         });
-        process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH = userConfigPath;
+        setUserConfigEnv(userConfigPath);
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         const config = getEngineConfig('claude-code', workspacePath);
@@ -203,7 +256,7 @@ describe('available-agents config hierarchy', () => {
             },
         });
         const emptyHomePath = createHomeDir();
-        delete process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+        clearUserConfigEnv();
         vi.spyOn(os, 'homedir').mockReturnValue(emptyHomePath);
 
         const config = getEngineConfig('qwen-code', workspacePath);
@@ -231,7 +284,7 @@ describe('available-agents config hierarchy', () => {
         });
         const userConfigPath = path.join(createTempDir('available-agents-user-malformed-'), 'available-agents.json');
         writeText(userConfigPath, '{ "engines": ');
-        process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH = userConfigPath;
+        setUserConfigEnv(userConfigPath);
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         const config = getEngineConfig('claude-code', workspacePath);
@@ -247,7 +300,7 @@ describe('available-agents config hierarchy', () => {
     it('does not fabricate default engines when no user or project config exists', () => {
         const workspacePath = createWorkspace();
         const emptyHomePath = createHomeDir();
-        delete process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+        clearUserConfigEnv();
         vi.spyOn(os, 'homedir').mockReturnValue(emptyHomePath);
 
         expect(loadAvailableAgentsConfig(workspacePath)).toBeNull();
@@ -272,7 +325,7 @@ describe('available-agents config hierarchy', () => {
             },
         }, null, 2));
         const emptyHomePath = createHomeDir();
-        delete process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+        clearUserConfigEnv();
         vi.spyOn(os, 'homedir').mockReturnValue(emptyHomePath);
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -300,7 +353,7 @@ describe('available-agents config hierarchy', () => {
             },
         }, null, 2));
         const emptyHomePath = createHomeDir();
-        delete process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+        clearUserConfigEnv();
         vi.spyOn(os, 'homedir').mockReturnValue(emptyHomePath);
         vi.spyOn(console, 'error').mockImplementation(() => {});
 
