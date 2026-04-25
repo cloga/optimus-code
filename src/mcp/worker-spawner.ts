@@ -145,6 +145,10 @@ interface RoleTemplateCandidate {
 function scoreRoleTemplateCandidate(role: string, candidatePath: string, preferredPath: string, frontmatter: Record<string, string>, body: string): number {
     const bodyLines = body.split('\n').filter(line => line.trim().length > 0).length;
     let score = Math.min(bodyLines, 50);
+    if (body.includes('## Core Responsibilities')) score += 20;
+    if (body.includes('## Workflow')) score += 20;
+    if (body.includes('## Quality Standards')) score += 10;
+    if (body.includes('## Collaboration Contract')) score += 10;
     if (frontmatter.role === role) score += 100;
     if (frontmatter.tier === 'T2') score += 30;
     if (frontmatter.description) score += 20;
@@ -155,14 +159,15 @@ function scoreRoleTemplateCandidate(role: string, candidatePath: string, preferr
     return score;
 }
 
-function extractBestFrontmatterDocument(content: string, role: string, candidatePath: string, preferredPath: string): Omit<RoleTemplateCandidate, 'path' | 'rawContent'> | null {
+export function extractBestFrontmatterDocument(content: string, role: string, candidatePath: string, preferredPath: string): Omit<RoleTemplateCandidate, 'path' | 'rawContent'> | null {
     const normalized = content.replace(/\r\n/g, '\n');
     const startIndices = [...normalized.matchAll(/^---\n/gm)].map(match => match.index ?? 0);
     let best: Omit<RoleTemplateCandidate, 'path' | 'rawContent'> | null = null;
 
     for (let i = 0; i < startIndices.length; i++) {
         const start = startIndices[i];
-        const document = normalized.slice(start).trim();
+        const end = startIndices[i + 2] ?? normalized.length;
+        const document = normalized.slice(start, end).trim();
         const parsed = parseFrontmatter(document);
         if (Object.keys(parsed.frontmatter).length === 0) continue;
 
@@ -179,6 +184,19 @@ function extractBestFrontmatterDocument(content: string, role: string, candidate
     }
 
     return best;
+}
+
+function hasMalformedFrontmatterLines(content: string): boolean {
+    const normalized = content.replace(/\r\n/g, '\n');
+    const match = normalized.match(/^---\n([\s\S]*?)\n---\n/);
+    if (!match) return false;
+
+    return match[1]
+        .split('\n')
+        .some(line => {
+            const trimmed = line.trim();
+            return trimmed.length > 0 && !/^[A-Za-z0-9_-]+:\s*/.test(trimmed);
+        });
 }
 
 function loadBestRoleTemplate(workspacePath: string, role: string): RoleTemplateCandidate | null {
@@ -344,10 +362,23 @@ async function ensureT2Role(workspacePath: string, role: string, engine: string,
 
     const existingTemplate = loadBestRoleTemplate(workspacePath, safeRole);
     if (existingTemplate) {
-        const existing = existingTemplate.content;
-        const existingFm = { frontmatter: existingTemplate.frontmatter, body: existingTemplate.body };
+        let existing = existingTemplate.content;
+        let existingFm = { frontmatter: existingTemplate.frontmatter, body: existingTemplate.body };
+        const malformedFrontmatter = hasMalformedFrontmatterLines(existing);
 
-        if (existingTemplate.path !== t2Path || existingTemplate.content !== existingTemplate.rawContent) {
+        if (malformedFrontmatter) {
+            existing = normalizeGeneratedRoleTemplate(existing, {
+                role: safeRole,
+                displayName: formattedRole,
+                description: existingFm.frontmatter.description || desc,
+                engine: existingFm.frontmatter.engine || eng,
+                model: existingFm.frontmatter.model || mod,
+                precipitatedAt: existingFm.frontmatter.precipitated || new Date().toISOString(),
+            });
+            existingFm = parseFrontmatter(existing);
+        }
+
+        if (existingTemplate.path !== t2Path || existingTemplate.content !== existingTemplate.rawContent || malformedFrontmatter) {
             fs.writeFileSync(t2Path, existing, 'utf8');
             console.error(`[T2 Guard] Canonicalized role '${safeRole}' template from ${path.relative(workspacePath, existingTemplate.path)} to .optimus/roles/${safeRole}.md`);
         }

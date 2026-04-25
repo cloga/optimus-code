@@ -226,13 +226,41 @@ function rankRoles(input: OptimusPlannerInput): Set<string> {
     return roles;
 }
 
+const PLANNER_ROLE_DESCRIPTIONS: Record<string, string> = {
+    security: 'Security engineer responsible for threat modeling, authentication and authorization review, secret-handling safety, abuse-case analysis, and secure implementation guidance. Produces actionable risks and expects fixes to preserve least privilege, auditability, and defense in depth.',
+    'code-architect': 'Code architect responsible for system boundaries, module seams, migration safety, maintainability, and technical design quality. Produces implementation plans that minimize blast radius, preserve compatibility, and call out structural risks before coding starts.',
+    architect: 'Software architect responsible for high-level design, orchestration flow, trade-off analysis, and systemic maintainability. Produces clear decisions, constraints, and validation criteria while favoring simple designs that fit existing project architecture.',
+    dev: 'Implementation engineer responsible for precise code changes, bug fixes, and feature work. Delivers minimal, tested modifications that follow existing conventions, avoid unrelated churn, and keep behavior backward compatible unless explicitly required.',
+    'qa-engineer': 'QA engineer responsible for validation strategy, regression detection, test coverage, and acceptance checks. Verifies implementation against the original request, reports reproducible failures, and expects evidence from relevant builds or tests.',
+    pm: 'Product manager responsible for requirement clarity, scope control, dependency ordering, and final acceptance framing. Converts ambiguous work into traceable tasks, confirms success criteria, and keeps execution aligned with user value.',
+    'code-reviewer': 'Code reviewer responsible for identifying correctness, security, maintainability, and regression risks in implementation changes. Provides high-signal findings with concrete fixes and avoids style-only feedback unless it affects behavior.',
+    'senior-full-stack-builder': 'Senior full-stack builder responsible for end-to-end implementation across UI, backend, runtime, and test layers. Delivers production-ready code with pragmatic design, robust error handling, and validation evidence.',
+    'distributed-systems-expert': 'Distributed systems expert responsible for concurrency, runtime isolation, scaling, latency, state coordination, and failure-mode analysis. Produces designs and validation guidance that remain safe under load and partial failure.',
+    'documentation-specialist': 'Documentation specialist responsible for clear user-facing and agent-facing docs, examples, changelog notes, and operational guidance. Produces accurate English documentation that is concise, actionable, and consistent with existing project terminology.',
+    'product-manager': 'Product manager responsible for requirements, prioritization, acceptance criteria, stakeholder communication, and release-readiness decisions. Ensures work is traceable, scoped, and aligned with the project workflow.',
+};
+
+function plannerRoleDescription(role: string): string {
+    return PLANNER_ROLE_DESCRIPTIONS[role] ||
+        `Specialist role '${role}' responsible for executing its assigned Optimus plan lane with clear ownership, high-quality reasoning, project-convention compliance, and concrete validation evidence. Produces actionable output, calls out risks, and avoids unrelated changes.`;
+}
+
 function selectRole(candidates: string[], knownRoles: Set<string>): string {
     for (const candidate of candidates) {
         if (knownRoles.has(candidate)) {
             return candidate;
         }
     }
-    return candidates[0];
+    const requested = candidates.find(candidate => candidate.trim().length > 0);
+    if (requested) {
+        return requested;
+    }
+    for (const fallback of ['dev', 'senior-full-stack-builder', 'qa-engineer', 'code-architect', 'architect', 'pm']) {
+        if (knownRoles.has(fallback)) {
+            return fallback;
+        }
+    }
+    return 'dev';
 }
 
 function buildSiblingOutputPath(summaryOutputPath: string, suffix: string): string {
@@ -262,9 +290,7 @@ function buildDelegateSpec(input: OptimusPlannerInput, summaryOutputPath: string
 
     return {
         role,
-        role_description: role === 'dev'
-            ? 'Implementation-focused engineer for direct code changes and focused bug fixes.'
-            : undefined,
+        role_description: plannerRoleDescription(role),
         task_description: input.taskDescription,
         output_path: buildSiblingOutputPath(summaryOutputPath, 'delegate'),
         context_files: input.contextFiles || [],
@@ -284,20 +310,12 @@ function buildCouncilSpec(input: OptimusPlannerInput, summaryOutputPath: string,
     ];
     const roles = Array.from(new Set(candidates.map(candidate => selectRole([candidate], knownRoles)))).slice(0, 3);
     const proposalPath = buildSiblingOutputPath(summaryOutputPath, 'problem');
-    const roleDescriptions: Record<string, string> = {
-        'code-architect': 'Reviews design seams, system boundaries, and migration risks.',
-        architect: 'Evaluates high-level orchestration and product fit tradeoffs.',
-        'qa-engineer': 'Examines validation coverage, regressions, and testability.',
-        'code-reviewer': 'Reviews implementation risk, maintainability, and likely edge cases.',
-        security: 'Reviews authentication, permissions, secret handling, and abuse cases.',
-        'distributed-systems-expert': 'Reviews concurrency, runtime isolation, and scaling risks.',
-    };
 
     return {
         proposalPath,
         proposalContent: renderOptimusCouncilProposal(input.taskDescription, roles),
         roles,
-        roleDescriptions: Object.fromEntries(roles.map(role => [role, roleDescriptions[role] || 'Expert reviewer for this council lane.'])),
+        roleDescriptions: Object.fromEntries(roles.map(role => [role, plannerRoleDescription(role)])),
     };
 }
 
@@ -307,13 +325,15 @@ function buildPlanSpec(input: OptimusPlannerInput, summaryOutputPath: string, si
     const contextFiles = input.contextFiles || [];
 
     if (signals.wantsArchitecture || signals.wantsResearch) {
+        const designRole = selectRole([
+            signals.wantsSecurity ? 'security' : 'code-architect',
+            signals.wantsPerformance ? 'distributed-systems-expert' : 'architect',
+            'dev'
+        ], knownRoles);
         items.push({
             id: 'design',
-            role: selectRole([
-                signals.wantsSecurity ? 'security' : 'code-architect',
-                signals.wantsPerformance ? 'distributed-systems-expert' : 'architect',
-                'dev'
-            ], knownRoles),
+            role: designRole,
+            role_description: plannerRoleDescription(designRole),
             task_description: [
                 'Analyze the task, identify the minimum safe implementation plan, and highlight the main risks before code changes begin.',
                 '',
@@ -327,9 +347,11 @@ function buildPlanSpec(input: OptimusPlannerInput, summaryOutputPath: string, si
     }
 
     const implementDependsOn = items.length > 0 ? ['design'] : undefined;
+    const implementRole = selectRole(['dev', 'senior-full-stack-builder', 'qa-engineer'], knownRoles);
     items.push({
         id: 'implement',
-        role: selectRole(['dev', 'senior-full-stack-builder', 'qa-engineer'], knownRoles),
+        role: implementRole,
+        role_description: plannerRoleDescription(implementRole),
         task_description: input.taskDescription,
         output_path: buildSiblingOutputPath(summaryOutputPath, 'implement'),
         context_files: contextFiles,
@@ -339,9 +361,11 @@ function buildPlanSpec(input: OptimusPlannerInput, summaryOutputPath: string, si
         startup_timeout_ms: input.startupTimeoutMs,
     });
 
+    const verifyRole = selectRole(['qa-engineer', 'code-reviewer', 'dev'], knownRoles);
     items.push({
         id: 'verify',
-        role: selectRole(['qa-engineer', 'code-reviewer', 'dev'], knownRoles),
+        role: verifyRole,
+        role_description: plannerRoleDescription(verifyRole),
         task_description: [
             'Verify the implementation against the original request. Focus on regressions, missing tests, and behavioral gaps.',
             '',
@@ -354,9 +378,11 @@ function buildPlanSpec(input: OptimusPlannerInput, summaryOutputPath: string, si
         required_skills: signals.wantsPerformance || signals.wantsVerification ? ['runtime-integration'] : undefined,
     });
 
+    const reflectRole = selectRole(['architect', 'code-architect', 'senior-full-stack-builder', 'dev'], knownRoles);
     items.push({
         id: 'reflect',
-        role: selectRole(['architect', 'code-architect', 'senior-full-stack-builder', 'dev'], knownRoles),
+        role: reflectRole,
+        role_description: plannerRoleDescription(reflectRole),
         task_description: [
             'Evaluate the implementation and review any errors encountered during the task.',
             'Identify new insights, architectural patterns, or recurring mistakes to avoid in the future.',
