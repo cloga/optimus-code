@@ -11,6 +11,29 @@ import { resolveOptimusPath } from '../utils/worktree';
 import { synthesizeIfRequired, injectSynthesisContext } from './synthesis-coordinator';
 import { fireHook } from '../harness/lifecycle-hooks.js';
 
+const INFRASTRUCTURE_FAILURE_PATTERNS = [
+    'Runtime server not available',
+    'Runtime server proxy timed out',
+    'Runtime server proxy failed',
+    'TASK_RUNNER_DIED',
+    'TASK_STARTUP_TIMEOUT',
+    'TASK_HEARTBEAT_TIMEOUT',
+    'SPAWN_FAILED',
+] as const;
+
+export function isInfrastructureFailureMessage(errorMessage: string | undefined): boolean {
+    if (!errorMessage) return false;
+    const normalized = errorMessage.toLowerCase();
+    return INFRASTRUCTURE_FAILURE_PATTERNS.some(pattern => normalized.includes(pattern.toLowerCase()));
+}
+
+function buildInfrastructureFailureMessage(errorMessage: string): string {
+    return [
+        `Infrastructure failure: ${errorMessage}`,
+        'Fix: inspect runtime server availability, runtime proxy health, worker spawn logs, and engine bootstrap/auth before retrying. Normal self-heal is skipped because it depends on the same runtime path.',
+    ].join(' ');
+}
+
 export function openWorkerLogFd(logsDir: string, taskId: string): number | 'ignore' {
     try {
         if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
@@ -45,6 +68,7 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
         TaskManifestManager.updateTask(workspacePath, taskId, {
             status: 'failed',
             error_message: `SPAWN_FAILED: mcp-server.js not found at ${mcpServerPath}. Fix: run 'npx github:cloga/optimus-code upgrade' to reinstall.`,
+            failure_classification: 'infrastructure_failure',
             completed_at: Date.now(),
         });
         return;
@@ -85,6 +109,7 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
         TaskManifestManager.updateTask(workspacePath, taskId, {
             status: 'failed',
             error_message: `SPAWN_FAILED: ${message}`,
+            failure_classification: 'infrastructure_failure',
             completed_at: Date.now(),
         });
         return;
@@ -107,6 +132,7 @@ export function spawnAsyncWorker(taskId: string, workspacePath: string): void {
         TaskManifestManager.updateTask(workspacePath, taskId, {
             status: 'failed',
             error_message: `SPAWN_FAILED: ${err.message}`,
+            failure_classification: 'infrastructure_failure',
             completed_at: Date.now(),
         });
     });
@@ -246,10 +272,21 @@ export async function runWorkerInProcess(taskId: string, workspacePath: string):
     }
 }
 
-async function handleTaskFailureAndRecoverIfPossible(workspacePath: string, taskId: string, errorMessage: string) {
+export async function handleTaskFailureAndRecoverIfPossible(workspacePath: string, taskId: string, errorMessage: string) {
     const manifest = TaskManifestManager.loadManifest(workspacePath);
     const failedTask = manifest[taskId];
     if (!failedTask) return;
+
+    if (isInfrastructureFailureMessage(errorMessage)) {
+        console.error(`[Runner] Task ${taskId} failed due to infrastructure. Skipping normal self-heal.`);
+        TaskManifestManager.updateTask(workspacePath, taskId, {
+            status: 'failed',
+            error_message: buildInfrastructureFailureMessage(errorMessage),
+            failure_classification: 'infrastructure_failure',
+            completed_at: Date.now()
+        });
+        return;
+    }
 
     const retryCount = failedTask.retry_count || 0;
     if (retryCount >= 3) {

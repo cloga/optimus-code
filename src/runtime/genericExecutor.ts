@@ -19,6 +19,7 @@ import { resolveOptimusPath, resolveWorkspaceRoot } from '../utils/worktree';
 import http from 'http';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 
 // ─── Engine Configuration ───
 
@@ -93,14 +94,71 @@ export function getRuntimeServerBootstrapCandidates(workspacePath?: string, env 
         || resolveWorkspaceRoot(process.cwd())
         || process.cwd();
     const homeDir = env.USERPROFILE || env.HOME || '';
+    const userRuntimePath = homeDir ? path.join(homeDir, '.optimus', 'dist', 'http-runtime.js') : '';
+    const workspaceOptimusRuntimePath = resolveOptimusPath(workspaceRoot, 'dist', 'http-runtime.js');
     const candidates = [
-        homeDir ? path.join(homeDir, '.optimus', 'dist', 'http-runtime.js') : '',
         path.join(__dirname, 'http-runtime.js'),
         path.join(__dirname, '..', 'dist', 'http-runtime.js'),
-        resolveOptimusPath(workspaceRoot, 'dist', 'http-runtime.js'),
+        workspaceOptimusRuntimePath !== userRuntimePath ? workspaceOptimusRuntimePath : '',
         path.resolve(workspaceRoot, 'optimus-plugin', 'dist', 'http-runtime.js'),
+        userRuntimePath,
     ].filter(Boolean);
     return [...new Set(candidates)];
+}
+
+export interface RuntimeStartupFailureDetails {
+    workspaceRoot: string;
+    httpRuntimePath: string;
+    port: number;
+    pid?: number;
+    exitCode: number | null;
+    timedOut: boolean;
+    stderr: string;
+    spawnError?: string;
+}
+
+export function getRuntimeStartupLogPath(workspaceRoot: string, now = new Date()): string {
+    const timestamp = now.toISOString().replace(/[:.]/g, '-');
+    return resolveOptimusPath(workspaceRoot, 'logs', `runtime-startup-${timestamp}-${process.pid}.log`);
+}
+
+export function getRuntimeStartupStderrSummary(stderr: string): { firstLine: string; lastLine: string } {
+    const lines = stderr.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    return {
+        firstLine: lines[0] || '',
+        lastLine: lines[lines.length - 1] || '',
+    };
+}
+
+export function buildRuntimeStartupFailureLog(details: RuntimeStartupFailureDetails): string {
+    return [
+        '# Optimus runtime startup failure',
+        `timestamp=${new Date().toISOString()}`,
+        `workspace=${details.workspaceRoot}`,
+        `httpRuntimePath=${details.httpRuntimePath}`,
+        `port=${details.port}`,
+        `pid=${details.pid ?? 'unknown'}`,
+        `exitCode=${details.exitCode ?? 'null'}`,
+        `timedOut=${details.timedOut}`,
+        details.spawnError ? `spawnError=${details.spawnError}` : '',
+        'fix=Inspect this log file, verify the selected httpRuntimePath exists, rebuild with npm run build if bundles are stale, and stop any stale process on the runtime port before retrying.',
+        '',
+        '## stderr',
+        details.stderr || '(empty)',
+        '',
+    ].filter(line => line !== '').join('\n');
+}
+
+function writeRuntimeStartupFailureLog(details: RuntimeStartupFailureDetails): { logPath: string; writeError?: string } {
+    const logPath = getRuntimeStartupLogPath(details.workspaceRoot);
+    try {
+        fs.mkdirSync(path.dirname(logPath), { recursive: true });
+        fs.writeFileSync(logPath, buildRuntimeStartupFailureLog(details), 'utf8');
+        return { logPath };
+    } catch (error) {
+        const writeError = error instanceof Error ? error.message : String(error);
+        return { logPath, writeError };
+    }
 }
 
 /**
@@ -142,14 +200,12 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
     }
 
     // Check if server is already running (from a previous session or manual start)
-    try {
-        const isUp = await httpGet(`http://127.0.0.1:${RUNTIME_PORT}/api/v2/health`);
-        if (isUp) {
-            runtimeServerReady = true;
-            console.error(`[RuntimeProxy] Runtime server already running on :${RUNTIME_PORT}`);
-            return true;
-        }
-    } catch { /* not running */ }
+    const isUp = await httpGet(`http://127.0.0.1:${RUNTIME_PORT}/api/v2/health`);
+    if (isUp) {
+        runtimeServerReady = true;
+        console.error(`[RuntimeProxy] Runtime server already running on :${RUNTIME_PORT}`);
+        return true;
+    }
 
     // Auto-start the runtime server
     runtimeServerStarting = (async () => {
@@ -157,21 +213,20 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
             || resolveWorkspaceRoot(process.cwd())
             || process.cwd();
 
-        // Find http-runtime.js: prioritize user-level, then project-level
+        // Find http-runtime.js: prefer the runtime bundled with this server, then workspace, then user-level fallback.
         const candidates = getRuntimeServerBootstrapCandidates(workspaceRoot, process.env);
-        const httpRuntimePath = candidates.find(p => {
-            try { return require('fs').existsSync(p); } catch { return false; }
-        });
+        const httpRuntimePath = candidates.find(p => fs.existsSync(p));
         if (!httpRuntimePath) {
             console.error(`[RuntimeProxy] Cannot find http-runtime.js. Tried: ${candidates.join(', ')}`);
             return;
         }
 
-        console.error(`[RuntimeProxy] Auto-starting runtime server on :${RUNTIME_PORT} (workspace=${workspaceRoot})`);
+        console.error(`[RuntimeProxy] Auto-starting runtime server on :${RUNTIME_PORT} (workspace=${workspaceRoot}, httpRuntimePath=${httpRuntimePath})`);
 
         runtimeServerProcess = spawn(process.execPath, [
             httpRuntimePath,
             '--port', String(RUNTIME_PORT),
+            '--workspace', workspaceRoot,
         ], {
             detached: true,
             stdio: ['ignore', 'ignore', 'pipe'],
@@ -185,6 +240,7 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
         let lastStderr = '';
         let processExited = false;
         let exitCode: number | null = null;
+        let spawnError: string | undefined;
 
         runtimeServerProcess.stderr?.on('data', (chunk: Buffer) => {
             lastStderr += chunk.toString();
@@ -193,23 +249,39 @@ export async function ensureRuntimeServer(workspacePath?: string): Promise<boole
             processExited = true;
             exitCode = code;
         });
+        runtimeServerProcess.on('error', (error) => {
+            processExited = true;
+            spawnError = error.message;
+        });
 
         while (Date.now() < deadline && !processExited) {
             await new Promise(r => setTimeout(r, 500));
-            try {
-                const isUp = await httpGet(`http://127.0.0.1:${RUNTIME_PORT}/api/v2/health`);
-                if (isUp) {
-                    runtimeServerReady = true;
-                    console.error(`[RuntimeProxy] Runtime server ready on :${RUNTIME_PORT}`);
-                    return;
-                }
-            } catch { /* not ready yet */ }
+            const isUp = await httpGet(`http://127.0.0.1:${RUNTIME_PORT}/api/v2/health`);
+            if (isUp) {
+                runtimeServerReady = true;
+                console.error(`[RuntimeProxy] Runtime server ready on :${RUNTIME_PORT} (workspace=${workspaceRoot}, httpRuntimePath=${httpRuntimePath}, pid=${runtimeServerProcess?.pid ?? 'unknown'})`);
+                return;
+            }
         }
 
+        const details: RuntimeStartupFailureDetails = {
+            workspaceRoot,
+            httpRuntimePath,
+            port: RUNTIME_PORT,
+            pid: runtimeServerProcess.pid,
+            exitCode,
+            timedOut: !processExited,
+            stderr: lastStderr,
+            spawnError,
+        };
+        const { firstLine, lastLine } = getRuntimeStartupStderrSummary(lastStderr);
+        const { logPath, writeError } = writeRuntimeStartupFailureLog(details);
+        const fix = 'Inspect logPath, verify httpRuntimePath, rebuild with npm run build if bundles are stale, and stop any stale process on the runtime port before retrying.';
+        const common = `path=${httpRuntimePath}, pid=${runtimeServerProcess.pid ?? 'unknown'}, exitCode=${exitCode ?? 'null'}, workspace=${workspaceRoot}, logPath=${logPath}, stderrFirst=${JSON.stringify(firstLine)}, stderrLast=${JSON.stringify(lastLine)}, fix=${JSON.stringify(fix)}`;
         if (processExited) {
-            console.error(`[RuntimeProxy] Runtime server process exited during startup (code=${exitCode}). Stderr: ${lastStderr.slice(-300)}`);
+            console.error(`[RuntimeProxy] Runtime server process exited during startup (${common}${spawnError ? `, spawnError=${JSON.stringify(spawnError)}` : ''}${writeError ? `, logWriteError=${JSON.stringify(writeError)}` : ''})`);
         } else {
-            console.error(`[RuntimeProxy] Runtime server failed to start within 15s. Last stderr: ${lastStderr.slice(-300)}`);
+            console.error(`[RuntimeProxy] Runtime server failed to start within 15s (${common}${writeError ? `, logWriteError=${JSON.stringify(writeError)}` : ''})`);
         }
     })();
 

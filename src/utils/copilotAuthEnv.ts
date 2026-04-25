@@ -35,7 +35,17 @@ const BYOM_ENV_KEYS = [
     'COPILOT_MODEL',
 ];
 
-export function sanitizeCopilotAuthEnv(env: NodeJS.ProcessEnv): void {
+const WINDOWS_PROFILE_ENV_KEYS = [
+    'HOME',
+    'USERPROFILE',
+    'HOMEDRIVE',
+    'HOMEPATH',
+];
+
+export function sanitizeCopilotAuthEnv(
+    env: NodeJS.ProcessEnv,
+    platform: NodeJS.Platform = process.platform,
+): void {
     if (!env.COPILOT_GITHUB_TOKEN) {
         // Remove classic PATs (ghp_) — they poison Copilot's auth flow.
         // Keep OAuth tokens (gho_) and fine-grained PATs (github_pat_) intact.
@@ -49,6 +59,19 @@ export function sanitizeCopilotAuthEnv(env: NodeJS.ProcessEnv): void {
 
     if (env.OPTIMUS_ALLOW_BYOM_PROPAGATION !== '1') {
         for (const key of BYOM_ENV_KEYS) {
+            if (env[key] !== undefined) {
+                delete env[key];
+            }
+        }
+    }
+
+    // Nested Copilot workers should not inherit the caller's Windows home/profile
+    // hints by default. Some user-level Copilot patches and BYOM shims hook off
+    // these variables and emit noisy startup warnings (for example Gemini patch
+    // probes) even though nested workers do not support that setup. Allow an
+    // explicit opt-out for users who intentionally rely on profile propagation.
+    if (platform === 'win32' && env.OPTIMUS_ALLOW_COPILOT_PROFILE_PROPAGATION !== '1') {
+        for (const key of WINDOWS_PROFILE_ENV_KEYS) {
             if (env[key] !== undefined) {
                 delete env[key];
             }

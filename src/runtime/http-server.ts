@@ -37,7 +37,9 @@ import {
 } from './agentRuntimeService';
 import {
     buildHeartbeatSseFrame,
+    buildCapacityLimitError,
     buildOverflowRuntimeArgs,
+    isGenericRunTerminalStatus,
     resolveWorkspaceFromBody,
     resolveWorkspaceFromHeader,
 } from './httpRuntimeHelpers';
@@ -46,7 +48,7 @@ import {
     startGenericRun,
     getGenericRunStatus,
     cancelGenericRun,
-    listGenericEngines,
+    buildGenericHealthPayload,
 } from './genericRuntime';
 import { subscribeToEvents, getEventBuffer } from '../utils/agentRuntime';
 import dotenv from 'dotenv';
@@ -488,12 +490,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // GET /api/v2/health
     if ((params = matchRoute(method, url, '/api/v2/health', 'GET'))) {
-        sendJson(res, 200, {
-            status: 'ok',
-            version: typeof OPTIMUS_VERSION !== 'undefined' ? OPTIMUS_VERSION : 'dev',
-            engines: listGenericEngines(),
-            uptime_ms: Math.round(process.uptime() * 1000),
-        });
+        const requestedWorkspace = ((req.headers['x-optimus-workspace'] as string | undefined) || defaultWorkspacePath || '').trim();
+        sendJson(res, 200, buildGenericHealthPayload(
+            typeof OPTIMUS_VERSION !== 'undefined' ? OPTIMUS_VERSION : 'dev',
+            Math.round(process.uptime() * 1000),
+            requestedWorkspace || undefined,
+        ));
         return;
     }
 
@@ -505,9 +507,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         } else if (parsed.workspace_path) {
             parsed.workspace_path = resolveWorkspaceFromBody('', parsed.workspace_path);
         }
-        console.error(`[HTTP] POST /api/v2/agent/run engine=${parsed.engine || 'default'}`);
-        const envelope = await runGenericSync(parsed);
-        sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
+        if (activeRuns >= MAX_CONCURRENT_RUNS) {
+            const rawBody = JSON.stringify(parsed);
+            if (await tryOverflow(basePort, defaultWorkspacePath, req, res, rawBody)) {
+                return;
+            }
+            sendConcurrencyLimit(res);
+            return;
+        }
+        console.error(`[HTTP] POST /api/v2/agent/run engine=${parsed.engine || 'default'} (active: ${activeRuns + 1}/${MAX_CONCURRENT_RUNS})`);
+        activeRuns++;
+        lastActivity = Date.now();
+        try {
+            const envelope = await runGenericSync(parsed);
+            sendJson(res, envelope.status === 'completed' ? 200 : 422, envelope);
+        } finally {
+            activeRuns--;
+            lastActivity = Date.now();
+        }
         return;
     }
 
@@ -519,8 +536,31 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         } else if (parsed.workspace_path) {
             parsed.workspace_path = resolveWorkspaceFromBody('', parsed.workspace_path);
         }
-        console.error(`[HTTP] POST /api/v2/agent/start engine=${parsed.engine || 'default'}`);
-        const envelope = startGenericRun(parsed);
+        if (activeRuns >= MAX_CONCURRENT_RUNS) {
+            const rawBody = JSON.stringify(parsed);
+            if (await tryOverflow(basePort, defaultWorkspacePath, req, res, rawBody)) {
+                return;
+            }
+            sendConcurrencyLimit(res);
+            return;
+        }
+        activeRuns++;
+        lastActivity = Date.now();
+        let envelope;
+        try {
+            envelope = startGenericRun(parsed);
+        } catch (err) {
+            activeRuns--;
+            lastActivity = Date.now();
+            throw err;
+        }
+        console.error(`[HTTP] POST /api/v2/agent/start engine=${parsed.engine || 'default'} admitted run=${envelope.run_id} (active: ${activeRuns}/${MAX_CONCURRENT_RUNS})`);
+        if (envelope.run_id) {
+            trackGenericRunCompletion(envelope.run_id, parsed.workspace_path);
+        } else {
+            activeRuns--;
+            lastActivity = Date.now();
+        }
         sendJson(res, 202, envelope);
         return;
     }
@@ -692,6 +732,41 @@ async function tryOverflow(basePort: number, _workspacePath: string, req: http.I
 
 const MAX_CONCURRENT_RUNS = parseInt(process.env.OPTIMUS_MAX_CONCURRENT || '5', 10);
 let activeRuns = 0;
+
+function sendConcurrencyLimit(res: http.ServerResponse): void {
+    const error = buildCapacityLimitError({
+        activeRuns,
+        maxConcurrentRuns: MAX_CONCURRENT_RUNS,
+        overflowActiveRuns: overflowPool.reduce((sum, instance) => sum + instance.activeRuns, 0),
+        overflowInstances: overflowPool.length,
+        maxOverflowInstances: MAX_OVERFLOW_INSTANCES,
+    });
+    sendError(res, 429, error.code, error.message, error.fix);
+}
+
+function trackGenericRunCompletion(runId: string, workspacePath?: string): void {
+    let released = false;
+    let checkCompletion: NodeJS.Timeout;
+    const release = () => {
+        if (released) return;
+        released = true;
+        activeRuns = Math.max(0, activeRuns - 1);
+        lastActivity = Date.now();
+        clearInterval(checkCompletion);
+    };
+
+    checkCompletion = setInterval(() => {
+        try {
+            const status = getGenericRunStatus(runId, workspacePath);
+            if (isGenericRunTerminalStatus(status.status)) {
+                release();
+            }
+        } catch (err: any) {
+            console.error(`[HTTP] v2 async run ${runId} status lookup failed; releasing concurrency slot: ${err.message || err}`);
+            release();
+        }
+    }, 5000);
+}
 
 function startServer() {
     const { port, workspacePath, isOverflow, idleTimeoutMs } = parseArgs();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { createAsyncDelegateTask, prepareAsyncPlanDispatch } from '../mcp/async-plan-dispatch';
+import { canonicalizeDelegateOutputPath, createAsyncDelegateTask, prepareAsyncPlanDispatch } from '../mcp/async-plan-dispatch';
 import { TaskManifestManager } from '../managers/TaskManifestManager';
 
 function createTempWorkspace(): string {
@@ -17,6 +17,24 @@ function cleanup(workspace: string): void {
 }
 
 describe('async plan dispatch helpers', () => {
+    it('keeps output paths inside .optimus using path-relative containment', () => {
+        const workspace = createTempWorkspace();
+        try {
+            expect(canonicalizeDelegateOutputPath(workspace, path.join('.optimus', 'results', 'ok.md')))
+                .toBe(path.join(workspace, '.optimus', 'results', 'ok.md'));
+
+            const prefixCollision = path.join(workspace, '.optimus2', 'escape.md');
+            expect(canonicalizeDelegateOutputPath(workspace, prefixCollision))
+                .toBe(path.join(workspace, '.optimus', 'results', 'escape.md'));
+
+            const outside = path.join(path.dirname(workspace), 'outside.md');
+            expect(canonicalizeDelegateOutputPath(workspace, outside))
+                .toBe(path.join(workspace, '.optimus', 'results', 'outside.md'));
+        } finally {
+            cleanup(workspace);
+        }
+    });
+
     it('creates blocked async tasks when dependencies are unresolved', () => {
         const workspace = createTempWorkspace();
         try {

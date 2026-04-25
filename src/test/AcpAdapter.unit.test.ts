@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AcpAdapter } from '../adapters/AcpAdapter.js';
+import { sanitizeCopilotAuthEnv } from '../utils/copilotAuthEnv.js';
 
 describe('AcpAdapter (unit)', () => {
   it('module imports without throwing', () => {
@@ -126,6 +127,45 @@ describe('AcpAdapter (unit)', () => {
       expect(env.COPILOT_PROVIDER_TYPE).toBe('openai');
       expect(env.COPILOT_PROVIDER_MODEL_ID).toBe('gemini-3-pro-preview');
       expect(env.COPILOT_MODEL).toBe('gemini-3-pro-preview');
+    });
+
+    it('strips Windows profile env for nested Copilot launches by default', () => {
+      const env = {
+        USERPROFILE: 'C:\\Users\\lochen',
+        HOME: 'C:\\Users\\lochen',
+        HOMEDRIVE: 'C:',
+        HOMEPATH: '\\Users\\lochen',
+      } as NodeJS.ProcessEnv;
+
+      sanitizeCopilotAuthEnv(env, 'win32');
+
+      expect(env.USERPROFILE).toBeUndefined();
+      expect(env.HOME).toBeUndefined();
+      expect(env.HOMEDRIVE).toBeUndefined();
+      expect(env.HOMEPATH).toBeUndefined();
+    });
+
+    it('preserves Windows profile env when OPTIMUS_ALLOW_COPILOT_PROFILE_PROPAGATION=1', () => {
+      const env = {
+        USERPROFILE: 'C:\\Users\\lochen',
+        HOME: 'C:\\Users\\lochen',
+        OPTIMUS_ALLOW_COPILOT_PROFILE_PROPAGATION: '1',
+      } as NodeJS.ProcessEnv;
+
+      sanitizeCopilotAuthEnv(env, 'win32');
+
+      expect(env.USERPROFILE).toBe('C:\\Users\\lochen');
+      expect(env.HOME).toBe('C:\\Users\\lochen');
+    });
+
+    it('does not strip HOME on non-Windows hosts', () => {
+      const env = {
+        HOME: '/home/lochen',
+      } as NodeJS.ProcessEnv;
+
+      sanitizeCopilotAuthEnv(env, 'linux');
+
+      expect(env.HOME).toBe('/home/lochen');
     });
   });
 });
