@@ -89,6 +89,60 @@ function formatVcsDiagnosticBlock(workspacePath: string): string {
   }
 }
 
+export interface OptimusStatusSnapshot {
+  active: boolean;
+  version: string;
+  workspace: string;
+  skills: number;
+  roles: number;
+  engines: number;
+  configured_engines: string[];
+  system_instructions: boolean;
+  project_memory: boolean;
+}
+
+export function buildOptimusStatusSnapshot(workspacePath: string): OptimusStatusSnapshot {
+  const optimusDir = resolveOptimusPath(workspacePath);
+  const hasOptimus = fs.existsSync(optimusDir);
+  const version = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
+
+  let skillCount = 0;
+  let roleCount = 0;
+  let hasSystemInstructions = false;
+  let hasMemory = false;
+
+  if (hasOptimus) {
+    try {
+      const skillsDir = path.join(optimusDir, 'skills');
+      if (fs.existsSync(skillsDir)) {
+        skillCount = fs.readdirSync(skillsDir, { withFileTypes: true }).filter(d => d.isDirectory()).length;
+      }
+    } catch {}
+    try {
+      const rolesDir = path.join(optimusDir, 'roles');
+      if (fs.existsSync(rolesDir)) {
+        roleCount = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md')).length;
+      }
+    } catch {}
+    hasSystemInstructions = fs.existsSync(path.join(optimusDir, 'config', 'system-instructions.md'));
+    hasMemory = fs.existsSync(path.join(optimusDir, 'memory', 'continuous-memory.md'));
+  }
+
+  const configuredEngines = Object.keys(loadAvailableAgentsConfig(workspacePath)?.engines || {});
+
+  return {
+    active: hasOptimus,
+    version,
+    workspace: workspacePath,
+    skills: skillCount,
+    roles: roleCount,
+    engines: configuredEngines.length,
+    configured_engines: configuredEngines,
+    system_instructions: hasSystemInstructions,
+    project_memory: hasMemory,
+  };
+}
+
 function formatVcsUnavailableMessage(action: string, error: unknown, workspacePath: string, fallbackNote?: string): string {
   const message = error instanceof Error ? error.message : String(error);
   const suffix = fallbackNote ? ` ${fallbackNote}` : '';
@@ -1255,8 +1309,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ? completion_timeout_ms
             : DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS;
           
-          const settlement = await waitForOptimusTasksToSettle(workspace_path, [taskId], timeout);
-          return formatOptimusCompletionResponse(settlement, workspace_path, issueInfo);
+          const waited = await waitForOptimusTasksToSettle(workspace_path, [taskId], timeout);
+          return {
+            content: [{
+              type: "text",
+              text: formatOptimusCompletionResponse(
+                `✅ Task spawned successfully.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${contextHint}`,
+                "delegate_task_async",
+                output_path,
+                waited.settlement,
+                issueInfo || undefined,
+              ),
+            }]
+          };
         }
 
         return { content: [{ type: "text", text: `✅ Task spawned successfully in background.\n\n**Task ID**: ${taskId}\n**Role**: ${role}${issueInfo}\n\nUse check_task_status to retrieve structured execution metadata (tokens, timing, status) after completion.${contextHint}` }] };
@@ -1659,8 +1724,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : DEFAULT_OPTIMUS_COMPLETION_TIMEOUT_MS;
       
       const allTaskIds = Object.values(preparedPlan.itemTaskIds) as string[];
-      const settlement = await waitForOptimusTasksToSettle(workspace_path, allTaskIds, timeout);
-      return formatOptimusCompletionResponse(settlement, workspace_path, issueInfo);
+      const waited = await waitForOptimusTasksToSettle(workspace_path, allTaskIds, timeout);
+      return {
+        content: [{
+          type: "text",
+          text: formatOptimusCompletionResponse(
+            `✅ Plan dispatched successfully.\n\n**Plan ID**: ${preparedPlan.planId}\n**Ready Tasks Spawned**: ${preparedPlan.readyTaskIds.length}\n**Blocked Tasks Queued**: ${preparedPlan.blockedTaskIds.length}${blockedSummary}\n\n**Item → Task Mapping**\n${itemMappings}`,
+            "dispatch_plan_async",
+            preparedPlan.tasks.map(task => task.outputPath).join(", "),
+            waited.settlement,
+            issueInfo || undefined,
+          ),
+        }]
+      };
     }
 
     return {
@@ -1822,60 +1898,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { workspace_path } = request.params.arguments as any;
       requireParams("optimus_status", request.params.arguments as any, ["workspace_path"]);
 
-      const optimusDir = resolveOptimusPath(workspace_path);
-      const hasOptimus = fs.existsSync(optimusDir);
-      const version = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version; } catch { return 'unknown'; } })();
+      const status = buildOptimusStatusSnapshot(workspace_path);
+      const engineDetail = status.configured_engines.length > 0
+        ? ` (${status.configured_engines.join(', ')})`
+        : '';
 
-      let skillCount = 0;
-      let roleCount = 0;
-      let engineCount = 0;
-      let hasSystemInstructions = false;
-      let hasMemory = false;
-
-      if (hasOptimus) {
-        try {
-          const skillsDir = path.join(optimusDir, 'skills');
-          if (fs.existsSync(skillsDir)) {
-            skillCount = fs.readdirSync(skillsDir, { withFileTypes: true }).filter(d => d.isDirectory()).length;
-          }
-        } catch {}
-        try {
-          const rolesDir = path.join(optimusDir, 'roles');
-          if (fs.existsSync(rolesDir)) {
-            roleCount = fs.readdirSync(rolesDir).filter(f => f.endsWith('.md')).length;
-          }
-        } catch {}
-        try {
-          const configPath = path.join(optimusDir, 'config', 'available-agents.json');
-          if (fs.existsSync(configPath)) {
-            const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            engineCount = Object.keys(raw?.engines || raw || {}).filter(k => k !== '$schema' && k !== '_comment').length;
-          }
-        } catch {}
-        hasSystemInstructions = fs.existsSync(path.join(optimusDir, 'config', 'system-instructions.md'));
-        hasMemory = fs.existsSync(path.join(optimusDir, 'memory', 'continuous-memory.md'));
-      }
-
-      const status = {
-        active: hasOptimus,
-        version,
-        workspace: workspace_path,
-        skills: skillCount,
-        roles: roleCount,
-        engines: engineCount,
-        system_instructions: hasSystemInstructions,
-        project_memory: hasMemory,
-      };
-
-      const statusText = hasOptimus
-        ? `✅ **Optimus Swarm Active** (v${version})\n\n` +
+      const statusText = status.active
+        ? `✅ **Optimus Swarm Active** (v${status.version})\n\n` +
           `| Component | Status |\n|---|---|\n` +
           `| Workspace | \`${workspace_path}\` |\n` +
-          `| Skills | ${skillCount} loaded |\n` +
-          `| Roles | ${roleCount} available |\n` +
-          `| Engines | ${engineCount} configured |\n` +
-          `| System Instructions | ${hasSystemInstructions ? '✅' : '❌ missing'} |\n` +
-          `| Project Memory | ${hasMemory ? '✅' : '—'} |\n\n` +
+          `| Skills | ${status.skills} loaded |\n` +
+          `| Roles | ${status.roles} available |\n` +
+          `| Engines | ${status.engines} configured${engineDetail} |\n` +
+          `| System Instructions | ${status.system_instructions ? '✅' : '❌ missing'} |\n` +
+          `| Project Memory | ${status.project_memory ? '✅' : '—'} |\n\n` +
           `**Next step:** Call \`roster_check\` to see your available agents, then delegate tasks to specialists.\n` +
           `**Full protocol:** Read \`.optimus/skills/master-onboarding/SKILL.md\``
         : `❌ **Optimus Swarm Not Initialized**\n\nNo \`.optimus/\` directory found at \`${workspace_path}\`.\n\n**Fix:** Run \`npx -y github:cloga/optimus-code init\` in the project root.`;

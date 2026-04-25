@@ -41,9 +41,9 @@ afterEach(() => {
 describe('agentRuntimeService', () => {
     it('makes a started run immediately queryable from the same workspace', async () => {
         const workspacePath = makeTmpDir();
-        const runnerModule = await import('../mcp/council-runner');
+        const runnerModule = await import('../mcp/council-runner.js');
         const runner = vi.mocked(runnerModule.runWorkerInProcess);
-        const { startRun, getRunStatus } = await import('../runtime/agentRuntimeService');
+        const { startRun, getRunStatus } = await import('../runtime/agentRuntimeService.js');
 
         const started = startRun({
             role: 'runtime-tester',

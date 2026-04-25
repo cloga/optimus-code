@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  *   - One persistent adapter per engine key (e.g., "claude-agent-acp")
- *   - If adapter is busy with a concurrent task, returns an ephemeral adapter
+ *   - If adapter is busy, reuses it for ACP multi-session concurrency
  *   - Idle adapters are evicted after a configurable timeout (default: 5 min)
  *   - Dead adapters are auto-replaced on next request
  *   - Graceful shutdown on process exit
@@ -53,7 +53,7 @@ export class AcpProcessPool {
     /**
      * Get a persistent adapter for the given engine key.
      * Returns warm idle adapter if available, creates new persistent one if not.
-     * Falls back to ephemeral adapter if existing adapter is busy (concurrent tasks).
+     * Reuses a busy adapter because AcpAdapter can multiplex concurrent sessions.
      */
     getOrCreateAdapter(
         key: string,

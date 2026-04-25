@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.30.2] - 2026-04-25
+
+### Bug Fixes
+- **Fleet runtime bootstrap stability** — Hardened automatic runtime startup so fleet workers prefer workspace-local bundles, pass the active workspace to the HTTP runtime, and emit actionable startup diagnostics when the runtime cannot become ready.
+- **Infrastructure failure handling** — Classified runtime/proxy failures as infrastructure failures and skipped normal self-heal loops that depend on the same broken runtime path.
+- **Runtime capacity controls** — Added v2 runtime admission control for synchronous and asynchronous generic runs, including overflow routing, 429 capacity errors, and async slot release on terminal status.
+- **Path containment hardening** — Tightened async plan output-path validation to avoid Windows prefix containment bypasses such as sibling `.optimus2` directories.
+
+### Improvements
+- **Fleet diagnostics consistency** — Aligned `optimus_status` and `/api/v2/health` engine reporting so user-level configured engines are visible alongside built-in engines.
+- **ACP/runtime contracts** — Consolidated duplicated ACP session typing and clarified adapter reuse behavior for multi-session ACP process pooling.
+
+### Tests
+- Added regression coverage for runtime bootstrap candidate selection, startup diagnostics, infrastructure failure self-heal guards, v2 capacity helper behavior, engine diagnostics, and async plan path containment.
+- Verified a real Optimus fleet smoke sample through `optimus_orchestrate` to a `verified` terminal state.
+
 ## [2.30.1] - 2026-04-18
 
 ### Improvements

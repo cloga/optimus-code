@@ -68,7 +68,11 @@ export function writeDelegateTaskArtifact(workspacePath: string, taskId: string,
 export function canonicalizeDelegateOutputPath(workspacePath: string, outputPath: string): string {
     const optimusDir = path.join(workspacePath, '.optimus');
     const resolvedOutputPath = path.resolve(workspacePath, outputPath);
-    return resolvedOutputPath.startsWith(optimusDir)
+    const relativeToOptimus = path.relative(optimusDir, resolvedOutputPath);
+    const isInsideOptimus = relativeToOptimus === '' ||
+        (!relativeToOptimus.startsWith('..') && !path.isAbsolute(relativeToOptimus));
+
+    return isInsideOptimus
         ? resolvedOutputPath
         : path.join(optimusDir, 'results', path.basename(outputPath));
 }

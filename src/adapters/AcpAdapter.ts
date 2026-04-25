@@ -9,18 +9,6 @@ import { loadProjectMcpServers } from '../utils/mcpConfig';
 import { isCopilotCliExecutable, sanitizeCopilotAuthEnv } from '../utils/copilotAuthEnv';
 import { resolveExecutablePath, buildResolutionDiagnostic } from '../utils/acpPathResolver.js';
 
-// ─── Session Context for Multi-Session Concurrency ───
-
-interface SessionContext {
-    sessionId: string;
-    outputChunks: string[];
-    onUpdate?: (chunk: string) => void;
-    activityTimer?: ReturnType<typeof setInterval>;
-    lastUpdateTime: number;
-    /** Deferred resolve/reject for session-scoped failure (e.g. per-session timeout) */
-    rejectSession?: (err: Error) => void;
-}
-
 // ─── ACP Response Helpers ───
 
 /**
@@ -67,6 +55,8 @@ interface SessionContext {
     onUpdate?: (chunk: string) => void;
     activityTimer?: ReturnType<typeof setInterval>;
     lastUpdateTime: number;
+    /** Deferred reject for session-scoped failure (e.g. per-session timeout). */
+    rejectSession?: (err: Error) => void;
 }
 
 /**

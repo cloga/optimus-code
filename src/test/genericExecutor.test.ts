@@ -7,6 +7,9 @@ import {
     resolveRuntimeProxyTimeoutMs,
     getRuntimeServerBootstrapCandidates,
     isRuntimeServerHealthyPayload,
+    getRuntimeStartupLogPath,
+    getRuntimeStartupStderrSummary,
+    buildRuntimeStartupFailureLog,
 } from '../runtime/genericExecutor';
 
 const originalArgv = [...process.argv];
@@ -83,6 +86,24 @@ describe('genericExecutor', () => {
             expect(candidates).toContain('C:\\Users\\lochen\\optimus-code\\.optimus\\dist\\http-runtime.js');
             expect(candidates).not.toContain('C:\\Users\\lochen\\optimus-code\\src\\runtime\\.optimus\\dist\\http-runtime.js');
         });
+
+        it('prefers colocated and workspace runtimes before the user-level runtime', () => {
+            const workspace = 'C:\\Users\\lochen\\optimus-code';
+            const userRuntime = 'C:\\Users\\lochen\\.optimus\\dist\\http-runtime.js';
+            const workspaceRuntime = 'C:\\Users\\lochen\\optimus-code\\.optimus\\dist\\http-runtime.js';
+            const pluginRuntime = 'C:\\Users\\lochen\\optimus-code\\optimus-plugin\\dist\\http-runtime.js';
+            const candidates = getRuntimeServerBootstrapCandidates(workspace, {
+                ...process.env,
+                USERPROFILE: 'C:\\Users\\lochen',
+                HOME: 'C:\\Users\\lochen',
+            });
+
+            expect(candidates[0]).toMatch(/runtime[\\/]http-runtime\.js$/);
+            expect(candidates.indexOf(workspaceRuntime)).toBeGreaterThan(0);
+            expect(candidates.indexOf(pluginRuntime)).toBeGreaterThan(0);
+            expect(candidates.indexOf(userRuntime)).toBeGreaterThan(candidates.indexOf(workspaceRuntime));
+            expect(candidates.indexOf(userRuntime)).toBeGreaterThan(candidates.indexOf(pluginRuntime));
+        });
     });
 
     describe('runtime health readiness', () => {
@@ -107,6 +128,36 @@ describe('genericExecutor', () => {
 
         it('falls back to the engine activity timeout plus grace', () => {
             expect(resolveRuntimeProxyTimeoutMs(undefined, 300_000)).toBe(330_000);
+        });
+    });
+
+    describe('runtime startup diagnostics', () => {
+        it('places startup failure logs under the workspace .optimus logs directory', () => {
+            const logPath = getRuntimeStartupLogPath(
+                'C:\\Users\\lochen\\optimus-code',
+                new Date('2026-04-25T12:34:56.789Z')
+            );
+            expect(logPath).toContain('C:\\Users\\lochen\\optimus-code\\.optimus\\logs\\runtime-startup-2026-04-25T12-34-56-789Z-');
+            expect(logPath).toMatch(/\.log$/);
+        });
+
+        it('summarizes first and last stderr lines while preserving full stderr in log content', () => {
+            const stderr = 'first failure line\nmiddle detail\nlast failure line\n';
+            expect(getRuntimeStartupStderrSummary(stderr)).toEqual({
+                firstLine: 'first failure line',
+                lastLine: 'last failure line',
+            });
+            const content = buildRuntimeStartupFailureLog({
+                workspaceRoot: 'C:\\Users\\lochen\\optimus-code',
+                httpRuntimePath: 'C:\\Users\\lochen\\optimus-code\\optimus-plugin\\dist\\http-runtime.js',
+                port: 3100,
+                pid: 12345,
+                exitCode: 1,
+                timedOut: false,
+                stderr,
+            });
+            expect(content).toContain('httpRuntimePath=C:\\Users\\lochen\\optimus-code\\optimus-plugin\\dist\\http-runtime.js');
+            expect(content).toContain(stderr);
         });
     });
 });

@@ -2,7 +2,9 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
     buildHeartbeatSseFrame,
+    buildCapacityLimitError,
     buildOverflowRuntimeArgs,
+    isGenericRunTerminalStatus,
     resolveWorkspaceFromBody,
     resolveWorkspaceFromHeader,
 } from '../runtime/httpRuntimeHelpers';
@@ -37,5 +39,27 @@ describe('httpRuntimeHelpers', () => {
         expect(frame).toContain('event: heartbeat');
         expect(frame).toContain('"run_id":"run_123"');
         expect(frame).toContain('"type":"heartbeat"');
+    });
+
+    it('builds actionable runtime capacity errors', () => {
+        const error = buildCapacityLimitError({
+            activeRuns: 5,
+            maxConcurrentRuns: 5,
+            overflowActiveRuns: 10,
+            overflowInstances: 2,
+            maxOverflowInstances: 2,
+        });
+
+        expect(error.code).toBe('concurrency_limit');
+        expect(error.message).toContain('15/15');
+        expect(error.fix).toContain('OPTIMUS_MAX_CONCURRENT=5');
+        expect(error.fix).toContain('OPTIMUS_MAX_OVERFLOW=2');
+    });
+
+    it('recognizes generic runtime terminal statuses', () => {
+        expect(isGenericRunTerminalStatus('completed')).toBe(true);
+        expect(isGenericRunTerminalStatus('failed')).toBe(true);
+        expect(isGenericRunTerminalStatus('cancelled')).toBe(true);
+        expect(isGenericRunTerminalStatus('running')).toBe(false);
     });
 });

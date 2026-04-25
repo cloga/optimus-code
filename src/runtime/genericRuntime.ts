@@ -6,6 +6,7 @@
  */
 import crypto from 'crypto';
 import { executePrompt, ExecuteResult, ExecuteOptions, getBuiltinEngines } from './genericExecutor';
+import { getConfiguredEngineNames } from '../mcp/engine-resolver';
 import { resolveWorkspaceRoot } from '../utils/worktree';
 
 // ─── Types ───
@@ -41,6 +42,23 @@ export interface GenericRunEnvelope {
         created_at: string;
         updated_at: string;
     };
+}
+
+export interface GenericEngineDiagnostics {
+    engines: string[];
+    builtin_engines: string[];
+    configured_engines: string[];
+    workspace_path?: string;
+}
+
+export interface GenericHealthPayload {
+    status: 'ok';
+    version: string;
+    engines: string[];
+    builtin_engines: string[];
+    configured_engines: string[];
+    workspace: string;
+    uptime_ms: number;
 }
 
 // ─── In-Memory Run Store ───
@@ -197,8 +215,38 @@ export function cancelGenericRun(runId: string, workspacePath?: string): Generic
 /**
  * List available engines for the generic runtime.
  */
-export function listGenericEngines(): string[] {
-    return getBuiltinEngines();
+export function listGenericEngines(workspacePath?: string): string[] {
+    return getGenericEngineDiagnostics(workspacePath).engines;
+}
+
+/**
+ * Build runtime diagnostics that distinguish built-in generic engines from
+ * workspace-configured engines resolved through available-agents.json.
+ */
+export function getGenericEngineDiagnostics(workspacePath?: string): GenericEngineDiagnostics {
+    const builtinEngines = getBuiltinEngines();
+    const resolvedWorkspace = resolveWorkspaceRoot(workspacePath);
+    const configuredEngines = resolvedWorkspace ? getConfiguredEngineNames(resolvedWorkspace) : [];
+    const engines = Array.from(new Set([...builtinEngines, ...configuredEngines]));
+    return {
+        engines,
+        builtin_engines: builtinEngines,
+        configured_engines: configuredEngines,
+        ...(resolvedWorkspace ? { workspace_path: resolvedWorkspace } : {}),
+    };
+}
+
+export function buildGenericHealthPayload(version: string, uptimeMs: number, workspacePath?: string): GenericHealthPayload {
+    const engineDiagnostics = getGenericEngineDiagnostics(workspacePath);
+    return {
+        status: 'ok',
+        version,
+        engines: engineDiagnostics.engines,
+        builtin_engines: engineDiagnostics.builtin_engines,
+        configured_engines: engineDiagnostics.configured_engines,
+        workspace: engineDiagnostics.workspace_path || '',
+        uptime_ms: uptimeMs,
+    };
 }
 
 // ─── Helpers ───

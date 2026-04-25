@@ -83,7 +83,7 @@ export interface TaskRecord {
         total_tokens?: number;
     };
     /** Machine-readable classification for terminal failures */
-    failure_classification?: 'activity_timeout' | 'heartbeat_timeout' | 'startup_timeout' | 'process_died' | 'dependency_failed' | 'dependency_missing';
+    failure_classification?: 'activity_timeout' | 'heartbeat_timeout' | 'startup_timeout' | 'process_died' | 'dependency_failed' | 'dependency_missing' | 'infrastructure_failure';
     /** Validation warnings from the harness */
     validation_warnings?: string[];
     /** Structured execution status */
