@@ -153,6 +153,7 @@ describe('ACP Concurrent Sessions', () => {
 
     // Start invoke — should become busy
     const p = adapter.invoke('test', 'agent');
+    expect(adapter.isBusy()).toBe(true);
 
     // Small delay for the invoke to start
     await new Promise(r => setTimeout(r, 100));

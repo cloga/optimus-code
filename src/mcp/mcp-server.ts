@@ -671,11 +671,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             wait_for_completion: {
               type: "boolean",
-              description: "When true, hold the connection and block until the task reaches a terminal state (verified, failed, or timed_out). Recommended for 'end-to-end' verification."
+              description: "When true, hold the connection and block until the task reaches a terminal state (verified, failed, or timed_out). Default is false, so the tool returns promptly after queueing/spawning the background task."
             },
             completion_timeout_ms: {
               type: "number",
-              description: "Optional timeout for wait_for_completion. Defaults to 1200000ms (20 minutes). If exceeded, you'll receive a timed_out status."
+              description: "Optional timeout used only when wait_for_completion is true. Defaults to 1200000ms (20 minutes). If exceeded, you'll receive a timed_out status."
             },
           },
           required: ["role", "task_description", "output_path", "workspace_path"],
@@ -831,11 +831,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             wait_for_completion: {
               type: "boolean",
-              description: "When true, hold the connection and block until all tasks in the plan reach a terminal state. Recommended for 'end-to-end' verification."
+              description: "When true, hold the connection and block until all tasks in the plan reach a terminal state. Default is false, so the tool returns promptly after queueing/spawning background tasks."
             },
             completion_timeout_ms: {
               type: "number",
-              description: "Optional timeout for wait_for_completion. Defaults to 1200000ms (20 minutes). If exceeded, you'll receive a timed_out status."
+              description: "Optional timeout used only when wait_for_completion is true. Defaults to 1200000ms (20 minutes). If exceeded, you'll receive a timed_out status."
             },
           },
           required: ["workspace_path", "items"],
@@ -1301,7 +1301,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: `⏳ Task queued with dependencies.\n\n**Task ID**: ${taskId}\n**Role**: ${role}\n**Status**: blocked\n**Blocked by**: ${blockedBy.map(id => `\`${id}\``).join(', ')}${issueInfo}\n\nTask will auto-start when all dependencies reach \`verified\` status. Use check_task_status to monitor.${contextHint}` }] };
     }
 
-        const wait_for_completion = (request.params.arguments as any).wait_for_completion ?? true;
+        const wait_for_completion = (request.params.arguments as any).wait_for_completion === true;
         const completion_timeout_ms = (request.params.arguments as any).completion_timeout_ms;
 
         if (wait_for_completion) {
@@ -1715,7 +1715,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ? `\n**Blocked Tasks**: ${preparedPlan.blockedTaskIds.map(id => `\`${id}\``).join(', ')}`
       : '';
       
-    const wait_for_completion = (request.params.arguments as any).wait_for_completion ?? true;
+    const wait_for_completion = (request.params.arguments as any).wait_for_completion === true;
     const completion_timeout_ms = (request.params.arguments as any).completion_timeout_ms;
 
     if (wait_for_completion) {

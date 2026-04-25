@@ -158,21 +158,24 @@ export function startGenericRun(request: GenericRunRequest): GenericRunEnvelope 
     };
     runStore.set(runId, record);
 
-    // Fire and forget
-    executePrompt(request.prompt, toExecuteOptions(request))
-        .then(result => {
-            record.status = result.parseError ? 'failed' : 'completed';
-            record.result = result;
-            if (result.parseError) {
-                record.error = { code: 'invalid_structured_output', message: result.parseError };
-            }
-            record.updatedAt = new Date().toISOString();
-        })
-        .catch(err => {
-            record.status = 'failed';
-            record.error = { code: 'execution_failed', message: err.message || String(err) };
-            record.updatedAt = new Date().toISOString();
-        });
+    // Fire and forget on the next tick. Calling an async function directly still
+    // runs its pre-await setup synchronously, which can block /agent/start.
+    setImmediate(() => {
+        executePrompt(request.prompt, toExecuteOptions(request))
+            .then(result => {
+                record.status = result.parseError ? 'failed' : 'completed';
+                record.result = result;
+                if (result.parseError) {
+                    record.error = { code: 'invalid_structured_output', message: result.parseError };
+                }
+                record.updatedAt = new Date().toISOString();
+            })
+            .catch(err => {
+                record.status = 'failed';
+                record.error = { code: 'execution_failed', message: err.message || String(err) };
+                record.updatedAt = new Date().toISOString();
+            });
+    });
 
     return buildEnvelope(record);
 }

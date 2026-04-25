@@ -100,6 +100,7 @@ export class AcpAdapter implements AgentAdapter {
     private _activeSessions = new Map<string, SessionContext>();
     private _idleSince: number = 0;
     private _invocationCount: number = 0;
+    private _activeInvocations: number = 0;
     private _stderrBuffer: string = '';
     private _spawnedWithShell: boolean = false;
     private _maxConcurrentSessions: number;
@@ -137,7 +138,7 @@ export class AcpAdapter implements AgentAdapter {
 
     /** Check if the adapter is currently handling one or more sessions */
     isBusy(): boolean {
-        return this._activeSessions.size > 0;
+        return this._activeInvocations > 0 || this._activeSessions.size > 0;
     }
 
     /** Graceful shutdown — kills process and resets state. Used by pool eviction. */
@@ -596,10 +597,18 @@ export class AcpAdapter implements AgentAdapter {
         extraEnv?: Record<string, string>,
         options?: { model?: string; autopilot?: boolean; maxContinues?: number; promptParts?: { sharedPrefix: string; uniqueSuffix: string; cacheKey: string } }
     ): Promise<string> {
-        if (this._persistent) {
-            return this._invokePersistent(prompt, mode, sessionId, onUpdate, extraEnv, options);
+        this._activeInvocations++;
+        try {
+            if (this._persistent) {
+                return await this._invokePersistent(prompt, mode, sessionId, onUpdate, extraEnv, options);
+            }
+            return await this._invokeEphemeral(prompt, mode, sessionId, onUpdate, extraEnv, options);
+        } finally {
+            this._activeInvocations = Math.max(0, this._activeInvocations - 1);
+            if (this._activeInvocations === 0 && this._activeSessions.size === 0) {
+                this._idleSince = Date.now();
+            }
         }
-        return this._invokeEphemeral(prompt, mode, sessionId, onUpdate, extraEnv, options);
     }
 
     /**

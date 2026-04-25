@@ -18,6 +18,26 @@ import os from 'os';
 
 // ─── Test Harness ───
 
+const originalUserAvailableAgentsPath = process.env.OPTIMUS_USER_AVAILABLE_AGENTS_PATH;
+const USER_CONFIG_ENV = 'OPTIMUS_USER_AVAILABLE_AGENTS_PATH';
+
+function clearUserConfigEnv(): void {
+    for (const key of Object.keys(process.env)) {
+        if (key.toLowerCase() === USER_CONFIG_ENV.toLowerCase()) {
+            delete process.env[key];
+        }
+    }
+}
+
+function setUserConfigEnv(value: string): void {
+    for (const key of Object.keys(process.env)) {
+        if (key.toLowerCase() === USER_CONFIG_ENV.toLowerCase()) {
+            process.env[key] = value;
+        }
+    }
+    process.env[USER_CONFIG_ENV] = value;
+}
+
 function assert(label: string, condition: boolean, detail?: string): void {
     expect(condition, detail ? `${label} — ${detail}` : label).toBe(true);
 }
@@ -28,6 +48,7 @@ function createTempWorkspace(): string {
     fs.mkdirSync(path.join(optimusDir, 'config'), { recursive: true });
     fs.mkdirSync(path.join(optimusDir, 'state'), { recursive: true });
     fs.mkdirSync(path.join(optimusDir, 'reviews'), { recursive: true });
+    setUserConfigEnv(path.join(optimusDir, 'config', 'isolated-user-available-agents.json'));
     return tmp;
 }
 
@@ -48,6 +69,11 @@ function writeEngineHealth(workspacePath: string, health: Record<string, object>
 }
 
 function cleanup(workspacePath: string): void {
+    if (originalUserAvailableAgentsPath === undefined) {
+        clearUserConfigEnv();
+    } else {
+        setUserConfigEnv(originalUserAvailableAgentsPath);
+    }
     try { fs.rmSync(workspacePath, { recursive: true, force: true }); } catch {}
 }
 
