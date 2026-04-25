@@ -826,7 +826,7 @@ function classifyWorkerError(role: string, engine: string, e: any): string {
     if (/CAPIError/i.test(msg) || /Execution failed.*CAPIError/i.test(msg)) {
         const statusMatch = msg.match(/CAPIError:\s*(\d{3})/);
         const status = statusMatch ? statusMatch[1] : 'unknown';
-        return `${prefix}: capi_error_${status} — ${msg}. This is a Copilot backend API error. Fix: verify model name is supported by Copilot (try 'gpt-5.4' or 'claude-sonnet-4'), check 'gh auth login' status, or retry.`;
+        return `${prefix}: capi_error_${status} — ${msg}. This is a Copilot backend API error. Fix: verify model name is supported by Copilot (try 'gpt-5.5' or 'claude-sonnet-4'), check 'gh auth login' status, or retry.`;
     }
 
     // Default

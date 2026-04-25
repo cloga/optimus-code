@@ -552,7 +552,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             role_model: {
               type: "string",
-              description: "Optional. Which model this role should use (e.g., 'claude-opus-4.6', 'gpt-5.4'). If omitted, the engine CLI selects its default model. If available_models is configured for the engine, must be from that list.",
+              description: "Optional. Which model this role should use (e.g., 'claude-opus-4.6', 'gpt-5.5'). If omitted, the engine CLI selects its default model. If available_models is configured for the engine, must be from that list.",
             },
             task_description: {
               type: "string",

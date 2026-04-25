@@ -1,7 +1,7 @@
 {
   "$schema": "./available-agents.schema.json",
   "_schema_version": 1,
-  "_comment": "Optional project-level override. Copy to .optimus/config/available-agents.json to override engine settings. Add 'available_models' per engine to restrict model choices (e.g. \"available_models\": [\"claude-opus-4.6-1m\", \"gpt-5.4\"]).",
+  "_comment": "Optional project-level override. Copy to .optimus/config/available-agents.json to override engine settings. Add 'available_models' per engine to restrict model choices (e.g. \"available_models\": [\"claude-opus-4.6-1m\", \"gpt-5.5\"]).",
   "engines": {
     "claude-code": {
       "timeout": { "heartbeat_ms": 600000, "activity_ms": 300000 }
