@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { resolveEffectiveTaskStatus, summarizeOptimusTaskSettlement } from '../mcp/optimus-orchestrator';
+import { buildOptimusDispatchPlan, resolveEffectiveTaskStatus, summarizeOptimusTaskSettlement } from '../mcp/optimus-orchestrator';
 import type { TaskRecord } from '../managers/TaskManifestManager';
 
 function createTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
@@ -58,5 +58,85 @@ describe('optimus orchestrator settlement helpers', () => {
 
         expect(settlement.settled).toBe(false);
         expect(settlement.overallStatus).toBe('running');
+    });
+});
+
+describe('optimus orchestrator planner role metadata', () => {
+    it('adds role descriptions to delegate specs when selected roles are not registered', () => {
+        const plan = buildOptimusDispatchPlan({
+            workspacePath: process.cwd(),
+            outputPath: '.optimus/results/docs-delegate.md',
+            taskDescription: 'Document how fleet role fallback works.',
+            modeHint: 'delegate',
+            registeredRoles: [],
+            intentSignals: {
+                wantsDocs: true,
+                wantsImplementation: false,
+                looksMultiStep: false,
+            },
+        });
+
+        expect(plan.strategy).toBe('delegate');
+        expect(plan.delegateSpec?.role).toBe('documentation-specialist');
+        expect(plan.delegateSpec?.role_description).toContain('Documentation specialist');
+    });
+
+    it('adds role descriptions to every plan item when selected roles are not registered', () => {
+        const plan = buildOptimusDispatchPlan({
+            workspacePath: process.cwd(),
+            outputPath: '.optimus/results/security-plan.md',
+            taskDescription: 'Investigate the security issue, implement a fix, and verify the regression tests.',
+            modeHint: 'plan',
+            registeredRoles: [],
+            intentSignals: {
+                wantsImplementation: true,
+                wantsVerification: true,
+                wantsArchitecture: true,
+                wantsResearch: true,
+                wantsSecurity: true,
+                looksMultiStep: true,
+            },
+        });
+
+        expect(plan.strategy).toBe('plan');
+        expect(plan.planSpec?.items.length).toBeGreaterThan(0);
+        for (const item of plan.planSpec?.items || []) {
+            expect(item.role).toEqual(expect.stringMatching(/\S/));
+            expect(item.role_description).toEqual(expect.stringMatching(/\S/));
+        }
+
+        const design = plan.planSpec?.items.find(item => item.id === 'design');
+        expect(design?.role).toBe('security');
+        expect(design?.role_description).toContain('Security engineer');
+    });
+
+    it('preserves known role preference while keeping security design roles describable', () => {
+        const registeredRoles = [
+            { canonical: 'architect', aliases: [] },
+            { canonical: 'dev', aliases: [] },
+            { canonical: 'qa-engineer', aliases: [] },
+        ];
+        const knownRoleNames = new Set(registeredRoles.flatMap(role => [role.canonical, ...role.aliases]));
+
+        const plan = buildOptimusDispatchPlan({
+            workspacePath: process.cwd(),
+            outputPath: '.optimus/results/known-security-plan.md',
+            taskDescription: 'Security-sensitive implementation that needs architecture analysis and verification.',
+            modeHint: 'plan',
+            registeredRoles,
+            intentSignals: {
+                wantsImplementation: true,
+                wantsVerification: true,
+                wantsArchitecture: true,
+                wantsSecurity: true,
+                looksMultiStep: true,
+            },
+        });
+
+        const design = plan.planSpec?.items.find(item => item.id === 'design');
+        expect(design?.role).toBe('architect');
+        expect(knownRoleNames.has(design?.role || '')).toBe(true);
+        expect(design?.role_description).toEqual(expect.stringMatching(/\S/));
+        expect(design?.role_description).toContain('Software architect');
     });
 });
