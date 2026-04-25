@@ -395,7 +395,7 @@ During migration, `optimus upgrade --disable-project-available-agents` disables 
     "github-copilot": {
       "protocol": "cli",
       "path": "copilot",
-      "available_models": ["gemini-3-pro-preview", "gpt-5.4"],
+      "available_models": ["gemini-3-pro-preview", "gpt-5.5"],
       "cli_flags": "-m",
       "automation": { "mode": "auto-approve", "continuation": "autopilot", "max_continues": 8 },
       "timeout": { "heartbeat_ms": 600000 }

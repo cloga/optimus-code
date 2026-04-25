@@ -231,7 +231,7 @@ function classifyHttpError(msg: string): { code: string; status: number; fix: st
         const status = statusMatch ? parseInt(statusMatch[1]) : 502;
         return {
             code: `capi_error_${statusMatch?.[1] || 'unknown'}`, status,
-            fix: 'Copilot backend API returned an error. Verify: (1) model name is supported by Copilot (`gpt-5.4`, `claude-sonnet-4`), (2) `gh auth login` is current, (3) your Copilot subscription is active. Retry with a different model if the issue persists.'
+            fix: 'Copilot backend API returned an error. Verify: (1) model name is supported by Copilot (`gpt-5.5`, `claude-sonnet-4`), (2) `gh auth login` is current, (3) your Copilot subscription is active. Retry with a different model if the issue persists.'
         };
     }
     if (/Invalid automation policy/i.test(msg)) {
