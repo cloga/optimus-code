@@ -96,7 +96,7 @@ describe('Engine automation integration', () => {
                     protocol: 'auto',
                     preferred_protocol: 'acp',
                     available_models: ['claude-opus-4.6-1m'],
-                    automation: { mode: 'deny-unapproved' },
+                    automation: { mode: 'deny-unapproved', continuation: 'single' },
                     acp: {
                         path: 'claude-agent-acp',
                         cli_flags: '--model',
@@ -301,7 +301,7 @@ describe('Engine automation integration', () => {
         }
     });
 
-    it('fails fast when Copilot ACP is explicitly configured with autopilot continuation', () => {
+    it('uses injected Copilot ACP autopilot defaults for explicit protocol configs', () => {
         const workspacePath = createTempWorkspace({
             engines: {
                 'github-copilot': {
@@ -315,7 +315,7 @@ describe('Engine automation integration', () => {
             }
         });
         try {
-            expect(() => getEngineProtocol('github-copilot', workspacePath)).toThrow(/protocol 'acp' cannot satisfy mode='auto-approve', continuation='autopilot'/i);
+            expect(getEngineProtocol('github-copilot', workspacePath)).toBe('acp');
         } finally {
             cleanup(workspacePath);
         }

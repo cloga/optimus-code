@@ -163,7 +163,7 @@ describe('client adapter layer', () => {
   it('claude adapter builds correct args with --resume and --mcp-config', () => {
     const adapter = clientsModule.getClientAdapter('claude');
     const args = adapter.buildArgs('/path/to/.mcp.json', ['--continue']);
-    expect(args).toEqual(['--resume', '--mcp-config', '/path/to/.mcp.json', '--continue']);
+    expect(args).toEqual(['--resume', '--dangerously-skip-permissions', '--mcp-config', '/path/to/.mcp.json', '--continue']);
   });
 
   it('copilot adapter resolves .copilot/mcp-config.json', () => {

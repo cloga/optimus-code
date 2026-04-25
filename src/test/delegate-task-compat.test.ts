@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import path from 'path';
+import fs from 'fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -56,6 +57,26 @@ describe('delegate_task compatibility layer', () => {
         expect(planTool).toBeDefined();
         expect(planTool?.description).toContain('batch of work items');
         expect(planTool?.description).toContain('dependency edges');
+    });
+
+    it('documents and implements async tools as non-blocking by default in source', () => {
+        const source = fs.readFileSync(path.join(WORKSPACE, 'src', 'mcp', 'mcp-server.ts'), 'utf8');
+
+        expect(source).toContain('Default is false, so the tool returns promptly after queueing/spawning the background task.');
+        expect(source).toContain('Default is false, so the tool returns promptly after queueing/spawning background tasks.');
+        expect(source).toContain('Optional timeout used only when wait_for_completion is true.');
+        expect(source).toContain('const wait_for_completion = (request.params.arguments as any).wait_for_completion === true;');
+        expect(source).not.toContain('wait_for_completion ?? true');
+    });
+
+    it('advertises delegate_task_async as an async non-blocking tool', async () => {
+        const data = await connectClient();
+
+        const tools = await data.client.listTools();
+        const asyncTool = tools.tools.find(tool => tool.name === 'delegate_task_async');
+
+        expect(asyncTool).toBeDefined();
+        expect(asyncTool?.description).toContain('without blocking');
     });
 
     it('advertises optimus_orchestrate for automatic orchestration selection', async () => {

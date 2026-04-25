@@ -640,10 +640,94 @@ export class AdoProvider implements IVcsProvider {
     }
 
     async listWorkItems(
-        _filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
+        filters?: { state?: 'open' | 'closed' | 'all'; labels?: string[]; limit?: number }
     ): Promise<WorkItemListItem[]> {
-        console.error('[AdoProvider] listWorkItems() is not yet implemented for Azure DevOps. Returning empty array.');
-        return [];
+        const limit = Math.min(filters?.limit || 100, 100);
+        const requestedLabels = (filters?.labels || []).map(label => label.trim()).filter(Boolean);
+        const conditions: string[] = [];
+
+        if (filters?.state === 'open' || filters?.state === undefined) {
+            conditions.push("[System.State] NOT IN ('Closed', 'Done', 'Removed')");
+        } else if (filters.state === 'closed') {
+            conditions.push("[System.State] IN ('Closed', 'Done', 'Removed')");
+        }
+
+        for (const label of requestedLabels) {
+            conditions.push(`[System.Tags] CONTAINS '${label.replace(/'/g, "''")}'`);
+        }
+
+        const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+        const wiql = `SELECT [System.Id] FROM WorkItems${whereClause} ORDER BY [System.ChangedDate] DESC`;
+
+        const wiqlResponse = await this.adoFetch(
+            `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/wiql?$top=${limit}&api-version=7.0`,
+            {
+                method: 'POST',
+                headers: this.buildAdoAuthHeaders('application/json'),
+                body: JSON.stringify({ query: wiql })
+            },
+            'list work items WIQL query'
+        );
+
+        if (!wiqlResponse.ok) {
+            throw new Error(`ADO API error: ${wiqlResponse.status} ${await wiqlResponse.text()}. Recovery hint: ${adoHttpRecoveryHint(wiqlResponse.status)}`);
+        }
+
+        const wiqlData = await wiqlResponse.json() as any;
+        const ids = (wiqlData.workItems || [])
+            .map((item: any) => item?.id)
+            .filter((id: unknown): id is number => typeof id === 'number')
+            .slice(0, limit);
+
+        if (ids.length === 0) {
+            return [];
+        }
+
+        const batchResponse = await this.adoFetch(
+            `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workitemsbatch?api-version=7.0`,
+            {
+                method: 'POST',
+                headers: this.buildAdoAuthHeaders('application/json'),
+                body: JSON.stringify({
+                    ids,
+                    fields: [
+                        'System.Title',
+                        'System.State',
+                        'System.Tags',
+                        'System.CreatedDate',
+                        'System.ChangedDate'
+                    ],
+                    errorPolicy: 'Omit'
+                })
+            },
+            'list work items batch lookup'
+        );
+
+        if (!batchResponse.ok) {
+            throw new Error(`ADO API error: ${batchResponse.status} ${await batchResponse.text()}. Recovery hint: ${adoHttpRecoveryHint(batchResponse.status)}`);
+        }
+
+        const batchData = await batchResponse.json() as any;
+        return (batchData.value || [])
+            .map((item: any): WorkItemListItem => {
+                const fields = item.fields || {};
+                const labels = String(fields['System.Tags'] || '')
+                    .split(';')
+                    .map(label => label.trim())
+                    .filter(Boolean);
+                return {
+                    id: String(item.id),
+                    number: item.id,
+                    title: fields['System.Title'] || `Work item ${item.id}`,
+                    state: fields['System.State'] || '',
+                    labels,
+                    url: `${this.webBaseUrl}/${encodeURIComponent(this.project)}/_workitems/edit/${item.id}`,
+                    created_at: fields['System.CreatedDate'] || '',
+                    updated_at: fields['System.ChangedDate'] || ''
+                };
+            })
+            .filter((item: WorkItemListItem) => requestedLabels.every(label => item.labels.includes(label)))
+            .slice(0, limit);
     }
 
     async listPullRequests(

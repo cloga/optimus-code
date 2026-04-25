@@ -86,7 +86,7 @@ describe('AdoProvider listWorkItems', () => {
         const items = await provider.listWorkItems({ state: 'open', labels: ['FlightReview'], limit: 2 });
 
         expect(seenRequests).toHaveLength(2);
-        expect(seenRequests[0].url).toBe('https://dev.azure.com/o365exchange/O365 Core/_apis/wit/wiql?$top=50&api-version=7.0');
+        expect(seenRequests[0].url).toBe('https://dev.azure.com/o365exchange/O365 Core/_apis/wit/wiql?$top=2&api-version=7.0');
         expect(seenRequests[0].init?.method).toBe('POST');
 
         const wiqlBody = JSON.parse(seenRequests[0].init?.body as string);
@@ -132,6 +132,6 @@ describe('AdoProvider listWorkItems', () => {
         expect(items).toEqual([]);
         expect(seenRequests).toHaveLength(1);
         const wiqlBody = JSON.parse(seenRequests[0].init?.body as string);
-        expect(seenRequests[0].url).toBe('https://dev.azure.com/o365exchange/O365 Core/_apis/wit/wiql?$top=50&api-version=7.0');
+        expect(seenRequests[0].url).toBe('https://dev.azure.com/o365exchange/O365 Core/_apis/wit/wiql?$top=5&api-version=7.0');
     });
 });
