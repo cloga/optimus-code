@@ -1085,3 +1085,13 @@ author: competitive-intel-analyst
 ### Strategic Alert: OpenAI Sandbox Agents (Maximum Priority)
 OpenAI v0.14.0 (2026-04-15) ships SandboxAgent + Manifest + SandboxRunConfig + skills capability + memory capability + snapshot/resume + multi-provider backends. Score 12/12. Directly overlaps Optimus's architectural differentiators. Specialist dispatched. Human escalation pending specialist result.
 
+---
+id: mem_1777127867950_hswffm
+date: 2026-04-25T14:37:47.951Z
+level: project
+category: bug-fix
+tags: [agent-runtime, available-agents, github-copilot, mcp-timeout]
+author: unknown
+---
+2026-04-25 agent runtime testing found that available-agents project config resolution must not use resolveOptimusPath for .optimus/config/available-agents.json, because its user-level fallback can read ~/.optimus/config/available-agents.json a second time as a project override and mask OPTIMUS_USER_AVAILABLE_AGENTS_PATH/test/user config. Use resolveSharedPath for project config and load the user config separately. Also ensure known engines such as github-copilot and claude-code receive system defaults (ACP path/args, autopilot automation, heartbeat/activity timeouts) even when user config declares protocol:'acp' only. A spartan-swarm delegate_task_async smoke can still hit outer MCP request timeout even when direct ACP smoke tests pass; distinguish MCP orchestration timeout from underlying GitHub Copilot ACP runtime failure.
+

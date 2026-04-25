@@ -15,7 +15,7 @@ import { ClaudeCodeAdapter } from "../adapters/ClaudeCodeAdapter";
 import { GitHubCopilotAdapter } from "../adapters/GitHubCopilotAdapter";
 import { AcpProcessPool } from "../utils/acpProcessPool";
 import { getAutomationCapabilityMode, getClaudePermissionModeForPolicy, normalizeAutomationPolicy } from "../utils/automationPolicy";
-import { resolveOptimusPath } from '../utils/worktree';
+import { resolveOptimusPath, resolveSharedPath } from '../utils/worktree';
 import { AvailableAgentsConfig, parseAvailableAgentsConfig } from "../types/AvailableAgentsConfig";
 
 // ─── Exported Types ───
@@ -393,6 +393,7 @@ export function readRawEngineEntries(configPath: string): Record<string, any> | 
 const ENGINE_SYSTEM_DEFAULTS: Record<string, any> = {
     'github-copilot': {
         protocol: 'acp',
+        timeout: { heartbeat_ms: 600_000, activity_ms: 300_000 },
         automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
         acp: {
             path: 'copilot', args: ['--acp', '--stdio'],
@@ -401,14 +402,17 @@ const ENGINE_SYSTEM_DEFAULTS: Record<string, any> = {
     },
     'claude-code': {
         protocol: 'acp',
+        timeout: { heartbeat_ms: 600_000, activity_ms: 300_000 },
         automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
         acp: {
             path: 'claude-agent-acp',
+            args: ['--acp', '--stdio'],
             capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] }
         }
     },
     '_default': {
         protocol: 'acp',
+        timeout: { heartbeat_ms: 600_000, activity_ms: 300_000 },
         automation: { mode: 'auto-approve', continuation: 'autopilot', max_continues: 8 },
         acp: { capabilities: { automation_modes: ['auto-approve'], automation_continuations: ['single', 'autopilot'] } }
     }
@@ -480,6 +484,9 @@ function applyEngineDefaults(engine: string, config: any): any {
     if (!config) {
         return cloneConfigValue(defaults);
     }
+    if (Object.prototype.hasOwnProperty.call(ENGINE_SYSTEM_DEFAULTS, engine)) {
+        return mergeConfigValue(defaults, config);
+    }
     // Preserve legacy behavior for verbose engine declarations that manage
     // their own transport/automation semantics explicitly.
     if (config.protocol !== undefined || config.cli || config.capabilities) {
@@ -518,7 +525,7 @@ export function loadAvailableAgentsConfig(workspacePath?: string): AvailableAgen
     if (!workspacePath) return null;
 
     const userConfigPath = getUserAvailableAgentsConfigPath();
-    const projectConfigPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
+    const projectConfigPath = resolveSharedPath(workspacePath, 'config', 'available-agents.json');
     const userConfig = readAvailableAgentsConfigFileWithStatus(userConfigPath, 'user').config;
     const projectConfig = readAvailableAgentsConfigFileWithStatus(projectConfigPath, 'project').config;
 
@@ -529,7 +536,7 @@ function loadStaticValidationEngineEntries(workspacePath?: string): Record<strin
     if (!workspacePath) return {};
 
     const userConfigPath = getUserAvailableAgentsConfigPath();
-    const projectConfigPath = resolveOptimusPath(workspacePath, 'config', 'available-agents.json');
+    const projectConfigPath = resolveSharedPath(workspacePath, 'config', 'available-agents.json');
     const userResult = readAvailableAgentsConfigFileWithStatus(userConfigPath, 'user');
     const projectResult = readAvailableAgentsConfigFileWithStatus(projectConfigPath, 'project');
     const mergedEngines = mergeConfigValue(
