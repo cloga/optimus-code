@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.30.3] - 2026-04-26
+
+### Bug Fixes
+- **Async delegation defaults** — `delegate_task_async` and `dispatch_plan_async` now return promptly by default instead of holding the MCP request open until terminal state; callers must opt in with `wait_for_completion: true`.
+- **Runtime proxy E2E stability** — Runtime-backed worker execution now starts runs via `/api/v2/agent/start` and polls status, avoiding long synchronous HTTP requests that could black-hole fleet workers.
+- **Runtime restart races** — Hardened runtime readiness checks and retry handling so connection-loss races after daemon restart do not immediately fail worker execution.
+- **Runtime async admission** — `/api/v2/agent/start` now schedules prompt execution on the next tick so large prompts cannot block the start response.
+- **ACP busy-state tracking** — ACP adapters now report busy immediately during invocation setup, closing a concurrency-test race.
+- **ADO work item listing** — Implemented Azure DevOps work item listing for unified VCS operations and fixed result-limit handling.
+
+### Tests
+- Added regression coverage for non-blocking async tool defaults, ACP busy-state setup, ADO work item listing, runtime proxy polling, and async runtime start behavior.
+- Verified direct runtime HTTP E2E with `github-copilot / gpt-5.5` and a real `delegate_task_async` worker smoke task to a `verified` terminal state.
+
 ## [2.30.2] - 2026-04-25
 
 ### Bug Fixes
