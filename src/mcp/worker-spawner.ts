@@ -833,6 +833,15 @@ function classifyWorkerError(role: string, engine: string, e: any): string {
     return `${prefix}: ${msg}`;
 }
 
+function parseWorkerFailureDetails(message: string): { failure_code?: string; failure_fix?: string } {
+    const codeMatch = message.match(/:\s*([a-z_]+)\s+—/);
+    const fixMatch = message.match(/\bFix:\s*(.+)$/is);
+    return {
+        failure_code: codeMatch?.[1],
+        failure_fix: fixMatch?.[1]?.trim(),
+    };
+}
+
 /**
  * Executes a single task delegation synchronously.
  */
@@ -1592,13 +1601,21 @@ Please provide your complete execution result below.${verifySuffix}`;
                 }
             } catch { /* best-effort, don't mask the original error */ }
         }
+        const classifiedErrorMessage = classifyWorkerError(role, activeEngine, e);
+
         // Track T3 failures too
         if (isT3) {
             trackT3Usage(workspacePath, role, false, activeEngine, activeModel);
         }
         // Track engine+model health on failure — skip for model config errors (not engine health)
         if (!isModelError(e)) {
-            trackEngineHealth(workspacePath, activeEngine, activeModel || 'default', false);
+            const failureDetails = parseWorkerFailureDetails(classifiedErrorMessage);
+            trackEngineHealth(workspacePath, activeEngine, activeModel || 'default', false, {
+                failure_code: failureDetails.failure_code,
+                failure_message: classifiedErrorMessage,
+                failure_fix: failureDetails.failure_fix,
+                task_id: _fallbackSessionId.startsWith('async_') ? _fallbackSessionId.replace('async_', '') : _fallbackSessionId,
+            });
         }
         // Check quarantine threshold: 3+ consecutive failures with 0 successes
         // Don't quarantine role if failure was due to engine/model health (wasFallback)
@@ -1616,7 +1633,7 @@ Please provide your complete execution result below.${verifySuffix}`;
                 console.error(`[Meta-Immune] Role '${role}' quarantined after ${entry.consecutive_failures} consecutive failures with 0 successes`);
             }
         }
-        throw new Error(classifyWorkerError(role, activeEngine, e));
+        throw new Error(classifiedErrorMessage);
     } finally {
         ConcurrencyGovernor.release();
         lockManager.releaseLock(lockKey);

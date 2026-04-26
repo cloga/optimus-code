@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
-import { TaskManifestManager } from "../managers/TaskManifestManager";
+import { TaskManifestManager, type TaskRecord } from "../managers/TaskManifestManager";
 import { resolveOptimusPath } from "../utils/worktree";
 import { isPidAlive } from "../utils/isPidAlive";
 
@@ -26,6 +26,14 @@ interface CronEntry {
     created_at: string;
     last_agent_id?: string;
     startup_timeout_ms?: number;
+    last_task_id?: string;
+    last_failure_code?: string;
+    last_failure_message?: string;
+    last_failure_fix?: string;
+    last_heartbeat_at?: string;
+    last_activity_timeout_ms?: number;
+    last_recovery_status?: string;
+    last_recovery_task_id?: string;
 }
 
 interface CrontabData {
@@ -110,8 +118,8 @@ function isLockStale(lockPath: string, workspacePath?: string): boolean {
                 const prefix = `cron_${data.cronId}_`;
                 for (const [taskId, task] of Object.entries(manifest)) {
                     if (!taskId.startsWith(prefix)) continue;
-                    if ((task as any).status !== 'running') continue;
-                    const hb = (task as any).heartbeatTime as number | undefined;
+                    if (task.status !== 'running') continue;
+                    const hb = task.heartbeatTime;
                     // If the task has heartbeated within the last 5 minutes, the worker
                     // is alive — lock is NOT stale even if the server PID is dead.
                     if (hb && (Date.now() - hb) < 5 * 60 * 1000) {
@@ -266,6 +274,198 @@ export function saveCrontab(workspacePath: string, data: CrontabData): void {
     fs.renameSync(tmpPath, crontabPath);
 }
 
+const TERMINAL_TASK_STATUSES = new Set<TaskRecord['status']>([
+    'completed',
+    'failed',
+    'verified',
+    'partial',
+    'awaiting_input',
+    'expired',
+    'degraded',
+    'cancelled',
+]);
+
+function isTerminalTaskStatus(status: TaskRecord['status']): boolean {
+    return TERMINAL_TASK_STATUSES.has(status);
+}
+
+function isFailureCronStatus(status: TaskRecord['status']): boolean {
+    return status !== 'completed' && status !== 'verified';
+}
+
+function toIsoTime(value?: number | null): string | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+    return new Date(value).toISOString();
+}
+
+function parseCronRunNumber(task: Partial<TaskRecord>): number | undefined {
+    if (typeof task.cron_run_number === 'number' && Number.isFinite(task.cron_run_number)) {
+        return task.cron_run_number;
+    }
+    const match = String(task.task_description || '').match(/\*\*Run number:\*\*\s*(\d+)/i);
+    if (!match) return undefined;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseActivityTimeoutMs(message: string): number | undefined {
+    const match = message.match(/\(limit:\s*(\d+)s\)/i);
+    if (!match) return undefined;
+    const seconds = Number(match[1]);
+    return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+}
+
+function extractFix(message: string): string | undefined {
+    const match = message.match(/\bFix:\s*(.+)$/is);
+    return match ? match[1].trim().slice(0, 1000) : undefined;
+}
+
+function classifyCronFailure(task: Partial<TaskRecord>): {
+    code?: string;
+    message?: string;
+    fix?: string;
+    activityTimeoutMs?: number;
+} {
+    const message = String(task.error_message || '');
+    if (!message) return {};
+
+    let code: string | undefined = task.failure_classification;
+    if (/auth_failed/i.test(message) || /authentication required/i.test(message) || /unauthorized/i.test(message)) {
+        code = 'auth_failed';
+    } else if (/task_timeout/i.test(message) || /activity timeout/i.test(message)) {
+        code = 'task_timeout';
+    }
+
+    return {
+        code,
+        message: message.slice(0, 1000),
+        fix: extractFix(message),
+        activityTimeoutMs: parseActivityTimeoutMs(message),
+    };
+}
+
+export function persistCronEntryRunning(
+    workspacePath: string,
+    crontab: CrontabData,
+    entry: CronEntry,
+    runAt: Date = new Date(),
+): void {
+    entry.last_run = runAt.toISOString();
+    entry.last_status = 'running';
+    entry.run_count++;
+    delete entry.last_failure_code;
+    delete entry.last_failure_message;
+    delete entry.last_failure_fix;
+    delete entry.last_activity_timeout_ms;
+    saveCrontab(workspacePath, crontab);
+}
+
+function applyTaskToCronEntry(
+    entry: CronEntry,
+    task: Partial<TaskRecord>,
+    options: { incrementFailure: boolean; failureCountFloor?: number } = { incrementFailure: false },
+): boolean {
+    let changed = false;
+    const set = <K extends keyof CronEntry>(key: K, value: CronEntry[K]) => {
+        if (entry[key] !== value) {
+            entry[key] = value;
+            changed = true;
+        }
+    };
+
+    if (task.taskId) set('last_task_id', task.taskId);
+    if (task.status) set('last_status', task.status);
+    if (task.agent_id) set('last_agent_id', task.agent_id);
+
+    const taskStartIso = toIsoTime(task.startTime);
+    if (taskStartIso) {
+        const currentLastRun = entry.last_run ? Date.parse(entry.last_run) : 0;
+        if (!entry.last_run || Number.isNaN(currentLastRun) || currentLastRun < (task.startTime || 0)) {
+            set('last_run', taskStartIso);
+        }
+    }
+
+    const runNumber = parseCronRunNumber(task);
+    if (runNumber !== undefined && runNumber > (entry.run_count || 0)) {
+        set('run_count', runNumber);
+    }
+
+    const heartbeatIso = toIsoTime(task.heartbeatTime);
+    if (heartbeatIso) set('last_heartbeat_at', heartbeatIso);
+
+    if (task.status && isFailureCronStatus(task.status as TaskRecord['status'])) {
+        const failure = classifyCronFailure(task);
+        if (failure.code) set('last_failure_code', failure.code);
+        if (failure.message) set('last_failure_message', failure.message);
+        if (failure.fix) set('last_failure_fix', failure.fix);
+        if (failure.activityTimeoutMs) set('last_activity_timeout_ms', failure.activityTimeoutMs);
+        if (options.incrementFailure) {
+            set('fail_count', (entry.fail_count || 0) + 1);
+        }
+    }
+
+    if (options.failureCountFloor !== undefined && options.failureCountFloor > (entry.fail_count || 0)) {
+        set('fail_count', options.failureCountFloor);
+    }
+
+    return changed;
+}
+
+export function updateCronEntryFromTask(
+    workspacePath: string,
+    entryId: string,
+    task: Partial<TaskRecord>,
+    options: { incrementFailure?: boolean } = {},
+): boolean {
+    const freshCrontab = loadCrontab(workspacePath);
+    if (!freshCrontab) return false;
+    const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
+    if (!freshEntry) return false;
+
+    const changed = applyTaskToCronEntry(freshEntry, task, { incrementFailure: options.incrementFailure === true });
+    if (changed) saveCrontab(workspacePath, freshCrontab);
+    return changed;
+}
+
+export function reconcileCrontabFromManifest(workspacePath: string): boolean {
+    const crontab = loadCrontab(workspacePath);
+    if (!crontab) return false;
+
+    const manifest = TaskManifestManager.loadManifest(workspacePath);
+    let changed = false;
+
+    for (const entry of crontab.crons) {
+        const prefix = `cron_${entry.id}_`;
+        const tasks = Object.values(manifest)
+            .filter(task => task.taskId?.startsWith(prefix))
+            .filter(task => isTerminalTaskStatus(task.status));
+        if (tasks.length === 0) continue;
+
+        tasks.sort((a, b) => (b.startTime || b.completed_at || b.heartbeatTime || 0) - (a.startTime || a.completed_at || a.heartbeatTime || 0));
+        const latest = tasks[0];
+        const latestTime = latest.startTime || latest.completed_at || latest.heartbeatTime || 0;
+        const lastRunTime = entry.last_run ? Date.parse(entry.last_run) : 0;
+        if (entry.last_run && !Number.isNaN(lastRunTime) && lastRunTime >= latestTime) {
+            continue;
+        }
+
+        const latestRunNumber = parseCronRunNumber(latest);
+        const latestIsNewFailedRun = isFailureCronStatus(latest.status)
+            && (latestRunNumber === undefined || latestRunNumber > (entry.run_count || 0));
+        const observedFailureCount = tasks.filter(task => isFailureCronStatus(task.status)).length;
+        const failureCountFloor = latestIsNewFailedRun
+            ? Math.max(observedFailureCount, (entry.fail_count || 0) + 1)
+            : observedFailureCount;
+        changed = applyTaskToCronEntry(entry, latest, {
+            incrementFailure: false,
+            failureCountFloor,
+        }) || changed;
+    }
+
+    if (changed) saveCrontab(workspacePath, crontab);
+    return changed;
+}
+
 // ─── Scheduler Leader Election ───
 // Only one MCP server process should run the cron scheduler per workspace.
 // We use an exclusive-create lock file with PID to elect a single leader.
@@ -395,6 +595,11 @@ export class MetaCronEngine {
         };
         this.schedulers.set(workspaceKey, state);
         console.error(`[Meta-Cron] This process (PID ${process.pid}) elected as scheduler leader`);
+
+        const reconciled = reconcileCrontabFromManifest(state.workspacePath);
+        if (reconciled) {
+            console.error('[Meta-Cron] Reconciled crontab state from task manifest');
+        }
 
         const crontab = loadCrontab(state.workspacePath);
         if (!crontab) {
@@ -530,9 +735,7 @@ export class MetaCronEngine {
 
         // Note: concurrency lock was already acquired in tick() before calling fire().
         // No need to createLock() here — that caused the TOCTOU race (Issue #511).
-        entry.last_run = new Date().toISOString();
-        entry.last_status = 'running';
-        entry.run_count++;
+        persistCronEntryRunning(state.workspacePath, _crontab, entry, new Date());
         state.runningCount++;
 
         const taskDescription =
@@ -554,6 +757,8 @@ export class MetaCronEngine {
             required_skills: entry.required_skills,
             delegation_depth: 0,
             agent_id: entry.last_agent_id,
+            cron_id: entry.id,
+            cron_run_number: entry.run_count,
         });
 
         // Capture child stdout/stderr to a log file for diagnostics (was stdio:'ignore' — Issue #326).
@@ -601,41 +806,36 @@ export class MetaCronEngine {
                 const startupTimeout = entry.startup_timeout_ms || 2 * 60 * 1000;
                 if (task.status === 'pending' && (Date.now() - fireTime) > startupTimeout) {
                     console.error(`[Meta-Cron] Task '${taskId}' still pending after ${Math.round(startupTimeout / 1000)}s — child process likely failed to start. Marking as failed.`);
-                    TaskManifestManager.updateTask(ws, taskId, { status: 'failed', error_message: 'Child process failed to start (task remained pending)' });
+                    TaskManifestManager.updateTask(ws, taskId, {
+                        status: 'failed',
+                        error_message: 'Child process failed to start (task remained pending)',
+                        failure_classification: 'startup_timeout',
+                        completed_at: Date.now(),
+                    });
                     clearInterval(checkInterval);
                     if (safetyTimer) clearTimeout(safetyTimer);
                     deleteLock(ws, entryId);
                     state.runningCount = Math.max(0, state.runningCount - 1);
-                    const freshCrontab = loadCrontab(ws);
-                    if (freshCrontab) {
-                        const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
-                        if (freshEntry) {
-                            freshEntry.last_status = 'failed';
-                            freshEntry.fail_count++;
-                            saveCrontab(ws, freshCrontab);
-                        }
-                    }
+                    updateCronEntryFromTask(ws, entryId, {
+                        taskId,
+                        status: 'failed',
+                        startTime: task.startTime,
+                        heartbeatTime: task.heartbeatTime,
+                        error_message: 'Child process failed to start (task remained pending)',
+                        failure_classification: 'startup_timeout',
+                        agent_id: task.agent_id,
+                        cron_id: entryId,
+                        cron_run_number: task.cron_run_number,
+                    }, { incrementFailure: true });
                     return;
                 }
 
-                if (task.status === 'completed' || task.status === 'failed' || task.status === 'verified' || task.status === 'partial' || task.status === 'awaiting_input' || task.status === 'expired' || task.status === 'degraded' || task.status === 'cancelled') {
+                if (isTerminalTaskStatus(task.status)) {
                     clearInterval(checkInterval);
                     if (safetyTimer) clearTimeout(safetyTimer);
                     deleteLock(ws, entryId);
                     state.runningCount = Math.max(0, state.runningCount - 1);
-                    const freshCrontab = loadCrontab(ws);
-                    if (freshCrontab) {
-                        const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
-                        if (freshEntry) {
-                            freshEntry.last_status = task.status;
-                            if (task.status === 'failed') freshEntry.fail_count++;
-                            // Session persistence: save agent_id for next cron cycle
-                            if (task.agent_id) {
-                                freshEntry.last_agent_id = task.agent_id;
-                            }
-                            saveCrontab(ws, freshCrontab);
-                        }
-                    }
+                    updateCronEntryFromTask(ws, entryId, task, { incrementFailure: isFailureCronStatus(task.status) });
                 }
             } catch (e: any) { console.error(`[Meta-Cron] Warning: task poll failed for cron '${entryId}': ${e.message}`); }
         }, 30_000);
@@ -645,17 +845,17 @@ export class MetaCronEngine {
             clearInterval(checkInterval);
             deleteLock(ws, entryId);
             state.runningCount = Math.max(0, state.runningCount - 1);
-            // Update crontab so last_status doesn't stay "running" forever
-            const freshCrontab = loadCrontab(ws);
-            if (freshCrontab) {
-                const freshEntry = freshCrontab.crons.find(c => c.id === entryId);
-                if (freshEntry && freshEntry.last_status === 'running') {
-                    freshEntry.last_status = 'failed';
-                    freshEntry.fail_count++;
-                    saveCrontab(ws, freshCrontab);
-                    console.error(`[Meta-Cron] Safety timeout: cron '${entryId}' exceeded 2h limit. Marked as failed.`);
-                }
-            }
+            updateCronEntryFromTask(ws, entryId, {
+                taskId,
+                status: 'failed',
+                startTime: fireTime,
+                heartbeatTime: Date.now(),
+                error_message: `META_CRON_SAFETY_TIMEOUT: cron '${entryId}' exceeded 2h limit. Fix: inspect the worker log and retry after increasing task timeout or resolving the engine hang.`,
+                failure_classification: 'heartbeat_timeout',
+                cron_id: entryId,
+                cron_run_number: entry.run_count,
+            }, { incrementFailure: true });
+            console.error(`[Meta-Cron] Safety timeout: cron '${entryId}' exceeded 2h limit. Marked as failed.`);
         }, 2 * 60 * 60 * 1000);
         if (typeof safetyTimer.unref === 'function') safetyTimer.unref();
     }

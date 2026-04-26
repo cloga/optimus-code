@@ -177,7 +177,7 @@ export class AcpAdapter implements AgentAdapter {
         // can appear in informational messages (e.g. "Run copilot login")
         if (/unauthorized|403|401/i.test(msg) || /authentication required/i.test(msg)) {
             return new Error(
-                `ACP auth_failed: ${msg}. Fix: check that .env GITHUB_TOKEN is not a classic PAT (ghp_) — Copilot doesn't support those. For Claude run \`claude login\` or set ANTHROPIC_API_KEY.`
+                `ACP auth_failed: ${msg}. Fix: for Copilot ACP run \`gh auth login\` and verify Copilot entitlement; Optimus .env GITHUB_TOKEN is only for GitHub API operations and is not used for Copilot ACP auth. For Claude run \`claude login\` or set ANTHROPIC_API_KEY.`
             );
         }
 
@@ -803,6 +803,7 @@ export class AcpAdapter implements AgentAdapter {
                         const timeoutErr = new Error(
                             `ACP task_timeout: no activity from engine for ${Math.round(elapsed / 1000)}s ` +
                             `(limit: ${Math.round(this.activityTimeoutMs / 1000)}s). ` +
+                            `Session: ${trackedSessionId}; last_activity_at: ${new Date(ctx.lastUpdateTime).toISOString()}. ` +
                             `The agent may be hung or the task may be too complex. ` +
                             `Fix: retry, or increase timeout via runtime_policy.timeout_ms or config timeout.activity_ms.`
                         );
@@ -1013,6 +1014,7 @@ export class AcpAdapter implements AgentAdapter {
                         const timeoutErr = new Error(
                             `ACP task_timeout: no activity from engine for ${Math.round(elapsed / 1000)}s ` +
                             `(limit: ${Math.round(this.activityTimeoutMs / 1000)}s). ` +
+                            `Session: ${trackedSessionId}; last_activity_at: ${new Date(ctx.lastUpdateTime).toISOString()}. ` +
                             `The agent may be hung or the task may be too complex. ` +
                             `Fix: retry, or increase timeout via runtime_policy.timeout_ms or config timeout.activity_ms.`
                         );
