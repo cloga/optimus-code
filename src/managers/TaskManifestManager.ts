@@ -70,6 +70,8 @@ export interface TaskRecord {
     runtime_run_id?: string;
     runtime_trace_id?: string;
     runtime_skill?: string;
+    cron_id?: string;
+    cron_run_number?: number;
 
     // === Structured execution metadata (for structured task notifications) ===
     /** Wall-clock execution time in milliseconds */

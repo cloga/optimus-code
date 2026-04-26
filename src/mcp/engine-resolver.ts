@@ -68,6 +68,10 @@ export interface EngineHealthEntry {
     last_success: string; // ISO timestamp
     last_failure: string; // ISO timestamp
     status: 'healthy' | 'degraded' | 'unhealthy';
+    last_failure_code?: string;
+    last_failure_message?: string;
+    last_failure_fix?: string;
+    last_failure_task_id?: string;
 }
 
 /** Time-to-live for unhealthy status: after this period, allow a probe attempt */
@@ -167,7 +171,18 @@ function computeHealthStatus(consecutiveFailures: number): 'healthy' | 'degraded
     return 'healthy';
 }
 
-export function trackEngineHealth(workspacePath: string, engine: string, model: string, success: boolean): void {
+export function trackEngineHealth(
+    workspacePath: string,
+    engine: string,
+    model: string,
+    success: boolean,
+    details?: {
+        failure_code?: string;
+        failure_message?: string;
+        failure_fix?: string;
+        task_id?: string;
+    }
+): void {
     engineHealthMutex = engineHealthMutex.then(() => {
         const health = loadEngineHealth(workspacePath);
         const key = `${engine}:${model}`;
@@ -190,10 +205,18 @@ export function trackEngineHealth(workspacePath: string, engine: string, model: 
             entry.successes++;
             entry.consecutive_failures = 0;
             entry.last_success = new Date().toISOString();
+            delete entry.last_failure_code;
+            delete entry.last_failure_message;
+            delete entry.last_failure_fix;
+            delete entry.last_failure_task_id;
         } else {
             entry.failures++;
             entry.consecutive_failures++;
             entry.last_failure = new Date().toISOString();
+            entry.last_failure_code = details?.failure_code;
+            entry.last_failure_message = details?.failure_message?.slice(0, 1000);
+            entry.last_failure_fix = details?.failure_fix?.slice(0, 1000);
+            entry.last_failure_task_id = details?.task_id;
         }
         const oldStatus = entry.status;
         entry.status = computeHealthStatus(entry.consecutive_failures);
