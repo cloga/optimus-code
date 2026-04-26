@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.30.4] - 2026-04-26
+
+### Changes
+- **optimus-fleet disabled** — Temporarily disabled the shipped `optimus-fleet` skill so it no longer forces strict `optimus_orchestrate` passthrough while `wait_for_completion=true` can exceed MCP request timeouts and fail with `MCP error -32001`.
+- **Fleet recovery guidance** — The disabled skill now directs agents to use manual todo decomposition and direct sub-agent dispatch until the underlying MCP-safe async orchestration behavior is fixed and validated.
+
 ## [2.30.3] - 2026-04-26
 
 ### Bug Fixes

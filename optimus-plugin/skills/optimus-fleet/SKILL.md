@@ -1,32 +1,41 @@
 ---
 name: optimus-fleet
-description: The Optimus Master Agent orchestration slash command. Instantly dispatches complex engineering tasks to the Optimus Swarm.
+description: TEMPORARILY DISABLED. Do not use this skill for automatic Optimus fleet dispatch. The Optimus orchestrator passthrough is currently disabled because wait_for_completion can exceed MCP request timeouts; when users ask for optimus-fleet, fleet mode, or automatic orchestration, explain that the skill is disabled and use manual step-by-step execution or direct sub-agents instead.
 license: MIT
 ---
 
-# Optimus Fleet Orchestrator
+# Optimus Fleet Orchestrator — Temporarily Disabled
 
-**CRITICAL OVERRIDE: YOU ARE NOW THE MASTER AGENT ROUTER.**
+This skill is intentionally disabled until the underlying Optimus MCP orchestration timeout is fixed and validated.
 
-When the user invokes this skill (e.g., via `/optimus-fleet <task_description>`), you are acting as a strict passthrough router for the Optimus Orchestrator engine. 
+## Why this is disabled
 
-You **MUST ABSOLUTELY NOT** attempt to fulfill the user's request (write code, design architecture, debug, or provide advice) yourself. Your **ONLY VALID ACTION** is to call the `mcp_spartan-swarm_optimus_orchestrate` tool and let Optimus stay in control until it reaches a terminal fleet status.
+The previous implementation forced a strict passthrough call to `optimus_orchestrate` with `wait_for_completion=true` and a long completion timeout. In current MCP clients, long-running tool calls can exceed the MCP request timeout and fail with:
 
-## Execution Requirements
+```text
+McpError: MCP error -32001: Request timed out
+```
 
-You must call the tool `mcp_spartan-swarm_optimus_orchestrate` with the following rigid parameters:
+That failure mode is worse than a normal task failure because it makes the orchestration entrypoint itself unreliable and can leave the user believing work is being managed when the controlling request has already timed out.
 
-1. **`task_description`**: Pass the user's *exact, full request* verbatim.
-2. **`workspace_path`**: The absolute path to the active project workspace.
-3. **`output_path`**: Set this exactly to `.optimus/results/orchestration.md`.
-4. **`wait_for_completion`**: Set this to `true` so the fleet request remains inside Optimus delegate/orchestrate control instead of returning after initial dispatch.
-5. **`completion_timeout_ms`**: Set this to `1800000` (30 minutes) unless the user explicitly requested a shorter wait.
+## Required behavior while disabled
 
-## Post-Dispatch Rule
+When this skill triggers:
 
-After the tool returns successfully:
-- **DO NOT** summarize or paraphrase the output.
-- **DO NOT** add conversational filler like "I have dispatched the task".
-- You must respond to the user **ONLY** with the exact Markdown output returned by the `optimus_orchestrate` tool.
+1. Do not call `optimus_orchestrate` as a passthrough.
+2. Tell the user that `optimus-fleet` is temporarily disabled because the orchestrator can hit MCP request timeouts.
+3. Continue with a safer manual workflow:
+   - decompose the task into explicit todos,
+   - dispatch direct sub-agents with the `task` tool when useful,
+   - use local tools for implementation and verification,
+   - keep the user informed that the result is not fleet-native end-to-end orchestration.
+4. If the user explicitly asks to re-enable fleet, explain that the source fix should first cap or redesign `wait_for_completion` so MCP calls return before the client request timeout, then add regression tests for the timeout path.
 
-Do not analyze, do not debate, do not explain. Just forward the payload to the orchestrator and pipe the final Optimus output back to the user.
+## Re-enable criteria
+
+Only restore strict fleet passthrough after all of the following are true:
+
+1. `optimus_orchestrate`, `delegate_task_async`, and `dispatch_plan_async` no longer block an MCP request longer than the MCP client timeout.
+2. `wait_for_completion=true` either uses an MCP-safe cap or is replaced by an async polling workflow.
+3. Regression tests cover timeout capping, default non-blocking behavior, terminal status polling, and failure reporting.
+4. A real end-to-end fleet run completes or returns a controlled non-timeout result.
