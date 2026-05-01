@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
     MetaCronEngine,
+    getMissedCronRunAt,
     loadCrontab,
     persistCronEntryRunning,
     reconcileCrontabFromManifest,
@@ -30,6 +31,7 @@ describe('Meta-Cron engine workspace scoping', () => {
 
     afterEach(() => {
         MetaCronEngine.shutdown();
+        vi.useRealTimers();
         fs.rmSync(rootDir, { recursive: true, force: true });
     });
 
@@ -185,5 +187,100 @@ describe('Meta-Cron engine workspace scoping', () => {
         expect(entry.fail_count).toBe(4);
         expect(entry.last_failure_code).toBe('task_timeout');
         expect(entry.last_activity_timeout_ms).toBe(300000);
+    });
+
+    it('finds only the most recent missed slot after the last run', () => {
+        const lastRun = new Date(2026, 4, 1, 8, 0, 0, 0);
+        const now = new Date(2026, 4, 1, 21, 45, 0, 0);
+        const expectedMissedSlot = new Date(2026, 4, 1, 20, 0, 0, 0);
+
+        const missedRunAt = getMissedCronRunAt({
+            cron_expression: '0 */4 * * *',
+            last_run: lastRun.toISOString(),
+        }, now);
+
+        expect(missedRunAt?.toISOString()).toBe(expectedMissedSlot.toISOString());
+    });
+
+    it('does not report catch-up when the current minute already matches the cron expression', () => {
+        const lastRun = new Date(2026, 4, 1, 16, 0, 0, 0);
+        const now = new Date(2026, 4, 1, 20, 0, 0, 0);
+
+        const missedRunAt = getMissedCronRunAt({
+            cron_expression: '0 */4 * * *',
+            last_run: lastRun.toISOString(),
+        }, now);
+
+        expect(missedRunAt).toBeNull();
+    });
+
+    it('runs a missed dry-run slot immediately when elected leader starts', () => {
+        const lastRun = new Date(2026, 4, 1, 16, 0, 0, 0);
+        const now = new Date(2026, 4, 1, 21, 45, 0, 0);
+        const expectedMissedSlot = new Date(2026, 4, 1, 20, 0, 0, 0);
+        vi.useFakeTimers();
+        vi.setSystemTime(now);
+
+        saveCrontab(workspaceOne, {
+            max_concurrent: 1,
+            crons: [{
+                id: 'four-hour-maintenance',
+                cron_expression: '0 */4 * * *',
+                role: 'script-agent',
+                required_skills: [],
+                capability_tier: 'maintain',
+                concurrency_policy: 'Forbid',
+                max_actions: 1,
+                dry_run_remaining: 1,
+                enabled: true,
+                last_run: lastRun.toISOString(),
+                last_status: 'verified',
+                run_count: 4,
+                fail_count: 0,
+                created_at: '2026-04-01T00:00:00.000Z',
+            }],
+        });
+
+        MetaCronEngine.init(workspaceOne);
+
+        const saved = loadCrontab(workspaceOne)!;
+        expect(saved.crons[0].dry_run_remaining).toBe(0);
+        expect(saved.crons[0].last_catchup_slot).toBe(expectedMissedSlot.toISOString());
+        expect(saved.crons[0].last_run).toBe(lastRun.toISOString());
+    });
+
+    it('does not repeat a catch-up slot that was already attempted', () => {
+        const lastRun = new Date(2026, 4, 1, 16, 0, 0, 0);
+        const now = new Date(2026, 4, 1, 21, 45, 0, 0);
+        const alreadyAttemptedSlot = new Date(2026, 4, 1, 20, 0, 0, 0);
+        vi.useFakeTimers();
+        vi.setSystemTime(now);
+
+        saveCrontab(workspaceOne, {
+            max_concurrent: 1,
+            crons: [{
+                id: 'four-hour-maintenance',
+                cron_expression: '0 */4 * * *',
+                role: 'script-agent',
+                required_skills: [],
+                capability_tier: 'maintain',
+                concurrency_policy: 'Forbid',
+                max_actions: 1,
+                dry_run_remaining: 1,
+                enabled: true,
+                last_run: lastRun.toISOString(),
+                last_status: 'verified',
+                run_count: 4,
+                fail_count: 0,
+                created_at: '2026-04-01T00:00:00.000Z',
+                last_catchup_slot: alreadyAttemptedSlot.toISOString(),
+            }],
+        });
+
+        MetaCronEngine.init(workspaceOne);
+
+        const saved = loadCrontab(workspaceOne)!;
+        expect(saved.crons[0].dry_run_remaining).toBe(1);
+        expect(saved.crons[0].last_catchup_slot).toBe(alreadyAttemptedSlot.toISOString());
     });
 });

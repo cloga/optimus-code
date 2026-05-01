@@ -34,6 +34,7 @@ interface CronEntry {
     last_activity_timeout_ms?: number;
     last_recovery_status?: string;
     last_recovery_task_id?: string;
+    last_catchup_slot?: string;
 }
 
 interface CrontabData {
@@ -90,6 +91,47 @@ function matchesCronExpression(expression: string, now: Date): boolean {
         matchesCronField(monthField, month, 1, 12) &&
         matchesCronField(dayOfWeekField, dayOfWeek, 0, 6)
     );
+}
+
+const MAX_CATCHUP_LOOKBACK_MINUTES = 366 * 24 * 60;
+
+function truncateToMinute(date: Date): Date {
+    const result = new Date(date);
+    result.setSeconds(0, 0);
+    return result;
+}
+
+function findMostRecentDueSlot(expression: string, now: Date, after: Date): Date | null {
+    const cursor = truncateToMinute(now);
+    cursor.setMinutes(cursor.getMinutes() - 1);
+
+    const afterTime = after.getTime();
+    for (let scanned = 0; scanned < MAX_CATCHUP_LOOKBACK_MINUTES && cursor.getTime() > afterTime; scanned++) {
+        if (matchesCronExpression(expression, cursor)) {
+            return new Date(cursor);
+        }
+        cursor.setMinutes(cursor.getMinutes() - 1);
+    }
+    return null;
+}
+
+export function getMissedCronRunAt(
+    entry: Pick<CronEntry, 'cron_expression' | 'last_run' | 'last_catchup_slot'>,
+    now: Date,
+): Date | null {
+    if (matchesCronExpression(entry.cron_expression, now)) return null;
+    if (!entry.last_run) return null;
+
+    const lastRunTime = Date.parse(entry.last_run);
+    if (!Number.isFinite(lastRunTime)) return null;
+
+    const missedRunAt = findMostRecentDueSlot(entry.cron_expression, now, new Date(lastRunTime));
+    if (!missedRunAt) return null;
+
+    const missedSlot = missedRunAt.toISOString();
+    if (entry.last_catchup_slot === missedSlot) return null;
+
+    return missedRunAt;
 }
 
 // ─── Lock File Management ───
@@ -611,6 +653,7 @@ export class MetaCronEngine {
         if (state.interval && typeof state.interval.unref === 'function') {
             state.interval.unref();
         }
+        this.tick(workspaceKey);
     }
 
     static shutdown(workspacePath?: string): void {
@@ -674,7 +717,10 @@ export class MetaCronEngine {
             let mutated = false;
             for (const entry of crontab.crons) {
                 if (!entry.enabled) continue;
-                if (!matchesCronExpression(entry.cron_expression, now)) continue;
+                const missedRunAt = getMissedCronRunAt(entry, now);
+                const scheduledRunAt = missedRunAt || now;
+                const isCatchUp = missedRunAt !== null;
+                if (!isCatchUp && !matchesCronExpression(entry.cron_expression, now)) continue;
                 if (state.runningCount >= crontab.max_concurrent) {
                     console.error(`[Meta-Cron] Skipping '${entry.id}' — max concurrent reached`);
                     continue;
@@ -695,13 +741,16 @@ export class MetaCronEngine {
                         `Would fire '${entry.id}' -> role '${entry.role}'`
                     );
                     entry.dry_run_remaining--;
+                    if (isCatchUp) entry.last_catchup_slot = scheduledRunAt.toISOString();
                     // Release the lock acquired above — dry runs don't actually fire
                     if (entry.concurrency_policy === 'Forbid') deleteLock(state.workspacePath, entry.id);
                     mutated = true;
                     continue;
                 }
-                this.fire(state, entry, crontab);
-                mutated = true;
+                if (isCatchUp) {
+                    console.error(`[Meta-Cron] Catching up '${entry.id}' for missed slot ${scheduledRunAt.toISOString()}`);
+                }
+                mutated = this.fire(state, entry, crontab, scheduledRunAt, isCatchUp) || mutated;
             }
             if (mutated) saveCrontab(state.workspacePath, crontab);
         } catch (e: any) {
@@ -709,12 +758,17 @@ export class MetaCronEngine {
         }
     }
 
-    private static fire(state: SchedulerState, entry: CronEntry, _crontab: CrontabData): void {
+    private static fire(
+        state: SchedulerState,
+        entry: CronEntry,
+        _crontab: CrontabData,
+        runAt: Date = new Date(),
+        isCatchUp = false,
+    ): boolean {
         // Defense-in-depth: per-tick deduplication prevents duplicate tasks even if
         // leader election is somehow bypassed (e.g., stale leader lock cleanup race).
         // The tick key is based on cron minute granularity — one fire per ID per minute.
-        const now = new Date();
-        const tickKey = `${entry.id}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+        const tickKey = `${entry.id}_${runAt.getFullYear()}-${String(runAt.getMonth() + 1).padStart(2, '0')}-${String(runAt.getDate()).padStart(2, '0')}_${String(runAt.getHours()).padStart(2, '0')}-${String(runAt.getMinutes()).padStart(2, '0')}`;
         const tickLockPath = path.join(getLockDir(state.workspacePath), `tick_${tickKey}.lock`);
         try {
             const tickDir = getLockDir(state.workspacePath);
@@ -727,7 +781,7 @@ export class MetaCronEngine {
                 console.error(`[Meta-Cron] Tick dedup: '${entry.id}' already fired for this minute — skipping`);
                 // Release the concurrency lock since we won't actually run
                 if (entry.concurrency_policy === 'Forbid') deleteLock(state.workspacePath, entry.id);
-                return;
+                return false;
             }
             // Non-EEXIST errors: log but proceed (don't block the cron on dedup failures)
             console.error(`[Meta-Cron] Tick dedup warning for '${entry.id}': ${e?.message}`);
@@ -735,7 +789,8 @@ export class MetaCronEngine {
 
         // Note: concurrency lock was already acquired in tick() before calling fire().
         // No need to createLock() here — that caused the TOCTOU race (Issue #511).
-        persistCronEntryRunning(state.workspacePath, _crontab, entry, new Date());
+        if (isCatchUp) entry.last_catchup_slot = runAt.toISOString();
+        persistCronEntryRunning(state.workspacePath, _crontab, entry, runAt);
         state.runningCount++;
 
         const taskDescription =
@@ -858,5 +913,6 @@ export class MetaCronEngine {
             console.error(`[Meta-Cron] Safety timeout: cron '${entryId}' exceeded 2h limit. Marked as failed.`);
         }, 2 * 60 * 60 * 1000);
         if (typeof safetyTimer.unref === 'function') safetyTimer.unref();
+        return true;
     }
 }
