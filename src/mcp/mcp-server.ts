@@ -38,6 +38,7 @@ import { listWorktrees, createWorktree, removeWorktree, ensureWorktreeForBranch 
 import {
   resolveHeartbeatTimeout,
 } from "../runtime/agentRuntimeService";
+import { MasterScheduler, MASTER_SCHEDULER_PROTOCOL } from "../runtime/masterScheduler";
 import { fireHook, getGlobalHookRegistry } from '../harness/lifecycle-hooks.js';
 import { taskMetricsHook } from '../harness/built-in-hooks.js';
 import { ensureRuntimeServer } from '../runtime/genericExecutor';
@@ -892,6 +893,56 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "scheduler_ingest",
+        description: "Application-layer scheduler entry point. Persist a user/system/worker/CI message into the durable scheduler inbox before deciding whether to queue, update, cancel, prioritize, or dispatch work. This does not intercept Copilot's core turn loop; it enforces the Master Agent inbox-first protocol.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            source: { type: "string", enum: ["user", "system", "worker", "ci"], description: "Where the inbox entry came from. Defaults to user." },
+            content: { type: "string", description: "Raw message or event content to persist." },
+            metadata: { type: "object", description: "Optional metadata such as affected_files, context_summary, or acceptance_criteria." },
+            auto_tick: { type: "boolean", description: "When true or omitted, run one scheduler tick after persisting the inbox entry." },
+          },
+          required: ["workspace_path", "content"],
+        }
+      },
+      {
+        name: "scheduler_tick",
+        description: "Run one Optimus application-layer Master Scheduler iteration: process inbox, recover stale tasks, reconcile worker results, and dispatch ready tasks within priority/dependency/conflict limits.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+          },
+          required: ["workspace_path"],
+        }
+      },
+      {
+        name: "scheduler_status",
+        description: "Show the durable application-layer scheduler queue: current/running tasks, ready queue, blocked items, review items, failures, cancellations, completed work, and pending inbox count.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+          },
+          required: ["workspace_path"],
+        }
+      },
+      {
+        name: "scheduler_cancel_task",
+        description: "Cancel a scheduler-owned application-layer task and record the cancellation in task_events. If the task has an active worker run, cancellation is forwarded best-effort; arbitrary Copilot/worker execution may not support true hot-pause.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to cancel." },
+            reason: { type: "string", description: "Human-readable cancellation reason." },
+          },
+          required: ["workspace_path", "task_id"],
+        }
+      },
+      {
         name: "write_blackboard_artifact",
         description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this for specs (problem/proposal/solution), task descriptions, reports, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix). Routing: specs/{date}-{topic}/ for Problem-First lifecycle, tasks/ for issue bindings, reports/ for analysis, results/ for task output.",
         inputSchema: {
@@ -1097,6 +1148,95 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } catch (e: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to remove worktree: ${e.message}`);
     }
+  }
+
+  if (request.params.name === "scheduler_ingest") {
+    const { workspace_path, content, metadata } = request.params.arguments as any;
+    requireParams("scheduler_ingest", request.params.arguments as any, ["workspace_path", "content"]);
+    const source = (request.params.arguments as any).source || "user";
+    if (!["user", "system", "worker", "ci"].includes(source)) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for scheduler_ingest: source must be one of user, system, worker, ci.");
+    }
+    const scheduler = new MasterScheduler(workspace_path);
+    const inboxEntry = scheduler.ingestInbox(source, content, metadata);
+    const autoTick = (request.params.arguments as any).auto_tick !== false;
+    const tick = autoTick ? await scheduler.tick() : undefined;
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `Scheduler inbox entry persisted.`,
+          ``,
+          `**Protocol**: ${MASTER_SCHEDULER_PROTOCOL}`,
+          `**Inbox ID**: \`${inboxEntry.id}\``,
+          `**Source**: ${source}`,
+          tick ? `**Processed Inbox**: ${tick.processed_inbox}` : `**Auto Tick**: disabled`,
+          tick ? `**Dispatched Tasks**: ${tick.dispatched_tasks.length > 0 ? tick.dispatched_tasks.map(id => `\`${id}\``).join(', ') : '(none)'}` : undefined,
+        ].filter(Boolean).join('\n')
+      }]
+    };
+  }
+
+  if (request.params.name === "scheduler_tick") {
+    const { workspace_path } = request.params.arguments as any;
+    requireParams("scheduler_tick", request.params.arguments as any, ["workspace_path"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const tick = await scheduler.tick();
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `Scheduler tick complete.`,
+          ``,
+          `**Scheduler Scope**: Optimus application layer; Copilot core turn scheduling is not replaced.`,
+          `**Processed Inbox**: ${tick.processed_inbox}`,
+          `**Recovered Tasks**: ${tick.recovered_tasks.length > 0 ? tick.recovered_tasks.map(id => `\`${id}\``).join(', ') : '(none)'}`,
+          `**Reconciled Tasks**: ${tick.reconciled_tasks.length > 0 ? tick.reconciled_tasks.map(id => `\`${id}\``).join(', ') : '(none)'}`,
+          `**Dispatched Tasks**: ${tick.dispatched_tasks.length > 0 ? tick.dispatched_tasks.map(id => `\`${id}\``).join(', ') : '(none)'}`,
+        ].join('\n')
+      }]
+    };
+  }
+
+  if (request.params.name === "scheduler_status") {
+    const { workspace_path } = request.params.arguments as any;
+    requireParams("scheduler_status", request.params.arguments as any, ["workspace_path"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const status = scheduler.getStatus();
+    const summarize = (label: string, tasks: any[]) => {
+      if (tasks.length === 0) return `**${label}**: (none)`;
+      return [`**${label}**`, ...tasks.map(task => `- \`${task.id}\` [${task.status}, p=${task.priority}] ${task.title}${task.blocking_reason ? ` - ${task.blocking_reason}` : ''}${task.failure_reason ? ` - ${task.failure_reason}` : ''}`)].join('\n');
+    };
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `Scheduler queue status`,
+          ``,
+          `**Scheduler Scope**: Optimus application layer. New feedback is durable only after it enters inbox/task_events.`,
+          `**Pending Inbox**: ${status.inbox_pending}`,
+          summarize('Current', status.current),
+          summarize('Ready', status.ready),
+          summarize('Pending', status.pending),
+          summarize('Blocked', status.blocked),
+          summarize('Review', status.review),
+          summarize('Failed', status.failed),
+          summarize('Cancelled', status.cancelled),
+          summarize('Done', status.done),
+        ].join('\n\n')
+      }]
+    };
+  }
+
+  if (request.params.name === "scheduler_cancel_task") {
+    const { workspace_path, task_id } = request.params.arguments as any;
+    requireParams("scheduler_cancel_task", request.params.arguments as any, ["workspace_path", "task_id"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = await scheduler.cancelTask(task_id, (request.params.arguments as any).reason || 'Cancelled by scheduler_cancel_task.');
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task cancelled: \`${task.id}\`\n\nCancellation is recorded at the application layer. Active worker cancellation is best-effort; true hot-pause is not guaranteed.` }] };
   }
 
   if (request.params.name === "check_task_status") {

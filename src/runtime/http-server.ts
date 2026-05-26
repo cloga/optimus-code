@@ -11,6 +11,9 @@
  *   GET  /api/v1/agent/runs/:id        — Get run status/result
  *   POST /api/v1/agent/runs/:id/resume — Resume blocked run
  *   POST /api/v1/agent/runs/:id/cancel — Cancel active run
+ *   POST /api/v1/scheduler/inbox       — Persist app-layer scheduler inbox entry
+ *   POST /api/v1/scheduler/tick        — Run one app-layer scheduler tick
+ *   GET  /api/v1/scheduler/tasks       — Get app-layer scheduler queue status
  *   GET  /api/v1/health                — Health check
  *
  * Auto-scaling: when at capacity, spawns overflow instances on adjacent ports.
@@ -50,6 +53,7 @@ import {
     cancelGenericRun,
     buildGenericHealthPayload,
 } from './genericRuntime';
+import { MasterScheduler, startMasterSchedulerLoop } from './masterScheduler';
 import { subscribeToEvents, getEventBuffer } from '../utils/agentRuntime';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -159,6 +163,11 @@ function parseJsonBody(body: string): any {
             'Verify the request body is valid JSON. Use a JSON validator or check for trailing commas, unquoted keys, or encoding issues.'
         );
     }
+}
+
+function parseOptionalJsonBody(body: string): any {
+    if (!body.trim()) return {};
+    return parseJsonBody(body);
 }
 
 /**
@@ -280,7 +289,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         res.writeHead(204, {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, X-Optimus-Mode',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Optimus-Mode, X-Optimus-Workspace',
             'Access-Control-Max-Age': '86400',
         });
         res.end();
@@ -482,11 +491,82 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // POST /api/v1/agent/runs/:id/cancel
     if ((params = matchRoute(method, url, '/api/v1/agent/runs/:id/cancel', 'POST'))) {
         const body = await readBody(req);
-        const parsed = body.trim() ? JSON.parse(body) : {};
+        const parsed = parseOptionalJsonBody(body);
         const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
         console.error(`[HTTP] POST /agent/runs/${params.id}/cancel`);
         const envelope = await cancelRun(workspacePath, params.id, parsed.reason);
         sendJson(res, 200, envelope);
+        return;
+    }
+
+    // POST /api/v1/scheduler/inbox — persist incoming app-layer scheduler message
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/inbox', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
+        if (typeof body.content !== 'string' || !body.content.trim()) {
+            throw new RuntimeError('Missing required field: content', 'missing_params', 400,
+                'Include content in the JSON body: { "workspace_path": "<path>", "source": "user", "content": "<message>" }.'
+            );
+        }
+        const source = typeof body.source === 'string' ? body.source : 'user';
+        if (!['user', 'system', 'worker', 'ci'].includes(source)) {
+            throw new RuntimeError(`Invalid scheduler inbox source: ${source}`, 'invalid_source', 400,
+                'Use one of: user, system, worker, ci.'
+            );
+        }
+        const scheduler = createHttpScheduler(workspacePath);
+        const entry = scheduler.ingestInbox(source as any, body.content, body.metadata);
+        const tick = body.auto_tick === false ? undefined : await scheduler.tick();
+        sendJson(res, 202, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'This persists the message for Master Agent scheduling; it does not replace Copilot core turn delivery.',
+            inbox_entry: entry,
+            tick,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tick — run one app-layer scheduler loop iteration
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tick', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const tick = await scheduler.tick();
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Application-layer scheduler tick; does not replace Copilot core turn scheduling.',
+            tick,
+        });
+        return;
+    }
+
+    // GET /api/v1/scheduler/tasks — get app-layer queue status
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks', 'GET'))) {
+        const workspacePath = resolveWorkspaceFromHeader(defaultWorkspacePath, req.headers['x-optimus-workspace'] as string | undefined);
+        const scheduler = createHttpScheduler(workspacePath);
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            status: scheduler.getStatus(),
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/cancel — cancel scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/cancel', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = await scheduler.cancelTask(params.id, parsed.reason || 'Cancelled by scheduler API request.');
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Cancellation is recorded at the application layer. Active worker cancellation is best-effort; true hot-pause is not guaranteed.',
+            task,
+        });
         return;
     }
 
@@ -583,7 +663,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // POST /api/v2/agent/runs/:id/cancel — cancel generic run
     if ((params = matchRoute(method, url, '/api/v2/agent/runs/:id/cancel', 'POST'))) {
         const body = await readBody(req);
-        const parsed = body.trim() ? JSON.parse(body) : {};
+        const parsed = parseOptionalJsonBody(body);
         const workspacePath = (parsed.workspace_path || (req.headers['x-optimus-workspace'] as string | undefined) || defaultWorkspacePath || '').trim();
         const envelope = cancelGenericRun(
             params.id!,
@@ -595,7 +675,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // 404
     sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`,
-        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
+        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, POST /api/v1/scheduler/tasks/:id/cancel, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
     );
 }
 
@@ -748,14 +828,60 @@ function sendConcurrencyLimit(res: http.ServerResponse): void {
     sendError(res, 429, error.code, error.message, error.fix);
 }
 
+function tryAcquireRuntimeSlot(): boolean {
+    if (activeRuns >= MAX_CONCURRENT_RUNS) {
+        return false;
+    }
+    activeRuns++;
+    lastActivity = Date.now();
+    return true;
+}
+
+function releaseRuntimeSlot(): void {
+    activeRuns = Math.max(0, activeRuns - 1);
+    lastActivity = Date.now();
+}
+
+function createHttpScheduler(workspacePath: string): MasterScheduler {
+    return new MasterScheduler(workspacePath, {
+        tryAcquireWorkerSlot: tryAcquireRuntimeSlot,
+        releaseWorkerSlot: releaseRuntimeSlot,
+        onWorkerRunStarted: trackAgentRunCompletion,
+    });
+}
+
+function trackAgentRunCompletion(runId: string, workspacePath: string): void {
+    let released = false;
+    let checkCompletion: NodeJS.Timeout;
+    const release = () => {
+        if (released) return;
+        released = true;
+        releaseRuntimeSlot();
+        clearInterval(checkCompletion);
+    };
+
+    checkCompletion = setInterval(() => {
+        try {
+            const status = getRunStatus(workspacePath, runId);
+            const terminal = ['completed', 'failed', 'cancelled', 'verified', 'partial', 'degraded'];
+            if (terminal.includes(status.status)) {
+                release();
+            }
+        } catch (err: any) {
+            console.error(`[HTTP] scheduler worker run ${runId} status lookup failed; releasing concurrency slot: ${err.message || err}`);
+            release();
+        }
+    }, 5000);
+    if (typeof checkCompletion.unref === 'function') checkCompletion.unref();
+}
+
 function trackGenericRunCompletion(runId: string, workspacePath?: string): void {
     let released = false;
     let checkCompletion: NodeJS.Timeout;
     const release = () => {
         if (released) return;
         released = true;
-        activeRuns = Math.max(0, activeRuns - 1);
-        lastActivity = Date.now();
+        releaseRuntimeSlot();
         clearInterval(checkCompletion);
     };
 
@@ -770,6 +896,7 @@ function trackGenericRunCompletion(runId: string, workspacePath?: string): void 
             release();
         }
     }, 5000);
+    if (typeof checkCompletion.unref === 'function') checkCompletion.unref();
 }
 
 function startServer() {
@@ -852,6 +979,13 @@ function startServer() {
 
     server.listen(port, () => {
         const label = isOverflow ? '(overflow)' : '(primary)';
+        if (workspacePath && !isOverflow) {
+            startMasterSchedulerLoop(workspacePath, {
+                tryAcquireWorkerSlot: tryAcquireRuntimeSlot,
+                releaseWorkerSlot: releaseRuntimeSlot,
+                onWorkerRunStarted: trackAgentRunCompletion,
+            });
+        }
         console.error(`\n🚀 Optimus Agent Runtime — HTTP Server ${label}`);
         console.error(`   Port:      ${port}`);
         console.error(`   Workspace: ${workspacePath || '(per-request)'}`);
@@ -865,6 +999,9 @@ function startServer() {
         console.error(`     GET  /api/v1/agent/runs/:id        — Get status`);
         console.error(`     POST /api/v1/agent/runs/:id/resume — Resume`);
         console.error(`     POST /api/v1/agent/runs/:id/cancel — Cancel`);
+        console.error(`     POST /api/v1/scheduler/inbox       — Scheduler inbox`);
+        console.error(`     POST /api/v1/scheduler/tick        — Scheduler tick`);
+        console.error(`     GET  /api/v1/scheduler/tasks       — Scheduler status`);
         console.error(`     GET  /api/v1/health                — Health`);
         console.error(`   Generic API (v2):`);
         console.error(`     POST /api/v2/agent/run             — Sync run (prompt-based)`);
