@@ -6,9 +6,21 @@ import * as path from 'path';
 
 // The regex used internally by VcsProviderFactory.getGitHubInfo (private)
 const GITHUB_REGEX = /github\.com[\/:]+([^\/]+)\/([^\/.]+)/;
+const originalGhToken = process.env.GH_TOKEN;
+const originalStrictGitHubToken = process.env.STRICT_GITHUB_TOKEN;
 
 afterEach(() => {
   VcsProviderFactory.clearCache();
+  if (originalGhToken === undefined) {
+    delete process.env.GH_TOKEN;
+  } else {
+    process.env.GH_TOKEN = originalGhToken;
+  }
+  if (originalStrictGitHubToken === undefined) {
+    delete process.env.STRICT_GITHUB_TOKEN;
+  } else {
+    process.env.STRICT_GITHUB_TOKEN = originalStrictGitHubToken;
+  }
 });
 
 describe('VcsProviderFactory', () => {
@@ -83,6 +95,27 @@ describe('VcsProviderFactory', () => {
       expect(after.cacheHit).toBe(true);
       expect(after.cacheAgeMs).toBeTypeOf('number');
       expect(after.resolutionChain.some(line => line.includes('[exists]'))).toBe(true);
+    });
+
+    it('passes configured GitHub auth mode to GitHubProvider', async () => {
+      const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'optimus-vcs-auth-'));
+      const optimusConfigDir = path.join(workspace, '.optimus', 'config');
+      fs.mkdirSync(optimusConfigDir, { recursive: true });
+      fs.writeFileSync(path.join(optimusConfigDir, 'vcs.json'), JSON.stringify({
+        provider: 'github',
+        github: {
+          auth: 'env:STRICT_GITHUB_TOKEN',
+          owner: 'cloga',
+          repo: 'optimus-code'
+        }
+      }), 'utf8');
+      process.env.GH_TOKEN = 'wrong-gh-token';
+      delete process.env.STRICT_GITHUB_TOKEN;
+
+      const provider = await VcsProviderFactory.getProvider(workspace);
+
+      await expect(provider.createWorkItem('Created item', 'Body'))
+        .rejects.toThrow(/STRICT_GITHUB_TOKEN/);
     });
   });
 });

@@ -26,10 +26,12 @@ function parseGitHubError(status: number, body: string): string {
 export class GitHubProvider implements IVcsProvider {
     private owner: string;
     private repo: string;
+    private authMode?: string;
 
-    constructor(owner: string, repo: string) {
+    constructor(owner: string, repo: string, authMode?: string) {
         this.owner = owner;
         this.repo = repo;
+        this.authMode = authMode;
     }
 
     async createWorkItem(
@@ -543,6 +545,27 @@ export class GitHubProvider implements IVcsProvider {
     }
 
     private getToken(): string | undefined {
+        if (this.authMode) {
+            const envMatch = this.authMode.match(/^env:([A-Za-z_][A-Za-z0-9_]*)$/);
+            if (!envMatch) {
+                throw new Error(
+                    `Unsupported GitHub auth mode '${this.authMode}'. ` +
+                    `Fix: set github.auth to env:GITHUB_TOKEN (or another env:<NAME>) in .optimus/config/vcs.json.`
+                );
+            }
+
+            const envName = envMatch[1];
+            const token = process.env[envName];
+            if (!token || token.trim().length === 0) {
+                throw new Error(
+                    `Configured GitHub auth environment variable '${envName}' is not set. ` +
+                    `Fix: set ${envName} in the MCP server environment or ensure DOTENV_PATH points to a .env file that defines it. ` +
+                    `The GitHub VCS provider will not fall back to GH_TOKEN when github.auth is configured.`
+                );
+            }
+            return token;
+        }
+
         return process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     }
 }

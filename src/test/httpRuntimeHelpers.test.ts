@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs';
 import { describe, expect, it } from 'vitest';
 import {
     buildHeartbeatSseFrame,
@@ -61,5 +62,20 @@ describe('httpRuntimeHelpers', () => {
         expect(isGenericRunTerminalStatus('failed')).toBe(true);
         expect(isGenericRunTerminalStatus('cancelled')).toBe(true);
         expect(isGenericRunTerminalStatus('running')).toBe(false);
+    });
+
+    it('documents scheduler HTTP endpoints as app-layer envelopes in source', () => {
+        const source = fs.readFileSync(path.join(process.cwd(), 'src', 'runtime', 'http-server.ts'), 'utf8');
+
+        expect(source).toContain("scheduler_scope: 'optimus_application_layer'");
+        expect(source).toContain('Application-layer scheduler tick; does not replace Copilot core turn scheduling.');
+        expect(source).toContain('parseOptionalJsonBody');
+    });
+
+    it('only starts the autonomous scheduler loop on the primary runtime instance', () => {
+        const source = fs.readFileSync(path.join(process.cwd(), 'src', 'runtime', 'http-server.ts'), 'utf8');
+
+        expect(source).toContain('if (workspacePath && !isOverflow)');
+        expect(source).toContain('startMasterSchedulerLoop(workspacePath');
     });
 });

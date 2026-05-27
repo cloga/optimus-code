@@ -99,7 +99,7 @@ export class VcsProviderFactory {
         if (providerType === 'github') {
             const { owner, repo } = this.getGitHubInfo(config, resolvedWorkspacePath);
             const { GitHubProvider } = await import('./GitHubProvider.js');
-            provider = new GitHubProvider(owner, repo);
+            provider = new GitHubProvider(owner, repo, config.github?.auth);
         } else if (providerType === 'azure-devops') {
             const { organization, project, webBaseUrl } = this.getAdoInfo(config, resolvedWorkspacePath);
             const { AdoProvider } = await import('./AdoProvider.js');
