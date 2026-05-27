@@ -14,6 +14,10 @@
  *   POST /api/v1/scheduler/inbox       — Persist app-layer scheduler inbox entry
  *   POST /api/v1/scheduler/tick        — Run one app-layer scheduler tick
  *   GET  /api/v1/scheduler/tasks       — Get app-layer scheduler queue status
+ *   GET  /api/v1/scheduler/tasks/:id   — Get one scheduler task with events/runs
+ *   POST /api/v1/scheduler/tasks/:id/pause    — Pause scheduler-owned task
+ *   POST /api/v1/scheduler/tasks/:id/resume   — Resume scheduler-owned task
+ *   POST /api/v1/scheduler/tasks/:id/reassign — Reassign scheduler-owned task
  *   GET  /api/v1/health                — Health check
  *
  * Auto-scaling: when at capacity, spawns overflow instances on adjacent ports.
@@ -570,6 +574,83 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
     }
 
+    // GET /api/v1/scheduler/tasks/:id — get one scheduler task with events and agent runs
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id', 'GET'))) {
+        const workspacePath = resolveWorkspaceFromHeader(defaultWorkspacePath, req.headers['x-optimus-workspace'] as string | undefined);
+        const scheduler = createHttpScheduler(workspacePath);
+        const details = scheduler.getTaskDetails(params.id);
+        if (!details.task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            details,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/pause — pause scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/pause', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = await scheduler.pauseTask(params.id, parsed.reason || 'Paused by scheduler API request.');
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Pause is application-layer state. Active worker cancellation is best-effort; resume starts fresh work.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/resume — resume scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/resume', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = scheduler.resumeTask(params.id, parsed.reason || 'Resumed by scheduler API request.');
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Resume moves paused work to ready. Run scheduler tick to dispatch.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/reassign — reassign scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/reassign', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = await scheduler.reassignTask(params.id, {
+            required_capability: typeof parsed.required_capability === 'string' ? parsed.required_capability : undefined,
+            assigned_agent_id: typeof parsed.assigned_agent_id === 'string' ? parsed.assigned_agent_id : undefined,
+            reason: parsed.reason || 'Reassigned by scheduler API request.',
+        });
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Reassignment updates scheduler routing and cancels active worker execution best-effort before redispatch.',
+            task,
+        });
+        return;
+    }
+
     // ─── v2 Generic API (no Optimus orchestration) ───
 
     // GET /api/v2/health
@@ -675,7 +756,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // 404
     sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`,
-        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, POST /api/v1/scheduler/tasks/:id/cancel, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
+        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, GET /api/v1/scheduler/tasks/:id, POST /api/v1/scheduler/tasks/:id/cancel, POST /api/v1/scheduler/tasks/:id/pause, POST /api/v1/scheduler/tasks/:id/resume, POST /api/v1/scheduler/tasks/:id/reassign, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
     );
 }
 

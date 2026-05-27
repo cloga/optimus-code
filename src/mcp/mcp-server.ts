@@ -943,6 +943,59 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "scheduler_pause_task",
+        description: "Pause a scheduler-owned application-layer task. Running workers are cancelled best-effort and the scheduler task moves to paused for later fresh-run resume; this is not ACP hot-pause.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to pause." },
+            reason: { type: "string", description: "Human-readable pause reason." },
+          },
+          required: ["workspace_path", "task_id"],
+        }
+      },
+      {
+        name: "scheduler_resume_task",
+        description: "Resume a paused scheduler-owned application-layer task by moving it back to the ready queue for a fresh worker dispatch on the next scheduler tick.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to resume." },
+            reason: { type: "string", description: "Human-readable resume reason." },
+          },
+          required: ["workspace_path", "task_id"],
+        }
+      },
+      {
+        name: "scheduler_reassign_task",
+        description: "Reassign a scheduler-owned application-layer task to another capability or agent instance. Running workers are cancelled best-effort and queued for redispatch under the new assignment.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to reassign." },
+            required_capability: { type: "string", description: "New scheduler capability or role to use for dispatch." },
+            assigned_agent_id: { type: "string", description: "Optional T1 agent instance ID for resumed/reassigned context." },
+            reason: { type: "string", description: "Human-readable reassignment reason." },
+          },
+          required: ["workspace_path", "task_id"],
+        }
+      },
+      {
+        name: "scheduler_get_task",
+        description: "Inspect a scheduler-owned application-layer task with its durable task_events and agent_runs.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to inspect." },
+          },
+          required: ["workspace_path", "task_id"],
+        }
+      },
+      {
         name: "write_blackboard_artifact",
         description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this for specs (problem/proposal/solution), task descriptions, reports, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix). Routing: specs/{date}-{topic}/ for Problem-First lifecycle, tasks/ for issue bindings, reports/ for analysis, results/ for task output.",
         inputSchema: {
@@ -1218,6 +1271,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           summarize('Current', status.current),
           summarize('Ready', status.ready),
           summarize('Pending', status.pending),
+          summarize('Paused', status.paused),
           summarize('Blocked', status.blocked),
           summarize('Review', status.review),
           summarize('Failed', status.failed),
@@ -1237,6 +1291,68 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
     }
     return { content: [{ type: "text", text: `Scheduler task cancelled: \`${task.id}\`\n\nCancellation is recorded at the application layer. Active worker cancellation is best-effort; true hot-pause is not guaranteed.` }] };
+  }
+
+  if (request.params.name === "scheduler_pause_task") {
+    const { workspace_path, task_id } = request.params.arguments as any;
+    requireParams("scheduler_pause_task", request.params.arguments as any, ["workspace_path", "task_id"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = await scheduler.pauseTask(task_id, (request.params.arguments as any).reason || 'Paused by scheduler_pause_task.');
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task paused: \`${task.id}\`\n\nRunning workers are cancelled best-effort; resume dispatches a fresh worker run.` }] };
+  }
+
+  if (request.params.name === "scheduler_resume_task") {
+    const { workspace_path, task_id } = request.params.arguments as any;
+    requireParams("scheduler_resume_task", request.params.arguments as any, ["workspace_path", "task_id"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = scheduler.resumeTask(task_id, (request.params.arguments as any).reason || 'Resumed by scheduler_resume_task.');
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task resume requested: \`${task.id}\` [${task.status}]. Run scheduler_tick to dispatch ready work.` }] };
+  }
+
+  if (request.params.name === "scheduler_reassign_task") {
+    const { workspace_path, task_id, required_capability, assigned_agent_id, reason } = request.params.arguments as any;
+    requireParams("scheduler_reassign_task", request.params.arguments as any, ["workspace_path", "task_id"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = await scheduler.reassignTask(task_id, { required_capability, assigned_agent_id, reason });
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task reassigned: \`${task.id}\` [${task.status}] capability=${task.required_capability}${task.assigned_agent_id ? ` agent=${task.assigned_agent_id}` : ''}.` }] };
+  }
+
+  if (request.params.name === "scheduler_get_task") {
+    const { workspace_path, task_id } = request.params.arguments as any;
+    requireParams("scheduler_get_task", request.params.arguments as any, ["workspace_path", "task_id"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const details = scheduler.getTaskDetails(task_id);
+    if (!details.task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `Scheduler task detail`,
+          ``,
+          `**Task**: \`${details.task.id}\` [${details.task.status}, p=${details.task.priority}] ${details.task.title}`,
+          `**Capability**: ${details.task.required_capability}`,
+          details.task.assigned_agent_id ? `**Assigned Agent**: ${details.task.assigned_agent_id}` : undefined,
+          details.task.runtime_run_id ? `**Runtime Run**: ${details.task.runtime_run_id}` : undefined,
+          details.task.blocking_reason ? `**Blocking Reason**: ${details.task.blocking_reason}` : undefined,
+          details.task.failure_reason ? `**Failure Reason**: ${details.task.failure_reason}` : undefined,
+          `**Events**: ${details.events.length}`,
+          ...details.events.slice(-10).map(event => `- ${event.created_at} ${event.event_type}`),
+          `**Agent Runs**: ${details.agent_runs.length}`,
+          ...details.agent_runs.slice(-10).map(run => `- \`${run.id}\` [${run.status}] ${run.runtime_run_id || ''}`.trim()),
+        ].filter(Boolean).join('\n')
+      }]
+    };
   }
 
   if (request.params.name === "check_task_status") {

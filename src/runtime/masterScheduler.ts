@@ -46,6 +46,7 @@ export interface SchedulerStatus {
     current: SchedulerTask[];
     ready: SchedulerTask[];
     pending: SchedulerTask[];
+    paused: SchedulerTask[];
     blocked: SchedulerTask[];
     review: SchedulerTask[];
     failed: SchedulerTask[];
@@ -53,6 +54,18 @@ export interface SchedulerStatus {
     cancelled: SchedulerTask[];
     inbox_pending: number;
     agent_runs: SchedulerAgentRun[];
+}
+
+export interface SchedulerTaskDetails {
+    task?: SchedulerTask;
+    events: ReturnType<SchedulerStore['listTaskEvents']>;
+    agent_runs: SchedulerAgentRun[];
+}
+
+export interface SchedulerReassignOptions {
+    required_capability?: SchedulerCapability;
+    assigned_agent_id?: string;
+    reason?: string;
 }
 
 const DEFAULT_WORKER_ROLES: Record<'research_worker' | 'coding_worker', string> = {
@@ -168,6 +181,7 @@ export class MasterScheduler {
             current: tasks.filter(task => task.status === 'running'),
             ready: tasks.filter(task => task.status === 'ready').sort(compareReadyTasks),
             pending: tasks.filter(task => task.status === 'pending'),
+            paused: tasks.filter(task => task.status === 'paused'),
             blocked: tasks.filter(task => task.status === 'blocked'),
             review: tasks.filter(task => task.status === 'review'),
             failed: tasks.filter(task => task.status === 'failed'),
@@ -205,11 +219,122 @@ export class MasterScheduler {
         return updated;
     }
 
+    getTaskDetails(taskId: string): SchedulerTaskDetails {
+        return {
+            task: this.store.getTask(taskId),
+            events: this.store.listTaskEvents(taskId),
+            agent_runs: this.store.listAgentRuns().filter(run => run.task_id === taskId),
+        };
+    }
+
+    async pauseTask(taskId: string, reason = 'Paused by scheduler request.'): Promise<SchedulerTask | undefined> {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        if (['done', 'failed', 'cancelled'].includes(task.status)) {
+            this.store.appendTaskEvent({
+                task_id: task.id,
+                event_type: 'task_pause_ignored',
+                payload: { reason, current_status: task.status },
+            });
+            return task;
+        }
+        if (task.runtime_run_id) {
+            try {
+                await cancelRun(this.workspacePath, task.runtime_run_id, reason);
+            } catch (error) {
+                this.store.appendTaskEvent({
+                    task_id: task.id,
+                    event_type: 'pause_runtime_cancel_failed',
+                    payload: { runtime_run_id: task.runtime_run_id, error: error instanceof Error ? error.message : String(error) },
+                });
+            }
+        }
+        const updated = this.store.updateTask(taskId, {
+            status: 'paused',
+            runtime_run_id: undefined,
+            blocking_reason: reason,
+        });
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_paused',
+            payload: { reason, previous_status: task.status },
+        });
+        return updated;
+    }
+
+    resumeTask(taskId: string, reason = 'Resumed by scheduler request.'): SchedulerTask | undefined {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        if (task.status !== 'paused') {
+            this.store.appendTaskEvent({
+                task_id: task.id,
+                event_type: 'task_resume_ignored',
+                payload: { reason, current_status: task.status },
+            });
+            return task;
+        }
+        const updated = this.store.updateTask(taskId, {
+            status: 'ready',
+            blocking_reason: undefined,
+            failure_reason: undefined,
+        });
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_resumed',
+            payload: { reason },
+        });
+        return updated;
+    }
+
+    async reassignTask(taskId: string, options: SchedulerReassignOptions): Promise<SchedulerTask | undefined> {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        if (['done', 'failed', 'cancelled'].includes(task.status)) {
+            this.store.appendTaskEvent({
+                task_id: task.id,
+                event_type: 'task_reassign_ignored',
+                payload: { reason: options.reason, current_status: task.status },
+            });
+            return task;
+        }
+        if (task.runtime_run_id) {
+            try {
+                await cancelRun(this.workspacePath, task.runtime_run_id, options.reason || 'Reassigned by scheduler request.');
+            } catch (error) {
+                this.store.appendTaskEvent({
+                    task_id: task.id,
+                    event_type: 'reassign_runtime_cancel_failed',
+                    payload: { runtime_run_id: task.runtime_run_id, error: error instanceof Error ? error.message : String(error) },
+                });
+            }
+        }
+        const nextCapability = options.required_capability || task.required_capability;
+        const updated = this.store.updateTask(taskId, {
+            required_capability: nextCapability,
+            assigned_agent_id: options.assigned_agent_id ?? task.assigned_agent_id,
+            status: task.status === 'paused' ? 'paused' : 'ready',
+            runtime_run_id: undefined,
+            blocking_reason: task.status === 'paused' ? task.blocking_reason : undefined,
+        });
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_reassigned',
+            payload: {
+                reason: options.reason,
+                previous_capability: task.required_capability,
+                required_capability: nextCapability,
+                assigned_agent_id: options.assigned_agent_id ?? task.assigned_agent_id,
+                previous_status: task.status,
+            },
+        });
+        return updated;
+    }
+
     private async processInbox(): Promise<number> {
         let processed = 0;
         for (const entry of this.store.listPendingInboxEntries()) {
             try {
-                const classification = classifyInboxContent(entry.content);
+                const classification = this.getInboxClassification(entry);
                 const linkedTask = await this.applyInboxClassification(entry, classification);
                 this.store.updateInboxEntry(entry.id, {
                     status: 'processed',
@@ -234,6 +359,37 @@ export class MasterScheduler {
     }
 
     private async applyInboxClassification(entry: SchedulerInboxEntry, classification: InboxClassification): Promise<SchedulerTask | undefined> {
+        const metadata = entry.metadata || {};
+        const targetTaskId = typeof metadata.target_task_id === 'string' ? metadata.target_task_id : undefined;
+        const action = typeof metadata.action === 'string' ? metadata.action.toLowerCase() : undefined;
+        if (targetTaskId) {
+            if (action === 'pause') return this.pauseTask(targetTaskId, entry.content);
+            if (action === 'resume') return this.resumeTask(targetTaskId, entry.content);
+            if (action === 'reassign') {
+                return this.reassignTask(targetTaskId, {
+                    required_capability: typeof metadata.required_capability === 'string' ? metadata.required_capability : undefined,
+                    assigned_agent_id: typeof metadata.assigned_agent_id === 'string' ? metadata.assigned_agent_id : undefined,
+                    reason: entry.content,
+                });
+            }
+        }
+        if (targetTaskId) {
+            switch (classification) {
+                case 'cancellation':
+                    return this.cancelTask(targetTaskId, entry.content);
+                case 'interrupt':
+                    return this.pauseTask(targetTaskId, entry.content);
+                case 'priority_change':
+                    return this.bumpTaskPriority(targetTaskId, entry);
+                case 'task_update':
+                    return this.updateTaskFromInbox(targetTaskId, entry);
+                case 'clarification':
+                case 'new_task':
+                default:
+                    return this.createTaskFromInbox(entry, 0, classification);
+            }
+        }
+
         switch (classification) {
             case 'cancellation':
                 return this.cancelCurrentTaskFromInbox(entry);
@@ -295,6 +451,12 @@ export class MasterScheduler {
         if (!task) {
             return this.createTaskFromInbox(entry, 25, 'task_update');
         }
+        return this.updateTaskFromInbox(task.id, entry)!;
+    }
+
+    private updateTaskFromInbox(taskId: string, entry: SchedulerInboxEntry): SchedulerTask | undefined {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
 
         const updatedDescription = `${task.description}\n\n## User update (${entry.received_at})\n${entry.content}`;
         const nextStatus: SchedulerTaskStatus = task.status === 'running' ? 'blocked' : task.status;
@@ -309,6 +471,25 @@ export class MasterScheduler {
             task_id: task.id,
             event_type: 'task_updated_from_inbox',
             payload: { inbox_id: entry.id, interrupted_running_task: task.status === 'running' },
+        });
+        return updated;
+    }
+
+    private bumpTaskPriority(taskId: string, entry: SchedulerInboxEntry): SchedulerTask | undefined {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        const metadataPriority = typeof entry.metadata?.priority === 'number' && Number.isFinite(entry.metadata.priority)
+            ? entry.metadata.priority
+            : undefined;
+        const updated = this.store.updateTask(taskId, {
+            priority: metadataPriority ?? Math.max(task.priority, 100),
+            status: task.status === 'paused' ? 'paused' : 'ready',
+            blocking_reason: task.status === 'paused' ? task.blocking_reason : undefined,
+        });
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_priority_changed_from_inbox',
+            payload: { inbox_id: entry.id, priority: updated?.priority },
         });
         return updated;
     }
@@ -372,6 +553,16 @@ export class MasterScheduler {
             event_type: 'task_preempted',
             payload: { inbox_id: entry.id, reason: entry.content },
         });
+    }
+
+    private getInboxClassification(entry: SchedulerInboxEntry): InboxClassification {
+        const action = typeof entry.metadata?.action === 'string' ? entry.metadata.action.toLowerCase() : undefined;
+        if (action === 'cancel') return 'cancellation';
+        if (action === 'pause' || action === 'interrupt') return 'interrupt';
+        if (action === 'priority' || action === 'prioritize') return 'priority_change';
+        if (action === 'update') return 'task_update';
+        if (action === 'resume' || action === 'reassign') return 'task_update';
+        return classifyInboxContent(entry.content);
     }
 
     private dispatchReadyTasks(): string[] {

@@ -94,6 +94,95 @@ describe('master scheduler', () => {
         expect(tick.status.ready.some(task => task.priority === 100 && task.title.includes('先做'))).toBe(true);
     });
 
+    it('pauses and resumes a scheduler task without auto-promoting while paused', async () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Interruptible task',
+            description: 'Interruptible task',
+            status: 'ready',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: ['src/runtime/masterScheduler.ts'],
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        const paused = await scheduler.pauseTask(task.id, 'Need to stop here');
+        await scheduler.tick();
+        expect(paused?.status).toBe('paused');
+        expect(scheduler.getStatus().paused.map(item => item.id)).toContain(task.id);
+        expect(store.getTask(task.id)!.status).toBe('paused');
+
+        const resumed = scheduler.resumeTask(task.id, 'Continue');
+        expect(resumed?.status).toBe('ready');
+        expect(store.listTaskEvents(task.id).map(event => event.event_type)).toEqual(
+            expect.arrayContaining(['task_paused', 'task_resumed'])
+        );
+    });
+
+    it('reassigns running work by clearing active runtime state and queueing redispatch', async () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Running assignment',
+            description: 'Running assignment',
+            status: 'running',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: ['src/runtime/masterScheduler.ts'],
+            runtime_run_id: 'run_missing',
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        const reassigned = await scheduler.reassignTask(task.id, {
+            required_capability: 'research_worker',
+            assigned_agent_id: 'researcher_123',
+            reason: 'Need research context',
+        });
+
+        expect(reassigned?.status).toBe('ready');
+        expect(reassigned?.required_capability).toBe('research_worker');
+        expect(reassigned?.assigned_agent_id).toBe('researcher_123');
+        expect(reassigned?.runtime_run_id).toBeUndefined();
+        expect(store.listTaskEvents(task.id).map(event => event.event_type)).toContain('task_reassigned');
+    });
+
+    it('honors targeted inbox metadata for pause, resume, reassign, and priority changes', async () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Targeted task',
+            description: 'Targeted task',
+            status: 'ready',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: [],
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        scheduler.ingestInbox('user', 'pause this one', { action: 'pause', target_task_id: task.id });
+        await scheduler.tick();
+        expect(store.getTask(task.id)!.status).toBe('paused');
+
+        scheduler.ingestInbox('user', 'send to researcher', {
+            action: 'reassign',
+            target_task_id: task.id,
+            required_capability: 'research_worker',
+            assigned_agent_id: 'researcher_456',
+        });
+        await scheduler.tick();
+        expect(store.getTask(task.id)!.required_capability).toBe('research_worker');
+        expect(store.getTask(task.id)!.status).toBe('paused');
+
+        scheduler.ingestInbox('user', 'resume now', { action: 'resume', target_task_id: task.id });
+        await scheduler.tick();
+        expect(store.getTask(task.id)!.status).toBe('ready');
+
+        scheduler.ingestInbox('user', 'do this first', { action: 'priority', target_task_id: task.id, priority: 77 });
+        await scheduler.tick();
+        expect(store.getTask(task.id)!.priority).toBe(77);
+    });
+
     it('blocks ready coding tasks when affected files are locked by a running task', async () => {
         const workspace = createWorkspace();
         const store = new SchedulerStore(workspace);
