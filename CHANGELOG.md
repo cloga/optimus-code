@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.30.5] - 2026-05-27
+
+### Bug Fixes
+- **GitHub VCS token selection** — GitHub VCS operations now honor the configured auth mode such as `env:GITHUB_TOKEN` and no longer silently fall back to `GH_TOKEN` when the configured variable is missing.
+- **VCS provider cache correctness** — Provider cache entries now include the resolved config path and git remote so config/auth changes are picked up reliably.
+
+### Improvements
+- **App-layer scheduler runtime** — Added durable scheduler store/runtime support with HTTP runtime endpoints and MCP status/tick coverage for inbox-driven scheduling.
+
+### Tests
+- Added regression coverage for GitHub auth precedence, missing configured auth variables, VCS provider config caching, scheduler persistence, and runtime helper behavior.
+
 ## [2.30.4] - 2026-04-26
 
 ### Changes
