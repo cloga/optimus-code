@@ -20,9 +20,13 @@ export type InboxClassification =
     | 'new_task'
     | 'task_update'
     | 'cancellation'
+    | 'pause'
     | 'priority_change'
     | 'clarification'
-    | 'interrupt';
+    | 'interrupt'
+    | 'checkpoint'
+    | 'handoff'
+    | 'yield';
 
 export interface SchedulerOptions {
     maxConcurrentWorkers?: number;
@@ -68,6 +72,31 @@ export interface SchedulerReassignOptions {
     reason?: string;
 }
 
+export interface SchedulerCheckpoint {
+    summary: string;
+    current_focus?: string;
+    next_steps?: string;
+    open_questions?: string[];
+    affected_files?: string[];
+    handoff_recommended?: boolean;
+}
+
+export interface SchedulerHandoffOptions {
+    summary: string;
+    required_capability?: SchedulerCapability;
+    assigned_agent_id?: string;
+    acceptance_criteria?: string;
+    context_summary?: string;
+    affected_files?: string[];
+    cancel_current_run?: boolean;
+    reason?: string;
+}
+
+export interface SchedulerYieldOptions {
+    reason: string;
+    checkpoint?: SchedulerCheckpoint;
+}
+
 const DEFAULT_WORKER_ROLES: Record<'research_worker' | 'coding_worker', string> = {
     research_worker: 'researcher',
     coding_worker: 'developer',
@@ -104,8 +133,12 @@ function inferAffectedFiles(metadata?: Record<string, unknown>): string[] {
 
 export function classifyInboxContent(content: string): InboxClassification {
     const normalized = content.toLowerCase();
-    if (/(取消|停下|停止|cancel|stop|abort)/i.test(content)) return 'cancellation';
+    if (/(取消|停掉|cancel|abort)/i.test(content)) return 'cancellation';
+    if (/(暂停|pause)/i.test(content)) return 'pause';
     if (/(先做|优先|插队|do this first|priority|first)/i.test(content)) return 'priority_change';
+    if (/(交给|转交|handoff|hand off|delegate to sub-agent|sub-agent)/i.test(content)) return 'handoff';
+    if (/(checkpoint|保存进度|记录进度)/i.test(content)) return 'checkpoint';
+    if (/(先这样|切走|yield|稍后继续)/i.test(content)) return 'yield';
     if (/(改成|变更|需求改|change requirement|change .* to)/i.test(content)) return 'task_update';
     if (/(打断|立即|马上|interrupt|urgent)/i.test(content)) return 'interrupt';
     if (/[?？]$/.test(content.trim()) || /^(what|why|how|when|who)\b/.test(normalized)) return 'clarification';
@@ -225,6 +258,109 @@ export class MasterScheduler {
             events: this.store.listTaskEvents(taskId),
             agent_runs: this.store.listAgentRuns().filter(run => run.task_id === taskId),
         };
+    }
+
+    checkpointTask(taskId: string, checkpoint: SchedulerCheckpoint): SchedulerTask | undefined {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        const affectedFiles = checkpoint.affected_files?.filter(filePath => filePath.trim().length > 0);
+        const updated = this.store.updateTask(taskId, {
+            context_summary: checkpoint.summary || task.context_summary,
+            affected_files: affectedFiles && affectedFiles.length > 0 ? affectedFiles : task.affected_files,
+        });
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_checkpointed',
+            payload: {
+                summary: checkpoint.summary,
+                current_focus: checkpoint.current_focus,
+                next_steps: checkpoint.next_steps,
+                open_questions: checkpoint.open_questions || [],
+                affected_files: affectedFiles || [],
+                handoff_recommended: checkpoint.handoff_recommended === true,
+            },
+        });
+        return updated;
+    }
+
+    async handoffTask(taskId: string, options: SchedulerHandoffOptions): Promise<SchedulerTask | undefined> {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        if (['done', 'failed', 'cancelled'].includes(task.status)) {
+            this.store.appendTaskEvent({
+                task_id: task.id,
+                event_type: 'task_handoff_ignored',
+                payload: { reason: options.reason, current_status: task.status, summary: options.summary },
+            });
+            return task;
+        }
+
+        let cancelledCurrentRun = false;
+        if (task.runtime_run_id && options.cancel_current_run === true) {
+            try {
+                await cancelRun(this.workspacePath, task.runtime_run_id, options.reason || 'Cancelled for scheduler handoff.');
+                cancelledCurrentRun = true;
+            } catch (error) {
+                this.store.appendTaskEvent({
+                    task_id: task.id,
+                    event_type: 'handoff_runtime_cancel_failed',
+                    payload: { runtime_run_id: task.runtime_run_id, error: error instanceof Error ? error.message : String(error) },
+                });
+            }
+        }
+
+        const nextStatus: SchedulerTaskStatus = task.status === 'running' && !cancelledCurrentRun
+            ? 'running'
+            : task.status === 'paused'
+                ? 'paused'
+                : 'ready';
+        const nextAffectedFiles = options.affected_files && options.affected_files.length > 0
+            ? options.affected_files
+            : task.affected_files;
+        const updated = this.store.updateTask(taskId, {
+            required_capability: options.required_capability || task.required_capability,
+            assigned_agent_id: options.assigned_agent_id ?? task.assigned_agent_id,
+            acceptance_criteria: options.acceptance_criteria ?? task.acceptance_criteria,
+            context_summary: options.context_summary || options.summary || task.context_summary,
+            affected_files: nextAffectedFiles,
+            status: nextStatus,
+            runtime_run_id: cancelledCurrentRun ? undefined : task.runtime_run_id,
+            blocking_reason: nextStatus === 'ready' ? undefined : task.blocking_reason,
+        });
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_handed_off',
+            payload: {
+                summary: options.summary,
+                reason: options.reason,
+                required_capability: options.required_capability || task.required_capability,
+                assigned_agent_id: options.assigned_agent_id ?? task.assigned_agent_id,
+                cancel_current_run: options.cancel_current_run === true,
+                cancelled_current_run: cancelledCurrentRun,
+                previous_status: task.status,
+                next_status: nextStatus,
+            },
+        });
+        return updated;
+    }
+
+    yieldTask(taskId: string, options: SchedulerYieldOptions): SchedulerTask | undefined {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        let updated: SchedulerTask | undefined = task;
+        if (options.checkpoint) {
+            updated = this.checkpointTask(taskId, options.checkpoint);
+        }
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'master_yielded',
+            payload: {
+                reason: options.reason,
+                checkpoint_recorded: !!options.checkpoint,
+                status_preserved: task.status,
+            },
+        });
+        return updated;
     }
 
     async pauseTask(taskId: string, reason = 'Paused by scheduler request.'): Promise<SchedulerTask | undefined> {
@@ -365,6 +501,18 @@ export class MasterScheduler {
         if (targetTaskId) {
             if (action === 'pause') return this.pauseTask(targetTaskId, entry.content);
             if (action === 'resume') return this.resumeTask(targetTaskId, entry.content);
+            if (action === 'checkpoint') {
+                return this.checkpointTask(targetTaskId, this.buildCheckpointFromInbox(entry));
+            }
+            if (action === 'handoff') {
+                return this.handoffTask(targetTaskId, this.buildHandoffFromInbox(entry));
+            }
+            if (action === 'yield') {
+                return this.yieldTask(targetTaskId, {
+                    reason: entry.content,
+                    checkpoint: this.buildCheckpointFromInbox(entry),
+                });
+            }
             if (action === 'reassign') {
                 return this.reassignTask(targetTaskId, {
                     required_capability: typeof metadata.required_capability === 'string' ? metadata.required_capability : undefined,
@@ -377,10 +525,18 @@ export class MasterScheduler {
             switch (classification) {
                 case 'cancellation':
                     return this.cancelTask(targetTaskId, entry.content);
-                case 'interrupt':
+                case 'pause':
                     return this.pauseTask(targetTaskId, entry.content);
+                case 'interrupt':
+                    return this.bumpTaskPriority(targetTaskId, entry);
                 case 'priority_change':
                     return this.bumpTaskPriority(targetTaskId, entry);
+                case 'checkpoint':
+                    return this.checkpointTask(targetTaskId, this.buildCheckpointFromInbox(entry));
+                case 'handoff':
+                    return this.handoffTask(targetTaskId, this.buildHandoffFromInbox(entry));
+                case 'yield':
+                    return this.yieldTask(targetTaskId, { reason: entry.content, checkpoint: this.buildCheckpointFromInbox(entry) });
                 case 'task_update':
                     return this.updateTaskFromInbox(targetTaskId, entry);
                 case 'clarification':
@@ -395,8 +551,15 @@ export class MasterScheduler {
                 return this.cancelCurrentTaskFromInbox(entry);
             case 'priority_change':
             case 'interrupt':
-                await this.preemptCurrentTask(entry);
                 return this.createTaskFromInbox(entry, 100, classification);
+            case 'pause':
+                return this.pauseCurrentTaskFromInbox(entry);
+            case 'checkpoint':
+                return this.checkpointMostRelevantTask(entry);
+            case 'handoff':
+                return this.handoffMostRelevantTask(entry);
+            case 'yield':
+                return this.yieldMostRelevantTask(entry);
             case 'task_update':
                 return this.updateMostRelevantTask(entry);
             case 'clarification':
@@ -555,12 +718,81 @@ export class MasterScheduler {
         });
     }
 
+    private async pauseCurrentTaskFromInbox(entry: SchedulerInboxEntry): Promise<SchedulerTask | undefined> {
+        const task = this.findCurrentOrLatestOpenTask();
+        if (!task) {
+            this.store.appendTaskEvent({
+                event_type: 'pause_without_target',
+                payload: { inbox_id: entry.id, content_summary: summarizeTitle(entry.content) },
+            });
+            return undefined;
+        }
+        return this.pauseTask(task.id, entry.content);
+    }
+
+    private checkpointMostRelevantTask(entry: SchedulerInboxEntry): SchedulerTask {
+        const task = this.findCurrentOrLatestOpenTask();
+        if (!task) {
+            return this.createTaskFromInbox(entry, 10, 'checkpoint');
+        }
+        return this.checkpointTask(task.id, this.buildCheckpointFromInbox(entry))!;
+    }
+
+    private async handoffMostRelevantTask(entry: SchedulerInboxEntry): Promise<SchedulerTask> {
+        const task = this.findCurrentOrLatestOpenTask();
+        if (!task) {
+            return this.createTaskFromInbox(entry, 50, 'handoff');
+        }
+        return (await this.handoffTask(task.id, this.buildHandoffFromInbox(entry)))!;
+    }
+
+    private yieldMostRelevantTask(entry: SchedulerInboxEntry): SchedulerTask {
+        const task = this.findCurrentOrLatestOpenTask();
+        if (!task) {
+            return this.createTaskFromInbox(entry, 10, 'yield');
+        }
+        return this.yieldTask(task.id, { reason: entry.content, checkpoint: this.buildCheckpointFromInbox(entry) })!;
+    }
+
+    private buildCheckpointFromInbox(entry: SchedulerInboxEntry): SchedulerCheckpoint {
+        const metadata = entry.metadata || {};
+        const openQuestions = Array.isArray(metadata.open_questions)
+            ? metadata.open_questions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            : undefined;
+        return {
+            summary: typeof metadata.summary === 'string' ? metadata.summary : entry.content,
+            current_focus: typeof metadata.current_focus === 'string' ? metadata.current_focus : undefined,
+            next_steps: typeof metadata.next_steps === 'string' ? metadata.next_steps : undefined,
+            open_questions: openQuestions,
+            affected_files: inferAffectedFiles(metadata),
+            handoff_recommended: metadata.handoff_recommended === true,
+        };
+    }
+
+    private buildHandoffFromInbox(entry: SchedulerInboxEntry): SchedulerHandoffOptions {
+        const metadata = entry.metadata || {};
+        return {
+            summary: typeof metadata.summary === 'string' ? metadata.summary : entry.content,
+            required_capability: typeof metadata.required_capability === 'string' ? metadata.required_capability : undefined,
+            assigned_agent_id: typeof metadata.assigned_agent_id === 'string' ? metadata.assigned_agent_id : undefined,
+            acceptance_criteria: typeof metadata.acceptance_criteria === 'string' ? metadata.acceptance_criteria : undefined,
+            context_summary: typeof metadata.context_summary === 'string' ? metadata.context_summary : undefined,
+            affected_files: inferAffectedFiles(metadata),
+            cancel_current_run: metadata.cancel_current_run === true,
+            reason: entry.content,
+        };
+    }
+
     private getInboxClassification(entry: SchedulerInboxEntry): InboxClassification {
         const action = typeof entry.metadata?.action === 'string' ? entry.metadata.action.toLowerCase() : undefined;
         if (action === 'cancel') return 'cancellation';
-        if (action === 'pause' || action === 'interrupt') return 'interrupt';
+        if (action === 'pause') return 'pause';
+        if (action === 'interrupt') return 'interrupt';
         if (action === 'priority' || action === 'prioritize') return 'priority_change';
         if (action === 'update') return 'task_update';
+        if (action === 'checkpoint') return 'checkpoint';
+        if (action === 'handoff') return 'handoff';
+        if (action === 'yield') return 'yield';
         if (action === 'resume' || action === 'reassign') return 'task_update';
         return classifyInboxContent(entry.content);
     }

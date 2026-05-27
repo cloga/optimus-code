@@ -71,7 +71,7 @@ describe('master scheduler', () => {
         expect(tick.status.blocked[0].blocking_reason).toContain('upstream-task');
     });
 
-    it('preempts the current task for high-priority inbox entries', async () => {
+    it('keeps the current running task active for high-priority inbox entries', async () => {
         const workspace = createWorkspace();
         const store = new SchedulerStore(workspace);
         const current = store.createTask({
@@ -89,9 +89,90 @@ describe('master scheduler', () => {
         const tick = await scheduler.tick();
         const updatedCurrent = store.getTask(current.id)!;
 
-        expect(updatedCurrent.status).toBe('ready');
-        expect(updatedCurrent.blocking_reason).toContain('Application-layer preemption');
+        expect(updatedCurrent.status).toBe('running');
+        expect(updatedCurrent.runtime_run_id).toBe('run_current');
         expect(tick.status.ready.some(task => task.priority === 100 && task.title.includes('先做'))).toBe(true);
+    });
+
+    it('records a durable checkpoint without changing task execution state', () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Master planning',
+            description: 'Master planning',
+            status: 'running',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: ['src/runtime/masterScheduler.ts'],
+            runtime_run_id: 'run_current',
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        const updated = scheduler.checkpointTask(task.id, {
+            summary: 'Parsed requirements and identified scheduler handoff gap.',
+            current_focus: 'Designing durable handoff',
+            next_steps: 'Implement checkpoint/handoff/yield controls',
+            open_questions: ['Should handoff cancel current run?'],
+            affected_files: ['src/runtime/masterScheduler.ts'],
+            handoff_recommended: true,
+        });
+
+        expect(updated?.status).toBe('running');
+        expect(updated?.runtime_run_id).toBe('run_current');
+        expect(store.listTaskEvents(task.id).some(event => event.event_type === 'task_checkpointed')).toBe(true);
+    });
+
+    it('hands off running work without cancelling the active worker by default', async () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Running master task',
+            description: 'Running master task',
+            status: 'running',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: ['src/runtime/masterScheduler.ts'],
+            runtime_run_id: 'run_current',
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        const handedOff = await scheduler.handoffTask(task.id, {
+            summary: 'Hand this implementation to a sub-agent.',
+            required_capability: 'research_worker',
+            assigned_agent_id: 'researcher_123',
+            reason: 'Master is switching focus',
+        });
+
+        expect(handedOff?.status).toBe('running');
+        expect(handedOff?.runtime_run_id).toBe('run_current');
+        expect(handedOff?.required_capability).toBe('research_worker');
+        expect(handedOff?.assigned_agent_id).toBe('researcher_123');
+        expect(store.listTaskEvents(task.id).some(event => event.event_type === 'task_handed_off')).toBe(true);
+    });
+
+    it('yields master focus with a checkpoint while preserving task status', () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Yieldable task',
+            description: 'Yieldable task',
+            status: 'running',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: [],
+            runtime_run_id: 'run_current',
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        const yielded = scheduler.yieldTask(task.id, {
+            reason: 'User switched to a new topic',
+            checkpoint: { summary: 'Ready for a sub-agent handoff if needed.' },
+        });
+
+        expect(yielded?.status).toBe('running');
+        expect(store.listTaskEvents(task.id).map(event => event.event_type)).toEqual(
+            expect.arrayContaining(['task_checkpointed', 'master_yielded'])
+        );
     });
 
     it('pauses and resumes a scheduler task without auto-promoting while paused', async () => {
@@ -181,6 +262,47 @@ describe('master scheduler', () => {
         scheduler.ingestInbox('user', 'do this first', { action: 'priority', target_task_id: task.id, priority: 77 });
         await scheduler.tick();
         expect(store.getTask(task.id)!.priority).toBe(77);
+    });
+
+    it('honors targeted inbox metadata for checkpoint, handoff, and yield without pausing running work', async () => {
+        const workspace = createWorkspace();
+        const store = new SchedulerStore(workspace);
+        const task = store.createTask({
+            title: 'Targeted handoff task',
+            description: 'Targeted handoff task',
+            status: 'running',
+            priority: 0,
+            required_capability: 'coding_worker',
+            affected_files: [],
+            runtime_run_id: 'run_current',
+        });
+        const scheduler = new MasterScheduler(workspace, { dispatchEnabled: false });
+
+        scheduler.ingestInbox('user', 'checkpoint before switching', {
+            action: 'checkpoint',
+            target_task_id: task.id,
+            summary: 'Master checkpoint before switching.',
+        });
+        scheduler.ingestInbox('user', 'handoff to researcher', {
+            action: 'handoff',
+            target_task_id: task.id,
+            summary: 'Research the remaining context.',
+            required_capability: 'research_worker',
+        });
+        scheduler.ingestInbox('user', 'yield now', {
+            action: 'yield',
+            target_task_id: task.id,
+            summary: 'Yield with current context preserved.',
+        });
+        await scheduler.tick();
+
+        const updated = store.getTask(task.id)!;
+        expect(updated.status).toBe('running');
+        expect(updated.runtime_run_id).toBe('run_current');
+        expect(updated.required_capability).toBe('research_worker');
+        expect(store.listTaskEvents(task.id).map(event => event.event_type)).toEqual(
+            expect.arrayContaining(['task_checkpointed', 'task_handed_off', 'master_yielded'])
+        );
     });
 
     it('blocks ready coding tasks when affected files are locked by a running task', async () => {

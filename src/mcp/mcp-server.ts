@@ -996,6 +996,61 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "scheduler_checkpoint_task",
+        description: "Record a durable master-agent checkpoint for a scheduler task without stopping running sub-agents. Use before switching focus so work can be resumed from task_events instead of chat memory.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to checkpoint." },
+            summary: { type: "string", description: "Concise durable summary of current progress." },
+            current_focus: { type: "string", description: "What the master agent was focused on at yield time." },
+            next_steps: { type: "string", description: "Concrete next steps for resume or handoff." },
+            open_questions: { type: "array", items: { type: "string" }, description: "Open questions that still need resolution." },
+            affected_files: { type: "array", items: { type: "string" }, description: "Relevant files for the checkpoint." },
+            handoff_recommended: { type: "boolean", description: "Whether this checkpoint should be handed to a sub-agent." },
+          },
+          required: ["workspace_path", "task_id", "summary"],
+        }
+      },
+      {
+        name: "scheduler_handoff_task",
+        description: "Record a durable handoff from the master agent to a sub-agent without pausing existing worker runs by default. Optionally queue redispatch or cancel the current run only when explicitly requested.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to hand off." },
+            summary: { type: "string", description: "Handoff packet summary for the receiving agent." },
+            required_capability: { type: "string", description: "Optional new scheduler capability or role to use." },
+            assigned_agent_id: { type: "string", description: "Optional T1 agent instance ID for context continuity." },
+            acceptance_criteria: { type: "string", description: "Optional acceptance criteria for the receiving agent." },
+            context_summary: { type: "string", description: "Optional context summary to store on the task." },
+            affected_files: { type: "array", items: { type: "string" }, description: "Relevant files for the handoff." },
+            cancel_current_run: { type: "boolean", description: "When true, best-effort cancel the current worker run before redispatch. Defaults false." },
+            reason: { type: "string", description: "Human-readable handoff reason." },
+          },
+          required: ["workspace_path", "task_id", "summary"],
+        }
+      },
+      {
+        name: "scheduler_yield_task",
+        description: "Record that the master agent yielded focus on a scheduler task, optionally with a checkpoint, without changing running sub-agent state.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to yield." },
+            reason: { type: "string", description: "Why the master agent is yielding." },
+            checkpoint: {
+              type: "object",
+              description: "Optional checkpoint payload with summary/current_focus/next_steps/open_questions/affected_files/handoff_recommended.",
+            },
+          },
+          required: ["workspace_path", "task_id", "reason"],
+        }
+      },
+      {
         name: "write_blackboard_artifact",
         description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this for specs (problem/proposal/solution), task descriptions, reports, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix). Routing: specs/{date}-{topic}/ for Problem-First lifecycle, tasks/ for issue bindings, reports/ for analysis, results/ for task output.",
         inputSchema: {
@@ -1353,6 +1408,67 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ].filter(Boolean).join('\n')
       }]
     };
+  }
+
+  if (request.params.name === "scheduler_checkpoint_task") {
+    const { workspace_path, task_id, summary, current_focus, next_steps, open_questions, affected_files, handoff_recommended } = request.params.arguments as any;
+    requireParams("scheduler_checkpoint_task", request.params.arguments as any, ["workspace_path", "task_id", "summary"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = scheduler.checkpointTask(task_id, {
+      summary,
+      current_focus,
+      next_steps,
+      open_questions: Array.isArray(open_questions) ? open_questions : undefined,
+      affected_files: Array.isArray(affected_files) ? affected_files : undefined,
+      handoff_recommended: handoff_recommended === true,
+    });
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task checkpointed: \`${task.id}\`\n\nCheckpoint is durable in task_events and does not stop running sub-agents.` }] };
+  }
+
+  if (request.params.name === "scheduler_handoff_task") {
+    const { workspace_path, task_id, summary, required_capability, assigned_agent_id, acceptance_criteria, context_summary, affected_files, cancel_current_run, reason } = request.params.arguments as any;
+    requireParams("scheduler_handoff_task", request.params.arguments as any, ["workspace_path", "task_id", "summary"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = await scheduler.handoffTask(task_id, {
+      summary,
+      required_capability,
+      assigned_agent_id,
+      acceptance_criteria,
+      context_summary,
+      affected_files: Array.isArray(affected_files) ? affected_files : undefined,
+      cancel_current_run: cancel_current_run === true,
+      reason,
+    });
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task handed off: \`${task.id}\` [${task.status}]\n\nExisting worker runs continue unless cancel_current_run was explicitly true.` }] };
+  }
+
+  if (request.params.name === "scheduler_yield_task") {
+    const { workspace_path, task_id, reason, checkpoint } = request.params.arguments as any;
+    requireParams("scheduler_yield_task", request.params.arguments as any, ["workspace_path", "task_id", "reason"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = scheduler.yieldTask(task_id, {
+      reason,
+      checkpoint: checkpoint && typeof checkpoint === 'object' && typeof checkpoint.summary === 'string'
+        ? {
+          summary: checkpoint.summary,
+          current_focus: checkpoint.current_focus,
+          next_steps: checkpoint.next_steps,
+          open_questions: Array.isArray(checkpoint.open_questions) ? checkpoint.open_questions : undefined,
+          affected_files: Array.isArray(checkpoint.affected_files) ? checkpoint.affected_files : undefined,
+          handoff_recommended: checkpoint.handoff_recommended === true,
+        }
+        : undefined,
+    });
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task yielded: \`${task.id}\` [${task.status}]\n\nYield preserves scheduler state and does not stop running sub-agents.` }] };
   }
 
   if (request.params.name === "check_task_status") {
