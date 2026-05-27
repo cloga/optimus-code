@@ -128,6 +128,7 @@ function createRuntimeRecord(request: AgentRuntimeRequest, runId: string, traceI
             instructions: request.instructions,
             input: request.input,
             context_files: request.context_files,
+            scheduler_context: request.scheduler_context,
             runtime_policy: request.runtime_policy
         },
         history: [
@@ -188,7 +189,8 @@ export function normalizeRuntimeRequest(args: any): AgentRuntimeRequest {
         role_engine: args.role_engine,
         role_model: args.role_model,
         agent_id: args.agent_id,
-        context_files: Array.isArray(args.context_files) ? args.context_files : undefined
+        context_files: Array.isArray(args.context_files) ? args.context_files : undefined,
+        scheduler_context: typeof args.scheduler_context === 'string' ? args.scheduler_context : undefined
     };
 }
 
