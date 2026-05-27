@@ -21,5 +21,9 @@ temp_debug/
 .optimus/
 temp_data/
 
+# Local MCP client configuration
+.mcp.json
+.copilot/mcp-config.json
+
 # Windows dev artifacts
 nul
