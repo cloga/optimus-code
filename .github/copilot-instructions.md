@@ -1,74 +1,69 @@
-# GitHub Copilot Optimus Project Instructions
-
-You are acting as the **Master Agent (Orchestrator)** for the Optimus project.
-
-**First actions (in order):**
-1. Read `.optimus/skills/master-onboarding/SKILL.md` — it contains Step 0 (load user memory) and all onboarding steps.
+# Copilot Instructions for Optimus Code
 
 ## Build, Test, and Release
 
-- **Build**: `npm run build` (runs `cd optimus-plugin && npm install && npm run build:production` via esbuild → 3 bundles)
-- **Test all**: `npx vitest run`
-- **Test single file**: `npx vitest run src/test/mytest.test.ts`
-- **Type check**: `npm run check-types`
-- **Pre-existing failure**: `council-capacity.test.ts` > "rejects malformed config entries" always fails — ignore it.
+- Build the shipped plugin with `npm run build`. This runs `cd optimus-plugin && npm install && npm run build:production` and regenerates the bundled runtime files under `optimus-plugin/dist/`.
+- Type-check with `npm run check-types`.
+- Run all tests with `npx vitest run`.
+- Run a single test file with `npx vitest run src/test/<name>.test.ts`.
+- For runtime, MCP, ACP adapter, worker spawning, or Meta-Cron changes, do not stop at build/type-check. Run targeted tests for the touched area, then run the full Vitest suite when behavior or shared runtime contracts changed.
+- After changing `src/mcp/mcp-server.ts`, MCP tool schemas/descriptions, shipped skills, or runtime files consumed by bundled tests, run `npm run build` before compatibility tests because some tests read generated files from `optimus-plugin/dist/`.
 
-### Release Workflow (IMPORTANT)
+## Release Workflow
 
-This project does **NOT** publish to npm. Releases go to **GitHub** via `gh release create`. The `GITHUB_TOKEN` is in `.env` at the repo root.
+- This project does not publish to npm. Releases are GitHub releases created from repository tags.
+- For a release:
+  1. Bump the version in both `package.json` and `optimus-plugin/package.json`; keep them identical.
+  2. Update `CHANGELOG.md`.
+  3. Run `npm run build`.
+  4. Commit through a feature branch and PR; do not push directly to `master`.
+  5. Create and push the release tag explicitly, for example `git tag v2.x.y` and `git push origin v2.x.y`.
+  6. Create the GitHub release with `gh release create`.
+- User upgrade commands install from GitHub, for example `npx github:cloga/optimus-code upgrade` or `npx github:cloga/optimus-code#v2.x.y upgrade`.
 
-**Exact steps — follow every time:**
-1. Bump version in **both** `package.json` AND `optimus-plugin/package.json` (they must match)
-2. Update `CHANGELOG.md` with the new version entry
-3. `npm run build` (rebuilds dist bundles with new version)
-4. `git add` the changed files (see Windows caveats below) and commit
-5. `git tag v{version}`, then push the branch and the new release tag explicitly: `git push origin master` and `git push origin v{version}`. Avoid `git push --tags` because unrelated local tags can cause a false failure even when the release tag itself is valid.
-6. Load token: `$env:GITHUB_TOKEN = (Select-String 'GITHUB_TOKEN=(.+)' .env).Matches.Groups[1].Value`
-7. `gh release create v{version} --title "v{version} — {summary}" --notes "{release notes}"`
+## Git and Windows Caveats
 
-**Never** run `npm publish` or `npm adduser` — there is no npm registry for this package.
+- The repository root may contain a Windows-reserved `nul` file. Do not use `git add -A` or `git add .`; stage explicit file paths only.
+- `.mcp.json` and `.copilot/mcp-config.json` are often locally modified by workspace configuration. Do not include or revert those files unless the task explicitly requires it.
+- Use Windows-style paths in shell commands.
+- Never revert unrelated user changes. If unrelated dirty files are present, leave them alone and stage only files changed for the current task.
 
-### User Install/Upgrade Commands
+## Runtime Architecture
 
-Users install and upgrade from GitHub directly (not npm):
-- **First install**: `npx github:cloga/optimus-code init`
-- **Upgrade**: `npx github:cloga/optimus-code upgrade`
-- **Specific version**: `npx github:cloga/optimus-code#v2.16.18 upgrade`
+- Optimus uses a user-level, multi-workspace HTTP runtime daemon. Workspace is request scope, not daemon process identity.
+- Body-driven run creation uses `workspace_path`; status and stream lookups use `X-Optimus-Workspace`.
+- Key runtime layers:
+  - `src/mcp/mcp-server.ts`: MCP tool schemas and handlers.
+  - `src/mcp/worker-spawner.ts`: task execution orchestration and worker lifecycle.
+  - `src/runtime/genericExecutor.ts`: engine-to-adapter routing and HTTP runtime proxy behavior.
+  - `src/runtime/genericRuntime.ts` and `src/runtime/http-server.ts`: in-memory run lifecycle and HTTP endpoints.
+  - `src/adapters/AcpAdapter.ts`: ACP process/session handling for Copilot and Claude.
+  - `src/mcp/meta-cron-engine.ts`: Meta-Cron scheduling, status persistence, and reconciliation.
+- Runtime proxy behavior should prefer asynchronous start plus status polling over long synchronous HTTP requests.
 
-## Environment
+## Fleet and Long-Running MCP Safety
 
-- `.env` at repo root contains `GITHUB_TOKEN=ghp_...` — this is for GitHub API operations (gh CLI, issue creation, releases). It is **not** used for ACP engine authentication.
-- ACP engines (Copilot, Claude Code) use their own auth mechanisms (VS Code session, Claude CLI login).
-- User memory is stored in `.optimus/memory/` — separate from `.env`.
+- The shipped `optimus-fleet` skill is temporarily disabled because strict `optimus_orchestrate` passthrough can hit MCP request timeouts when `wait_for_completion=true` blocks the tool handler.
+- Do not route broad tasks through `optimus_orchestrate` until the MCP-safe async orchestration path is fixed and validated.
+- For long-running work, use non-blocking task creation and poll status separately. Avoid holding an MCP tool call open while waiting for terminal state.
+- If a request reports MCP `-32001` timeout, investigate whether the handler blocked longer than the MCP client request timeout before retrying the same command.
 
-## Windows Development Caveats
+## Runtime Validation Matrix
 
-- **`nul` file**: A file named `nul` exists in the repo root (Windows reserved name). This causes `git add -A` and `git add .` to fail. Always use explicit file paths with `git add`.
-- **Path separators**: Use backslashes (`\`) in PowerShell commands. Use `path.resolve()` for normalizing paths from git output.
+Use the narrowest relevant subset first, then widen coverage before completion:
 
-## GitHub Copilot-Specific Notes
+- MCP schema/async behavior: `npx vitest run src/test/delegate-task-compat.test.ts src/test/optimus-orchestrator.test.ts`
+- Runtime proxy and generic runtime: `npx vitest run src/test/genericRuntime.test.ts src/test/httpRuntimeHelpers.test.ts`
+- ACP behavior: `npx vitest run src/test/AcpAdapter.unit.test.ts src/test/acpProcessPool.test.ts src/test/acp-concurrent-sessions.test.ts`
+- Worktree/workspace routing: `npx vitest run src/test/worktree.test.ts src/test/worktreeManager.test.ts`
+- Meta-Cron: `npx vitest run src/test/meta-cron-engine.test.ts src/test/meta-cron-locks.test.ts`
+- After runtime fixes, validate a real non-blocking delegate path when possible and confirm the output artifact exists instead of relying only on unit tests.
 
-- MCP tools are accessed via the `spartan-swarm` MCP server connection.
-- In GitHub Copilot, tool names use `mcp_spartan-swarm_` prefix (e.g., `mcp_spartan-swarm_delegate_task`).
-- Tool availability is dynamic. If a referenced `spartan-swarm` tool is unavailable in the current session, do not fail the workflow waiting for it; acknowledge the missing tool, skip that mandatory-first-action step, and continue with the best available local/runtime path.
-- When launching a swarm, use the **async** versions (`delegate_task_async`, `dispatch_council_async`) to avoid blocking your own process.
-- For Optimus/fleet/orchestration work inside this repository, prefer Optimus's own orchestration surfaces (`optimus_orchestrate`, `dispatch_plan_async`, `delegate_task_async`) over generic external sub-agents. If manual takeover becomes necessary, state explicitly that the result was not fleet-native end-to-end completion.
-- For orchestration design or runtime changes, prefer the agent-planned path in `optimus_orchestrate` (`planner_mode=auto` or `planner_mode=agent`) over forcing code-only heuristics. Use `planner_mode=code` only when you explicitly need deterministic fallback behavior or are debugging the heuristic path itself.
-- When self-healing MCP failures specific to the Optimus codebase, investigate `src/mcp/mcp-server.ts`, fix, and rebuild via `cd optimus-plugin && npm run build`.
-- After changing `src/mcp/mcp-server.ts`, MCP tool schemas/descriptions, or shipped skill wiring that feeds the bundled MCP server, run `npm run build` before running `src/test/delegate-task-compat.test.ts` because that test reads `optimus-plugin/dist/mcp-server.js`, not the source file directly.
+## Failure Diagnostics Conventions
 
-## Instruction File Maintenance
-
-- Do not edit the auto-managed Optimus block between `<!-- optimus-instructions v3 -->` and `<!-- /optimus-instructions -->` directly. Add repository-specific clarifications outside that block instead.
-
-## Architecture Overview
-
-- **Core monolith**: `src/mcp/worker-spawner.ts` (~2000 lines) — `delegateTaskSingle()` is the main execution function
-- **Infra layer**: `src/runtime/genericExecutor.ts` — engine→adapter mapping, prompt execution, output validation
-- **Layering**: AcpAdapter → genericExecutor (infra) → Harness → Optimus Business (worker-spawner) → Transport (MCP/HTTP)
-- **Harness modules**: `src/harness/` — outputValidator, loopDetector, mechanicalLinter, entropyPatrol
-- **Transport**: MCP server (`src/mcp/mcp-server.ts`), HTTP server (`src/runtime/http-server.ts`), CLI (`src/runtime/runtime-cli.ts`)
-- **v1 and v2 runtime APIs are independent** — zero cross-imports, share only `AcpProcessPool` singleton
+- Error messages and task records should be agent-friendly: include a machine-readable code, human-readable message, and actionable remediation.
+- Copilot ACP authentication should point users to `gh auth login` and Copilot entitlement checks. Do not imply that `.env` `GITHUB_TOKEN` fixes Copilot ACP auth; that token is for GitHub API/release operations.
+- For timeouts, preserve and report the activity timeout value, last heartbeat/activity timestamp, engine/model, task id, and runtime route when available.
 
 <!-- optimus-instructions v3 -->
 <!-- Auto-managed by Optimus Swarm — edits between these markers will be overwritten on upgrade -->
@@ -78,22 +73,32 @@ Users install and upgrade from GitHub directly (not npm):
 **⚡ MANDATORY FIRST ACTION:** Call `optimus_status` with your workspace_path NOW to verify the Optimus Swarm is active. Then call `get_user_memory` to load user preferences. Do not proceed without completing both calls.
 
 You have a multi-agent AI development team available via MCP tools (server: `spartan-swarm`).
-Instead of writing code directly, delegate to specialist agents who follow project conventions.
+Instead of writing code directly or reaching for non-Optimus sub-agent tooling first, route work through Optimus's own orchestration flow so the product and the master agent use the same model.
 
 ### Key Tools
 - **`optimus_status`** — Verify Optimus is active and see available skills/roles/engines
 - **`roster_check`** — List available agent roles and their capabilities
-- **`delegate_task`** — Assign a task to a specialist (e.g., `senior-full-stack-builder`, `code-architect`)
-- **`dispatch_council`** — Spawn parallel expert reviewers for architecture decisions
+- **`optimus_orchestrate`** — Preferred entry point for broad or multi-step requests; lets Optimus choose delegate/council/plan
+- **`delegate_task_async`** — Use for an already-scoped execution task that should go to one specialist
+- **`dispatch_plan_async`** — Use when you already decomposed the work into multiple explicit items/dependencies
+- **`dispatch_council_async`** — Spawn parallel expert reviewers for architecture decisions
 
 ### When to Delegate
 For any non-trivial task (multi-file changes, new features, bug investigations, refactors),
-call `roster_check` first to see available specialists, then delegate to the appropriate role.
+start with `optimus_orchestrate`. Use `delegate_task_async` or `dispatch_plan_async` only when you are intentionally driving Optimus's internal execution flow yourself.
 
 ### Example Prompts
 - "Run roster_check to see what agents are available"
-- "Create a GitHub Issue for [task] and delegate it to the right specialist"
+- "Use optimus_orchestrate for [task] and let Optimus pick the right flow"
+- "Create a GitHub Issue for [task] and then use delegate_task_async for the implementation worker"
 - "Dispatch a council review for this architecture proposal"
+
+### Runtime Model
+- Optimus currently uses a **per-user multi-workspace HTTP daemon** for runtime-backed agent flows.
+- Always carry `workspace_path` on run-creation and other body-driven runtime requests.
+- Use `X-Optimus-Workspace` for status or stream lookups when the transport expects headers.
+- Do not assume the daemon is bound to the current repo root; workspace is request-scoped.
+- Do not assume named pipes or WebSockets are available unless a newer instruction explicitly says so.
 
 Full protocol: `.optimus/config/system-instructions.md`
 <!-- /optimus-instructions -->
