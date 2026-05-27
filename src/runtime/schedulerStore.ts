@@ -9,6 +9,7 @@ export type SchedulerTaskStatus =
     | 'pending'
     | 'ready'
     | 'running'
+    | 'paused'
     | 'blocked'
     | 'review'
     | 'failed'

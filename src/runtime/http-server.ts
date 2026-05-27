@@ -14,6 +14,13 @@
  *   POST /api/v1/scheduler/inbox       — Persist app-layer scheduler inbox entry
  *   POST /api/v1/scheduler/tick        — Run one app-layer scheduler tick
  *   GET  /api/v1/scheduler/tasks       — Get app-layer scheduler queue status
+ *   GET  /api/v1/scheduler/tasks/:id   — Get one scheduler task with events/runs
+ *   POST /api/v1/scheduler/tasks/:id/pause    — Pause scheduler-owned task
+ *   POST /api/v1/scheduler/tasks/:id/resume   — Resume scheduler-owned task
+ *   POST /api/v1/scheduler/tasks/:id/reassign — Reassign scheduler-owned task
+ *   POST /api/v1/scheduler/tasks/:id/checkpoint — Checkpoint master-agent progress
+ *   POST /api/v1/scheduler/tasks/:id/handoff    — Handoff master work to a sub-agent
+ *   POST /api/v1/scheduler/tasks/:id/yield      — Yield master focus without stopping workers
  *   GET  /api/v1/health                — Health check
  *
  * Auto-scaling: when at capacity, spawns overflow instances on adjacent ports.
@@ -570,6 +577,178 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
     }
 
+    // GET /api/v1/scheduler/tasks/:id — get one scheduler task with events and agent runs
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id', 'GET'))) {
+        const workspacePath = resolveWorkspaceFromHeader(defaultWorkspacePath, req.headers['x-optimus-workspace'] as string | undefined);
+        const scheduler = createHttpScheduler(workspacePath);
+        const details = scheduler.getTaskDetails(params.id);
+        if (!details.task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            details,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/pause — pause scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/pause', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = await scheduler.pauseTask(params.id, parsed.reason || 'Paused by scheduler API request.');
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Pause is application-layer state. Active worker cancellation is best-effort; resume starts fresh work.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/resume — resume scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/resume', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = scheduler.resumeTask(params.id, parsed.reason || 'Resumed by scheduler API request.');
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Resume moves paused work to ready. Run scheduler tick to dispatch.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/reassign — reassign scheduler-owned app-layer task
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/reassign', 'POST'))) {
+        const body = await readBody(req);
+        const parsed = parseOptionalJsonBody(body);
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, parsed.workspace_path);
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = await scheduler.reassignTask(params.id, {
+            required_capability: typeof parsed.required_capability === 'string' ? parsed.required_capability : undefined,
+            assigned_agent_id: typeof parsed.assigned_agent_id === 'string' ? parsed.assigned_agent_id : undefined,
+            reason: parsed.reason || 'Reassigned by scheduler API request.',
+        });
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Reassignment updates scheduler routing and cancels active worker execution best-effort before redispatch.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/checkpoint — checkpoint master-agent progress
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/checkpoint', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
+        if (typeof body.summary !== 'string' || !body.summary.trim()) {
+            throw new RuntimeError('Missing required field: summary', 'missing_params', 400,
+                'Include summary in the JSON body: { "workspace_path": "<path>", "summary": "<checkpoint>" }.'
+            );
+        }
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = scheduler.checkpointTask(params.id, {
+            summary: body.summary,
+            current_focus: typeof body.current_focus === 'string' ? body.current_focus : undefined,
+            next_steps: typeof body.next_steps === 'string' ? body.next_steps : undefined,
+            open_questions: Array.isArray(body.open_questions) ? body.open_questions.filter((item: unknown): item is string => typeof item === 'string') : undefined,
+            affected_files: Array.isArray(body.affected_files) ? body.affected_files.filter((item: unknown): item is string => typeof item === 'string') : undefined,
+            handoff_recommended: body.handoff_recommended === true,
+        });
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Checkpoint recorded durably in task_events; running workers are not stopped.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/handoff — handoff master work to a sub-agent
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/handoff', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
+        if (typeof body.summary !== 'string' || !body.summary.trim()) {
+            throw new RuntimeError('Missing required field: summary', 'missing_params', 400,
+                'Include summary in the JSON body: { "workspace_path": "<path>", "summary": "<handoff packet>" }.'
+            );
+        }
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = await scheduler.handoffTask(params.id, {
+            summary: body.summary,
+            required_capability: typeof body.required_capability === 'string' ? body.required_capability : undefined,
+            assigned_agent_id: typeof body.assigned_agent_id === 'string' ? body.assigned_agent_id : undefined,
+            acceptance_criteria: typeof body.acceptance_criteria === 'string' ? body.acceptance_criteria : undefined,
+            context_summary: typeof body.context_summary === 'string' ? body.context_summary : undefined,
+            affected_files: Array.isArray(body.affected_files) ? body.affected_files.filter((item: unknown): item is string => typeof item === 'string') : undefined,
+            cancel_current_run: body.cancel_current_run === true,
+            reason: typeof body.reason === 'string' ? body.reason : undefined,
+        });
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Handoff recorded durably. Existing worker runs continue unless cancel_current_run was true.',
+            task,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/yield — yield master focus without stopping workers
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/yield', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
+        if (typeof body.reason !== 'string' || !body.reason.trim()) {
+            throw new RuntimeError('Missing required field: reason', 'missing_params', 400,
+                'Include reason in the JSON body: { "workspace_path": "<path>", "reason": "<why yielding>" }.'
+            );
+        }
+        const checkpoint = body.checkpoint && typeof body.checkpoint === 'object' && typeof body.checkpoint.summary === 'string'
+            ? {
+                summary: body.checkpoint.summary,
+                current_focus: typeof body.checkpoint.current_focus === 'string' ? body.checkpoint.current_focus : undefined,
+                next_steps: typeof body.checkpoint.next_steps === 'string' ? body.checkpoint.next_steps : undefined,
+                open_questions: Array.isArray(body.checkpoint.open_questions) ? body.checkpoint.open_questions.filter((item: unknown): item is string => typeof item === 'string') : undefined,
+                affected_files: Array.isArray(body.checkpoint.affected_files) ? body.checkpoint.affected_files.filter((item: unknown): item is string => typeof item === 'string') : undefined,
+                handoff_recommended: body.checkpoint.handoff_recommended === true,
+            }
+            : undefined;
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = scheduler.yieldTask(params.id, { reason: body.reason, checkpoint });
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Master yield recorded durably; running workers are not stopped.',
+            task,
+        });
+        return;
+    }
+
     // ─── v2 Generic API (no Optimus orchestration) ───
 
     // GET /api/v2/health
@@ -675,7 +854,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // 404
     sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`,
-        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, POST /api/v1/scheduler/tasks/:id/cancel, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
+        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, GET /api/v1/scheduler/tasks/:id, POST /api/v1/scheduler/tasks/:id/cancel, POST /api/v1/scheduler/tasks/:id/pause, POST /api/v1/scheduler/tasks/:id/resume, POST /api/v1/scheduler/tasks/:id/reassign, POST /api/v1/scheduler/tasks/:id/checkpoint, POST /api/v1/scheduler/tasks/:id/handoff, POST /api/v1/scheduler/tasks/:id/yield, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
     );
 }
 

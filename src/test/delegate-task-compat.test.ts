@@ -93,6 +93,25 @@ describe('delegate_task compatibility layer', () => {
         expect(schemaProperties).toHaveProperty('completion_timeout_ms');
     });
 
+    it('advertises explicit scheduler control tools for interruptible work', async () => {
+        const data = await connectClient();
+
+        const tools = await data.client.listTools();
+        const byName = new Map(tools.tools.map(tool => [tool.name, tool]));
+
+        for (const name of ['scheduler_pause_task', 'scheduler_resume_task', 'scheduler_reassign_task', 'scheduler_get_task', 'scheduler_checkpoint_task', 'scheduler_handoff_task', 'scheduler_yield_task']) {
+            expect(byName.get(name)).toBeDefined();
+            const schemaProperties = (byName.get(name)?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties || {};
+            expect(schemaProperties).toHaveProperty('workspace_path');
+            expect(schemaProperties).toHaveProperty('task_id');
+        }
+        expect(byName.get('scheduler_pause_task')?.description).toContain('not ACP hot-pause');
+        expect(byName.get('scheduler_reassign_task')?.description).toContain('redispatch');
+        expect(byName.get('scheduler_checkpoint_task')?.description).toContain('without stopping running sub-agents');
+        expect(byName.get('scheduler_handoff_task')?.description).toContain('without pausing existing worker runs');
+        expect(byName.get('scheduler_yield_task')?.description).toContain('without changing running sub-agent state');
+    });
+
     it('rejects synchronous delegate_task calls without workspace_path', async () => {
         const data = await connectClient();
 
