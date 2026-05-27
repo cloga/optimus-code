@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.30.6] - 2026-05-27
+
+### Features
+- **Interruptible scheduler controls** — Added durable scheduler controls for pause, resume, reassign, task detail inspection, checkpoint, handoff, and master yield workflows.
+- **Checkpoint-first interruption model** — Master-agent interruptions now have durable checkpoint/yield/handoff primitives so running sub-agents can continue by default while the master switches focus.
+
+### Improvements
+- **Natural-language scheduler routing** — Scheduler inbox handling now honors explicit metadata actions and targets, and treats urgent/priority work as queue reprioritization instead of stopping active workers.
+- **HTTP scheduler control surface** — Added REST endpoints for scheduler task detail, pause, resume, reassign, checkpoint, handoff, and yield.
+
+### Tests
+- Added regression coverage for scheduler pause/resume/reassign, checkpoint/handoff/yield, targeted inbox controls, MCP tool schemas, and HTTP endpoint contracts.
+
 ## [2.30.5] - 2026-05-27
 
 ### Bug Fixes
