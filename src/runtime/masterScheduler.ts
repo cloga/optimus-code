@@ -9,6 +9,14 @@ import {
 } from './schedulerStore';
 import { startRun, getRunStatus, cancelRun } from './agentRuntimeService';
 import { TaskManifestManager } from '../managers/TaskManifestManager';
+import {
+    buildSchedulerContextPacket,
+    formatSchedulerContextForPrompt,
+} from './schedulerContext';
+import { buildMemoryEntry } from '../managers/MemoryManager';
+import { detectWorktreeContext } from '../utils/worktree';
+import fs from 'fs';
+import path from 'path';
 
 export const MASTER_SCHEDULER_PROTOCOL = [
     'Application-layer scheduler: this does not intercept or replace Copilot core turn scheduling.',
@@ -95,6 +103,20 @@ export interface SchedulerHandoffOptions {
 export interface SchedulerYieldOptions {
     reason: string;
     checkpoint?: SchedulerCheckpoint;
+}
+
+export interface SchedulerResumeContext {
+    task?: SchedulerTask;
+    context?: string;
+    suggested_next_action: 'continue_as_master' | 'handoff_to_sub_agent' | 'tick_scheduler' | 'ask_user' | 'task_not_found';
+}
+
+export interface SchedulerMemoryPromotion {
+    level: 'project' | 'role';
+    category: string;
+    tags: string[];
+    content: string;
+    role?: string;
 }
 
 const DEFAULT_WORKER_ROLES: Record<'research_worker' | 'coding_worker', string> = {
@@ -258,6 +280,59 @@ export class MasterScheduler {
             events: this.store.listTaskEvents(taskId),
             agent_runs: this.store.listAgentRuns().filter(run => run.task_id === taskId),
         };
+    }
+
+    getResumeContext(taskId: string): SchedulerResumeContext {
+        const packet = buildSchedulerContextPacket(this.workspacePath, taskId);
+        if (!packet) {
+            return { suggested_next_action: 'task_not_found' };
+        }
+        const context = formatSchedulerContextForPrompt(packet);
+        let suggested: SchedulerResumeContext['suggested_next_action'] = 'continue_as_master';
+        if (packet.task.status === 'ready') suggested = 'tick_scheduler';
+        if (packet.latest_handoff) suggested = 'handoff_to_sub_agent';
+        if (packet.task.status === 'blocked' && packet.task.blocking_reason) suggested = 'ask_user';
+        return { task: packet.task, context, suggested_next_action: suggested };
+    }
+
+    promoteTaskMemory(taskId: string, promotion: SchedulerMemoryPromotion): SchedulerTask | undefined {
+        const task = this.store.getTask(taskId);
+        if (!task) return undefined;
+        const memoryFile = this.getPromotionMemoryPath(promotion.level, promotion.role || task.required_capability);
+        fs.mkdirSync(path.dirname(memoryFile), { recursive: true });
+        const entry = buildMemoryEntry({
+            level: promotion.level,
+            category: promotion.category,
+            tags: promotion.tags,
+            content: promotion.content,
+            author: 'scheduler-memory-bridge',
+        });
+        fs.appendFileSync(memoryFile, entry, 'utf8');
+        this.store.appendTaskEvent({
+            task_id: task.id,
+            event_type: 'task_memory_promoted',
+            payload: {
+                level: promotion.level,
+                category: promotion.category,
+                tags: promotion.tags,
+                role: promotion.role,
+                memory_file: memoryFile,
+            },
+        });
+        return task;
+    }
+
+    private getPromotionMemoryPath(level: 'project' | 'role', role: string): string {
+        const ctx = detectWorktreeContext(this.workspacePath);
+        const memoryRoot = path.join(ctx.mainRoot, '.optimus', 'memory');
+        if (level === 'project') {
+            return path.join(memoryRoot, 'continuous-memory.md');
+        }
+        const sanitizedRole = role.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
+        if (!sanitizedRole) {
+            throw new Error(`Invalid role name for memory promotion: '${role}'`);
+        }
+        return path.join(memoryRoot, 'roles', `${sanitizedRole}.md`);
     }
 
     checkpointTask(taskId: string, checkpoint: SchedulerCheckpoint): SchedulerTask | undefined {
@@ -823,6 +898,10 @@ export class MasterScheduler {
             }
             try {
                 const role = this.resolveRoleForTask(candidate);
+                const schedulerContextPacket = buildSchedulerContextPacket(this.workspacePath, candidate.id);
+                const schedulerContext = schedulerContextPacket
+                    ? formatSchedulerContextForPrompt(schedulerContextPacket)
+                    : undefined;
                 const envelope = startRun({
                     role,
                     workspace_path: this.workspacePath,
@@ -835,6 +914,7 @@ export class MasterScheduler {
                     ].filter(Boolean).join('\n'),
                     context_files: candidate.affected_files,
                     agent_id: candidate.assigned_agent_id,
+                    scheduler_context: schedulerContext,
                 });
                 if (acquiredWorkerSlot) {
                     this.onWorkerRunStarted?.(envelope.run_id, this.workspacePath);

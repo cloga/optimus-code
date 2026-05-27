@@ -76,6 +76,8 @@ describe('httpRuntimeHelpers', () => {
         expect(source).toContain("'/api/v1/scheduler/tasks/:id/checkpoint'");
         expect(source).toContain("'/api/v1/scheduler/tasks/:id/handoff'");
         expect(source).toContain("'/api/v1/scheduler/tasks/:id/yield'");
+        expect(source).toContain("'/api/v1/scheduler/tasks/:id/resume-context'");
+        expect(source).toContain("'/api/v1/scheduler/tasks/:id/promote-memory'");
         expect(source).toContain("'/api/v1/scheduler/tasks/:id'");
     });
 

@@ -21,6 +21,8 @@
  *   POST /api/v1/scheduler/tasks/:id/checkpoint — Checkpoint master-agent progress
  *   POST /api/v1/scheduler/tasks/:id/handoff    — Handoff master work to a sub-agent
  *   POST /api/v1/scheduler/tasks/:id/yield      — Yield master focus without stopping workers
+ *   GET  /api/v1/scheduler/tasks/:id/resume-context — Get prompt-friendly resume context
+ *   POST /api/v1/scheduler/tasks/:id/promote-memory  — Explicitly promote a lesson to long-term memory
  *   GET  /api/v1/health                — Health check
  *
  * Auto-scaling: when at capacity, spawns overflow instances on adjacent ports.
@@ -749,6 +751,55 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
     }
 
+    // GET /api/v1/scheduler/tasks/:id/resume-context — prompt-friendly task recovery context
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/resume-context', 'GET'))) {
+        const workspacePath = resolveWorkspaceFromHeader(defaultWorkspacePath, req.headers['x-optimus-workspace'] as string | undefined);
+        const scheduler = createHttpScheduler(workspacePath);
+        const resumeContext = scheduler.getResumeContext(params.id);
+        if (!resumeContext.task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Prompt-friendly scheduler context for master recovery; not long-term memory.',
+            resume_context: resumeContext,
+        });
+        return;
+    }
+
+    // POST /api/v1/scheduler/tasks/:id/promote-memory — explicit long-term memory promotion
+    if ((params = matchRoute(method, url, '/api/v1/scheduler/tasks/:id/promote-memory', 'POST'))) {
+        const body = parseJsonBody(await readBody(req));
+        const workspacePath = resolveWorkspaceFromBody(defaultWorkspacePath, body.workspace_path);
+        if (body.level !== 'project' && body.level !== 'role') {
+            throw new RuntimeError('Invalid memory level', 'invalid_params', 400, 'Use level: "project" or "role".');
+        }
+        if (typeof body.category !== 'string' || !body.category.trim() || typeof body.content !== 'string' || !body.content.trim()) {
+            throw new RuntimeError('Missing required fields: category, content', 'missing_params', 400,
+                'Include category and content in the JSON body. Do not pass raw scheduler event logs.'
+            );
+        }
+        const scheduler = createHttpScheduler(workspacePath);
+        const task = scheduler.promoteTaskMemory(params.id, {
+            level: body.level,
+            category: body.category,
+            tags: Array.isArray(body.tags) ? body.tags.filter((item: unknown): item is string => typeof item === 'string') : [],
+            content: body.content,
+            role: typeof body.role === 'string' ? body.role : undefined,
+        });
+        if (!task) {
+            sendError(res, 404, 'task_not_found', `Scheduler task '${params.id}' was not found.`);
+            return;
+        }
+        sendJson(res, 200, {
+            scheduler_scope: 'optimus_application_layer',
+            note: 'Only the explicit lesson was promoted to long-term memory; scheduler events were not copied automatically.',
+            task,
+        });
+        return;
+    }
+
     // ─── v2 Generic API (no Optimus orchestration) ───
 
     // GET /api/v2/health
@@ -854,7 +905,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // 404
     sendError(res, 404, 'not_found', `Route not found: ${method} ${url}`,
-        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, GET /api/v1/scheduler/tasks/:id, POST /api/v1/scheduler/tasks/:id/cancel, POST /api/v1/scheduler/tasks/:id/pause, POST /api/v1/scheduler/tasks/:id/resume, POST /api/v1/scheduler/tasks/:id/reassign, POST /api/v1/scheduler/tasks/:id/checkpoint, POST /api/v1/scheduler/tasks/:id/handoff, POST /api/v1/scheduler/tasks/:id/yield, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
+        'Valid endpoints: POST /api/v1/agent/run, POST /api/v1/agent/start, GET /api/v1/agent/runs/:id, POST /api/v1/agent/runs/:id/resume, POST /api/v1/agent/runs/:id/cancel, POST /api/v1/scheduler/inbox, POST /api/v1/scheduler/tick, GET /api/v1/scheduler/tasks, GET /api/v1/scheduler/tasks/:id, GET /api/v1/scheduler/tasks/:id/resume-context, POST /api/v1/scheduler/tasks/:id/cancel, POST /api/v1/scheduler/tasks/:id/pause, POST /api/v1/scheduler/tasks/:id/resume, POST /api/v1/scheduler/tasks/:id/reassign, POST /api/v1/scheduler/tasks/:id/checkpoint, POST /api/v1/scheduler/tasks/:id/handoff, POST /api/v1/scheduler/tasks/:id/yield, POST /api/v1/scheduler/tasks/:id/promote-memory, GET /api/v1/health, POST /api/v2/agent/run, POST /api/v2/agent/start, GET /api/v2/agent/runs/:id, POST /api/v2/agent/runs/:id/cancel, GET /api/v2/health'
     );
 }
 

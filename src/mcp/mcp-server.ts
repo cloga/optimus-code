@@ -1051,6 +1051,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: "scheduler_resume_context",
+        description: "Return a prompt-friendly scheduler context packet so the master agent can resume or take over a task from durable task_events instead of transient chat memory.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID to recover context for." },
+          },
+          required: ["workspace_path", "task_id"],
+        }
+      },
+      {
+        name: "scheduler_promote_memory",
+        description: "Explicitly promote a selected reusable lesson from a scheduler task into long-term project or role memory. This never copies the full scheduler event log automatically.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspace_path: { type: "string", description: "Absolute path to the project workspace root." },
+            task_id: { type: "string", description: "Scheduler task ID that produced the lesson." },
+            level: { type: "string", enum: ["project", "role"], description: "Long-term memory scope." },
+            category: { type: "string", description: "Memory category, e.g. architecture-decision or workflow." },
+            tags: { type: "array", items: { type: "string" }, description: "Tags for selective memory loading." },
+            content: { type: "string", description: "The concise reusable lesson to store. Do not pass raw task logs." },
+            role: { type: "string", description: "Role name for role-level memory. Defaults to task required_capability." },
+          },
+          required: ["workspace_path", "task_id", "level", "category", "content"],
+        }
+      },
+      {
         name: "write_blackboard_artifact",
         description: "Write a file to the .optimus/ blackboard directory. Only paths within .optimus/ are allowed. Use this for specs (problem/proposal/solution), task descriptions, reports, and other orchestration artifacts. artifact_path is relative to the .optimus/ directory (do NOT include the .optimus/ prefix). Routing: specs/{date}-{topic}/ for Problem-First lifecycle, tasks/ for issue bindings, reports/ for analysis, results/ for task output.",
         inputSchema: {
@@ -1469,6 +1498,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
     }
     return { content: [{ type: "text", text: `Scheduler task yielded: \`${task.id}\` [${task.status}]\n\nYield preserves scheduler state and does not stop running sub-agents.` }] };
+  }
+
+  if (request.params.name === "scheduler_resume_context") {
+    const { workspace_path, task_id } = request.params.arguments as any;
+    requireParams("scheduler_resume_context", request.params.arguments as any, ["workspace_path", "task_id"]);
+    const scheduler = new MasterScheduler(workspace_path);
+    const resumeContext = scheduler.getResumeContext(task_id);
+    if (!resumeContext.task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return {
+      content: [{
+        type: "text",
+        text: [
+          `Scheduler resume context`,
+          ``,
+          `**Suggested Next Action**: ${resumeContext.suggested_next_action}`,
+          ``,
+          resumeContext.context,
+        ].filter(Boolean).join('\n')
+      }]
+    };
+  }
+
+  if (request.params.name === "scheduler_promote_memory") {
+    const { workspace_path, task_id, level, category, content, role } = request.params.arguments as any;
+    requireParams("scheduler_promote_memory", request.params.arguments as any, ["workspace_path", "task_id", "level", "category", "content"]);
+    if (!["project", "role"].includes(level)) {
+      throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for scheduler_promote_memory: level must be project or role.");
+    }
+    const tags = Array.isArray((request.params.arguments as any).tags)
+      ? (request.params.arguments as any).tags.filter((item: unknown): item is string => typeof item === 'string')
+      : [];
+    const scheduler = new MasterScheduler(workspace_path);
+    const task = scheduler.promoteTaskMemory(task_id, { level, category, tags, content, role });
+    if (!task) {
+      return { content: [{ type: "text", text: `Scheduler task ${task_id} not found.` }] };
+    }
+    return { content: [{ type: "text", text: `Scheduler task memory promoted: \`${task.id}\`\n\nOnly the explicit lesson was written to long-term ${level} memory; scheduler events were not copied automatically.` }] };
   }
 
   if (request.params.name === "check_task_status") {
