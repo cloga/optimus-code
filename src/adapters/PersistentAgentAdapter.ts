@@ -1231,7 +1231,7 @@ export abstract class PersistentAgentAdapter implements AgentAdapter {
             if (isError) {
                 this.outputBuffer += `\n> [LOG] ${line}`;
             } else {
-                this.outputBuffer += !!line ? `\n${line}` : '';
+                this.outputBuffer += line ? `\n${line}` : '';
             }
         }
 

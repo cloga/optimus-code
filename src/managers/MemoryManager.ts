@@ -103,7 +103,7 @@ export function parseMemoryEntries(content: string): MemoryEntry[] {
             flushUnstructured();
 
             // Collect body text until next frontmatter block or EOF
-            let bodyStart = fmEnd + 1;
+            const bodyStart = fmEnd + 1;
             let bodyEnd = bodyStart;
             while (bodyEnd < lines.length) {
                 // Look ahead for next frontmatter opening
@@ -751,7 +751,7 @@ function resolveCategory(category: string): string {
  */
 export function appendToUserMemory(category: string, content: string): void {
     const memPath = getUserMemoryPath();
-    let fileContent = fs.readFileSync(memPath, 'utf8');
+    const fileContent = fs.readFileSync(memPath, 'utf8');
     const resolvedCategory = resolveCategory(category);
     const sectionHeader = `## ${resolvedCategory}`;
 

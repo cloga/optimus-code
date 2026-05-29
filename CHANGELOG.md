@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.30.7] - 2026-05-27
+
+### Bug Fixes
+- **T3 usage tracking** — `t3-tracker` no longer silently swallows I/O errors when writing the usage log; failures are now surfaced via a diagnostic error log instead of being discarded.
+
+### Improvements
+- **Repo hygiene** — Removed tracked scratch files (`test-ipc/` integration scripts and `test_git_workflow.js`) from version control and corrected `.gitignore` (dropped a stray invalid entry, added scratch-script ignore rules).
+- **Tooling** — Introduced an ESLint 9 + typescript-eslint flat config and repaired the previously broken `npm run lint` script (removed the deprecated `--ext ts` flag). Unified root/plugin dependency versions and added the missing `marked` dependency required for a clean plugin build.
+
 ## [2.30.6] - 2026-05-27
 
 ### Features

@@ -11,7 +11,6 @@ scripts/
 temp/
 temp_debug/
 *.log
-[LOG]
 
 # Env Files
 .env
@@ -27,3 +26,7 @@ temp_data/
 
 # Windows dev artifacts
 nul
+
+# Local scratch / integration scripts (not part of vitest suite)
+test-ipc/
+test_git_workflow.js

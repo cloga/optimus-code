@@ -494,7 +494,7 @@ export async function runAsyncWorker(taskId: string, workspacePath: string) {
             synthesisContent += `**Council:** ${task.roles!.map(r => `\`${r}\``).join(', ')}\n\n`;
 
             let synthesisVerifiedCount = 0;
-            let synthesisFailedRoles: string[] = [];
+            const synthesisFailedRoles: string[] = [];
 
             for (let i = 0; i < task.roles!.length; i++) {
                 const role = task.roles![i];

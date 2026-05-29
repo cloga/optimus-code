@@ -9,7 +9,7 @@ import assert from 'assert';
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>, body: string } {
     const yamlRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
     const match = content.match(yamlRegex);
-    let frontmatter: Record<string, string> = {};
+    const frontmatter: Record<string, string> = {};
     let body = content;
 
     if (match) {

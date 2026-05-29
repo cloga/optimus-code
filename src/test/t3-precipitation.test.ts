@@ -14,7 +14,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
     const normalized = content.replace(/\r\n/g, '\n');
     const yamlRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
     const match = normalized.match(yamlRegex);
-    let frontmatter: Record<string, string> = {};
+    const frontmatter: Record<string, string> = {};
     let body = content;
     if (match) {
         const yamlBlock = match[1];
@@ -88,7 +88,7 @@ console.log(`\n🧪 Test workspace: ${tmpDir}\n`);
 console.log('━━━ Test 1: T3 Usage Tracking ━━━');
 trackT3Usage(tmpDir, 'security-auditor', true, 'claude-code', 'claude-opus-4.6-1m');
 trackT3Usage(tmpDir, 'security-auditor', true, 'claude-code', 'claude-opus-4.6-1m');
-let log = loadT3UsageLog(tmpDir);
+const log = loadT3UsageLog(tmpDir);
 assert('Tracks 2 invocations', log['security-auditor']?.invocations === 2);
 assert('Tracks 2 successes', log['security-auditor']?.successes === 2);
 assert('Tracks 0 failures', log['security-auditor']?.failures === 0);

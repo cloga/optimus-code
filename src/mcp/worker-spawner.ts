@@ -114,7 +114,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
     const normalized = content.replace(/\r\n/g, '\n');
     const yamlRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
     const match = normalized.match(yamlRegex);
-    let frontmatter: Record<string, string> = {};
+    const frontmatter: Record<string, string> = {};
     let body = normalized;
     
     if (match) {

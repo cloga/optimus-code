@@ -76,5 +76,8 @@ export function trackT3Usage(workspacePath: string, role: string, success: boole
         log[role].engine = engine;
         if (model) log[role].model = model;
         saveT3UsageLog(workspacePath, log);
-    }).catch(() => {});
+    }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[T3Tracker] Failed to record usage for role '${role}': ${msg}`);
+    });
 }

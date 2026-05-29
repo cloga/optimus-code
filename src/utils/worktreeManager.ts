@@ -68,7 +68,7 @@ export function listWorktrees(workspacePath: string): WorktreeInfo[] {
             let wtPath = '';
             let head = '';
             let branch = '';
-            let isMain = false;
+            const isMain = false;
 
             for (const line of lines) {
                 if (line.startsWith('worktree ')) {

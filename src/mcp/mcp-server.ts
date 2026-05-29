@@ -1472,7 +1472,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (request.params.name === "check_task_status") {
-    let { taskId, workspace_path } = request.params.arguments as any;
+    const { taskId, workspace_path } = request.params.arguments as any;
     requireParams("check_task_status", request.params.arguments as any, ["taskId", "workspace_path"]);
     
     TaskManifestManager.reapStaleTasks(workspace_path); // Trigger reaper
@@ -1700,7 +1700,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
   if (request.params.name === "optimus_orchestrate") {
-    let { workspace_path, task_description, output_path, intent_signals, context_files, mode_hint, heartbeat_timeout_ms, startup_timeout_ms, wait_for_completion, completion_timeout_ms } = request.params.arguments as any;
+    const { workspace_path, task_description, output_path, intent_signals, context_files, mode_hint, heartbeat_timeout_ms, startup_timeout_ms, wait_for_completion, completion_timeout_ms } = request.params.arguments as any;
     requireParams("optimus_orchestrate", request.params.arguments as any, ["workspace_path", "task_description", "output_path"]);
 
     try { validateStartupTimeoutMs(startup_timeout_ms); } catch (e: any) {
@@ -1994,7 +1994,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (request.params.name === "dispatch_plan_async") {
-    let { workspace_path, items } = request.params.arguments as any;
+    const { workspace_path, items } = request.params.arguments as any;
     requireParams("dispatch_plan_async", request.params.arguments as any, ["workspace_path", "items"]);
     if (!Array.isArray(items) || items.length === 0) {
       throw new McpError(ErrorCode.InvalidParams, "Invalid arguments for dispatch_plan_async: 'items' must be a non-empty array.");
@@ -2315,7 +2315,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }]
       };
         } else if (request.params.name === "append_memory") {
-      let { category, tags, content, level } = request.params.arguments as any;
+      const { category, tags, content, level } = request.params.arguments as any;
       requireParams("append_memory", request.params.arguments as any, ["category", "content"]);
 
       // User-level memory: separate subsystem with different format and trust domain
